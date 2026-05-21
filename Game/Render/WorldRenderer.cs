@@ -1,6 +1,7 @@
 using Godot;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Map;
+using TileMap = StruggleGame.Sim.Map.TileMap;
 
 namespace StruggleGame.Game.Render;
 
