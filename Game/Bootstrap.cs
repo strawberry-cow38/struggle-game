@@ -2,6 +2,7 @@ using Godot;
 using StruggleGame.Game.Camera;
 using StruggleGame.Game.Designation;
 using StruggleGame.Game.Render;
+using StruggleGame.Game.Tools;
 using StruggleGame.Game.UI;
 using StruggleGame.Sim;
 
@@ -10,6 +11,7 @@ namespace StruggleGame.Game;
 public partial class Bootstrap : Node2D
 {
     private SimHost? _host;
+    private readonly ToolService _tools = new();
 
     public override void _Ready()
     {
@@ -23,8 +25,11 @@ public partial class Bootstrap : Node2D
         var renderer = new WorldRenderer { Host = _host, Name = "WorldRenderer" };
         AddChild(renderer);
 
-        var designator = new WallDesignator { Host = _host, Name = "WallDesignator" };
-        AddChild(designator);
+        var wallDesignator = new WallDesignator { Host = _host, Tools = _tools, Name = "WallDesignator" };
+        AddChild(wallDesignator);
+
+        var cancelDesignator = new CancelDesignator { Host = _host, Tools = _tools, Name = "CancelDesignator" };
+        AddChild(cancelDesignator);
 
         float worldPx = SimConstants.MapSize * SimConstants.PixelsPerTile;
         var camera = new GameCamera
@@ -37,6 +42,9 @@ public partial class Bootstrap : Node2D
 
         var hud = new HudOverlay { Host = _host, Name = "Hud" };
         AddChild(hud);
+
+        var toolbar = new Toolbar { Tools = _tools, Name = "Toolbar" };
+        AddChild(toolbar);
     }
 
     public override void _UnhandledInput(InputEvent @event)
