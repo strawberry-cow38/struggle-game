@@ -5,7 +5,7 @@ namespace StruggleGame.Sim.World;
 
 // Sub-tile float position. Integer tile = (int)X, (int)Y; sub-tile is the
 // fractional remainder. Centers are at .5.
-public struct Position : IComponent
+public struct WorldPos : IComponent
 {
     public float X;
     public float Y;

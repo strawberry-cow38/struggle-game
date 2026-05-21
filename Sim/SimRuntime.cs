@@ -29,10 +29,10 @@ public sealed class SimRuntime
 
     public SimSnapshot BuildSnapshot()
     {
-        var query = Store.Query<Position, Wanderer>();
+        var query = Store.Query<WorldPos, Wanderer>();
         var buf = new DummyState[query.Count];
         int i = 0;
-        query.ForEachEntity((ref Position p, ref Wanderer _, Entity _) =>
+        query.ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
         {
             buf[i++] = new DummyState(p.X, p.Y);
         });
@@ -54,7 +54,7 @@ public sealed class SimRuntime
                     if (!Map.Walkable(x, y)) continue;
 
                     var e = Store.CreateEntity();
-                    e.AddComponent(new Position { X = x + 0.5f, Y = y + 0.5f });
+                    e.AddComponent(new WorldPos { X = x + 0.5f, Y = y + 0.5f });
                     e.AddComponent(new PathFollower());
                     e.AddComponent(new Wanderer());
                     return;

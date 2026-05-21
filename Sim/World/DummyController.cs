@@ -22,15 +22,15 @@ public sealed class DummyController
 
     public void Step(EntityStore store, float dt)
     {
-        var query = store.Query<Position, PathFollower, Wanderer>();
-        query.ForEachEntity((ref Position pos, ref PathFollower path, ref Wanderer _, Entity _) =>
+        var query = store.Query<WorldPos, PathFollower, Wanderer>();
+        query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity _) =>
         {
             EnsurePath(ref pos, ref path);
             AdvanceAlongPath(ref pos, ref path, dt);
         });
     }
 
-    private void EnsurePath(ref Position pos, ref PathFollower path)
+    private void EnsurePath(ref WorldPos pos, ref PathFollower path)
     {
         if (path.Waypoints is not null && path.Index < path.Waypoints.Count) return;
 
@@ -54,7 +54,7 @@ public sealed class DummyController
         path.Index = 0;
     }
 
-    private static void AdvanceAlongPath(ref Position pos, ref PathFollower path, float dt)
+    private static void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt)
     {
         if (path.Waypoints is null || path.Index >= path.Waypoints.Count) return;
 
