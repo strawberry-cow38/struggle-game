@@ -13,9 +13,9 @@ public class SimRuntimeTests
         var sim = new SimRuntime();
         Assert.Equal(0, sim.Tick);
 
-        sim.Step();
-        sim.Step();
-        sim.Step();
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
 
         Assert.Equal(3, sim.Tick);
     }

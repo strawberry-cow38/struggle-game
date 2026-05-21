@@ -14,9 +14,12 @@ public sealed class SimHost : IDisposable
     private readonly SimRuntime _sim;
     private readonly Thread _thread;
     private volatile bool _running;
+    private volatile int _tickHz = SimConstants.TickHz;
     private SimSnapshot? _latest;
 
     public TileMap Map => _sim.Map;
+
+    public int TickHz => _tickHz;
 
     public SimHost()
     {
@@ -28,6 +31,14 @@ public sealed class SimHost : IDisposable
 
     public SimSnapshot? LatestSnapshot => Volatile.Read(ref _latest);
 
+    // Switch tick rate at runtime. Loop reads _tickHz each iteration so the
+    // change picks up next tick boundary without a restart.
+    public void SetTickHz(int hz)
+    {
+        if (hz < 1) hz = 1;
+        _tickHz = hz;
+    }
+
     public void Dispose()
     {
         _running = false;
@@ -37,19 +48,22 @@ public sealed class SimHost : IDisposable
     private void Loop()
     {
         var sw = Stopwatch.StartNew();
-        long tickStride = Stopwatch.Frequency / SimConstants.TickHz;
         long nextTick = sw.ElapsedTicks;
 
         while (_running)
         {
+            int hz = _tickHz;
+            long tickStride = Stopwatch.Frequency / hz;
+            float dt = 1f / hz;
+
             long now = sw.ElapsedTicks;
             if (now >= nextTick)
             {
-                _sim.Step();
+                _sim.Step(dt);
                 Volatile.Write(ref _latest, _sim.BuildSnapshot());
                 nextTick += tickStride;
-                // If we fell badly behind (paused breakpoint etc.), don't
-                // try to catch up by spamming — resync to now.
+                // If we fell badly behind (paused breakpoint, hz bump, etc.),
+                // don't try to catch up by spamming — resync to now.
                 if (nextTick < now - tickStride * 4) nextTick = now + tickStride;
             }
             else

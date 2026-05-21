@@ -21,9 +21,9 @@ public sealed class SimRuntime
         SpawnDummy(SimConstants.MapSize / 2, SimConstants.MapSize / 2);
     }
 
-    public void Step()
+    public void Step(float dt)
     {
-        _dummies.Step(Store, SimConstants.TickSeconds);
+        _dummies.Step(Store, dt);
         Tick++;
     }
 
