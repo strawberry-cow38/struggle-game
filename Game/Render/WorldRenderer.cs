@@ -76,9 +76,20 @@ public partial class WorldRenderer : Node2D
         }
 
         float radius = PixelsPerTile * 0.35f;
+        var labelFont = ThemeDB.FallbackFont;
+        const int labelFontSize = 14;
+        var labelOffset = new Vector2(0f, -PixelsPerTile * 0.6f);
         foreach (var d in snap.Dummies)
         {
-            DrawCircle(new Vector2(d.X * PixelsPerTile, d.Y * PixelsPerTile), radius, DummyColor);
+            var center = new Vector2(d.X * PixelsPerTile, d.Y * PixelsPerTile);
+            DrawCircle(center, radius, DummyColor);
+            if (labelFont is not null && !string.IsNullOrEmpty(d.Job))
+            {
+                var textSize = labelFont.GetStringSize(d.Job, HorizontalAlignment.Center, -1f, labelFontSize);
+                var anchor = center + labelOffset - new Vector2(textSize.X * 0.5f, 0f);
+                DrawString(labelFont, anchor, d.Job, HorizontalAlignment.Left, -1f, labelFontSize,
+                    new Color(1f, 1f, 1f, 0.95f));
+            }
         }
     }
 

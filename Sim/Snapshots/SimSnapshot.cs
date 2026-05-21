@@ -20,7 +20,7 @@ public sealed class SimSnapshot
     }
 }
 
-public readonly record struct DummyState(float X, float Y);
+public readonly record struct DummyState(float X, float Y, string Job);
 
 // Progress = 0..1 normalised by BuildSystem.BuildTimeSec.
 public readonly record struct BlueprintState(TilePos Tile, float Progress);

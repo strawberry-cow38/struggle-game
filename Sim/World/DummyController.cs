@@ -27,13 +27,20 @@ public sealed class DummyController
     private readonly PathService _paths;
     private readonly JobBoard _jobs;
     private readonly Func<MapView> _viewProvider;
+    private readonly Action<JobId> _cancelJob;
     private readonly Random _rng;
 
-    public DummyController(PathService paths, JobBoard jobs, Func<MapView> viewProvider, int seed)
+    public DummyController(
+        PathService paths,
+        JobBoard jobs,
+        Func<MapView> viewProvider,
+        Action<JobId> cancelJob,
+        int seed)
     {
         _paths = paths;
         _jobs = jobs;
         _viewProvider = viewProvider;
+        _cancelJob = cancelJob;
         _rng = new Random(seed);
     }
 
@@ -70,10 +77,11 @@ public sealed class DummyController
             }
             else
             {
+                // Unreachable. Kill the job so no one re-picks it.
                 if (entity.HasComponent<BuildTarget>())
                 {
                     var bt = entity.GetComponent<BuildTarget>();
-                    _jobs.Release(bt.JobId);
+                    _cancelJob(bt.JobId);
                     cb.RemoveComponent<BuildTarget>(entity.Id);
                 }
                 path.Waypoints = null;
@@ -115,7 +123,8 @@ public sealed class DummyController
                 }
                 else
                 {
-                    _jobs.Release(bt.JobId);
+                    // No walkable neighbor anywhere — same as unreachable.
+                    _cancelJob(bt.JobId);
                     cb.RemoveComponent<BuildTarget>(entity.Id);
                 }
                 return;

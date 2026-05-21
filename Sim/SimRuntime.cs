@@ -32,7 +32,7 @@ public sealed class SimRuntime
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
         _mapView = Map.Snapshot(MapVersion);
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
-        _dummies = new DummyController(PathService, Jobs, () => MapView, seed + 1);
+        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1);
         _builds = new BuildSystem(this, Jobs);
 
         SpawnDummy(SimConstants.MapSize / 2, SimConstants.MapSize / 2);
@@ -53,9 +53,16 @@ public sealed class SimRuntime
         var dq = Store.Query<WorldPos, Wanderer>();
         var dummies = new DummyState[dq.Count];
         int i = 0;
-        dq.ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
+        dq.ForEachEntity((ref WorldPos p, ref Wanderer _, Entity ent) =>
         {
-            dummies[i++] = new DummyState(p.X, p.Y);
+            string label = "Idle";
+            if (ent.HasComponent<BuildTarget>())
+            {
+                var bt = ent.GetComponent<BuildTarget>();
+                var j = Jobs.Get(bt.JobId);
+                if (j is not null) label = j.Kind.ToString();
+            }
+            dummies[i++] = new DummyState(p.X, p.Y, label);
         });
 
         var bps = new BlueprintState[Jobs.Count];
