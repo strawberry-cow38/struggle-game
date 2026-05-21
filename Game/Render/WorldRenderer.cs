@@ -29,6 +29,8 @@ public partial class WorldRenderer : Node2D
     private static readonly Color SelectionRing = new(1.0f, 1.0f, 0.20f, 1.0f);
     private static readonly Color PathLineColor = new(1.0f, 0.92f, 0.10f, 0.85f);
     private static readonly Color PathTargetColor = new(1.0f, 0.92f, 0.10f, 1.0f);
+    private static readonly Color DraftedRing = new(1.0f, 0.25f, 0.20f, 1.0f);
+    private static readonly Color OrderMarker = new(1.0f, 0.40f, 0.20f, 0.95f);
 
     public SimHost? Host { get; set; }
 
@@ -86,9 +88,13 @@ public partial class WorldRenderer : Node2D
         {
             var center = new Vector2(d.X * PixelsPerTile, d.Y * PixelsPerTile);
             DrawCircle(center, radius, DummyColor);
+            if (d.Drafted)
+            {
+                DrawArc(center, radius + 2f, 0f, Mathf.Tau, 32, DraftedRing, 2f, antialiased: true);
+            }
             if (snap.SelectedDummyId is int sel && d.EntityId == sel)
             {
-                DrawArc(center, radius + 4f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
+                DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
             }
             if (labelFont is not null && !string.IsNullOrEmpty(d.Job))
             {
@@ -133,6 +139,17 @@ public partial class WorldRenderer : Node2D
         var tc = new Vector2((target.X + 0.5f) * PixelsPerTile, (target.Y + 0.5f) * PixelsPerTile);
         DrawLine(tc + new Vector2(-t, -t), tc + new Vector2(t, t), PathTargetColor, width: 3f);
         DrawLine(tc + new Vector2(-t, t), tc + new Vector2(t, -t), PathTargetColor, width: 3f);
+
+        // Queued draft orders past the live path.
+        if (snap.SelectedOrders is { Length: > 0 } orders)
+        {
+            float r = PixelsPerTile * 0.18f;
+            foreach (var o in orders)
+            {
+                var oc = new Vector2((o.X + 0.5f) * PixelsPerTile, (o.Y + 0.5f) * PixelsPerTile);
+                DrawCircle(oc, r, OrderMarker);
+            }
+        }
     }
 
     private void DrawBlueprint(TilePos tile, float progress)

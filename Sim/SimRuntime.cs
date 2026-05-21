@@ -53,29 +53,42 @@ public sealed class SimRuntime
         var dq = Store.Query<WorldPos, Wanderer>();
         var dummies = new DummyState[dq.Count];
         TilePos[]? selectedPath = null;
+        TilePos[]? selectedOrders = null;
         int i = 0;
         dq.ForEachEntity((ref WorldPos p, ref Wanderer _, Entity ent) =>
         {
-            string label = "Idle";
-            if (ent.HasComponent<BuildTarget>())
+            bool drafted = ent.HasComponent<Drafted>();
+            string label = drafted ? "Drafted" : "Idle";
+            if (!drafted && ent.HasComponent<BuildTarget>())
             {
                 var bt = ent.GetComponent<BuildTarget>();
                 var j = Jobs.Get(bt.JobId);
                 if (j is not null) label = j.Kind.ToString();
             }
-            dummies[i++] = new DummyState(ent.Id, p.X, p.Y, label);
+            dummies[i++] = new DummyState(ent.Id, p.X, p.Y, label, drafted);
 
-            if (selectedDummyId is int sel && ent.Id == sel && ent.HasComponent<PathFollower>())
+            if (selectedDummyId is int sel && ent.Id == sel)
             {
-                var pf = ent.GetComponent<PathFollower>();
-                if (pf.Waypoints is { Count: > 0 })
+                if (ent.HasComponent<PathFollower>())
                 {
-                    int remaining = pf.Waypoints.Count - pf.Index;
-                    if (remaining > 0)
+                    var pf = ent.GetComponent<PathFollower>();
+                    if (pf.Waypoints is { Count: > 0 })
                     {
-                        selectedPath = new TilePos[remaining];
-                        for (int k = 0; k < remaining; k++)
-                            selectedPath[k] = pf.Waypoints[pf.Index + k];
+                        int remaining = pf.Waypoints.Count - pf.Index;
+                        if (remaining > 0)
+                        {
+                            selectedPath = new TilePos[remaining];
+                            for (int k = 0; k < remaining; k++)
+                                selectedPath[k] = pf.Waypoints[pf.Index + k];
+                        }
+                    }
+                }
+                if (ent.HasComponent<OrderQueue>())
+                {
+                    var oq = ent.GetComponent<OrderQueue>();
+                    if (oq.Tiles is { Count: > 0 })
+                    {
+                        selectedOrders = oq.Tiles.ToArray();
                     }
                 }
             }
@@ -91,7 +104,7 @@ public sealed class SimRuntime
         }
         if (j < bps.Length) Array.Resize(ref bps, j);
 
-        return new SimSnapshot(Tick, MapVersion, dummies, bps, selectedDummyId, selectedPath);
+        return new SimSnapshot(Tick, MapVersion, dummies, bps, selectedDummyId, selectedPath, selectedOrders);
     }
 
     // Snapshot of the tile array taken under a lock so a parallel write

@@ -62,6 +62,13 @@ public partial class Bootstrap : Node2D
             case Key.Key2: _host.SetTickHz(120); break;
             case Key.Key3: _host.SetTickHz(180); break;
             case Key.Key4: _host.SetTickHz(360); break;
+            case Key.R:
+                if (_host.SelectedDummyId is int id)
+                {
+                    _host.QueueCommand(new Sim.Commands.ToggleDraftCommand(id));
+                    GetViewport().SetInputAsHandled();
+                }
+                return;
             default: return;
         }
         GD.Print($"Sim tick rate → {_host.TickHz}Hz");

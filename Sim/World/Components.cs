@@ -44,3 +44,16 @@ public struct BuildTarget : IComponent
 {
     public JobId JobId;
 }
+
+// Marker — colonist is drafted. Drafted pawns skip job claim and
+// wander; they hold position and follow player-issued orders.
+public struct Drafted : IComponent
+{
+}
+
+// FIFO queue of move orders for a drafted colonist. The next order is
+// popped when the current path runs out; appended on shift+RMB.
+public struct OrderQueue : IComponent
+{
+    public List<TilePos>? Tiles;
+}

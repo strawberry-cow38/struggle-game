@@ -60,6 +60,7 @@ public sealed class DummyController
     private void Plan(ref WorldPos pos, ref PathFollower path, Entity entity, CommandBuffer cb, MapView view)
     {
         var here = new TilePos((int)pos.X, (int)pos.Y);
+        bool drafted = entity.HasComponent<Drafted>();
 
         // 1. Resolve in-flight request.
         if (path.PendingPathId != 0)
@@ -75,7 +76,7 @@ public sealed class DummyController
                 path.Waypoints = result.Path;
                 path.Index = result.Path[0] == here ? 1 : 0;
             }
-            else
+            else if (!drafted)
             {
                 // Unreachable. Kill the job so no one re-picks it.
                 if (entity.HasComponent<BuildTarget>())
@@ -87,6 +88,36 @@ public sealed class DummyController
                 path.Waypoints = null;
                 path.Index = 0;
             }
+            else
+            {
+                // Drafted: order was unreachable. Drop this order, fall
+                // through to next order on the queue (if any).
+                path.Waypoints = null;
+                path.Index = 0;
+            }
+        }
+
+        // Drafted colonists ignore jobs/wander. Walk the active path if
+        // there is one; otherwise dequeue the next move order; otherwise
+        // hold position and watch.
+        if (drafted)
+        {
+            if (path.Waypoints is not null && path.Index < path.Waypoints.Count) return;
+            if (path.PendingPathId != 0) return;
+
+            if (entity.HasComponent<OrderQueue>())
+            {
+                ref var oq = ref entity.GetComponent<OrderQueue>();
+                while (oq.Tiles is { Count: > 0 })
+                {
+                    var next = oq.Tiles[0];
+                    oq.Tiles.RemoveAt(0);
+                    if (!view.Walkable(next) || next == here) continue;
+                    path.PendingPathId = _paths.Request(here, next);
+                    return;
+                }
+            }
+            return; // standing watch
         }
 
         // 2. Existing build target.
