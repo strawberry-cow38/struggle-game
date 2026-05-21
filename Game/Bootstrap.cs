@@ -2,6 +2,7 @@ using Godot;
 using StruggleGame.Game.Camera;
 using StruggleGame.Game.Designation;
 using StruggleGame.Game.Render;
+using StruggleGame.Game.UI;
 using StruggleGame.Sim;
 
 namespace StruggleGame.Game;
@@ -33,6 +34,9 @@ public partial class Bootstrap : Node2D
         };
         AddChild(camera);
         camera.MakeCurrent();
+
+        var hud = new HudOverlay { Host = _host, Name = "Hud" };
+        AddChild(hud);
     }
 
     public override void _UnhandledInput(InputEvent @event)

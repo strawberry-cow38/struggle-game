@@ -17,10 +17,13 @@ public sealed class SimHost : IDisposable
     private volatile bool _running;
     private volatile int _tickHz = SimConstants.TickHz;
     private SimSnapshot? _latest;
+    private volatile float _actualTps;
 
     public TileMap Map => _sim.Map;
 
     public int TickHz => _tickHz;
+
+    public float ActualTps => _actualTps;
 
     public SimHost()
     {
@@ -57,6 +60,8 @@ public sealed class SimHost : IDisposable
     {
         var sw = Stopwatch.StartNew();
         long nextTick = sw.ElapsedTicks;
+        long windowStartMs = sw.ElapsedMilliseconds;
+        int ticksThisWindow = 0;
 
         while (_running)
         {
@@ -69,6 +74,7 @@ public sealed class SimHost : IDisposable
             {
                 _sim.Step(dt);
                 Volatile.Write(ref _latest, _sim.BuildSnapshot());
+                ticksThisWindow++;
                 nextTick += tickStride;
                 // If we fell badly behind (paused breakpoint, hz bump, etc.),
                 // don't try to catch up by spamming — resync to now.
@@ -79,6 +85,15 @@ public sealed class SimHost : IDisposable
                 long sleepTicks = nextTick - now;
                 long sleepMs = sleepTicks * 1000 / Stopwatch.Frequency;
                 if (sleepMs > 1) Thread.Sleep(1); else Thread.SpinWait(64);
+            }
+
+            long elapsedMs = sw.ElapsedMilliseconds;
+            long windowMs = elapsedMs - windowStartMs;
+            if (windowMs >= 500)
+            {
+                _actualTps = ticksThisWindow * 1000f / windowMs;
+                ticksThisWindow = 0;
+                windowStartMs = elapsedMs;
             }
         }
     }
