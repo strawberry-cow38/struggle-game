@@ -253,13 +253,13 @@ public sealed class DummyController
 
     private void RequestWanderPath(MapView view, TilePos from, ref PathFollower path)
     {
-        // Anchor wander to a built wall (proxy for "claimed player
-        // structure") if any exist, else to the map center. Pick within
-        // a 10-tile box of the anchor.
+        // Anchor wander to a player-placed wall if any exist, else to
+        // the map center. PlayerWalls excludes border + procgen so
+        // colonists don't drift to map edges when nothing is built.
         TilePos anchor;
-        if (view.Walls.Count > 0)
+        if (view.PlayerWalls.Count > 0)
         {
-            anchor = view.Walls[_rng.Next(view.Walls.Count)];
+            anchor = view.PlayerWalls[_rng.Next(view.PlayerWalls.Count)];
         }
         else
         {

@@ -17,14 +17,20 @@ public sealed class MapView
     // immutable for the snapshot's lifetime.
     public IReadOnlyList<TilePos> Walls { get; }
 
+    // Subset of Walls actually placed by the player (via blueprint
+    // completion). Excludes the border + procgen clusters. Wander logic
+    // uses this so colonists hover around real player structures.
+    public IReadOnlyList<TilePos> PlayerWalls { get; }
+
     private readonly TileType[] _tiles;
 
-    public MapView(long version, int width, int height, TileType[] tiles)
+    public MapView(long version, int width, int height, TileType[] tiles, IReadOnlyList<TilePos> playerWalls)
     {
         Version = version;
         Width = width;
         Height = height;
         _tiles = tiles;
+        PlayerWalls = playerWalls;
 
         var walls = new List<TilePos>();
         for (int y = 0; y < height; y++)

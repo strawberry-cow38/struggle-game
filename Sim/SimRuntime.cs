@@ -26,11 +26,12 @@ public sealed class SimRuntime
     private readonly BuildSystem _builds;
     private readonly ConcurrentQueue<ISimCommand> _commands = new();
     private readonly object _mapLock = new();
+    private readonly List<TilePos> _playerWalls = new();
 
     public SimRuntime(int seed = 1337)
     {
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
-        _mapView = Map.Snapshot(MapVersion);
+        _mapView = Map.Snapshot(MapVersion, Array.Empty<TilePos>());
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
         _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1);
         _builds = new BuildSystem(this, Jobs);
@@ -154,8 +155,9 @@ public sealed class SimRuntime
             lock (_mapLock)
             {
                 Map.Set(tile, TileType.Wall);
+                _playerWalls.Add(tile);
                 MapVersion++;
-                newView = Map.Snapshot(MapVersion);
+                newView = Map.Snapshot(MapVersion, _playerWalls.ToArray());
             }
             Volatile.Write(ref _mapView, newView);
         }

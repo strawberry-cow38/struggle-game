@@ -31,11 +31,11 @@ public sealed class TileMap
     // Build an immutable read-only snapshot at the given version. Caller is
     // responsible for serialising writes vs this read (SimRuntime holds the
     // map lock for both).
-    public MapView Snapshot(long version)
+    public MapView Snapshot(long version, IReadOnlyList<TilePos>? playerWalls = null)
     {
         var copy = new TileType[_tiles.Length];
         Array.Copy(_tiles, copy, _tiles.Length);
-        return new MapView(version, Width, Height, copy);
+        return new MapView(version, Width, Height, copy, playerWalls ?? Array.Empty<TilePos>());
     }
 
     private int Index(int x, int y) => y * Width + x;
