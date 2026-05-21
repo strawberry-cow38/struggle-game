@@ -34,15 +34,17 @@ public sealed class DummyController
 
     public void Step(EntityStore store, float dt)
     {
+        var cb = store.GetCommandBuffer();
         var query = store.Query<WorldPos, PathFollower, Wanderer>();
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity entity) =>
         {
-            Plan(ref pos, ref path, entity);
+            Plan(ref pos, ref path, entity, cb);
             AdvanceAlongPath(ref pos, ref path, dt);
         });
+        cb.Playback();
     }
 
-    private void Plan(ref WorldPos pos, ref PathFollower path, Entity entity)
+    private void Plan(ref WorldPos pos, ref PathFollower path, Entity entity, CommandBuffer cb)
     {
         var here = new TilePos((int)pos.X, (int)pos.Y);
 
@@ -52,7 +54,7 @@ public sealed class DummyController
             var bt = entity.GetComponent<BuildTarget>();
             if (!_registry.Has(bt.Tile))
             {
-                entity.RemoveComponent<BuildTarget>();
+                cb.RemoveComponent<BuildTarget>(entity.Id);
                 path.Waypoints = null;
                 path.Index = 0;
             }
@@ -73,7 +75,7 @@ public sealed class DummyController
                 else
                 {
                     // Can't reach this target; drop it.
-                    entity.RemoveComponent<BuildTarget>();
+                    cb.RemoveComponent<BuildTarget>(entity.Id);
                 }
                 return;
             }
@@ -84,7 +86,7 @@ public sealed class DummyController
         }
 
         // 2. Look for a new blueprint to claim.
-        if (_registry.Count > 0 && TryClaimNearestBlueprint(here, entity, out var route2))
+        if (_registry.Count > 0 && TryClaimNearestBlueprint(here, entity, cb, out var route2))
         {
             path.Waypoints = route2;
             path.Index = 1;
@@ -95,7 +97,7 @@ public sealed class DummyController
         EnsureWanderPath(ref pos, ref path);
     }
 
-    private bool TryClaimNearestBlueprint(TilePos from, Entity entity, out List<TilePos> route)
+    private bool TryClaimNearestBlueprint(TilePos from, Entity entity, CommandBuffer cb, out List<TilePos> route)
     {
         var ranked = new List<(int dist, TilePos tile)>(_registry.Count);
         foreach (var t in _registry.Tiles)
@@ -111,7 +113,7 @@ public sealed class DummyController
             var target = ranked[i].tile;
             if (TryRouteToNeighbor(from, target, out var found))
             {
-                entity.AddComponent(new BuildTarget { Tile = target });
+                cb.AddComponent(entity.Id, new BuildTarget { Tile = target });
                 route = found;
                 return true;
             }
