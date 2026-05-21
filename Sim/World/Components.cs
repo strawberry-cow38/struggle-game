@@ -1,4 +1,5 @@
 using Friflo.Engine.ECS;
+using StruggleGame.Sim.Jobs;
 using StruggleGame.Sim.Map;
 
 namespace StruggleGame.Sim.World;
@@ -36,9 +37,10 @@ public struct Blueprint : IComponent
     public float ProgressSec;
 }
 
-// Optional assignment from a builder to a specific blueprint, so they
-// don't recompute the nearest target every tick.
+// Optional assignment from a builder to a specific job (any kind), so
+// they don't recompute the nearest target every tick. The board is the
+// source of truth for tile + state.
 public struct BuildTarget : IComponent
 {
-    public TilePos Tile;
+    public JobId JobId;
 }

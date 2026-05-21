@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Friflo.Engine.ECS;
 using StruggleGame.Sim.Commands;
+using StruggleGame.Sim.Jobs;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Pathfinding;
 using StruggleGame.Sim.Snapshots;
@@ -12,7 +13,7 @@ public sealed class SimRuntime
 {
     public EntityStore Store { get; } = new();
     public TileMap Map { get; }
-    public BlueprintRegistry Blueprints { get; } = new();
+    public JobBoard Jobs { get; } = new();
     public long Tick { get; private set; }
     public long MapVersion { get; private set; }
 
@@ -31,8 +32,8 @@ public sealed class SimRuntime
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
         _mapView = Map.Snapshot(MapVersion);
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
-        _dummies = new DummyController(PathService, Blueprints, () => MapView, seed + 1);
-        _builds = new BuildSystem(this, Blueprints);
+        _dummies = new DummyController(PathService, Jobs, () => MapView, seed + 1);
+        _builds = new BuildSystem(this, Jobs);
 
         SpawnDummy(SimConstants.MapSize / 2, SimConstants.MapSize / 2);
     }
@@ -57,13 +58,15 @@ public sealed class SimRuntime
             dummies[i++] = new DummyState(p.X, p.Y);
         });
 
-        var bps = new BlueprintState[Blueprints.Count];
+        var bps = new BlueprintState[Jobs.Count];
         int j = 0;
-        foreach (var kv in Blueprints.All)
+        foreach (var job in Jobs.All)
         {
-            var bp = kv.Value.GetComponent<Blueprint>();
-            bps[j++] = new BlueprintState(kv.Key, bp.ProgressSec / BuildSystem.BuildTimeSec);
+            if (job.Kind != JobKind.WallBuild) continue;
+            var bp = job.Entity.GetComponent<Blueprint>();
+            bps[j++] = new BlueprintState(job.Tile, bp.ProgressSec / BuildSystem.BuildTimeSec);
         }
+        if (j < bps.Length) Array.Resize(ref bps, j);
 
         return new SimSnapshot(Tick, MapVersion, dummies, bps);
     }
@@ -86,28 +89,48 @@ public sealed class SimRuntime
     {
         if (!Map.InBounds(tile)) return false;
         if (Map.Get(tile) == TileType.Wall) return false;
-        if (Blueprints.Has(tile)) return false;
+        if (Jobs.HasTile(tile)) return false;
 
         var e = Store.CreateEntity();
         e.AddComponent(new Blueprint { Tile = tile, ProgressSec = 0f });
-        Blueprints.Add(tile, e);
+        var id = Jobs.Post(JobKind.WallBuild, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
         return true;
     }
 
-    public void CompleteWallBlueprint(TilePos tile)
+    public void CompleteJob(JobId id)
     {
-        if (!Blueprints.TryGet(tile, out var entity)) return;
-        Blueprints.Remove(tile);
+        var job = Jobs.Get(id);
+        if (job is null) return;
+        var tile = job.Tile;
+        var entity = job.Entity;
+        Jobs.Complete(id);
         entity.DeleteEntity();
 
-        MapView newView;
-        lock (_mapLock)
+        if (job.Kind == JobKind.WallBuild)
         {
-            Map.Set(tile, TileType.Wall);
-            MapVersion++;
-            newView = Map.Snapshot(MapVersion);
+            MapView newView;
+            lock (_mapLock)
+            {
+                Map.Set(tile, TileType.Wall);
+                MapVersion++;
+                newView = Map.Snapshot(MapVersion);
+            }
+            Volatile.Write(ref _mapView, newView);
         }
-        Volatile.Write(ref _mapView, newView);
+    }
+
+    public void CancelJob(JobId id)
+    {
+        var job = Jobs.Get(id);
+        if (job is null) return;
+        var entity = job.Entity;
+        Jobs.Cancel(id);
+        entity.DeleteEntity();
     }
 
     private void SpawnDummy(int tileX, int tileY)
