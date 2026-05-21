@@ -59,56 +59,86 @@ public partial class WorldRenderer : Node2D
         }
     }
 
-    // Tileable grassy texture: low-frequency value noise (wraps at edges)
-    // shifted into a green palette, plus per-pixel grit.
+    // Grass texture tuned for the oblique top-down camera: short vertical
+    // blade strokes (camera looks down + forward, so blades visible as tiny
+    // upright streaks), each a base→tip gradient, scattered across a
+    // mottled soil base. Wraps seamlessly because strokes that cross an
+    // edge are also drawn on the opposite side.
     private static ImageTexture BuildGrassTexture(int seed)
     {
-        const int gridSize = 16;
         var rng = new Random(seed);
-        var noise = new float[gridSize + 1, gridSize + 1];
-        for (int gy = 0; gy < gridSize; gy++)
+        var img = Image.CreateEmpty(GrassTexSize, GrassTexSize, false, Image.Format.Rgba8);
+
+        // Mottled soil/dirt base so bare patches show through between blades.
+        const int baseGrid = 8;
+        var baseNoise = new float[baseGrid + 1, baseGrid + 1];
+        for (int y = 0; y < baseGrid; y++)
         {
-            for (int gx = 0; gx < gridSize; gx++)
+            for (int x = 0; x < baseGrid; x++)
             {
-                noise[gx, gy] = (float)rng.NextDouble();
+                baseNoise[x, y] = (float)rng.NextDouble();
             }
         }
-        // Make the noise grid wrap so the resulting texture tiles seamlessly.
-        for (int i = 0; i <= gridSize; i++)
+        for (int i = 0; i <= baseGrid; i++)
         {
-            noise[gridSize, i] = noise[0, i % gridSize];
-            noise[i, gridSize] = noise[i % gridSize, 0];
+            baseNoise[baseGrid, i] = baseNoise[0, i % baseGrid];
+            baseNoise[i, baseGrid] = baseNoise[i % baseGrid, 0];
         }
-
-        var img = Image.CreateEmpty(GrassTexSize, GrassTexSize, false, Image.Format.Rgba8);
         for (int py = 0; py < GrassTexSize; py++)
         {
             for (int px = 0; px < GrassTexSize; px++)
             {
-                float fx = px / (float)GrassTexSize * gridSize;
-                float fy = py / (float)GrassTexSize * gridSize;
+                float fx = px / (float)GrassTexSize * baseGrid;
+                float fy = py / (float)GrassTexSize * baseGrid;
                 int ix = (int)fx;
                 int iy = (int)fy;
                 float u = fx - ix;
                 float v = fy - iy;
-                float n00 = noise[ix, iy];
-                float n10 = noise[ix + 1, iy];
-                float n01 = noise[ix, iy + 1];
-                float n11 = noise[ix + 1, iy + 1];
-                float n = Mathf.Lerp(Mathf.Lerp(n00, n10, u), Mathf.Lerp(n01, n11, u), v);
-
-                // Per-pixel grit for blade-of-grass texture without a real noise tex.
-                float grit = ((float)rng.NextDouble() - 0.5f) * 0.10f;
-
-                float r = 0.16f + n * 0.18f + grit * 0.5f;
-                float g = 0.32f + n * 0.30f + grit * 0.8f;
-                float b = 0.10f + n * 0.12f + grit * 0.5f;
-                img.SetPixel(px, py, new Color(
-                    Mathf.Clamp(r, 0f, 1f),
-                    Mathf.Clamp(g, 0f, 1f),
-                    Mathf.Clamp(b, 0f, 1f)));
+                float n = Mathf.Lerp(
+                    Mathf.Lerp(baseNoise[ix, iy], baseNoise[ix + 1, iy], u),
+                    Mathf.Lerp(baseNoise[ix, iy + 1], baseNoise[ix + 1, iy + 1], u),
+                    v);
+                float r = 0.18f + n * 0.12f;
+                float g = 0.26f + n * 0.15f;
+                float b = 0.10f + n * 0.07f;
+                img.SetPixel(px, py, new Color(r, g, b));
             }
         }
+
+        // Scatter ~2200 short upright blade strokes across the texture.
+        // Each blade = 3–6 px tall × 1 px wide, dark at base → bright at tip,
+        // hue chosen from a small palette so the field has visible variation.
+        var bladePalette = new Color[]
+        {
+            new(0.48f, 0.62f, 0.18f),
+            new(0.36f, 0.55f, 0.16f),
+            new(0.42f, 0.66f, 0.22f),
+            new(0.55f, 0.58f, 0.18f),
+            new(0.62f, 0.55f, 0.20f), // dry/yellow blade
+        };
+        const int bladeCount = 2200;
+        for (int i = 0; i < bladeCount; i++)
+        {
+            int bx = rng.Next(GrassTexSize);
+            int by = rng.Next(GrassTexSize);
+            int height = rng.Next(3, 7);
+            int width = rng.NextDouble() < 0.15 ? 2 : 1;
+            var tip = bladePalette[rng.Next(bladePalette.Length)];
+            for (int yy = 0; yy < height; yy++)
+            {
+                // Top of stroke = bright tip, bottom = darker base.
+                float t = yy / (float)(height - 1);
+                float shade = Mathf.Lerp(0.55f, 1.0f, t);
+                var c = new Color(tip.R * shade, tip.G * shade, tip.B * shade);
+                for (int xx = 0; xx < width; xx++)
+                {
+                    int wx = (bx + xx) & (GrassTexSize - 1);
+                    int wy = (by + yy) & (GrassTexSize - 1);
+                    img.SetPixel(wx, wy, c);
+                }
+            }
+        }
+
         return ImageTexture.CreateFromImage(img);
     }
 
