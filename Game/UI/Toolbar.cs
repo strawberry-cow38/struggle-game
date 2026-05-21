@@ -36,9 +36,14 @@ public partial class Toolbar : CanvasLayer
         AddButton(hbox, ToolMode.BuildWall, "Wall");
         AddButton(hbox, ToolMode.Cancel, "Cancel");
 
-        hbox.Position = new Vector2(
-            -hbox.Size.X - MarginRight,
-            -hbox.Size.Y - MarginBottom);
+        // Children aren't sized until the first layout pass — reposition
+        // every time the row resorts (initial sort + future button adds).
+        hbox.Resized += () =>
+        {
+            hbox.Position = new Vector2(
+                -hbox.Size.X - MarginRight,
+                -hbox.Size.Y - MarginBottom);
+        };
 
         Tools.ModeChanged += OnModeChanged;
         OnModeChanged(Tools.Mode);
