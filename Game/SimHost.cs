@@ -18,6 +18,9 @@ public sealed class SimHost : IDisposable
     private volatile int _tickHz = SimConstants.TickHz;
     private SimSnapshot? _latest;
     private volatile float _actualTps;
+    // -1 means "no selection". Volatile int so the game thread can write
+    // and the sim thread can read each tick without locking.
+    private int _selectedDummyId = -1;
 
     public TileMap Map => _sim.Map;
 
@@ -41,6 +44,12 @@ public sealed class SimHost : IDisposable
     {
         if (hz < 1) hz = 1;
         _tickHz = hz;
+    }
+
+    public int? SelectedDummyId
+    {
+        get { int v = Volatile.Read(ref _selectedDummyId); return v >= 0 ? v : null; }
+        set { Volatile.Write(ref _selectedDummyId, value ?? -1); }
     }
 
     // Game→Sim command submission. Drained at the start of every tick.
@@ -73,7 +82,8 @@ public sealed class SimHost : IDisposable
             if (now >= nextTick)
             {
                 _sim.Step(dt);
-                Volatile.Write(ref _latest, _sim.BuildSnapshot());
+                int sel = Volatile.Read(ref _selectedDummyId);
+                Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null));
                 ticksThisWindow++;
                 nextTick += tickStride;
                 // If we fell badly behind (paused breakpoint, hz bump, etc.),

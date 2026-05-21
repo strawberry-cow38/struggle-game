@@ -2,6 +2,7 @@ using Godot;
 using StruggleGame.Game.Camera;
 using StruggleGame.Game.Designation;
 using StruggleGame.Game.Render;
+using StruggleGame.Game.Selection;
 using StruggleGame.Game.Tools;
 using StruggleGame.Game.UI;
 using StruggleGame.Sim;
@@ -30,6 +31,9 @@ public partial class Bootstrap : Node2D
 
         var cancelDesignator = new CancelDesignator { Host = _host, Tools = _tools, Name = "CancelDesignator" };
         AddChild(cancelDesignator);
+
+        var selector = new Selector { Host = _host, Tools = _tools, Name = "Selector" };
+        AddChild(selector);
 
         float worldPx = SimConstants.MapSize * SimConstants.PixelsPerTile;
         var camera = new GameCamera

@@ -26,6 +26,9 @@ public partial class WorldRenderer : Node2D
     private static readonly Color BlueprintFill = new(0.20f, 0.55f, 0.95f, 0.30f);
     private static readonly Color BlueprintBorder = new(0.45f, 0.75f, 1.00f, 0.85f);
     private static readonly Color BlueprintProgress = new(0.95f, 0.85f, 0.20f, 0.85f);
+    private static readonly Color SelectionRing = new(1.0f, 1.0f, 0.20f, 1.0f);
+    private static readonly Color PathLineColor = new(1.0f, 0.92f, 0.10f, 0.85f);
+    private static readonly Color PathTargetColor = new(1.0f, 0.92f, 0.10f, 1.0f);
 
     public SimHost? Host { get; set; }
 
@@ -83,6 +86,10 @@ public partial class WorldRenderer : Node2D
         {
             var center = new Vector2(d.X * PixelsPerTile, d.Y * PixelsPerTile);
             DrawCircle(center, radius, DummyColor);
+            if (snap.SelectedDummyId is int sel && d.EntityId == sel)
+            {
+                DrawArc(center, radius + 4f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
+            }
             if (labelFont is not null && !string.IsNullOrEmpty(d.Job))
             {
                 var textSize = labelFont.GetStringSize(d.Job, HorizontalAlignment.Center, -1f, labelFontSize);
@@ -91,6 +98,41 @@ public partial class WorldRenderer : Node2D
                     new Color(1f, 1f, 1f, 0.95f));
             }
         }
+
+        DrawSelectedPath(snap);
+    }
+
+    private void DrawSelectedPath(Sim.Snapshots.SimSnapshot snap)
+    {
+        if (snap.SelectedPath is not { Length: > 0 } path) return;
+        if (snap.SelectedDummyId is not int sel) return;
+
+        // Find live dummy world pos so the line starts at the colonist,
+        // not at the tile they've already left.
+        Vector2? start = null;
+        foreach (var d in snap.Dummies)
+        {
+            if (d.EntityId != sel) continue;
+            start = new Vector2(d.X * PixelsPerTile, d.Y * PixelsPerTile);
+            break;
+        }
+
+        var points = new Vector2[path.Length + (start.HasValue ? 1 : 0)];
+        int idx = 0;
+        if (start is Vector2 s) points[idx++] = s;
+        for (int k = 0; k < path.Length; k++)
+        {
+            points[idx++] = new Vector2(
+                (path[k].X + 0.5f) * PixelsPerTile,
+                (path[k].Y + 0.5f) * PixelsPerTile);
+        }
+        if (points.Length >= 2) DrawPolyline(points, PathLineColor, width: 2f, antialiased: true);
+
+        var target = path[^1];
+        float t = PixelsPerTile * 0.35f;
+        var tc = new Vector2((target.X + 0.5f) * PixelsPerTile, (target.Y + 0.5f) * PixelsPerTile);
+        DrawLine(tc + new Vector2(-t, -t), tc + new Vector2(t, t), PathTargetColor, width: 3f);
+        DrawLine(tc + new Vector2(-t, t), tc + new Vector2(t, -t), PathTargetColor, width: 3f);
     }
 
     private void DrawBlueprint(TilePos tile, float progress)

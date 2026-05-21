@@ -200,11 +200,27 @@ public sealed class DummyController
         return true;
     }
 
+    private const int WanderRadius = 10;
+
     private void RequestWanderPath(MapView view, TilePos from, ref PathFollower path)
     {
-        for (int tries = 0; tries < 8; tries++)
+        // Anchor wander to a built wall (proxy for "claimed player
+        // structure") if any exist, else to the map center. Pick within
+        // a 10-tile box of the anchor.
+        TilePos anchor;
+        if (view.Walls.Count > 0)
         {
-            var goal = new TilePos(_rng.Next(view.Width), _rng.Next(view.Height));
+            anchor = view.Walls[_rng.Next(view.Walls.Count)];
+        }
+        else
+        {
+            anchor = new TilePos(view.Width / 2, view.Height / 2);
+        }
+        for (int tries = 0; tries < 12; tries++)
+        {
+            int gx = anchor.X + _rng.Next(-WanderRadius, WanderRadius + 1);
+            int gy = anchor.Y + _rng.Next(-WanderRadius, WanderRadius + 1);
+            var goal = new TilePos(gx, gy);
             if (!view.Walkable(goal) || goal == from) continue;
             path.PendingPathId = _paths.Request(from, goal);
             return;

@@ -11,16 +11,28 @@ public sealed class SimSnapshot
     public DummyState[] Dummies { get; }
     public BlueprintState[] Blueprints { get; }
 
-    public SimSnapshot(long tick, long mapVersion, DummyState[] dummies, BlueprintState[] blueprints)
+    // Set when the game has a selected colonist; null otherwise.
+    public int? SelectedDummyId { get; }
+    public TilePos[]? SelectedPath { get; }
+
+    public SimSnapshot(
+        long tick,
+        long mapVersion,
+        DummyState[] dummies,
+        BlueprintState[] blueprints,
+        int? selectedDummyId = null,
+        TilePos[]? selectedPath = null)
     {
         Tick = tick;
         MapVersion = mapVersion;
         Dummies = dummies;
         Blueprints = blueprints;
+        SelectedDummyId = selectedDummyId;
+        SelectedPath = selectedPath;
     }
 }
 
-public readonly record struct DummyState(float X, float Y, string Job);
+public readonly record struct DummyState(int EntityId, float X, float Y, string Job);
 
 // Progress = 0..1 normalised by BuildSystem.BuildTimeSec.
 public readonly record struct BlueprintState(TilePos Tile, float Progress);

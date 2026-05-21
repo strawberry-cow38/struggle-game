@@ -12,6 +12,11 @@ public sealed class MapView
     public int Width { get; }
     public int Height { get; }
 
+    // Pre-scanned list of every wall tile. Built once at construction so
+    // wander/anchor lookups don't rescan the grid each call. Treated as
+    // immutable for the snapshot's lifetime.
+    public IReadOnlyList<TilePos> Walls { get; }
+
     private readonly TileType[] _tiles;
 
     public MapView(long version, int width, int height, TileType[] tiles)
@@ -20,6 +25,17 @@ public sealed class MapView
         Width = width;
         Height = height;
         _tiles = tiles;
+
+        var walls = new List<TilePos>();
+        for (int y = 0; y < height; y++)
+        {
+            int row = y * width;
+            for (int x = 0; x < width; x++)
+            {
+                if (tiles[row + x] == TileType.Wall) walls.Add(new TilePos(x, y));
+            }
+        }
+        Walls = walls;
     }
 
     public TileType Get(int x, int y) => _tiles[y * Width + x];

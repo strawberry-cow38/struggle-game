@@ -48,10 +48,11 @@ public sealed class SimRuntime
 
     public void QueueCommand(ISimCommand cmd) => _commands.Enqueue(cmd);
 
-    public SimSnapshot BuildSnapshot()
+    public SimSnapshot BuildSnapshot(int? selectedDummyId = null)
     {
         var dq = Store.Query<WorldPos, Wanderer>();
         var dummies = new DummyState[dq.Count];
+        TilePos[]? selectedPath = null;
         int i = 0;
         dq.ForEachEntity((ref WorldPos p, ref Wanderer _, Entity ent) =>
         {
@@ -62,7 +63,22 @@ public sealed class SimRuntime
                 var j = Jobs.Get(bt.JobId);
                 if (j is not null) label = j.Kind.ToString();
             }
-            dummies[i++] = new DummyState(p.X, p.Y, label);
+            dummies[i++] = new DummyState(ent.Id, p.X, p.Y, label);
+
+            if (selectedDummyId is int sel && ent.Id == sel && ent.HasComponent<PathFollower>())
+            {
+                var pf = ent.GetComponent<PathFollower>();
+                if (pf.Waypoints is { Count: > 0 })
+                {
+                    int remaining = pf.Waypoints.Count - pf.Index;
+                    if (remaining > 0)
+                    {
+                        selectedPath = new TilePos[remaining];
+                        for (int k = 0; k < remaining; k++)
+                            selectedPath[k] = pf.Waypoints[pf.Index + k];
+                    }
+                }
+            }
         });
 
         var bps = new BlueprintState[Jobs.Count];
@@ -75,7 +91,7 @@ public sealed class SimRuntime
         }
         if (j < bps.Length) Array.Resize(ref bps, j);
 
-        return new SimSnapshot(Tick, MapVersion, dummies, bps);
+        return new SimSnapshot(Tick, MapVersion, dummies, bps, selectedDummyId, selectedPath);
     }
 
     // Snapshot of the tile array taken under a lock so a parallel write
