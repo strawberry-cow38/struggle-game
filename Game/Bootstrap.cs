@@ -1,20 +1,37 @@
 using Godot;
+using StruggleGame.Game.Camera;
+using StruggleGame.Game.Render;
 using StruggleGame.Sim;
 
 namespace StruggleGame.Game;
 
 public partial class Bootstrap : Node2D
 {
-    private SimRuntime? _sim;
+    private SimHost? _host;
 
     public override void _Ready()
     {
-        _sim = new SimRuntime();
-        GD.Print($"Struggle Game booted. Tile = {SimConstants.TileMeters}m, TickHz = {SimConstants.TickHz}.");
+        _host = new SimHost();
+        GD.Print(
+            $"Struggle Game booted. Tile = {SimConstants.TileMeters}m, " +
+            $"Tick = {SimConstants.TickHz}Hz, Map = {SimConstants.MapSize}x{SimConstants.MapSize}.");
+
+        var renderer = new WorldRenderer { Host = _host, Name = "WorldRenderer" };
+        AddChild(renderer);
+
+        float worldPx = SimConstants.MapSize * SimConstants.PixelsPerTile;
+        var camera = new GameCamera
+        {
+            Name = "Camera",
+            Position = new Vector2(worldPx * 0.5f, worldPx * 0.5f),
+        };
+        AddChild(camera);
+        camera.MakeCurrent();
     }
 
-    public override void _Process(double delta)
+    public override void _ExitTree()
     {
-        _sim?.Step();
+        _host?.Dispose();
+        _host = null;
     }
 }
