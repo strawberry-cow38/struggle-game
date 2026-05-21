@@ -59,7 +59,8 @@ public sealed class AStar
         while (_open.Count > 0)
         {
             int currentIdx = _open.Dequeue();
-            if (_closed[currentIdx]) continue;
+            // _closed leaks across runs; gate by current generation.
+            if (_generation[currentIdx] == _runId && _closed[currentIdx]) continue;
             if (currentIdx == goalIdx) return Reconstruct(goalIdx);
             _closed[currentIdx] = true;
 
@@ -78,7 +79,7 @@ public sealed class AStar
                 }
 
                 int nIdx = Index(nx, ny);
-                if (_closed[nIdx]) continue;
+                if (_generation[nIdx] == _runId && _closed[nIdx]) continue;
 
                 float tentativeG = _gScore[currentIdx] + cost;
                 if (_generation[nIdx] != _runId || tentativeG < _gScore[nIdx])
