@@ -1,0 +1,17 @@
+<Project Sdk="Godot.NET.Sdk/4.6.2">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>StruggleGame</RootNamespace>
+    <AssemblyName>StruggleGame</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Sim\**\*.cs" />
+    <Compile Remove="Tests\**\*.cs" />
+    <None Remove="Sim\**\*" />
+    <None Remove="Tests\**\*" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="Sim\StruggleGame.Sim.csproj" />
+  </ItemGroup>
+</Project>

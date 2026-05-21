@@ -1,0 +1,30 @@
+# Godot
+.godot/
+.import/
+*.import
+export.cfg
+build/
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+project.lock.json
+.vs/
+.vscode/
+*.dll
+*.pdb
+
+# Mono
+mono_crash.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
