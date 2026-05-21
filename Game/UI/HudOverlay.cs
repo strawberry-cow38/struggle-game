@@ -9,7 +9,11 @@ public partial class HudOverlay : CanvasLayer
 {
     public SimHost? Host { get; set; }
 
+    // Bump on every build so the running game shows whether it is current.
+    private const string BuildTag = "build fa40d85+1";
+
     private Label _label = null!;
+    private Label _versionLabel = null!;
 
     public override void _Ready()
     {
@@ -31,6 +35,18 @@ public partial class HudOverlay : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         AddChild(_label);
+
+        _versionLabel = new Label
+        {
+            Name = "Version",
+            Text = BuildTag,
+            LabelSettings = settings,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            AnchorLeft = 1, AnchorTop = 0, AnchorRight = 1, AnchorBottom = 0,
+            OffsetLeft = -260, OffsetTop = 8, OffsetRight = -12, OffsetBottom = 36,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        AddChild(_versionLabel);
     }
 
     public override void _Process(double delta)

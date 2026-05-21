@@ -16,42 +16,48 @@ public partial class Toolbar : CanvasLayer
     private const int MarginBottom = 16;
 
     private readonly Dictionary<ToolMode, Button> _buttons = new();
+    private HBoxContainer _hbox = null!;
 
     public override void _Ready()
     {
         Layer = 90;
         if (Tools is null) return;
 
-        var hbox = new HBoxContainer
+        _hbox = new HBoxContainer
         {
             Name = "ToolRow",
-            AnchorLeft = 1, AnchorTop = 1, AnchorRight = 1, AnchorBottom = 1,
-            GrowHorizontal = Control.GrowDirection.Begin,
-            GrowVertical = Control.GrowDirection.Begin,
             MouseFilter = Control.MouseFilterEnum.Pass,
         };
-        hbox.AddThemeConstantOverride("separation", ButtonGap);
-        AddChild(hbox);
+        _hbox.AddThemeConstantOverride("separation", ButtonGap);
+        AddChild(_hbox);
 
-        AddButton(hbox, ToolMode.BuildWall, "Wall");
-        AddButton(hbox, ToolMode.Cancel, "Cancel");
+        AddButton(_hbox, ToolMode.BuildWall, "Wall");
+        AddButton(_hbox, ToolMode.Cancel, "Cancel");
 
-        // Children aren't sized until the first layout pass — reposition
-        // every time the row resorts (initial sort + future button adds).
-        hbox.Resized += () =>
-        {
-            hbox.Position = new Vector2(
-                -hbox.Size.X - MarginRight,
-                -hbox.Size.Y - MarginBottom);
-        };
+        // Absolute positioning against the viewport. CanvasLayer parents
+        // and anchored HBox sizing had inconsistent first-frame behavior;
+        // computing pixels from viewport size is reliable.
+        _hbox.Resized += Reposition;
+        GetTree().Root.SizeChanged += Reposition;
+        CallDeferred(nameof(Reposition));
 
         Tools.ModeChanged += OnModeChanged;
         OnModeChanged(Tools.Mode);
     }
 
+    private void Reposition()
+    {
+        if (_hbox is null) return;
+        var vp = GetViewport().GetVisibleRect().Size;
+        _hbox.Position = new Vector2(
+            vp.X - _hbox.Size.X - MarginRight,
+            vp.Y - _hbox.Size.Y - MarginBottom);
+    }
+
     public override void _ExitTree()
     {
         if (Tools is not null) Tools.ModeChanged -= OnModeChanged;
+        if (IsInsideTree()) GetTree().Root.SizeChanged -= Reposition;
     }
 
     private void AddButton(HBoxContainer parent, ToolMode mode, string label)
