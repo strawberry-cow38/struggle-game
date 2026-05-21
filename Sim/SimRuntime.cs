@@ -36,9 +36,7 @@ public sealed class SimRuntime
         _builds = new BuildSystem(this, Jobs);
 
         int center = SimConstants.MapSize / 2;
-        SpawnDummy(center, center);
-        SpawnDummy(center + 1, center);
-        SpawnDummy(center, center + 1);
+        for (int i = 0; i < 100; i++) SpawnDummy(center, center);
     }
 
     public void Step(float dt)
