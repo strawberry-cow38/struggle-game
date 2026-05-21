@@ -35,7 +35,10 @@ public sealed class SimRuntime
         _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1);
         _builds = new BuildSystem(this, Jobs);
 
-        SpawnDummy(SimConstants.MapSize / 2, SimConstants.MapSize / 2);
+        int center = SimConstants.MapSize / 2;
+        SpawnDummy(center, center);
+        SpawnDummy(center + 1, center);
+        SpawnDummy(center, center + 1);
     }
 
     public void Step(float dt)
@@ -180,6 +183,7 @@ public sealed class SimRuntime
                     int x = tileX + dx;
                     int y = tileY + dy;
                     if (!Map.Walkable(x, y)) continue;
+                    if (IsOccupied(x, y)) continue;
 
                     var e = Store.CreateEntity();
                     e.AddComponent(new WorldPos { X = x + 0.5f, Y = y + 0.5f });
@@ -190,5 +194,15 @@ public sealed class SimRuntime
             }
         }
         throw new InvalidOperationException("No walkable tile found for dummy spawn.");
+    }
+
+    private bool IsOccupied(int tileX, int tileY)
+    {
+        bool occupied = false;
+        Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
+        {
+            if ((int)p.X == tileX && (int)p.Y == tileY) occupied = true;
+        });
+        return occupied;
     }
 }

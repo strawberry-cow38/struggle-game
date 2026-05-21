@@ -19,8 +19,8 @@ public class DraftingTests
         sim.QueueCommand(new PlaceWallBlueprintCommand(new TilePos(center + 1, center)));
         for (int i = 0; i < 30; i++) sim.Step(SimConstants.TickSeconds);
 
-        var pawn = FindWanderer(sim);
-        Assert.True(pawn.HasComponent<BuildTarget>(), "Expected pawn to have claimed the blueprint after 30 ticks.");
+        var pawn = FindClaimer(sim);
+        Assert.True(pawn.HasComponent<BuildTarget>(), "Expected a pawn to have claimed the blueprint after 30 ticks.");
         var jobId = pawn.GetComponent<BuildTarget>().JobId;
 
         sim.QueueCommand(new ToggleDraftCommand(pawn.Id));
@@ -30,7 +30,10 @@ public class DraftingTests
         Assert.False(pawn.HasComponent<BuildTarget>(), "Drafted pawn must drop its BuildTarget.");
         var job = sim.Jobs.Get(jobId);
         Assert.NotNull(job);
-        Assert.Equal(JobState.Open, job!.State);
+        // The released job may be re-claimed by another idle pawn on the
+        // same tick. What matters is that *this* pawn is no longer the
+        // claimant.
+        Assert.NotEqual(pawn.Id, job!.Claimant.Id);
     }
 
     [Fact]
@@ -58,6 +61,17 @@ public class DraftingTests
             if (found.IsNull) found = e;
         });
         Assert.False(found.IsNull, "No wanderer entity in sim.");
+        return found;
+    }
+
+    private static Entity FindClaimer(SimRuntime sim)
+    {
+        Entity found = default;
+        sim.Store.Query<Wanderer, BuildTarget>().ForEachEntity((ref Wanderer _, ref BuildTarget _, Entity e) =>
+        {
+            if (found.IsNull) found = e;
+        });
+        Assert.False(found.IsNull, "No pawn claimed the blueprint.");
         return found;
     }
 }
