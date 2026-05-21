@@ -1,4 +1,5 @@
 using Godot;
+using StruggleGame.Sim;
 
 namespace StruggleGame.Game.Camera;
 
@@ -65,13 +66,29 @@ public partial class GameCamera : Camera2D
     {
         ApplyKeyPan((float)delta);
 
-        if (Mathf.IsEqualApprox(Zoom.X, _targetZoom)) return;
+        if (!Mathf.IsEqualApprox(Zoom.X, _targetZoom))
+        {
+            // Exponential smoothing toward target. Frame-rate independent.
+            float t = 1f - Mathf.Exp(-(float)delta / ZoomTweenSeconds);
+            float next = Mathf.Lerp(Zoom.X, _targetZoom, t);
+            if (Mathf.Abs(next - _targetZoom) < 0.001f) next = _targetZoom;
+            Zoom = new Vector2(next, next);
+        }
 
-        // Exponential smoothing toward target. Frame-rate independent.
-        float t = 1f - Mathf.Exp(-(float)delta / ZoomTweenSeconds);
-        float next = Mathf.Lerp(Zoom.X, _targetZoom, t);
-        if (Mathf.Abs(next - _targetZoom) < 0.001f) next = _targetZoom;
-        Zoom = new Vector2(next, next);
+        ClampToMap();
+    }
+
+    private static void GetMapBounds(out float worldPx)
+    {
+        worldPx = SimConstants.MapSize * SimConstants.PixelsPerTile;
+    }
+
+    private void ClampToMap()
+    {
+        GetMapBounds(out float worldPx);
+        Position = new Vector2(
+            Mathf.Clamp(Position.X, 0f, worldPx),
+            Mathf.Clamp(Position.Y, 0f, worldPx));
     }
 
     private void ApplyKeyPan(float delta)
