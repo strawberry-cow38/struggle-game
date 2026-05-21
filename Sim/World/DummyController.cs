@@ -97,11 +97,29 @@ public sealed class DummyController
             }
         }
 
-        // Drafted colonists ignore jobs/wander. Walk the active path if
-        // there is one; otherwise dequeue the next move order; otherwise
-        // hold position and watch.
+        // Drafted colonists ignore jobs/wander. Walk the active player
+        // order if there is one; otherwise dequeue the next move order;
+        // otherwise hold position and watch.
         if (drafted)
         {
+            // Belt-and-braces: if a BuildTarget survived the draft toggle
+            // for any reason, drop it now and clear whatever path was
+            // pointing at it. ToggleDraftCommand already does this on the
+            // tick the draft started; this catches any race.
+            if (entity.HasComponent<BuildTarget>())
+            {
+                var bt = entity.GetComponent<BuildTarget>();
+                _jobs.Release(bt.JobId);
+                cb.RemoveComponent<BuildTarget>(entity.Id);
+                if (path.PendingPathId != 0)
+                {
+                    _paths.Discard(path.PendingPathId);
+                    path.PendingPathId = 0;
+                }
+                path.Waypoints = null;
+                path.Index = 0;
+            }
+
             if (path.Waypoints is not null && path.Index < path.Waypoints.Count) return;
             if (path.PendingPathId != 0) return;
 
