@@ -1,5 +1,6 @@
 using Godot;
 using StruggleGame.Game.Camera;
+using StruggleGame.Game.Designation;
 using StruggleGame.Game.Render;
 using StruggleGame.Sim;
 
@@ -20,6 +21,9 @@ public partial class Bootstrap : Node2D
 
         var renderer = new WorldRenderer { Host = _host, Name = "WorldRenderer" };
         AddChild(renderer);
+
+        var designator = new WallDesignator { Host = _host, Name = "WallDesignator" };
+        AddChild(designator);
 
         float worldPx = SimConstants.MapSize * SimConstants.PixelsPerTile;
         var camera = new GameCamera

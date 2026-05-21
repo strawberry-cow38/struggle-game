@@ -22,3 +22,19 @@ public struct PathFollower : IComponent
 public struct Wanderer : IComponent
 {
 }
+
+// Pending construction job on a tile. ProgressSec advances while a
+// builder is adjacent; when it reaches BuildSystem.BuildTimeSec the tile
+// becomes Wall and the entity is deleted.
+public struct Blueprint : IComponent
+{
+    public TilePos Tile;
+    public float ProgressSec;
+}
+
+// Optional assignment from a builder to a specific blueprint, so they
+// don't recompute the nearest target every tick.
+public struct BuildTarget : IComponent
+{
+    public TilePos Tile;
+}

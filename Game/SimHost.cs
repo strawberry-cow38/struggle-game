@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using StruggleGame.Sim;
+using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
 
@@ -38,6 +39,13 @@ public sealed class SimHost : IDisposable
         if (hz < 1) hz = 1;
         _tickHz = hz;
     }
+
+    // Game→Sim command submission. Drained at the start of every tick.
+    public void QueueCommand(ISimCommand cmd) => _sim.QueueCommand(cmd);
+
+    // Threadsafe map snapshot for rebuilding the wall overlay texture
+    // when MapVersion changes.
+    public byte[] CopyTilesForRender() => _sim.CopyTilesForRender();
 
     public void Dispose()
     {

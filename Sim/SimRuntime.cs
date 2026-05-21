@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using Friflo.Engine.ECS;
+using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
 using StruggleGame.Sim.World;
@@ -9,40 +11,96 @@ public sealed class SimRuntime
 {
     public EntityStore Store { get; } = new();
     public TileMap Map { get; }
+    public BlueprintRegistry Blueprints { get; } = new();
     public long Tick { get; private set; }
+    public long MapVersion { get; private set; }
 
     private readonly DummyController _dummies;
+    private readonly BuildSystem _builds;
+    private readonly ConcurrentQueue<ISimCommand> _commands = new();
+    private readonly object _mapLock = new();
 
     public SimRuntime(int seed = 1337)
     {
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
-        _dummies = new DummyController(Map, seed + 1);
+        _dummies = new DummyController(this, Map, Blueprints, seed + 1);
+        _builds = new BuildSystem(this, Map, Blueprints);
 
         SpawnDummy(SimConstants.MapSize / 2, SimConstants.MapSize / 2);
     }
 
     public void Step(float dt)
     {
+        while (_commands.TryDequeue(out var cmd)) cmd.Apply(this);
         _dummies.Step(Store, dt);
+        _builds.Step(Store, dt);
         Tick++;
     }
 
+    public void QueueCommand(ISimCommand cmd) => _commands.Enqueue(cmd);
+
     public SimSnapshot BuildSnapshot()
     {
-        var query = Store.Query<WorldPos, Wanderer>();
-        var buf = new DummyState[query.Count];
+        var dq = Store.Query<WorldPos, Wanderer>();
+        var dummies = new DummyState[dq.Count];
         int i = 0;
-        query.ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
+        dq.ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
         {
-            buf[i++] = new DummyState(p.X, p.Y);
+            dummies[i++] = new DummyState(p.X, p.Y);
         });
-        return new SimSnapshot(Tick, buf);
+
+        var bps = new BlueprintState[Blueprints.Count];
+        int j = 0;
+        foreach (var kv in Blueprints.All)
+        {
+            var bp = kv.Value.GetComponent<Blueprint>();
+            bps[j++] = new BlueprintState(kv.Key, bp.ProgressSec / BuildSystem.BuildTimeSec);
+        }
+
+        return new SimSnapshot(Tick, MapVersion, dummies, bps);
+    }
+
+    // Snapshot of the tile array taken under a lock so a parallel write
+    // can't tear it. Game uses this to rebuild the wall overlay texture
+    // when MapVersion changes.
+    public byte[] CopyTilesForRender()
+    {
+        lock (_mapLock)
+        {
+            var src = Map.RawTiles;
+            var copy = new byte[src.Length];
+            for (int k = 0; k < src.Length; k++) copy[k] = (byte)src[k];
+            return copy;
+        }
+    }
+
+    public bool TryPlaceWallBlueprint(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return false;
+        if (Map.Get(tile) == TileType.Wall) return false;
+        if (Blueprints.Has(tile)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new Blueprint { Tile = tile, ProgressSec = 0f });
+        Blueprints.Add(tile, e);
+        return true;
+    }
+
+    public void CompleteWallBlueprint(TilePos tile)
+    {
+        if (!Blueprints.TryGet(tile, out var entity)) return;
+        Blueprints.Remove(tile);
+        entity.DeleteEntity();
+
+        lock (_mapLock)
+        {
+            Map.Set(tile, TileType.Wall);
+        }
+        MapVersion++;
     }
 
     private void SpawnDummy(int tileX, int tileY)
     {
-        // Walk outward in a spiral until we find a walkable tile in case the
-        // requested spawn happens to land on a wall cluster.
         for (int r = 0; r < SimConstants.MapSize; r++)
         {
             for (int dy = -r; dy <= r; dy++)

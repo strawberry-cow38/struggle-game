@@ -5,9 +5,9 @@ using TileMap = StruggleGame.Sim.Map.TileMap;
 
 namespace StruggleGame.Game.Render;
 
-// Renders the static tile map (tiled grass texture + a baked wall
-// overlay) plus the dynamic dummies from the latest SimSnapshot. Tiles do
-// not change yet, so both textures are built once at _Ready.
+// Renders the static tile map (tiled grass texture + a wall overlay
+// rebuilt whenever SimSnapshot.MapVersion changes), the pending
+// blueprints from the snapshot, and the dynamic dummies on top.
 public partial class WorldRenderer : Node2D
 {
     private const int PixelsPerTile = SimConstants.PixelsPerTile;
@@ -17,23 +17,29 @@ public partial class WorldRenderer : Node2D
     private ImageTexture? _wallOverlayTex;
     private int _mapPixelWidth;
     private int _mapPixelHeight;
+    private int _mapWidth;
+    private int _mapHeight;
+    private long _lastMapVersion = -1;
 
     private static readonly Color WallColor = new(0.18f, 0.16f, 0.14f);
     private static readonly Color DummyColor = new(0.95f, 0.55f, 0.20f);
+    private static readonly Color BlueprintFill = new(0.20f, 0.55f, 0.95f, 0.30f);
+    private static readonly Color BlueprintBorder = new(0.45f, 0.75f, 1.00f, 0.85f);
+    private static readonly Color BlueprintProgress = new(0.95f, 0.85f, 0.20f, 0.85f);
 
     public SimHost? Host { get; set; }
 
     public override void _Ready()
     {
-        // Keep tiles crisp at high zoom and let the grass tile across the map.
         TextureFilter = TextureFilterEnum.Nearest;
         TextureRepeat = TextureRepeatEnum.Enabled;
 
         if (Host is null) return;
         _grassTex = BuildGrassTexture(seed: 1337);
-        _wallOverlayTex = BuildWallOverlay(Host.Map);
-        _mapPixelWidth = Host.Map.Width * PixelsPerTile;
-        _mapPixelHeight = Host.Map.Height * PixelsPerTile;
+        _mapWidth = Host.Map.Width;
+        _mapHeight = Host.Map.Height;
+        _mapPixelWidth = _mapWidth * PixelsPerTile;
+        _mapPixelHeight = _mapHeight * PixelsPerTile;
     }
 
     public override void _Process(double delta)
@@ -43,19 +49,53 @@ public partial class WorldRenderer : Node2D
 
     public override void _Draw()
     {
-        if (_grassTex is null || _wallOverlayTex is null || Host is null) return;
+        if (_grassTex is null || Host is null) return;
+
+        var snap = Host.LatestSnapshot;
+
+        // Rebuild wall overlay if the sim mutated the map since last frame.
+        if (snap is not null && snap.MapVersion != _lastMapVersion)
+        {
+            var tileBytes = Host.CopyTilesForRender();
+            _wallOverlayTex = BuildWallOverlay(tileBytes, _mapWidth, _mapHeight);
+            _lastMapVersion = snap.MapVersion;
+        }
 
         var mapRect = new Rect2(0, 0, _mapPixelWidth, _mapPixelHeight);
         DrawTextureRect(_grassTex, mapRect, tile: true);
-        DrawTextureRect(_wallOverlayTex, mapRect, tile: false);
+        if (_wallOverlayTex is not null)
+        {
+            DrawTextureRect(_wallOverlayTex, mapRect, tile: false);
+        }
 
-        var snap = Host.LatestSnapshot;
         if (snap is null) return;
+
+        foreach (var bp in snap.Blueprints)
+        {
+            DrawBlueprint(bp.Tile, bp.Progress);
+        }
 
         float radius = PixelsPerTile * 0.35f;
         foreach (var d in snap.Dummies)
         {
             DrawCircle(new Vector2(d.X * PixelsPerTile, d.Y * PixelsPerTile), radius, DummyColor);
+        }
+    }
+
+    private void DrawBlueprint(TilePos tile, float progress)
+    {
+        var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+        DrawRect(rect, BlueprintFill, filled: true);
+        DrawRect(rect, BlueprintBorder, filled: false, width: 2f);
+        if (progress > 0f)
+        {
+            float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
+            var bar = new Rect2(
+                rect.Position.X,
+                rect.Position.Y + (PixelsPerTile - h),
+                PixelsPerTile,
+                h);
+            DrawRect(bar, BlueprintProgress, filled: true);
         }
     }
 
@@ -69,7 +109,6 @@ public partial class WorldRenderer : Node2D
         var rng = new Random(seed);
         var img = Image.CreateEmpty(GrassTexSize, GrassTexSize, false, Image.Format.Rgba8);
 
-        // Mottled soil/dirt base so bare patches show through between blades.
         const int baseGrid = 8;
         var baseNoise = new float[baseGrid + 1, baseGrid + 1];
         for (int y = 0; y < baseGrid; y++)
@@ -105,16 +144,13 @@ public partial class WorldRenderer : Node2D
             }
         }
 
-        // Scatter ~2200 short upright blade strokes across the texture.
-        // Each blade = 3–6 px tall × 1 px wide, dark at base → bright at tip,
-        // hue chosen from a small palette so the field has visible variation.
         var bladePalette = new Color[]
         {
             new(0.48f, 0.62f, 0.18f),
             new(0.36f, 0.55f, 0.16f),
             new(0.42f, 0.66f, 0.22f),
             new(0.55f, 0.58f, 0.18f),
-            new(0.62f, 0.55f, 0.20f), // dry/yellow blade
+            new(0.62f, 0.55f, 0.20f),
         };
         const int bladeCount = 2200;
         for (int i = 0; i < bladeCount; i++)
@@ -126,7 +162,6 @@ public partial class WorldRenderer : Node2D
             var tip = bladePalette[rng.Next(bladePalette.Length)];
             for (int yy = 0; yy < height; yy++)
             {
-                // Top of stroke = bright tip, bottom = darker base.
                 float t = yy / (float)(height - 1);
                 float shade = Mathf.Lerp(0.55f, 1.0f, t);
                 var c = new Color(tip.R * shade, tip.G * shade, tip.B * shade);
@@ -142,16 +177,16 @@ public partial class WorldRenderer : Node2D
         return ImageTexture.CreateFromImage(img);
     }
 
-    // Walls = opaque dark, grass = transparent. Drawn over the tiled grass.
-    private static ImageTexture BuildWallOverlay(TileMap map)
+    private static ImageTexture BuildWallOverlay(byte[] tiles, int width, int height)
     {
-        var img = Image.CreateEmpty(map.Width, map.Height, false, Image.Format.Rgba8);
+        var img = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
         var transparent = new Color(0f, 0f, 0f, 0f);
-        for (int y = 0; y < map.Height; y++)
+        for (int y = 0; y < height; y++)
         {
-            for (int x = 0; x < map.Width; x++)
+            for (int x = 0; x < width; x++)
             {
-                img.SetPixel(x, y, map.Get(x, y) == TileType.Wall ? WallColor : transparent);
+                bool wall = tiles[y * width + x] == (byte)TileType.Wall;
+                img.SetPixel(x, y, wall ? WallColor : transparent);
             }
         }
         return ImageTexture.CreateFromImage(img);
