@@ -4,8 +4,9 @@ namespace StruggleGame.Sim.Pathfinding;
 
 // 8-connected grid A* with octile heuristic. Returns waypoints from start
 // to goal (inclusive of both). Returns null if no path. Reuses internal
-// buffers across calls; not thread-safe — give each consumer its own
-// instance.
+// buffers across calls; not thread-safe — give each worker its own
+// instance. Takes a MapView per call so a worker pool can compute against
+// an immutable snapshot without touching the live TileMap.
 public sealed class AStar
 {
     private static readonly (int dx, int dy, float cost)[] Neighbors = new (int, int, float)[]
@@ -14,7 +15,8 @@ public sealed class AStar
         (1, 1, 1.4142136f), (1, -1, 1.4142136f), (-1, 1, 1.4142136f), (-1, -1, 1.4142136f),
     };
 
-    private readonly TileMap _map;
+    private readonly int _width;
+    private readonly int _height;
     private readonly float[] _gScore;
     private readonly int[] _cameFrom;
     private readonly bool[] _closed;
@@ -22,19 +24,24 @@ public sealed class AStar
     private int _runId;
     private readonly PriorityQueue<int, float> _open = new();
 
-    public AStar(TileMap map)
+    public AStar(int width, int height)
     {
-        _map = map;
-        int cells = map.Width * map.Height;
+        _width = width;
+        _height = height;
+        int cells = width * height;
         _gScore = new float[cells];
         _cameFrom = new int[cells];
         _closed = new bool[cells];
         _generation = new int[cells];
     }
 
-    public List<TilePos>? FindPath(TilePos start, TilePos goal)
+    public List<TilePos>? FindPath(MapView view, TilePos start, TilePos goal)
     {
-        if (!_map.Walkable(start) || !_map.Walkable(goal)) return null;
+        if (view.Width != _width || view.Height != _height)
+        {
+            throw new ArgumentException("MapView size doesn't match AStar buffer size.", nameof(view));
+        }
+        if (!view.Walkable(start) || !view.Walkable(goal)) return null;
         if (start == goal) return new List<TilePos> { start };
 
         _runId++;
@@ -56,16 +63,16 @@ public sealed class AStar
             if (currentIdx == goalIdx) return Reconstruct(goalIdx);
             _closed[currentIdx] = true;
 
-            int cx = currentIdx % _map.Width;
-            int cy = currentIdx / _map.Width;
+            int cx = currentIdx % _width;
+            int cy = currentIdx / _width;
 
             foreach (var (dx, dy, cost) in Neighbors)
             {
                 int nx = cx + dx;
                 int ny = cy + dy;
-                if (!_map.Walkable(nx, ny)) continue;
+                if (!view.Walkable(nx, ny)) continue;
                 // Disallow diagonal cut through wall corner.
-                if (dx != 0 && dy != 0 && (!_map.Walkable(cx + dx, cy) || !_map.Walkable(cx, cy + dy)))
+                if (dx != 0 && dy != 0 && (!view.Walkable(cx + dx, cy) || !view.Walkable(cx, cy + dy)))
                 {
                     continue;
                 }
@@ -94,13 +101,13 @@ public sealed class AStar
         int cur = goalIdx;
         while (cur != -1)
         {
-            stack.Push(new TilePos(cur % _map.Width, cur / _map.Width));
+            stack.Push(new TilePos(cur % _width, cur / _width));
             cur = _cameFrom[cur];
         }
         return new List<TilePos>(stack);
     }
 
-    private int Index(int x, int y) => y * _map.Width + x;
+    private int Index(int x, int y) => y * _width + x;
 
     private static float Heuristic(TilePos a, TilePos b)
     {

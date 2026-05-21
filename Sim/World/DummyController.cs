@@ -4,12 +4,16 @@ using StruggleGame.Sim.Pathfinding;
 
 namespace StruggleGame.Sim.World;
 
-// Per-tick: for every Wanderer, decide what to do.
-//   - If they have a BuildTarget that still exists in the registry, walk
-//     to a tile 4-adjacent to it (BuildSystem ticks progress while
-//     adjacent).
-//   - Else if any blueprints are queued, claim the nearest reachable one.
-//   - Else pick a random walkable goal and wander to it.
+// Per-tick: for every Wanderer, drive the decision loop.
+//   1. If a path request is in flight, poll PathService — when it resolves
+//      either start walking or drop the goal.
+//   2. If holding a BuildTarget, walk to a tile 4-adjacent to it.
+//   3. If any blueprints are open, claim the nearest by Manhattan and ask
+//      PathService to route to a walkable neighbor.
+//   4. Otherwise pick a random wander goal and request a path.
+//
+// All pathfinding now goes through PathService so this controller is
+// trivially compatible with a future async worker pool.
 public sealed class DummyController
 {
     private static readonly (int dx, int dy)[] FourNeighbors = new (int, int)[]
@@ -17,38 +21,64 @@ public sealed class DummyController
         (1, 0), (-1, 0), (0, 1), (0, -1),
     };
 
-    private readonly SimRuntime _sim;
-    private readonly TileMap _map;
+    private readonly PathService _paths;
     private readonly BlueprintRegistry _registry;
-    private readonly AStar _astar;
+    private readonly Func<MapView> _viewProvider;
     private readonly Random _rng;
 
-    public DummyController(SimRuntime sim, TileMap map, BlueprintRegistry registry, int seed)
+    public DummyController(PathService paths, BlueprintRegistry registry, Func<MapView> viewProvider, int seed)
     {
-        _sim = sim;
-        _map = map;
+        _paths = paths;
         _registry = registry;
-        _astar = new AStar(map);
+        _viewProvider = viewProvider;
         _rng = new Random(seed);
     }
 
     public void Step(EntityStore store, float dt)
     {
+        var view = _viewProvider();
         var cb = store.GetCommandBuffer();
         var query = store.Query<WorldPos, PathFollower, Wanderer>();
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity entity) =>
         {
-            Plan(ref pos, ref path, entity, cb);
+            Plan(ref pos, ref path, entity, cb, view);
             AdvanceAlongPath(ref pos, ref path, dt);
         });
         cb.Playback();
     }
 
-    private void Plan(ref WorldPos pos, ref PathFollower path, Entity entity, CommandBuffer cb)
+    private void Plan(ref WorldPos pos, ref PathFollower path, Entity entity, CommandBuffer cb, MapView view)
     {
         var here = new TilePos((int)pos.X, (int)pos.Y);
 
-        // 1. Existing build target.
+        // 1. Resolve in-flight request.
+        if (path.PendingPathId != 0)
+        {
+            if (!_paths.TryConsume(path.PendingPathId, out var result))
+            {
+                return; // still pending
+            }
+            path.PendingPathId = 0;
+
+            if (result.Status == PathStatus.Found && result.Path is { Count: > 0 })
+            {
+                path.Waypoints = result.Path;
+                // If the path starts at our current tile, skip it.
+                path.Index = result.Path[0] == here ? 1 : 0;
+            }
+            else
+            {
+                // No path: drop any build target so we don't loop.
+                if (entity.HasComponent<BuildTarget>())
+                {
+                    cb.RemoveComponent<BuildTarget>(entity.Id);
+                }
+                path.Waypoints = null;
+                path.Index = 0;
+            }
+        }
+
+        // 2. Existing build target.
         if (entity.HasComponent<BuildTarget>())
         {
             var bt = entity.GetComponent<BuildTarget>();
@@ -60,71 +90,54 @@ public sealed class DummyController
             }
             else if (IsAdjacent4(here, bt.Tile))
             {
-                // Standing next to it. Stop walking — BuildSystem ticks now.
+                // Standing next to it — BuildSystem advances progress.
                 path.Waypoints = null;
                 path.Index = 0;
                 return;
             }
             else if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
             {
-                if (TryRouteToNeighbor(here, bt.Tile, out var route))
+                if (TryPickNeighbor(view, here, bt.Tile, out var neighbor))
                 {
-                    path.Waypoints = route;
-                    path.Index = 1;
+                    if (neighbor == here)
+                    {
+                        // Already there next tick the IsAdjacent4 branch fires.
+                        path.Waypoints = null;
+                        path.Index = 0;
+                    }
+                    else
+                    {
+                        path.PendingPathId = _paths.Request(here, neighbor);
+                    }
                 }
                 else
                 {
-                    // Can't reach this target; drop it.
                     cb.RemoveComponent<BuildTarget>(entity.Id);
                 }
                 return;
             }
             else
             {
-                return; // still walking toward target
+                return; // still walking
             }
         }
 
-        // 2. Look for a new blueprint to claim.
-        if (_registry.Count > 0 && TryClaimNearestBlueprint(here, entity, cb, out var route2))
+        // 3. Claim a new blueprint.
+        if (_registry.Count > 0 && TryClaimBlueprint(view, here, entity, cb, ref path))
         {
-            path.Waypoints = route2;
-            path.Index = 1;
             return;
         }
 
-        // 3. Wander.
-        EnsureWanderPath(ref pos, ref path);
+        // 4. Wander.
+        if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
+        {
+            RequestWanderPath(view, here, ref path);
+        }
     }
 
-    private bool TryClaimNearestBlueprint(TilePos from, Entity entity, CommandBuffer cb, out List<TilePos> route)
-    {
-        var ranked = new List<(int dist, TilePos tile)>(_registry.Count);
-        foreach (var t in _registry.Tiles)
-        {
-            int dist = Math.Abs(t.X - from.X) + Math.Abs(t.Y - from.Y);
-            ranked.Add((dist, t));
-        }
-        ranked.Sort(static (a, b) => a.dist.CompareTo(b.dist));
-
-        int attempts = Math.Min(ranked.Count, 8);
-        for (int i = 0; i < attempts; i++)
-        {
-            var target = ranked[i].tile;
-            if (TryRouteToNeighbor(from, target, out var found))
-            {
-                cb.AddComponent(entity.Id, new BuildTarget { Tile = target });
-                route = found;
-                return true;
-            }
-        }
-        route = null!;
-        return false;
-    }
-
-    // Find the walkable 4-neighbor of `target` closest to `from`, then A*
-    // to it. Returns the full waypoint list (start..neighbor inclusive).
-    private bool TryRouteToNeighbor(TilePos from, TilePos target, out List<TilePos> route)
+    // Find a walkable 4-neighbor of `target` closest to `from`. Result may
+    // equal `from` if we're already adjacent.
+    private static bool TryPickNeighbor(MapView view, TilePos from, TilePos target, out TilePos neighbor)
     {
         TilePos best = default;
         int bestDist = int.MaxValue;
@@ -132,7 +145,7 @@ public sealed class DummyController
         {
             int nx = target.X + dx;
             int ny = target.Y + dy;
-            if (!_map.Walkable(nx, ny)) continue;
+            if (!view.Walkable(nx, ny)) continue;
             int d = Math.Abs(nx - from.X) + Math.Abs(ny - from.Y);
             if (d < bestDist)
             {
@@ -142,44 +155,49 @@ public sealed class DummyController
         }
         if (bestDist == int.MaxValue)
         {
-            route = null!;
+            neighbor = default;
             return false;
         }
-        if (best == from)
-        {
-            route = new List<TilePos> { from };
-            return true;
-        }
-        var path = _astar.FindPath(from, best);
-        if (path is { Count: > 0 })
-        {
-            route = path;
-            return true;
-        }
-        route = null!;
-        return false;
+        neighbor = best;
+        return true;
     }
 
-    private void EnsureWanderPath(ref WorldPos pos, ref PathFollower path)
+    // Pick the closest blueprint (by Manhattan) that has at least one
+    // walkable neighbor and assign it. Routing happens via PathService —
+    // if no actual route exists, the result tick clears the target.
+    private bool TryClaimBlueprint(MapView view, TilePos from, Entity entity, CommandBuffer cb, ref PathFollower path)
     {
-        if (path.Waypoints is not null && path.Index < path.Waypoints.Count) return;
-
-        var start = new TilePos((int)pos.X, (int)pos.Y);
-        for (int tries = 0; tries < 32; tries++)
+        TilePos? bestTile = null;
+        TilePos bestNeighbor = default;
+        int bestDist = int.MaxValue;
+        foreach (var t in _registry.Tiles)
         {
-            var goal = new TilePos(_rng.Next(_map.Width), _rng.Next(_map.Height));
-            if (!_map.Walkable(goal) || goal == start) continue;
-
-            var found = _astar.FindPath(start, goal);
-            if (found is { Count: > 1 })
-            {
-                path.Waypoints = found;
-                path.Index = 1;
-                return;
-            }
+            int d = Math.Abs(t.X - from.X) + Math.Abs(t.Y - from.Y);
+            if (d >= bestDist) continue;
+            if (!TryPickNeighbor(view, from, t, out var neighbor)) continue;
+            bestTile = t;
+            bestNeighbor = neighbor;
+            bestDist = d;
         }
-        path.Waypoints = null;
-        path.Index = 0;
+        if (bestTile is null) return false;
+
+        cb.AddComponent(entity.Id, new BuildTarget { Tile = bestTile.Value });
+        if (bestNeighbor != from)
+        {
+            path.PendingPathId = _paths.Request(from, bestNeighbor);
+        }
+        return true;
+    }
+
+    private void RequestWanderPath(MapView view, TilePos from, ref PathFollower path)
+    {
+        for (int tries = 0; tries < 8; tries++)
+        {
+            var goal = new TilePos(_rng.Next(view.Width), _rng.Next(view.Height));
+            if (!view.Walkable(goal) || goal == from) continue;
+            path.PendingPathId = _paths.Request(from, goal);
+            return;
+        }
     }
 
     private static bool IsAdjacent4(TilePos a, TilePos b)

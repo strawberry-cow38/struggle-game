@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Friflo.Engine.ECS;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Map;
+using StruggleGame.Sim.Pathfinding;
 using StruggleGame.Sim.Snapshots;
 using StruggleGame.Sim.World;
 
@@ -15,6 +16,11 @@ public sealed class SimRuntime
     public long Tick { get; private set; }
     public long MapVersion { get; private set; }
 
+    private MapView _mapView;
+    public MapView MapView => Volatile.Read(ref _mapView);
+
+    public PathService PathService { get; }
+
     private readonly DummyController _dummies;
     private readonly BuildSystem _builds;
     private readonly ConcurrentQueue<ISimCommand> _commands = new();
@@ -23,8 +29,10 @@ public sealed class SimRuntime
     public SimRuntime(int seed = 1337)
     {
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
-        _dummies = new DummyController(this, Map, Blueprints, seed + 1);
-        _builds = new BuildSystem(this, Map, Blueprints);
+        _mapView = Map.Snapshot(MapVersion);
+        PathService = new PathService(Map.Width, Map.Height, () => MapView);
+        _dummies = new DummyController(PathService, Blueprints, () => MapView, seed + 1);
+        _builds = new BuildSystem(this, Blueprints);
 
         SpawnDummy(SimConstants.MapSize / 2, SimConstants.MapSize / 2);
     }
@@ -92,11 +100,14 @@ public sealed class SimRuntime
         Blueprints.Remove(tile);
         entity.DeleteEntity();
 
+        MapView newView;
         lock (_mapLock)
         {
             Map.Set(tile, TileType.Wall);
+            MapVersion++;
+            newView = Map.Snapshot(MapVersion);
         }
-        MapVersion++;
+        Volatile.Write(ref _mapView, newView);
     }
 
     private void SpawnDummy(int tileX, int tileY)

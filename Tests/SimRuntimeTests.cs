@@ -70,9 +70,9 @@ public class AStarTests
     public void StraightLine_Open()
     {
         var map = new TileMap(10, 10);
-        var astar = new AStar(map);
+        var astar = new AStar(10, 10);
 
-        var path = astar.FindPath(new TilePos(0, 0), new TilePos(9, 0));
+        var path = astar.FindPath(map.Snapshot(0), new TilePos(0, 0), new TilePos(9, 0));
 
         Assert.NotNull(path);
         Assert.Equal(new TilePos(0, 0), path![0]);
@@ -84,9 +84,9 @@ public class AStarTests
     {
         var map = new TileMap(5, 5);
         for (int y = 0; y < 5; y++) map.Set(2, y, TileType.Wall);
-        var astar = new AStar(map);
+        var astar = new AStar(5, 5);
 
-        var path = astar.FindPath(new TilePos(0, 0), new TilePos(4, 4));
+        var path = astar.FindPath(map.Snapshot(0), new TilePos(0, 0), new TilePos(4, 4));
 
         Assert.Null(path);
     }
@@ -96,9 +96,9 @@ public class AStarTests
     {
         var map = new TileMap(5, 5);
         map.Set(0, 0, TileType.Wall);
-        var astar = new AStar(map);
+        var astar = new AStar(5, 5);
 
-        var path = astar.FindPath(new TilePos(0, 0), new TilePos(4, 4));
+        var path = astar.FindPath(map.Snapshot(0), new TilePos(0, 0), new TilePos(4, 4));
 
         Assert.Null(path);
     }

@@ -11,14 +11,12 @@ public sealed class BuildSystem
 {
     public const float BuildTimeSec = 1.5f;
 
-    private readonly TileMap _map;
     private readonly BlueprintRegistry _registry;
     private readonly SimRuntime _sim;
 
-    public BuildSystem(SimRuntime sim, TileMap map, BlueprintRegistry registry)
+    public BuildSystem(SimRuntime sim, BlueprintRegistry registry)
     {
         _sim = sim;
-        _map = map;
         _registry = registry;
     }
 

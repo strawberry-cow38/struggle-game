@@ -12,10 +12,14 @@ public struct WorldPos : IComponent
 }
 
 // Active path being walked by the entity. Null Tiles = no path.
+// PendingPathId tracks an in-flight async PathService request; 0 = none.
+// While non-zero, the entity is waiting on a route and should not submit
+// further requests until TryConsume returns.
 public struct PathFollower : IComponent
 {
     public List<TilePos>? Waypoints;
     public int Index;
+    public long PendingPathId;
 }
 
 // Marker for the wandering dummy entity. DummyController scans for this.
