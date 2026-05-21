@@ -64,6 +64,8 @@ public partial class Bootstrap : Node2D
         {
             Name = "Void",
             Material = new ShaderMaterial { Shader = shader },
+            // Don't eat mouse input — the camera needs MMB pan + wheel zoom.
+            MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         rect.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         layer.AddChild(rect);

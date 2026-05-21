@@ -1,8 +1,8 @@
 shader_type canvas_item;
 
-// Trippy animated checkerboard for the empty space around the map.
-// Two colour waves cycle out of phase; the checkerboard alternates
-// between them and a subtle scroll keeps it from looking static.
+// Trippy animated grayscale checkerboard for the empty space around the
+// map. Two phase-offset brightness waves alternate per checkerboard cell;
+// a slow scroll keeps the grid from feeling static.
 
 uniform float cell_size = 48.0;
 uniform float color_speed = 0.6;
@@ -15,9 +15,9 @@ void fragment() {
     float check = mod(cell.x + cell.y, 2.0);
 
     float t = TIME * color_speed;
-    vec3 a = 0.5 + 0.5 * cos(t + cell.xyx * 0.08 + vec3(0.0, 2.094, 4.188));
-    vec3 b = 0.5 + 0.5 * cos(t * 1.3 + cell.yxy * 0.11 + vec3(1.5, 3.5, 5.5));
+    float a = 0.5 + 0.5 * cos(t + (cell.x + cell.y) * 0.08);
+    float b = 0.5 + 0.5 * cos(t * 1.3 + (cell.x - cell.y) * 0.11 + 1.5);
 
-    vec3 col = mix(a, b, check) * brightness;
-    COLOR = vec4(col, 1.0);
+    float v = mix(a, b, check) * brightness;
+    COLOR = vec4(v, v, v, 1.0);
 }
