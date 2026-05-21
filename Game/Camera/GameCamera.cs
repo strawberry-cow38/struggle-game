@@ -20,6 +20,7 @@ public partial class GameCamera : Camera2D
     // 1/zoom each frame so the world appears to scroll at a consistent
     // rate regardless of how zoomed in/out you are.
     private const float KeyPanPxPerSec = 1200f;
+    private const float ShiftBoostMultiplier = 3.0f;
 
     private int _zoomIndex = DefaultZoomIndex;
     private float _targetZoom = ZoomLevels[DefaultZoomIndex];
@@ -101,7 +102,9 @@ public partial class GameCamera : Camera2D
         if (input == Vector2.Zero) return;
 
         input = input.Normalized();
-        Position += input * KeyPanPxPerSec * delta / Zoom.X;
+        float speed = KeyPanPxPerSec;
+        if (Input.IsKeyPressed(Key.Shift)) speed *= ShiftBoostMultiplier;
+        Position += input * speed * delta / Zoom.X;
     }
 
     private void SetZoomIndex(int idx)
