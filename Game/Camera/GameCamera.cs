@@ -9,11 +9,16 @@ public partial class GameCamera : Camera2D
 {
     private static readonly float[] ZoomLevels = new[]
     {
-        0.25f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f,
+        0.0625f, 0.125f, 0.25f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f,
     };
 
-    private const int DefaultZoomIndex = 3; // 1.0
+    private const int DefaultZoomIndex = 5; // 1.0
     private const float ZoomTweenSeconds = 0.15f;
+
+    // Screen-space pan speed at zoom 1.0 (pixels per second). Scaled by
+    // 1/zoom each frame so the world appears to scroll at a consistent
+    // rate regardless of how zoomed in/out you are.
+    private const float KeyPanPxPerSec = 1200f;
 
     private int _zoomIndex = DefaultZoomIndex;
     private float _targetZoom = ZoomLevels[DefaultZoomIndex];
@@ -58,6 +63,8 @@ public partial class GameCamera : Camera2D
 
     public override void _Process(double delta)
     {
+        ApplyKeyPan((float)delta);
+
         if (Mathf.IsEqualApprox(Zoom.X, _targetZoom)) return;
 
         // Exponential smoothing toward target. Frame-rate independent.
@@ -65,6 +72,19 @@ public partial class GameCamera : Camera2D
         float next = Mathf.Lerp(Zoom.X, _targetZoom, t);
         if (Mathf.Abs(next - _targetZoom) < 0.001f) next = _targetZoom;
         Zoom = new Vector2(next, next);
+    }
+
+    private void ApplyKeyPan(float delta)
+    {
+        var input = Vector2.Zero;
+        if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up)) input.Y -= 1f;
+        if (Input.IsKeyPressed(Key.S) || Input.IsKeyPressed(Key.Down)) input.Y += 1f;
+        if (Input.IsKeyPressed(Key.A) || Input.IsKeyPressed(Key.Left)) input.X -= 1f;
+        if (Input.IsKeyPressed(Key.D) || Input.IsKeyPressed(Key.Right)) input.X += 1f;
+        if (input == Vector2.Zero) return;
+
+        input = input.Normalized();
+        Position += input * KeyPanPxPerSec * delta / Zoom.X;
     }
 
     private void SetZoomIndex(int idx)
