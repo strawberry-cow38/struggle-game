@@ -70,7 +70,7 @@ public partial class WallDesignator : Node2D
     public override void _Draw()
     {
         if (!_dragging) return;
-        foreach (var t in Bresenham(_startTile, _currentTile))
+        foreach (var t in CardinalLine(_startTile, _currentTile))
         {
             DrawTilePreview(t);
         }
@@ -85,7 +85,7 @@ public partial class WallDesignator : Node2D
 
     private void CommitLine()
     {
-        foreach (var t in Bresenham(_startTile, _currentTile))
+        foreach (var t in CardinalLine(_startTile, _currentTile))
         {
             Host!.QueueCommand(new PlaceWallBlueprintCommand(t));
         }
@@ -99,21 +99,22 @@ public partial class WallDesignator : Node2D
             Mathf.FloorToInt(world.Y / PixelsPerTile));
     }
 
-    private static IEnumerable<TilePos> Bresenham(TilePos a, TilePos b)
+    // Snap to the dominant cardinal axis — walls only run N/S or E/W.
+    private static IEnumerable<TilePos> CardinalLine(TilePos a, TilePos b)
     {
-        int x0 = a.X, y0 = a.Y, x1 = b.X, y1 = b.Y;
-        int dx = Math.Abs(x1 - x0);
-        int dy = -Math.Abs(y1 - y0);
-        int sx = x0 < x1 ? 1 : -1;
-        int sy = y0 < y1 ? 1 : -1;
-        int err = dx + dy;
-        while (true)
+        int dx = b.X - a.X;
+        int dy = b.Y - a.Y;
+        if (Math.Abs(dx) >= Math.Abs(dy))
         {
-            yield return new TilePos(x0, y0);
-            if (x0 == x1 && y0 == y1) yield break;
-            int e2 = 2 * err;
-            if (e2 >= dy) { err += dy; x0 += sx; }
-            if (e2 <= dx) { err += dx; y0 += sy; }
+            int sx = dx >= 0 ? 1 : -1;
+            int steps = Math.Abs(dx);
+            for (int i = 0; i <= steps; i++) yield return new TilePos(a.X + i * sx, a.Y);
+        }
+        else
+        {
+            int sy = dy >= 0 ? 1 : -1;
+            int steps = Math.Abs(dy);
+            for (int i = 0; i <= steps; i++) yield return new TilePos(a.X, a.Y + i * sy);
         }
     }
 }
