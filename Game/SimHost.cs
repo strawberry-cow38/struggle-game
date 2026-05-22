@@ -20,9 +20,12 @@ public sealed class SimHost : IDisposable
     private volatile int _tickHz = SimConstants.TickHz;
     private SimSnapshot? _latest;
     private volatile float _actualTps;
-    // -1 means "no selection". Volatile int so the game thread can write
-    // and the sim thread can read each tick without locking.
+    // Pawn selection. The sim-snapshot path/order display reads the
+    // _selectedDummyId field (first selected pawn); the multi-array
+    // _selectedDummyIds is what panels + Bootstrap shortcuts iterate
+    // to apply commands across the whole selection.
     private int _selectedDummyId = -1;
+    private int[] _selectedDummyIds = Array.Empty<int>();
 
     // Tree selection set. Game thread writes via SelectedTreeIds setter
     // (replaces atomically); sim thread reads via Volatile each tick.
@@ -77,7 +80,22 @@ public sealed class SimHost : IDisposable
     public int? SelectedDummyId
     {
         get { int v = Volatile.Read(ref _selectedDummyId); return v >= 0 ? v : null; }
-        set { Volatile.Write(ref _selectedDummyId, value ?? -1); }
+        set
+        {
+            Volatile.Write(ref _selectedDummyId, value ?? -1);
+            Volatile.Write(ref _selectedDummyIds, value is int id ? new[] { id } : Array.Empty<int>());
+        }
+    }
+
+    public int[] SelectedDummyIds
+    {
+        get => Volatile.Read(ref _selectedDummyIds);
+        set
+        {
+            var arr = value ?? Array.Empty<int>();
+            Volatile.Write(ref _selectedDummyIds, arr);
+            Volatile.Write(ref _selectedDummyId, arr.Length > 0 ? arr[0] : -1);
+        }
     }
 
     public int[] SelectedTreeIds
@@ -103,34 +121,44 @@ public sealed class SimHost : IDisposable
         set => Volatile.Write(ref _selectedWoodIds, value ?? Array.Empty<int>());
     }
 
-    // Selected wall tile (player-built or procgen). UI uses this to
-    // gate the WallInfoPanel + its deconstruct button. Stored as a
-    // class wrapper so Volatile.Read/Write can deal in references —
-    // TilePos? doesn't have a Volatile overload.
-    private sealed record TileRef(TilePos Tile);
-    private TileRef? _selectedWallTile;
+    // Tile selections (walls / doors / blueprints) are multi-select. The
+    // *Tiles array is the source of truth; the singular *Tile property
+    // is "first element or null" for callers that only need one and for
+    // the snapshot/path code that wasn't built for multi yet.
+    private TilePos[] _selectedWallTiles = Array.Empty<TilePos>();
+    public TilePos[] SelectedWallTiles
+    {
+        get => Volatile.Read(ref _selectedWallTiles);
+        set => Volatile.Write(ref _selectedWallTiles, value ?? Array.Empty<TilePos>());
+    }
     public TilePos? SelectedWallTile
     {
-        get => Volatile.Read(ref _selectedWallTile)?.Tile;
-        set => Volatile.Write(ref _selectedWallTile, value is TilePos t ? new TileRef(t) : null);
+        get { var a = Volatile.Read(ref _selectedWallTiles); return a.Length > 0 ? a[0] : null; }
+        set => Volatile.Write(ref _selectedWallTiles, value is TilePos t ? new[] { t } : Array.Empty<TilePos>());
     }
 
-    // Selected door tile. UI surfaces forbid/locked toggles + decon.
-    private TileRef? _selectedDoorTile;
+    private TilePos[] _selectedDoorTiles = Array.Empty<TilePos>();
+    public TilePos[] SelectedDoorTiles
+    {
+        get => Volatile.Read(ref _selectedDoorTiles);
+        set => Volatile.Write(ref _selectedDoorTiles, value ?? Array.Empty<TilePos>());
+    }
     public TilePos? SelectedDoorTile
     {
-        get => Volatile.Read(ref _selectedDoorTile)?.Tile;
-        set => Volatile.Write(ref _selectedDoorTile, value is TilePos t ? new TileRef(t) : null);
+        get { var a = Volatile.Read(ref _selectedDoorTiles); return a.Length > 0 ? a[0] : null; }
+        set => Volatile.Write(ref _selectedDoorTiles, value is TilePos t ? new[] { t } : Array.Empty<TilePos>());
     }
 
-    // Selected blueprint tile. Any pending wall/floor/door blueprint or
-    // chop/decon/haul job is reachable from this — BlueprintInfoPanel
-    // surfaces Forbid + Cancel against the underlying job.
-    private TileRef? _selectedBlueprintTile;
+    private TilePos[] _selectedBlueprintTiles = Array.Empty<TilePos>();
+    public TilePos[] SelectedBlueprintTiles
+    {
+        get => Volatile.Read(ref _selectedBlueprintTiles);
+        set => Volatile.Write(ref _selectedBlueprintTiles, value ?? Array.Empty<TilePos>());
+    }
     public TilePos? SelectedBlueprintTile
     {
-        get => Volatile.Read(ref _selectedBlueprintTile)?.Tile;
-        set => Volatile.Write(ref _selectedBlueprintTile, value is TilePos t ? new TileRef(t) : null);
+        get { var a = Volatile.Read(ref _selectedBlueprintTiles); return a.Length > 0 ? a[0] : null; }
+        set => Volatile.Write(ref _selectedBlueprintTiles, value is TilePos t ? new[] { t } : Array.Empty<TilePos>());
     }
 
     // Read-only accessor for the WallInfoPanel: is the wall at this

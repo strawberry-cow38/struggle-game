@@ -22,7 +22,7 @@ public partial class WallInfoPanel : CanvasLayer
     private Label _stateLabel = null!;
     private Button _deconBtn = null!;
 
-    private TilePos? _shownTile;
+    private TilePos[] _shownTiles = Array.Empty<TilePos>();
     private long _lastSnapshotTick = -1;
 
     public override void _Ready()
@@ -53,7 +53,7 @@ public partial class WallInfoPanel : CanvasLayer
         _nameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         headerRow.AddChild(_nameLabel);
         var closeBtn = new Button { Text = "X", CustomMinimumSize = new Vector2(28, 24) };
-        closeBtn.Pressed += () => Host!.SelectedWallTile = null;
+        closeBtn.Pressed += () => Host!.SelectedWallTiles = Array.Empty<TilePos>();
         headerRow.AddChild(closeBtn);
         vbox.AddChild(headerRow);
 
@@ -81,20 +81,27 @@ public partial class WallInfoPanel : CanvasLayer
     public override void _Process(double delta)
     {
         if (Host is null) return;
-        var tile = Host.SelectedWallTile;
+        var tiles = Host.SelectedWallTiles;
         var snap = Host.LatestSnapshot;
-        if (tile is null || snap is null)
+        if (tiles.Length == 0 || snap is null)
         {
-            if (_root.Visible) { _root.Visible = false; _shownTile = null; }
+            if (_root.Visible) { _root.Visible = false; _shownTiles = Array.Empty<TilePos>(); }
             return;
         }
         if (!_root.Visible) _root.Visible = true;
-        if (tile != _shownTile || snap.Tick != _lastSnapshotTick)
+        if (!TilesEqual(tiles, _shownTiles) || snap.Tick != _lastSnapshotTick)
         {
-            Render(tile.Value);
-            _shownTile = tile;
+            Render(tiles);
+            _shownTiles = tiles;
             _lastSnapshotTick = snap.Tick;
         }
+    }
+
+    private static bool TilesEqual(TilePos[] a, TilePos[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
+        return true;
     }
 
     private void Reposition()
@@ -104,32 +111,55 @@ public partial class WallInfoPanel : CanvasLayer
         _root.Size = new Vector2(PanelWidth, _root.Size.Y);
     }
 
-    private void Render(TilePos tile)
+    private void Render(TilePos[] tiles)
     {
-        if (!Host!.Map.InBounds(tile))
+        // Drop any selected tile whose wall is gone; if nothing's left,
+        // close the panel.
+        var live = new List<TilePos>(tiles.Length);
+        int playerWalls = 0;
+        foreach (var t in tiles)
         {
-            Host.SelectedWallTile = null;
+            if (!Host!.Map.InBounds(t)) continue;
+            if (Host.Map.GetWall(t) == WallType.None) continue;
+            live.Add(t);
+            if (Host.IsPlayerWall(t)) playerWalls++;
+        }
+        if (live.Count == 0)
+        {
+            Host!.SelectedWallTiles = Array.Empty<TilePos>();
             return;
         }
-        var type = Host.Map.GetWall(tile);
-        if (type == WallType.None)
+        if (live.Count != tiles.Length)
         {
-            // Wall was just decon'd from under the panel.
-            Host.SelectedWallTile = null;
-            return;
+            Host!.SelectedWallTiles = live.ToArray();
         }
-        bool isPlayer = Host.IsPlayerWall(tile);
-        _nameLabel.Text = $"Wall ({type})";
-        _tileLabel.Text = $"Tile: ({tile.X}, {tile.Y})";
-        _stateLabel.Text = isPlayer ? "Player-built" : "Pre-placed";
-        _deconBtn.Disabled = !isPlayer;
+
+        var first = live[0];
+        if (live.Count == 1)
+        {
+            var type = Host!.Map.GetWall(first);
+            _nameLabel.Text = $"Wall ({type})";
+            _tileLabel.Text = $"Tile: ({first.X}, {first.Y})";
+            _stateLabel.Text = playerWalls == 1 ? "Player-built" : "Pre-placed";
+        }
+        else
+        {
+            _nameLabel.Text = $"Walls ({live.Count})";
+            _tileLabel.Text = $"First: ({first.X}, {first.Y})";
+            _stateLabel.Text = playerWalls == live.Count
+                ? "All player-built"
+                : (playerWalls == 0 ? "All pre-placed" : $"{playerWalls}/{live.Count} player-built");
+        }
+        _deconBtn.Disabled = playerWalls == 0;
     }
 
     private void OnDeconPressed()
     {
         if (Host is null) return;
-        var tile = Host.SelectedWallTile;
-        if (tile is null) return;
-        Host.QueueCommand(new PostWallDeconCommand(tile.Value));
+        foreach (var t in Host.SelectedWallTiles)
+        {
+            if (!Host.IsPlayerWall(t)) continue;
+            Host.QueueCommand(new PostWallDeconCommand(t));
+        }
     }
 }

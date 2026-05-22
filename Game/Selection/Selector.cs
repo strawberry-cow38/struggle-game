@@ -77,13 +77,13 @@ public partial class Selector : Node2D
         // Pawn beats wood/tree if both are within radius.
         if (TryPickPawn(snap, world, out int pawnId))
         {
-            Host.SelectedDummyId = pawnId;
+            Host.SelectedDummyIds = ToggleInt(Host.SelectedDummyIds, pawnId, shift);
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
-            Host.SelectedWallTile = null;
-            Host.SelectedDoorTile = null;
-            Host.SelectedBlueprintTile = null;
+            Host.SelectedWallTiles = Array.Empty<TilePos>();
+            Host.SelectedDoorTiles = Array.Empty<TilePos>();
+            Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             return;
         }
 
@@ -136,9 +136,9 @@ public partial class Selector : Node2D
         // Door under cursor wins over wall (door sits "on top" UX-wise).
         if (TryPickDoor(snap, clickTile))
         {
-            Host.SelectedDoorTile = clickTile;
-            Host.SelectedWallTile = null;
-            Host.SelectedBlueprintTile = null;
+            Host.SelectedDoorTiles = ToggleTile(Host.SelectedDoorTiles, clickTile, shift);
+            Host.SelectedWallTiles = Array.Empty<TilePos>();
+            Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
@@ -152,9 +152,9 @@ public partial class Selector : Node2D
         // so there's no conflict to worry about.
         if (TryPickBlueprint(snap, clickTile))
         {
-            Host.SelectedBlueprintTile = clickTile;
-            Host.SelectedDoorTile = null;
-            Host.SelectedWallTile = null;
+            Host.SelectedBlueprintTiles = ToggleTile(Host.SelectedBlueprintTiles, clickTile, shift);
+            Host.SelectedDoorTiles = Array.Empty<TilePos>();
+            Host.SelectedWallTiles = Array.Empty<TilePos>();
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
@@ -166,9 +166,9 @@ public partial class Selector : Node2D
         // but the panel only enables the decon button for player walls.
         if (Host.Map.InBounds(clickTile) && Host.Map.GetWall(clickTile) != WallType.None)
         {
-            Host.SelectedWallTile = clickTile;
-            Host.SelectedDoorTile = null;
-            Host.SelectedBlueprintTile = null;
+            Host.SelectedWallTiles = ToggleTile(Host.SelectedWallTiles, clickTile, shift);
+            Host.SelectedDoorTiles = Array.Empty<TilePos>();
+            Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
@@ -183,10 +183,37 @@ public partial class Selector : Node2D
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
             Host.SelectedWoodIds = Array.Empty<int>();
-            Host.SelectedWallTile = null;
-            Host.SelectedDoorTile = null;
-            Host.SelectedBlueprintTile = null;
+            Host.SelectedWallTiles = Array.Empty<TilePos>();
+            Host.SelectedDoorTiles = Array.Empty<TilePos>();
+            Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
         }
+    }
+
+    // shift=false: replace selection with [v]. shift=true: toggle v in
+    // the current selection (add if absent, remove if present).
+    private static int[] ToggleInt(int[] current, int v, bool shift)
+    {
+        if (!shift) return new[] { v };
+        var set = new HashSet<int>(current);
+        if (!set.Add(v)) set.Remove(v);
+        var arr = new int[set.Count];
+        int i = 0;
+        foreach (var x in set) arr[i++] = x;
+        return arr;
+    }
+
+    private static TilePos[] ToggleTile(TilePos[] current, TilePos v, bool shift)
+    {
+        if (!shift) return new[] { v };
+        var list = new List<TilePos>(current.Length + 1);
+        bool removed = false;
+        foreach (var t in current)
+        {
+            if (t == v) { removed = true; continue; }
+            list.Add(t);
+        }
+        if (!removed) list.Add(v);
+        return list.ToArray();
     }
 
     private bool TryPickDoor(SimSnapshot snap, TilePos tile)

@@ -24,7 +24,7 @@ public partial class BlueprintInfoPanel : CanvasLayer
     private CheckBox _forbidChk = null!;
     private Button _cancelBtn = null!;
 
-    private TilePos? _shownTile;
+    private TilePos[] _shownTiles = Array.Empty<TilePos>();
     private long _lastSnapshotTick = -1;
     private bool _suppressToggle;
 
@@ -56,7 +56,7 @@ public partial class BlueprintInfoPanel : CanvasLayer
         _nameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         headerRow.AddChild(_nameLabel);
         var closeBtn = new Button { Text = "X", CustomMinimumSize = new Vector2(28, 24) };
-        closeBtn.Pressed += () => Host!.SelectedBlueprintTile = null;
+        closeBtn.Pressed += () => Host!.SelectedBlueprintTiles = Array.Empty<TilePos>();
         headerRow.AddChild(closeBtn);
         vbox.AddChild(headerRow);
 
@@ -88,20 +88,27 @@ public partial class BlueprintInfoPanel : CanvasLayer
     public override void _Process(double delta)
     {
         if (Host is null) return;
-        var tile = Host.SelectedBlueprintTile;
+        var tiles = Host.SelectedBlueprintTiles;
         var snap = Host.LatestSnapshot;
-        if (tile is null || snap is null)
+        if (tiles.Length == 0 || snap is null)
         {
-            if (_root.Visible) { _root.Visible = false; _shownTile = null; }
+            if (_root.Visible) { _root.Visible = false; _shownTiles = Array.Empty<TilePos>(); }
             return;
         }
         if (!_root.Visible) _root.Visible = true;
-        if (tile != _shownTile || snap.Tick != _lastSnapshotTick)
+        if (!TilesEqual(tiles, _shownTiles) || snap.Tick != _lastSnapshotTick)
         {
-            Render(snap, tile.Value);
-            _shownTile = tile;
+            Render(snap, tiles);
+            _shownTiles = tiles;
             _lastSnapshotTick = snap.Tick;
         }
+    }
+
+    private static bool TilesEqual(TilePos[] a, TilePos[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
+        return true;
     }
 
     private void Reposition()
@@ -111,20 +118,52 @@ public partial class BlueprintInfoPanel : CanvasLayer
         _root.Size = new Vector2(PanelWidth, _root.Size.Y);
     }
 
-    private void Render(SimSnapshot snap, TilePos tile)
+    private void Render(SimSnapshot snap, TilePos[] tiles)
     {
-        if (TryFind(snap, tile, out string kind, out float progress, out bool forbidden))
+        var liveTiles = new List<TilePos>(tiles.Length);
+        var liveKinds = new List<string>(tiles.Length);
+        float progSum = 0f;
+        int forbidCount = 0;
+        foreach (var t in tiles)
         {
-            _nameLabel.Text = kind;
-            _tileLabel.Text = $"Tile: ({tile.X}, {tile.Y})";
-            _progressLabel.Text = $"Progress: {progress * 100f:0}%";
-            _suppressToggle = true;
-            _forbidChk.ButtonPressed = forbidden;
-            _suppressToggle = false;
+            if (TryFind(snap, t, out var kind, out var progress, out var forbidden))
+            {
+                liveTiles.Add(t);
+                liveKinds.Add(kind);
+                progSum += progress;
+                if (forbidden) forbidCount++;
+            }
+        }
+        if (liveTiles.Count == 0)
+        {
+            Host!.SelectedBlueprintTiles = Array.Empty<TilePos>();
             return;
         }
-        // Blueprint vanished (built / cancelled). Drop selection.
-        Host!.SelectedBlueprintTile = null;
+        if (liveTiles.Count != tiles.Length)
+        {
+            Host!.SelectedBlueprintTiles = liveTiles.ToArray();
+        }
+
+        if (liveTiles.Count == 1)
+        {
+            _nameLabel.Text = liveKinds[0];
+            _tileLabel.Text = $"Tile: ({liveTiles[0].X}, {liveTiles[0].Y})";
+            _progressLabel.Text = $"Progress: {progSum * 100f:0}%";
+        }
+        else
+        {
+            // Mixed-kind selections collapse to "Jobs (N)".
+            string headKind = liveKinds[0];
+            bool uniform = true;
+            for (int i = 1; i < liveKinds.Count; i++) if (liveKinds[i] != headKind) { uniform = false; break; }
+            _nameLabel.Text = uniform ? $"{headKind}s ({liveTiles.Count})" : $"Jobs ({liveTiles.Count})";
+            _tileLabel.Text = $"First: ({liveTiles[0].X}, {liveTiles[0].Y})";
+            _progressLabel.Text = $"Avg progress: {(progSum / liveTiles.Count) * 100f:0}%  Forbid {forbidCount}/{liveTiles.Count}";
+        }
+
+        _suppressToggle = true;
+        _forbidChk.ButtonPressed = forbidCount == liveTiles.Count;
+        _suppressToggle = false;
     }
 
     private static bool TryFind(SimSnapshot snap, TilePos tile, out string kind, out float progress, out bool forbidden)
@@ -152,17 +191,15 @@ public partial class BlueprintInfoPanel : CanvasLayer
     private void OnForbidToggled(bool pressed)
     {
         if (_suppressToggle || Host is null) return;
-        var tile = Host.SelectedBlueprintTile;
-        if (tile is null) return;
-        Host.QueueCommand(new SetJobForbiddenCommand(tile.Value, pressed));
+        foreach (var t in Host.SelectedBlueprintTiles)
+            Host.QueueCommand(new SetJobForbiddenCommand(t, pressed));
     }
 
     private void OnCancelPressed()
     {
         if (Host is null) return;
-        var tile = Host.SelectedBlueprintTile;
-        if (tile is null) return;
-        Host.QueueCommand(new CancelJobAtTileCommand(tile.Value));
-        Host.SelectedBlueprintTile = null;
+        foreach (var t in Host.SelectedBlueprintTiles)
+            Host.QueueCommand(new CancelJobAtTileCommand(t));
+        Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
     }
 }

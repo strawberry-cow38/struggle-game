@@ -137,25 +137,37 @@ public partial class Bootstrap : Node2D
             case Key.Key3: _host.SetTickHz(180); _host.SetPaused(false); break;
             case Key.Key4: _host.SetTickHz(360); _host.SetPaused(false); break;
             case Key.R:
-                if (_host.SelectedDummyId is int id)
+            {
+                var pawnIds = _host.SelectedDummyIds;
+                if (pawnIds.Length > 0)
                 {
-                    _host.QueueCommand(new Sim.Commands.ToggleDraftCommand(id));
+                    foreach (var pid in pawnIds)
+                        _host.QueueCommand(new Sim.Commands.ToggleDraftCommand(pid));
                     GetViewport().SetInputAsHandled();
                 }
                 return;
+            }
             case Key.F:
             {
-                // Door selected: toggle Forbidden on it.
-                if (_host.SelectedDoorTile is Sim.Map.TilePos dTile)
+                // Doors selected: toggle Forbidden across the whole
+                // selection. Target = !(majority currently forbidden), so
+                // a mixed selection flips toward "all forbid".
+                var doorTiles = _host.SelectedDoorTiles;
+                if (doorTiles.Length > 0)
                 {
                     var dsnap = _host.LatestSnapshot;
                     if (dsnap is null) return;
-                    bool curForbidden = false;
+                    var tileSet = new HashSet<Sim.Map.TilePos>(doorTiles);
+                    int forbidCount = 0, totalCount = 0;
                     foreach (var d in dsnap.Doors)
                     {
-                        if (d.Tile == dTile) { curForbidden = d.Forbidden; break; }
+                        if (!tileSet.Contains(d.Tile)) continue;
+                        totalCount++;
+                        if (d.Forbidden) forbidCount++;
                     }
-                    _host.QueueCommand(new Sim.Commands.SetDoorForbiddenCommand(dTile, !curForbidden));
+                    bool doorTarget = !(forbidCount > totalCount - forbidCount);
+                    foreach (var dt in doorTiles)
+                        _host.QueueCommand(new Sim.Commands.SetDoorForbiddenCommand(dt, doorTarget));
                     GetViewport().SetInputAsHandled();
                     return;
                 }

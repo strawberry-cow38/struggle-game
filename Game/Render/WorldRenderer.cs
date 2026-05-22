@@ -205,9 +205,9 @@ public partial class WorldRenderer : Node2D
         // top of the tile fills so the cyan ring is always visible.
         if (Host is not null)
         {
-            if (Host.SelectedWallTile is TilePos selW) DrawSelectionOutline(selW);
-            if (Host.SelectedDoorTile is TilePos selD) DrawSelectionOutline(selD);
-            if (Host.SelectedBlueprintTile is TilePos selB) DrawSelectionOutline(selB);
+            foreach (var t in Host.SelectedWallTiles) DrawSelectionOutline(t);
+            foreach (var t in Host.SelectedDoorTiles) DrawSelectionOutline(t);
+            foreach (var t in Host.SelectedBlueprintTiles) DrawSelectionOutline(t);
         }
 
         var stackFont = ThemeDB.FallbackFont;

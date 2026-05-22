@@ -29,7 +29,7 @@ public partial class DoorInfoPanel : CanvasLayer
     private DoorPriority _shownPriority = DoorPriority.Medium;
     private Button _deconBtn = null!;
 
-    private TilePos? _shownTile;
+    private TilePos[] _shownTiles = Array.Empty<TilePos>();
     private long _lastSnapshotTick = -1;
     private bool _suppressToggle;
 
@@ -61,7 +61,7 @@ public partial class DoorInfoPanel : CanvasLayer
         _nameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         headerRow.AddChild(_nameLabel);
         var closeBtn = new Button { Text = "X", CustomMinimumSize = new Vector2(28, 24) };
-        closeBtn.Pressed += () => Host!.SelectedDoorTile = null;
+        closeBtn.Pressed += () => Host!.SelectedDoorTiles = Array.Empty<TilePos>();
         headerRow.AddChild(closeBtn);
         vbox.AddChild(headerRow);
 
@@ -101,20 +101,27 @@ public partial class DoorInfoPanel : CanvasLayer
     public override void _Process(double delta)
     {
         if (Host is null) return;
-        var tile = Host.SelectedDoorTile;
+        var tiles = Host.SelectedDoorTiles;
         var snap = Host.LatestSnapshot;
-        if (tile is null || snap is null)
+        if (tiles.Length == 0 || snap is null)
         {
-            if (_root.Visible) { _root.Visible = false; _shownTile = null; }
+            if (_root.Visible) { _root.Visible = false; _shownTiles = Array.Empty<TilePos>(); }
             return;
         }
         if (!_root.Visible) _root.Visible = true;
-        if (tile != _shownTile || snap.Tick != _lastSnapshotTick)
+        if (!TilesEqual(tiles, _shownTiles) || snap.Tick != _lastSnapshotTick)
         {
-            Render(snap, tile.Value);
-            _shownTile = tile;
+            Render(snap, tiles);
+            _shownTiles = tiles;
             _lastSnapshotTick = snap.Tick;
         }
+    }
+
+    private static bool TilesEqual(TilePos[] a, TilePos[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
+        return true;
     }
 
     private void Reposition()
@@ -124,27 +131,53 @@ public partial class DoorInfoPanel : CanvasLayer
         _root.Size = new Vector2(PanelWidth, _root.Size.Y);
     }
 
-    private void Render(SimSnapshot snap, TilePos tile)
+    private void Render(SimSnapshot snap, TilePos[] tiles)
     {
-        DoorRenderState? door = null;
-        foreach (var d in snap.Doors)
+        // Build a lookup of live doors from the snapshot, then prune
+        // any selected tile whose door vanished (decon'd / scrubbed).
+        var live = new List<DoorRenderState>(tiles.Length);
+        var liveTiles = new List<TilePos>(tiles.Length);
+        foreach (var t in tiles)
         {
-            if (d.Tile == tile) { door = d; break; }
+            foreach (var d in snap.Doors)
+            {
+                if (d.Tile == t) { live.Add(d); liveTiles.Add(t); break; }
+            }
         }
-        if (door is null)
+        if (live.Count == 0)
         {
-            // Door vanished (decon'd / scrubbed); drop selection.
-            Host!.SelectedDoorTile = null;
+            Host!.SelectedDoorTiles = Array.Empty<TilePos>();
             return;
         }
-        var d0 = door.Value;
-        _nameLabel.Text = $"Door ({d0.Orientation})";
-        _tileLabel.Text = $"Tile: ({tile.X}, {tile.Y})";
-        _stateLabel.Text = $"Open: {d0.OpenAmount * 100f:0}%";
+        if (live.Count != tiles.Length)
+        {
+            Host!.SelectedDoorTiles = liveTiles.ToArray();
+        }
+
+        var d0 = live[0];
+        int forbidCount = 0, lockedCount = 0;
+        foreach (var d in live)
+        {
+            if (d.Forbidden) forbidCount++;
+            if (d.Locked) lockedCount++;
+        }
+
+        if (live.Count == 1)
+        {
+            _nameLabel.Text = $"Door ({d0.Orientation})";
+            _tileLabel.Text = $"Tile: ({liveTiles[0].X}, {liveTiles[0].Y})";
+            _stateLabel.Text = $"Open: {d0.OpenAmount * 100f:0}%";
+        }
+        else
+        {
+            _nameLabel.Text = $"Doors ({live.Count})";
+            _tileLabel.Text = $"First: ({liveTiles[0].X}, {liveTiles[0].Y})";
+            _stateLabel.Text = $"Forbid {forbidCount}/{live.Count}  Lock {lockedCount}/{live.Count}";
+        }
 
         _suppressToggle = true;
-        _forbidChk.ButtonPressed = d0.Forbidden;
-        _lockedChk.ButtonPressed = d0.Locked;
+        _forbidChk.ButtonPressed = forbidCount == live.Count;
+        _lockedChk.ButtonPressed = lockedCount == live.Count;
         _suppressToggle = false;
         _shownPriority = d0.Priority;
         _priorityBtn.Text = $"Priority: {PriorityLabel(d0.Priority)}";
@@ -171,33 +204,29 @@ public partial class DoorInfoPanel : CanvasLayer
     private void OnPriorityCycled()
     {
         if (Host is null) return;
-        var tile = Host.SelectedDoorTile;
-        if (tile is null) return;
         var next = NextPriority(_shownPriority);
-        Host.QueueCommand(new SetDoorPriorityCommand(tile.Value, next));
+        foreach (var t in Host.SelectedDoorTiles)
+            Host.QueueCommand(new SetDoorPriorityCommand(t, next));
     }
 
     private void OnForbidToggled(bool pressed)
     {
         if (_suppressToggle || Host is null) return;
-        var tile = Host.SelectedDoorTile;
-        if (tile is null) return;
-        Host.QueueCommand(new SetDoorForbiddenCommand(tile.Value, pressed));
+        foreach (var t in Host.SelectedDoorTiles)
+            Host.QueueCommand(new SetDoorForbiddenCommand(t, pressed));
     }
 
     private void OnLockedToggled(bool pressed)
     {
         if (_suppressToggle || Host is null) return;
-        var tile = Host.SelectedDoorTile;
-        if (tile is null) return;
-        Host.QueueCommand(new SetDoorLockedCommand(tile.Value, pressed));
+        foreach (var t in Host.SelectedDoorTiles)
+            Host.QueueCommand(new SetDoorLockedCommand(t, pressed));
     }
 
     private void OnDeconPressed()
     {
         if (Host is null) return;
-        var tile = Host.SelectedDoorTile;
-        if (tile is null) return;
-        Host.QueueCommand(new PostDoorDeconCommand(tile.Value));
+        foreach (var t in Host.SelectedDoorTiles)
+            Host.QueueCommand(new PostDoorDeconCommand(t));
     }
 }
