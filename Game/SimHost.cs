@@ -59,6 +59,8 @@ public sealed class SimHost : IDisposable
     // burst.
     public void SetPaused(bool paused) => _paused = paused;
 
+    public bool IsPaused => _paused;
+
     // Step the sim directly from the caller's thread (intended for the
     // Godot main thread in harness/video-capture mode). Pair with
     // SetPaused(true) on the sim loop so it doesn't race the manual

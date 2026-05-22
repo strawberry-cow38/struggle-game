@@ -119,6 +119,11 @@ public partial class Bootstrap : Node2D
                     GetViewport().SetInputAsHandled();
                 }
                 return;
+            case Key.Space:
+                _host.SetPaused(!_host.IsPaused);
+                GD.Print(_host.IsPaused ? "Sim PAUSED" : "Sim RESUMED");
+                GetViewport().SetInputAsHandled();
+                return;
             default: return;
         }
         GD.Print($"Sim tick rate → {_host.TickHz}Hz");

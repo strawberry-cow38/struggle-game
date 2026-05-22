@@ -10,7 +10,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "build 415effd (float adjacency + chunked map)";
+    private const string BuildTag = "build spacebar-pause (float adjacency + chunked map)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
@@ -76,7 +76,8 @@ public partial class HudOverlay : CanvasLayer
         float tps = Host.ActualTps;
         float speed = Host.TickHz / (float)SimConstants.TickHz;
         int rooms = Host.LatestSnapshot?.RoomCount ?? 0;
-        _label.Text = $"FPS  {fps:0}\nTPS  {tps:0} / {Host.TickHz}\nSPEED {speed:0.##}x\nROOMS {rooms}";
+        string paused = Host.IsPaused ? "  [PAUSED]" : string.Empty;
+        _label.Text = $"FPS  {fps:0}\nTPS  {tps:0} / {Host.TickHz}{paused}\nSPEED {speed:0.##}x\nROOMS {rooms}";
 
         var w = Host.Watcher;
         var recent = w.Recent;
