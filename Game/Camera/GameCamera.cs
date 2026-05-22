@@ -10,10 +10,11 @@ public partial class GameCamera : Camera2D
 {
     private static readonly float[] ZoomLevels = new[]
     {
-        0.0625f, 0.125f, 0.25f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f,
+        0.0625f, 0.09f, 0.125f, 0.18f, 0.25f, 0.35f, 0.5f, 0.75f,
+        1.0f, 1.25f, 1.5f, 2.0f, 2.5f, 3.0f, 4.0f,
     };
 
-    private const int DefaultZoomIndex = 5; // 1.0
+    private const int DefaultZoomIndex = 8; // 1.0
     // 25% of the original 0.15s tween — short snap with a hint of ease.
     private const float ZoomTweenSeconds = 0.0375f;
 
