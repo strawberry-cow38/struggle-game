@@ -89,7 +89,7 @@ public sealed class SimRuntime
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
         _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor);
         _dummies.OnHaulPickup = (carriedEnt, cb) => OnHaulPickedUp(carriedEnt, cb);
-        _dummies.OnHaulDeliver = (carrying, dropTile, cb) => DeliverCarrying(carrying, dropTile, cb);
+        _dummies.OnHaulDeliver = (carrierEntity, dropTile, cb) => DeliverCarrying(carrierEntity, dropTile, cb);
         _builds = new BuildSystem(this, Jobs);
         _chops = new ChopSystem(this, Jobs);
         _decons = new DeconSystem(this, Jobs);
@@ -196,7 +196,31 @@ public sealed class SimRuntime
             }
             bool carrying = ent.HasComponent<Carrying>();
             if (carrying) label = "Haul";
-            dummies[i++] = new DummyState(ent.Id, p.X, p.Y, label, drafted, carrying);
+
+            CarriedItemState[] inventory = Array.Empty<CarriedItemState>();
+            float carryW = 0f, carryB = 0f;
+            if (carrying)
+            {
+                var c = ent.GetComponent<Carrying>();
+                if (c.Slots is { Count: > 0 })
+                {
+                    inventory = new CarriedItemState[c.Slots.Count];
+                    for (int si = 0; si < c.Slots.Count; si++)
+                    {
+                        var s = c.Slots[si];
+                        inventory[si] = new CarriedItemState(s.EntityId, s.ItemPath, s.Count, s.Forbidden);
+                        if (ItemCatalog.ItemsByPath.TryGetValue(s.ItemPath, out var def))
+                        {
+                            carryW += def.Weight * s.Count;
+                            carryB += def.Bulk * s.Count;
+                        }
+                    }
+                }
+            }
+            dummies[i++] = new DummyState(
+                ent.Id, p.X, p.Y, label, drafted, carrying,
+                inventory, carryW, carryB,
+                SimConstants.MaxCarryWeight, SimConstants.MaxCarryBulk);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {
@@ -985,18 +1009,27 @@ public sealed class SimRuntime
     // up so HaulSystem can re-post them. dropTile is usually the planned
     // DestTile, but the carrier passes its current tile instead when
     // delivery aborts (drafted mid-haul, dest blocked).
-    public void DeliverCarrying(Carrying c, TilePos dropTile, CommandBuffer cb)
+    public void DeliverCarrying(Entity carrier, TilePos dropTile, CommandBuffer cb)
     {
+        if (!carrier.HasComponent<Carrying>()) return;
+        var c = carrier.GetComponent<Carrying>();
         _reservedHaulDests.Remove(c.DestTile);
         if (!c.PrimaryJobId.IsNone)
         {
             var job = Jobs.Get(c.PrimaryJobId);
             if (job is not null) Jobs.Complete(c.PrimaryJobId);
         }
+        List<CarriedSlot>? retained = null;
         if (c.Slots is not null)
         {
             foreach (var slot in c.Slots)
             {
+                if (slot.Forbidden)
+                {
+                    retained ??= new List<CarriedSlot>();
+                    retained.Add(slot);
+                    continue;
+                }
                 if (!Store.TryGetEntityById(slot.EntityId, out var e)) continue;
                 if (e.HasComponent<HaulReserved>()) cb.RemoveComponent<HaulReserved>(e.Id);
                 cb.AddComponent(e.Id, new Wood { Tile = dropTile, Count = slot.Count });
@@ -1012,6 +1045,65 @@ public sealed class SimRuntime
                 if (pe.HasComponent<HaulPayload>()) cb.RemoveComponent<HaulPayload>(pe.Id);
             }
         }
+        cb.RemoveComponent<Carrying>(carrier.Id);
+        if (retained is not null)
+        {
+            // Forbidden slots stay on the pawn. Reset haul-related fields
+            // so HaulSystem / HandleHaul don't treat the pawn as mid-job.
+            cb.AddComponent(carrier.Id, new Carrying
+            {
+                Slots = retained,
+                PendingPickupIds = null,
+                DestTile = default,
+                StockpileId = 0,
+                PrimaryJobId = default,
+            });
+        }
+    }
+
+    // Player-issued via the pawn info panel: drop a single inventory
+    // slot at the pawn's current tile. Bypasses the "forbidden stays in
+    // inventory" rule — this is the explicit player override that
+    // forbidden cargo can be ejected with.
+    public void ForceDropInventorySlot(int carrierId, int slotEntityId)
+    {
+        if (!Store.TryGetEntityById(carrierId, out var ent)) return;
+        if (!ent.HasComponent<Carrying>()) return;
+        if (!ent.HasComponent<WorldPos>()) return;
+        var wp = ent.GetComponent<WorldPos>();
+        var here = new TilePos((int)wp.X, (int)wp.Y);
+        ref var c = ref ent.GetComponent<Carrying>();
+        if (c.Slots is null) return;
+        int idx = c.Slots.FindIndex(s => s.EntityId == slotEntityId);
+        if (idx < 0) return;
+        var slot = c.Slots[idx];
+        c.Slots.RemoveAt(idx);
+        if (Store.TryGetEntityById(slot.EntityId, out var slotEnt))
+        {
+            if (slotEnt.HasComponent<HaulReserved>()) slotEnt.RemoveComponent<HaulReserved>();
+            if (slotEnt.HasComponent<HaulPayload>()) slotEnt.RemoveComponent<HaulPayload>();
+            if (!slotEnt.HasComponent<Wood>()) slotEnt.AddComponent(new Wood { Tile = here, Count = slot.Count });
+            if (!slotEnt.HasComponent<WorldPos>()) slotEnt.AddComponent(new WorldPos { X = here.X + 0.5f, Y = here.Y + 0.5f });
+        }
+        bool empty = (c.Slots.Count == 0) && (c.PendingPickupIds is null || c.PendingPickupIds.Count == 0);
+        if (empty)
+        {
+            ent.RemoveComponent<Carrying>();
+        }
+    }
+
+    public void SetInventorySlotForbidden(int carrierId, int slotEntityId, bool forbidden)
+    {
+        if (!Store.TryGetEntityById(carrierId, out var ent)) return;
+        if (!ent.HasComponent<Carrying>()) return;
+        ref var c = ref ent.GetComponent<Carrying>();
+        if (c.Slots is null) return;
+        int idx = c.Slots.FindIndex(s => s.EntityId == slotEntityId);
+        if (idx < 0) return;
+        var slot = c.Slots[idx];
+        if (slot.Forbidden == forbidden) return;
+        slot.Forbidden = forbidden;
+        c.Slots[idx] = slot;
     }
 
     // Called by DummyController when it actually picks up an item from

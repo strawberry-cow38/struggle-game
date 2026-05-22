@@ -95,7 +95,6 @@ public sealed class ToggleDraftCommand : ISimCommand
             // draft toggles.
             if (ent.HasComponent<Carrying>())
             {
-                var c = ent.GetComponent<Carrying>();
                 TilePos here;
                 if (ent.HasComponent<WorldPos>())
                 {
@@ -104,12 +103,11 @@ public sealed class ToggleDraftCommand : ISimCommand
                 }
                 else
                 {
-                    here = c.DestTile;
+                    here = ent.GetComponent<Carrying>().DestTile;
                 }
                 var cb = sim.Store.GetCommandBuffer();
-                sim.DeliverCarrying(c, here, cb);
+                sim.DeliverCarrying(ent, here, cb);
                 cb.Playback();
-                ent.RemoveComponent<Carrying>();
             }
             else
             {
@@ -389,6 +387,38 @@ public sealed class CancelJobAtTileCommand : ISimCommand
     public TilePos Tile { get; }
     public CancelJobAtTileCommand(TilePos tile) { Tile = tile; }
     public void Apply(SimRuntime sim) => sim.CancelJobAtTile(Tile);
+}
+
+// Pawn info panel: drop one inventory slot at the pawn's current
+// tile. Force-drop bypasses the per-slot Forbidden flag — this is the
+// explicit player escape hatch for items the AI has been told to keep.
+public sealed class ForceDropInventorySlotCommand : ISimCommand
+{
+    public int CarrierEntityId { get; }
+    public int SlotEntityId { get; }
+    public ForceDropInventorySlotCommand(int carrierId, int slotId)
+    {
+        CarrierEntityId = carrierId;
+        SlotEntityId = slotId;
+    }
+    public void Apply(SimRuntime sim) => sim.ForceDropInventorySlot(CarrierEntityId, SlotEntityId);
+}
+
+// Pawn info panel: toggle the Forbidden flag on one inventory slot.
+// Forbidden slots are never auto-dropped on delivery / draft / abort
+// and are never used as material for any job.
+public sealed class SetInventorySlotForbiddenCommand : ISimCommand
+{
+    public int CarrierEntityId { get; }
+    public int SlotEntityId { get; }
+    public bool Forbidden { get; }
+    public SetInventorySlotForbiddenCommand(int carrierId, int slotId, bool forbidden)
+    {
+        CarrierEntityId = carrierId;
+        SlotEntityId = slotId;
+        Forbidden = forbidden;
+    }
+    public void Apply(SimRuntime sim) => sim.SetInventorySlotForbidden(CarrierEntityId, SlotEntityId, Forbidden);
 }
 
 // Debug bar action: spawn a fresh wanderer at a random walkable tile.

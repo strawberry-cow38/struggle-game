@@ -180,11 +180,16 @@ public struct DoorBlueprint : IComponent
 // One item in a pawn's carry inventory. Each slot references an
 // existing item entity (Wood today, more later) kept alive across
 // the haul so completion is a re-anchor rather than delete/recreate.
+// Forbidden = player marked this slot "keep on the pawn"; the haul
+// delivery path leaves it in inventory instead of dropping it, the
+// draft-toggle drop leaves it too, and the pawn won't take new haul
+// jobs while carrying anything (forbidden or not).
 public struct CarriedSlot
 {
     public int EntityId;
     public string ItemPath;
     public int Count;
+    public bool Forbidden;
 }
 
 // A pawn carrying one or more items to a single stockpile destination.

@@ -46,7 +46,10 @@ public sealed class DummyController
     // planned DestTile or a fallback tile on abort). Hooked by SimRuntime
     // to re-anchor every slot, complete the primary job, and free any
     // never-picked-up topoff reservations.
-    public Action<Carrying, TilePos, CommandBuffer>? OnHaulDeliver;
+    // Args: carrier entity, drop tile, command buffer. DeliverCarrying
+    // owns the Carrying component lifecycle — callers must NOT remove
+    // Carrying themselves (forbidden slots may be retained on the pawn).
+    public Action<Entity, TilePos, CommandBuffer>? OnHaulDeliver;
     // Scratch set populated each Step() so a single tick of topoff scans
     // doesn't reserve the same item for two different carriers.
     private readonly HashSet<int> _topoffReservedThisTick = new();
@@ -138,9 +141,7 @@ public sealed class DummyController
                 // dest-reservation release + freeing topoff reservations.
                 if (entity.HasComponent<Carrying>())
                 {
-                    var c = entity.GetComponent<Carrying>();
-                    OnHaulDeliver?.Invoke(c, here, cb);
-                    cb.RemoveComponent<Carrying>(entity.Id);
+                    OnHaulDeliver?.Invoke(entity, here, cb);
                 }
                 else
                 {
@@ -185,9 +186,7 @@ public sealed class DummyController
                 // current tile so it's not stuck in limbo.
                 if (entity.HasComponent<Carrying>())
                 {
-                    var c = entity.GetComponent<Carrying>();
-                    OnHaulDeliver?.Invoke(c, here, cb);
-                    cb.RemoveComponent<Carrying>(entity.Id);
+                    OnHaulDeliver?.Invoke(entity, here, cb);
                 }
                 cb.RemoveComponent<BuildTarget>(entity.Id);
                 path.Waypoints = null;
@@ -344,6 +343,11 @@ public sealed class DummyController
                 && job.Kind != JobKind.Haul) continue;
             if (job.State != JobState.Open) continue;
             if (job.Forbidden) continue;
+            // A pawn still hauling (forbidden cargo retained from a prior
+            // delivery, mid-flight cargo, etc.) must not pick up another
+            // haul — HandleHaul would treat the old Carrying as the active
+            // job and walk to its stale DestTile.
+            if (job.Kind == JobKind.Haul && entity.HasComponent<Carrying>()) continue;
             int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
             if (d >= bestDist) continue;
             TilePos approach;
@@ -486,8 +490,7 @@ public sealed class DummyController
             }
 
             // Dropoff at primary DestTile.
-            OnHaulDeliver?.Invoke(c, here, cb);
-            cb.RemoveComponent<Carrying>(entity.Id);
+            OnHaulDeliver?.Invoke(entity, here, cb);
             cb.RemoveComponent<BuildTarget>(entity.Id);
             return;
         }
@@ -510,8 +513,7 @@ public sealed class DummyController
                     return;
                 }
                 // Dest blocked: drop everything here, abort.
-                OnHaulDeliver?.Invoke(c, here, cb);
-                cb.RemoveComponent<Carrying>(entity.Id);
+                OnHaulDeliver?.Invoke(entity, here, cb);
                 cb.RemoveComponent<BuildTarget>(entity.Id);
                 return;
             }

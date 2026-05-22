@@ -74,7 +74,22 @@ public sealed class SimSnapshot
     }
 }
 
-public readonly record struct DummyState(int EntityId, float X, float Y, string Job, bool Drafted, bool Carrying);
+public readonly record struct DummyState(
+    int EntityId,
+    float X,
+    float Y,
+    string Job,
+    bool Drafted,
+    bool Carrying,
+    CarriedItemState[] Inventory,
+    float CarryWeight,
+    float CarryBulk,
+    float MaxCarryWeight,
+    float MaxCarryBulk);
+
+// One inventory slot surfaced to the UI. SlotEntityId is the underlying
+// item entity (the same id the carry/drop commands reference).
+public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath, int Count, bool Forbidden);
 
 // Progress = 0..1 normalised by BuildSystem.BuildTimeSec. Forbidden
 // blueprints are skipped by builders and rendered with a red X overlay.
