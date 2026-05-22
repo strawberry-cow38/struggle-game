@@ -9,4 +9,5 @@ public enum JobKind : byte
     Deconstruct = 3,
     FloorBuild = 4,
     DoorBuild = 5,
+    Haul = 6,
 }

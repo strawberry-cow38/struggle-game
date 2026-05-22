@@ -36,6 +36,10 @@ public sealed class DummyController
     private readonly Action<JobId> _cancelJob;
     private readonly DoorLookup _tryGetDoor;
     private readonly Random _rng;
+    // Optional callback for haul completion. Set by SimRuntime so we
+    // don't need to plumb the runtime through the controller's surface.
+    public Action<Friflo.Engine.ECS.Entity, JobId, CommandBuffer>? OnHaulPickup;
+    public Action<Friflo.Engine.ECS.Entity, JobId, TilePos, TilePos, CommandBuffer>? OnHaulDeliver;
 
     public DummyController(
         PathService paths,
@@ -60,13 +64,13 @@ public sealed class DummyController
         var query = store.Query<WorldPos, PathFollower, Wanderer>();
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity entity) =>
         {
-            Plan(ref pos, ref path, entity, cb, view);
+            Plan(ref pos, ref path, entity, cb, view, store);
             AdvanceAlongPath(ref pos, ref path, dt, view);
         });
         cb.Playback();
     }
 
-    private void Plan(ref WorldPos pos, ref PathFollower path, Entity entity, CommandBuffer cb, MapView view)
+    private void Plan(ref WorldPos pos, ref PathFollower path, Entity entity, CommandBuffer cb, MapView view, EntityStore store)
     {
         var here = new TilePos((int)pos.X, (int)pos.Y);
         bool drafted = entity.HasComponent<Drafted>();
@@ -118,7 +122,21 @@ public sealed class DummyController
             if (entity.HasComponent<BuildTarget>())
             {
                 var bt = entity.GetComponent<BuildTarget>();
-                _jobs.Release(bt.JobId);
+                // Mid-haul: cancel so the dest reservation releases, then
+                // drop the carried item where the carrier stands.
+                if (entity.HasComponent<Carrying>())
+                {
+                    var c = entity.GetComponent<Carrying>();
+                    if (store.TryGetEntityById(c.CarriedEntityId, out var cargo))
+                    {
+                        OnHaulDeliver?.Invoke(cargo, bt.JobId, c.DestTile, here, cb);
+                    }
+                    cb.RemoveComponent<Carrying>(entity.Id);
+                }
+                else
+                {
+                    _jobs.Release(bt.JobId);
+                }
                 cb.RemoveComponent<BuildTarget>(entity.Id);
                 if (path.PendingPathId != 0)
                 {
@@ -154,9 +172,25 @@ public sealed class DummyController
             var job = _jobs.Get(bt.JobId);
             if (job is null || job.State == JobState.Completed || job.State == JobState.Cancelled)
             {
+                // If carrying for a now-dead haul, drop the cargo at the
+                // current tile so it's not stuck in limbo.
+                if (entity.HasComponent<Carrying>())
+                {
+                    var c = entity.GetComponent<Carrying>();
+                    if (store.TryGetEntityById(c.CarriedEntityId, out var cargo))
+                    {
+                        OnHaulDeliver?.Invoke(cargo, bt.JobId, c.DestTile, here, cb);
+                    }
+                    cb.RemoveComponent<Carrying>(entity.Id);
+                }
                 cb.RemoveComponent<BuildTarget>(entity.Id);
                 path.Waypoints = null;
                 path.Index = 0;
+            }
+            else if (job.Kind == JobKind.Haul)
+            {
+                HandleHaul(ref pos, ref path, entity, cb, view, job, here, store);
+                return;
             }
             else if (BuildAdjacency.InRange(pos.X, pos.Y, job.Tile.X, job.Tile.Y))
             {
@@ -241,6 +275,7 @@ public sealed class DummyController
     {
         JobId bestId = JobId.None;
         TilePos bestNeighbor = default;
+        bool bestIsHaul = false;
         int bestDist = int.MaxValue;
         foreach (var job in _jobs.All)
         {
@@ -248,13 +283,27 @@ public sealed class DummyController
                 && job.Kind != JobKind.ChopTree
                 && job.Kind != JobKind.Deconstruct
                 && job.Kind != JobKind.FloorBuild
-                && job.Kind != JobKind.DoorBuild) continue;
+                && job.Kind != JobKind.DoorBuild
+                && job.Kind != JobKind.Haul) continue;
             if (job.State != JobState.Open) continue;
             int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
             if (d >= bestDist) continue;
-            if (!TryPickNeighbor(view, from, job.Tile, out var neighbor)) continue;
+            TilePos approach;
+            bool isHaul = job.Kind == JobKind.Haul;
+            if (isHaul)
+            {
+                // Haul pickup walks onto the wood tile itself, not a neighbor.
+                if (!view.Walkable(job.Tile)) continue;
+                approach = job.Tile;
+            }
+            else
+            {
+                if (!TryPickNeighbor(view, from, job.Tile, out var neighbor)) continue;
+                approach = neighbor;
+            }
             bestId = job.Id;
-            bestNeighbor = neighbor;
+            bestNeighbor = approach;
+            bestIsHaul = isHaul;
             bestDist = d;
         }
         if (bestId.IsNone) return false;
@@ -266,6 +315,96 @@ public sealed class DummyController
             path.PendingPathId = _paths.Request(from, bestNeighbor);
         }
         return true;
+    }
+
+    // Two-phase: walk to pickup tile → pickup; walk to dest tile → drop.
+    // The dest is read from the carrier's Carrying component (set at
+    // pickup time) so the runtime owns the source of truth.
+    private void HandleHaul(
+        ref WorldPos pos,
+        ref PathFollower path,
+        Entity entity,
+        CommandBuffer cb,
+        MapView view,
+        Job job,
+        TilePos here,
+        EntityStore store)
+    {
+        bool carrying = entity.HasComponent<Carrying>();
+        TilePos target;
+        TilePos originalDest = default;
+        if (!carrying)
+        {
+            target = job.Tile;
+        }
+        else
+        {
+            var c = entity.GetComponent<Carrying>();
+            target = c.DestTile;
+            originalDest = c.DestTile;
+        }
+
+        if (here == target)
+        {
+            path.Waypoints = null;
+            path.Index = 0;
+
+            if (!carrying)
+            {
+                // Pickup: validate wood entity still present.
+                if (!job.Entity.HasComponent<HaulPayload>())
+                {
+                    _cancelJob(job.Id);
+                    cb.RemoveComponent<BuildTarget>(entity.Id);
+                    return;
+                }
+                var hp = job.Entity.GetComponent<HaulPayload>();
+                cb.AddComponent(entity.Id, new Carrying
+                {
+                    CarriedEntityId = job.Entity.Id,
+                    ItemPath = hp.ItemPath,
+                    DestTile = hp.DestTile,
+                    StockpileId = hp.StockpileId,
+                });
+                OnHaulPickup?.Invoke(job.Entity, job.Id, cb);
+            }
+            else
+            {
+                // Dropoff.
+                var c = entity.GetComponent<Carrying>();
+                if (store.TryGetEntityById(c.CarriedEntityId, out var cargo))
+                {
+                    OnHaulDeliver?.Invoke(cargo, job.Id, originalDest, here, cb);
+                }
+                else
+                {
+                    _cancelJob(job.Id);
+                }
+                cb.RemoveComponent<Carrying>(entity.Id);
+                cb.RemoveComponent<BuildTarget>(entity.Id);
+            }
+            return;
+        }
+
+        if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
+        {
+            if (!view.Walkable(target))
+            {
+                _cancelJob(job.Id);
+                if (carrying)
+                {
+                    var c = entity.GetComponent<Carrying>();
+                    if (store.TryGetEntityById(c.CarriedEntityId, out var cargo))
+                    {
+                        OnHaulDeliver?.Invoke(cargo, job.Id, originalDest, here, cb);
+                    }
+                    cb.RemoveComponent<Carrying>(entity.Id);
+                }
+                cb.RemoveComponent<BuildTarget>(entity.Id);
+                return;
+            }
+            path.PendingPathId = _paths.Request(here, target);
+        }
     }
 
     private const int WanderRadius = 10;

@@ -1,3 +1,4 @@
+using Friflo.Engine.ECS;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Stockpiles;
 using StruggleGame.Sim.World;
@@ -89,7 +90,33 @@ public sealed class ToggleDraftCommand : ISimCommand
         if (ent.HasComponent<BuildTarget>())
         {
             var bt = ent.GetComponent<BuildTarget>();
-            sim.Jobs.Release(bt.JobId);
+            // Mid-haul carriers drop the cargo at their current tile so
+            // the wood doesn't vanish when the draft toggles.
+            if (ent.HasComponent<Carrying>())
+            {
+                var c = ent.GetComponent<Carrying>();
+                if (sim.Store.TryGetEntityById(c.CarriedEntityId, out var cargo))
+                {
+                    TilePos here;
+                    if (ent.HasComponent<WorldPos>())
+                    {
+                        var wp = ent.GetComponent<WorldPos>();
+                        here = new TilePos((int)wp.X, (int)wp.Y);
+                    }
+                    else
+                    {
+                        here = c.DestTile;
+                    }
+                    var cb = sim.Store.GetCommandBuffer();
+                    sim.CompleteHaulJob(bt.JobId, cargo, c.DestTile, here, cb);
+                    cb.Playback();
+                }
+                ent.RemoveComponent<Carrying>();
+            }
+            else
+            {
+                sim.Jobs.Release(bt.JobId);
+            }
             ent.RemoveComponent<BuildTarget>();
         }
         if (ent.HasComponent<PathFollower>())

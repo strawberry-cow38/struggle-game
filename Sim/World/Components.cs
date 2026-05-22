@@ -134,3 +134,34 @@ public struct DoorBlueprint : IComponent
     public DoorOrientation Orientation;
     public float ProgressSec;
 }
+
+// A pawn carrying an item to a stockpile destination. CarriedEntityId
+// points at the in-flight item entity (e.g. the original Wood entity,
+// kept alive so completion is a single component-update rather than
+// a delete/recreate). DestTile is the chosen stockpile cell.
+public struct Carrying : IComponent
+{
+    public int CarriedEntityId;
+    public string ItemPath;
+    public TilePos DestTile;
+    public int StockpileId;
+}
+
+// Marks an item entity as already promised to a haul job. Posted by
+// HaulSystem when a Job is created; the same component is removed when
+// the job completes/cancels. Prevents the poster from re-posting a haul
+// for an item that's mid-flight.
+public struct HaulReserved : IComponent
+{
+    public StruggleGame.Sim.Jobs.JobId JobId;
+}
+
+// Lives on the to-be-hauled item entity from job-post until the carrier
+// picks it up. Captures the chosen destination so the carrier knows
+// where to drop after pickup. Removed at pickup time.
+public struct HaulPayload : IComponent
+{
+    public TilePos DestTile;
+    public int StockpileId;
+    public string ItemPath;
+}

@@ -44,7 +44,11 @@ public sealed class SimRuntime
     private readonly FloorSystem _floors;
     private readonly DoorBuildSystem _doorBuilds;
     private readonly DoorSystem _doors;
+    private readonly HaulSystem _hauls;
     private readonly SafetySystem _safety;
+    // Stockpile tiles currently promised to an in-flight haul job. Posting
+    // a new haul avoids these so two carriers can't target the same cell.
+    private readonly HashSet<TilePos> _reservedHaulDests = new();
     private readonly ConcurrentQueue<ISimCommand> _commands = new();
     private readonly object _mapLock = new();
     private readonly List<TilePos> _playerWalls = new();
@@ -76,12 +80,16 @@ public sealed class SimRuntime
         _spawnRng = new Random(seed + 7);
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
         _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor);
+        _dummies.OnHaulPickup = (carriedEnt, jobId, cb) => OnHaulPickedUp(carriedEnt, cb);
+        _dummies.OnHaulDeliver = (carriedEnt, jobId, originalDest, dropTile, cb)
+            => CompleteHaulJob(jobId, carriedEnt, originalDest, dropTile, cb);
         _builds = new BuildSystem(this, Jobs);
         _chops = new ChopSystem(this, Jobs);
         _decons = new DeconSystem(this, Jobs);
         _floors = new FloorSystem(this, Jobs);
         _doorBuilds = new DoorBuildSystem(this, Jobs);
         _doors = new DoorSystem();
+        _hauls = new HaulSystem(this, Jobs);
         _safety = new SafetySystem(() => MapView, PathService, Watcher);
 
         // Trees go down before colonists so spawn can avoid landing on one.
@@ -105,6 +113,7 @@ public sealed class SimRuntime
         _floors.Step(Store, dt);
         _doorBuilds.Step(Store, dt);
         _doors.Step(Store, dt);
+        _hauls.Step(Store, dt);
         _safety.Step(Store, Tick);
         // Coalesced rebuild: one map clone + one room flood-fill per tick
         // even if N walls/doors mutated this tick.
@@ -139,7 +148,9 @@ public sealed class SimRuntime
                 var j = Jobs.Get(bt.JobId);
                 if (j is not null) label = j.Kind.ToString();
             }
-            dummies[i++] = new DummyState(ent.Id, p.X, p.Y, label, drafted);
+            bool carrying = ent.HasComponent<Carrying>();
+            if (carrying) label = "Haul";
+            dummies[i++] = new DummyState(ent.Id, p.X, p.Y, label, drafted, carrying);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {
@@ -418,6 +429,18 @@ public sealed class SimRuntime
         {
             entity.DeleteEntity();
         }
+        else if (kind == JobKind.Haul)
+        {
+            // Wood entity survives the cancel — only the routing intent
+            // is dropped. Release the dest cell so another haul can use it.
+            if (entity.HasComponent<HaulPayload>())
+            {
+                var hp = entity.GetComponent<HaulPayload>();
+                _reservedHaulDests.Remove(hp.DestTile);
+                entity.RemoveComponent<HaulPayload>();
+            }
+            if (entity.HasComponent<HaulReserved>()) entity.RemoveComponent<HaulReserved>();
+        }
     }
 
     // Try to post a chop job on the tree at this tile. Returns false if
@@ -609,6 +632,7 @@ public sealed class SimRuntime
         int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
         int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
         int removed = 0;
+        var removedTiles = new HashSet<TilePos>();
         for (int y = ymin; y <= ymax; y++)
         {
             for (int x = xmin; x <= xmax; x++)
@@ -616,9 +640,11 @@ public sealed class SimRuntime
                 var t = new TilePos(x, y);
                 if (!pile.Tiles.Remove(t)) continue;
                 _stockpileByTile.Remove(t);
+                removedTiles.Add(t);
                 removed++;
             }
         }
+        if (removedTiles.Count > 0) CancelHaulsTargetingTiles(removedTiles);
         return removed;
     }
 
@@ -628,7 +654,39 @@ public sealed class SimRuntime
         if (pile is null) return false;
         foreach (var t in pile.Tiles) _stockpileByTile.Remove(t);
         _stockpiles.Remove(pile);
+        CancelHaulsTargetingStockpile(stockpileId);
         return true;
+    }
+
+    // Cancel any in-flight haul whose dest belongs to a stockpile we
+    // just deleted (or whose dest tile was shrunk out). Cancellation
+    // releases the reservation and clears HaulReserved so the wood is
+    // free to be re-posted next tick.
+    private void CancelHaulsTargetingStockpile(int stockpileId)
+    {
+        var toCancel = new List<JobId>();
+        foreach (var job in Jobs.All)
+        {
+            if (job.Kind != JobKind.Haul) continue;
+            if (!job.Entity.HasComponent<HaulPayload>()) continue;
+            if (job.Entity.GetComponent<HaulPayload>().StockpileId != stockpileId) continue;
+            toCancel.Add(job.Id);
+        }
+        foreach (var id in toCancel) CancelJob(id);
+    }
+
+    private void CancelHaulsTargetingTiles(HashSet<TilePos> removedTiles)
+    {
+        var toCancel = new List<JobId>();
+        foreach (var job in Jobs.All)
+        {
+            if (job.Kind != JobKind.Haul) continue;
+            if (!job.Entity.HasComponent<HaulPayload>()) continue;
+            var hp = job.Entity.GetComponent<HaulPayload>();
+            if (!removedTiles.Contains(hp.DestTile)) continue;
+            toCancel.Add(job.Id);
+        }
+        foreach (var id in toCancel) CancelJob(id);
     }
 
     public bool RenameStockpile(int stockpileId, string name)
@@ -671,10 +729,106 @@ public sealed class SimRuntime
         return null;
     }
 
+    public bool TryGetStockpileAt(TilePos tile, out Stockpile pile)
+    {
+        if (_stockpileByTile.TryGetValue(tile, out var p)) { pile = p; return true; }
+        pile = null!;
+        return false;
+    }
+
+    public void ReserveHaulDest(TilePos tile) => _reservedHaulDests.Add(tile);
+    public void ReleaseHaulDest(TilePos tile) => _reservedHaulDests.Remove(tile);
+    public bool IsHaulDestReserved(TilePos tile) => _reservedHaulDests.Contains(tile);
+
+    // Walks the player's zones (highest priority first; create-order tiebreak)
+    // and picks the closest free cell that accepts the item. A free cell is
+    // a stockpile tile not currently holding any wood entity and not already
+    // promised to another in-flight haul.
+    public bool TryFindBestHaulDest(TilePos source, ItemDef def, out TilePos dest, out int stockpileId)
+    {
+        dest = default;
+        stockpileId = 0;
+
+        // Build occupancy snapshot once.
+        var occupied = new HashSet<TilePos>(_reservedHaulDests);
+        Store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
+        {
+            // The source wood itself doesn't count — its tile is the pickup.
+            if (w.Tile == source) return;
+            occupied.Add(w.Tile);
+        });
+
+        StockpilePriority bestPriority = StockpilePriority.Low - 1;
+        int bestDist = int.MaxValue;
+
+        foreach (var pile in _stockpiles)
+        {
+            if (!pile.Allows(def)) continue;
+            if (pile.Tiles.Count == 0) continue;
+            if (pile.Priority < bestPriority) continue;
+
+            TilePos pileBest = default;
+            int pileBestDist = int.MaxValue;
+            foreach (var t in pile.Tiles)
+            {
+                if (occupied.Contains(t)) continue;
+                int d = Math.Abs(t.X - source.X) + Math.Abs(t.Y - source.Y);
+                if (d < pileBestDist) { pileBestDist = d; pileBest = t; }
+            }
+            if (pileBestDist == int.MaxValue) continue;
+
+            // Higher priority always wins; equal priority -> distance.
+            if (pile.Priority > bestPriority
+                || (pile.Priority == bestPriority && pileBestDist < bestDist))
+            {
+                bestPriority = pile.Priority;
+                bestDist = pileBestDist;
+                dest = pileBest;
+                stockpileId = pile.Id;
+            }
+        }
+        return stockpileId != 0;
+    }
+
+    // Pawn delivered a carried item. Re-anchors the wood at dropTile,
+    // completes the job, and releases the original dest reservation.
+    // originalDest and dropTile differ only in the fallback path where
+    // the planned dest became invalid mid-flight (stockpile deleted/shrunk)
+    // and the carrier drops at its current tile instead.
+    public void CompleteHaulJob(JobId jobId, Entity carriedEntity, TilePos originalDest, TilePos dropTile, CommandBuffer cb)
+    {
+        _reservedHaulDests.Remove(originalDest);
+        var job = Jobs.Get(jobId);
+        if (job is not null) Jobs.Complete(jobId);
+        if (carriedEntity.HasComponent<HaulReserved>()) cb.RemoveComponent<HaulReserved>(carriedEntity.Id);
+        cb.AddComponent(carriedEntity.Id, new Wood { Tile = dropTile });
+        cb.AddComponent(carriedEntity.Id, new WorldPos { X = dropTile.X + 0.5f, Y = dropTile.Y + 0.5f });
+    }
+
+    // Called by DummyController when it actually picks up an item from
+    // the world. Removes the world-side Wood component so the renderer
+    // stops drawing the log; the entity itself stays alive on the
+    // carrier until drop.
+    public void OnHaulPickedUp(Entity carriedEntity, CommandBuffer cb)
+    {
+        if (carriedEntity.HasComponent<Wood>()) cb.RemoveComponent<Wood>(carriedEntity.Id);
+        if (carriedEntity.HasComponent<HaulPayload>()) cb.RemoveComponent<HaulPayload>(carriedEntity.Id);
+    }
+
     private bool HasWallAt(int x, int y)
     {
         if (!Map.InBounds(new TilePos(x, y))) return false;
         return Map.GetWall(new TilePos(x, y)) != WallType.None;
+    }
+
+    // Spawn a free wood pile at the given tile. Used by haul tests and
+    // future debug tooling — gameplay drops wood via chop/decon.
+    public Entity SpawnWoodPile(TilePos tile)
+    {
+        var w = Store.CreateEntity();
+        w.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
+        w.AddComponent(new Wood { Tile = tile });
+        return w;
     }
 
     // Drop a tree at a random walkable, unoccupied, tree-free tile.

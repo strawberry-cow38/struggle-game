@@ -229,6 +229,14 @@ public partial class WorldRenderer : Node2D
             {
                 DrawArc(center, radius + 2f, 0f, Mathf.Tau, 32, DraftedRing, 2f, antialiased: true);
             }
+            if (d.Carrying)
+            {
+                float logW = PixelsPerTile * 0.45f;
+                float logH = PixelsPerTile * 0.18f;
+                var carry = new Rect2(center.X - logW * 0.5f, center.Y - radius - logH - 1f, logW, logH);
+                DrawRect(carry, WoodColor, filled: true);
+                DrawRect(new Rect2(carry.Position + new Vector2(0, 1f), new Vector2(carry.Size.X, 2f)), WoodHighlight, filled: true);
+            }
             if (snap.SelectedDummyId is int sel && d.EntityId == sel)
             {
                 DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
