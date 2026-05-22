@@ -8,6 +8,12 @@ namespace StruggleGame.Sim.World;
 // points at an open WallBuild job. If they're 4-adjacent, advance
 // ProgressSec. Completed jobs are reported back to SimRuntime which
 // mutates the map and bumps MapVersion.
+//
+// Completion is gated on the blueprint tile being unoccupied: another
+// wandering pawn standing on the tile would get a wall spawned under
+// them. When blocked, progress is clamped one dt below BuildTimeSec and
+// the builder is released (BuildTarget dropped, job back to Open) so
+// any pawn can re-claim once the tile clears.
 public sealed class BuildSystem
 {
     public const float BuildTimeSec = 1.5f;
@@ -23,10 +29,17 @@ public sealed class BuildSystem
 
     public void Step(EntityStore store, float dt)
     {
+        var occupied = new HashSet<TilePos>();
+        store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
+        {
+            occupied.Add(new TilePos((int)p.X, (int)p.Y));
+        });
+
         var completed = new List<JobId>();
+        var releaseBlocked = new List<(JobId Id, int EntityId)>();
 
         var builders = store.Query<WorldPos, BuildTarget, Wanderer>();
-        builders.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
+        builders.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity ent) =>
         {
             var job = _jobs.Get(target.JobId);
             if (job is null || job.Kind != JobKind.WallBuild) return;
@@ -45,9 +58,28 @@ public sealed class BuildSystem
             blueprint.ProgressSec += dt;
             if (blueprint.ProgressSec >= BuildTimeSec)
             {
-                completed.Add(job.Id);
+                if (occupied.Contains(job.Tile))
+                {
+                    // Hold one tick under completion so as soon as the
+                    // tile is free a single tick of work finishes it.
+                    blueprint.ProgressSec = BuildTimeSec - dt;
+                    releaseBlocked.Add((job.Id, ent.Id));
+                }
+                else
+                {
+                    completed.Add(job.Id);
+                }
             }
         });
+
+        foreach (var (id, entityId) in releaseBlocked)
+        {
+            if (store.TryGetEntityById(entityId, out var builder) && builder.HasComponent<BuildTarget>())
+            {
+                builder.RemoveComponent<BuildTarget>();
+            }
+            _jobs.Release(id);
+        }
 
         foreach (var id in completed)
         {

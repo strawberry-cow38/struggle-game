@@ -10,7 +10,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "build 99dbbfb+2 (watcher+harness)";
+    private const string BuildTag = "build f434a6b+1 (block-on-occupied)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
