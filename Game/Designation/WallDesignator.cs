@@ -22,6 +22,8 @@ public partial class WallDesignator : Node2D
     private bool _dragging;
     private TilePos _startTile;
     private TilePos _currentTile;
+    private bool _hovering;
+    private TilePos _hoverTile;
 
     public override void _Ready()
     {
@@ -33,7 +35,7 @@ public partial class WallDesignator : Node2D
         if (Host is null) return;
         if (Tools is null || Tools.Mode != ToolMode.BuildWall)
         {
-            if (_dragging) { _dragging = false; QueueRedraw(); }
+            if (_dragging || _hovering) { _dragging = false; _hovering = false; QueueRedraw(); }
             return;
         }
 
@@ -56,12 +58,21 @@ public partial class WallDesignator : Node2D
                 GetViewport().SetInputAsHandled();
             }
         }
-        else if (@event is InputEventMouseMotion && _dragging)
+        else if (@event is InputEventMouseMotion)
         {
             var t = MouseToTile();
-            if (t != _currentTile)
+            if (_dragging)
             {
-                _currentTile = t;
+                if (t != _currentTile)
+                {
+                    _currentTile = t;
+                    QueueRedraw();
+                }
+            }
+            else if (!_hovering || t != _hoverTile)
+            {
+                _hoverTile = t;
+                _hovering = true;
                 QueueRedraw();
             }
         }
@@ -69,10 +80,16 @@ public partial class WallDesignator : Node2D
 
     public override void _Draw()
     {
-        if (!_dragging) return;
-        foreach (var t in CardinalLine(_startTile, _currentTile))
+        if (_dragging)
         {
-            DrawTilePreview(t);
+            foreach (var t in CardinalLine(_startTile, _currentTile))
+            {
+                DrawTilePreview(t);
+            }
+        }
+        else if (_hovering)
+        {
+            DrawTilePreview(_hoverTile);
         }
     }
 

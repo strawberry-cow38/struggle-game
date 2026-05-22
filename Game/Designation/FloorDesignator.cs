@@ -22,6 +22,8 @@ public partial class FloorDesignator : Node2D
     private bool _dragging;
     private TilePos _startTile;
     private TilePos _currentTile;
+    private bool _hovering;
+    private TilePos _hoverTile;
 
     public override void _Ready()
     {
@@ -33,7 +35,7 @@ public partial class FloorDesignator : Node2D
         if (Host is null) return;
         if (Tools is null || Tools.Mode != ToolMode.Floor)
         {
-            if (_dragging) { _dragging = false; QueueRedraw(); }
+            if (_dragging || _hovering) { _dragging = false; _hovering = false; QueueRedraw(); }
             return;
         }
 
@@ -56,12 +58,21 @@ public partial class FloorDesignator : Node2D
                 GetViewport().SetInputAsHandled();
             }
         }
-        else if (@event is InputEventMouseMotion && _dragging)
+        else if (@event is InputEventMouseMotion)
         {
             var t = MouseToTile();
-            if (t != _currentTile)
+            if (_dragging)
             {
-                _currentTile = t;
+                if (t != _currentTile)
+                {
+                    _currentTile = t;
+                    QueueRedraw();
+                }
+            }
+            else if (!_hovering || t != _hoverTile)
+            {
+                _hoverTile = t;
+                _hovering = true;
                 QueueRedraw();
             }
         }
@@ -69,18 +80,26 @@ public partial class FloorDesignator : Node2D
 
     public override void _Draw()
     {
-        if (!_dragging) return;
-        int xmin = Math.Min(_startTile.X, _currentTile.X);
-        int ymin = Math.Min(_startTile.Y, _currentTile.Y);
-        int xmax = Math.Max(_startTile.X, _currentTile.X);
-        int ymax = Math.Max(_startTile.Y, _currentTile.Y);
-        var rect = new Rect2(
-            xmin * PixelsPerTile,
-            ymin * PixelsPerTile,
-            (xmax - xmin + 1) * PixelsPerTile,
-            (ymax - ymin + 1) * PixelsPerTile);
-        DrawRect(rect, FillColor, filled: true);
-        DrawRect(rect, BorderColor, filled: false, width: 2f);
+        if (_dragging)
+        {
+            int xmin = Math.Min(_startTile.X, _currentTile.X);
+            int ymin = Math.Min(_startTile.Y, _currentTile.Y);
+            int xmax = Math.Max(_startTile.X, _currentTile.X);
+            int ymax = Math.Max(_startTile.Y, _currentTile.Y);
+            var rect = new Rect2(
+                xmin * PixelsPerTile,
+                ymin * PixelsPerTile,
+                (xmax - xmin + 1) * PixelsPerTile,
+                (ymax - ymin + 1) * PixelsPerTile);
+            DrawRect(rect, FillColor, filled: true);
+            DrawRect(rect, BorderColor, filled: false, width: 2f);
+        }
+        else if (_hovering)
+        {
+            var rect = new Rect2(_hoverTile.X * PixelsPerTile, _hoverTile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+            DrawRect(rect, FillColor, filled: true);
+            DrawRect(rect, BorderColor, filled: false, width: 2f);
+        }
     }
 
     private TilePos MouseToTile()
