@@ -192,9 +192,18 @@ public partial class WorldRenderer : Node2D
             DrawDeconMark(d.Tile, d.Progress);
         }
 
+        var stackFont = ThemeDB.FallbackFont;
+        var mouseLocal = GetLocalMousePosition();
+        int cursorTileX = Mathf.FloorToInt(mouseLocal.X / PixelsPerTile);
+        int cursorTileY = Mathf.FloorToInt(mouseLocal.Y / PixelsPerTile);
         foreach (var w in snap.Wood)
         {
             DrawWood(w.Tile);
+            int md = Math.Abs(w.Tile.X - cursorTileX) + Math.Abs(w.Tile.Y - cursorTileY);
+            if (md <= StackLabelRadius)
+            {
+                DrawStackLabel(stackFont, w.Tile, w.ItemPath, w.Count);
+            }
         }
 
         var selectedTreeSet = snap.SelectedTreeIds.Length > 0
@@ -252,62 +261,31 @@ public partial class WorldRenderer : Node2D
         }
 
         DrawSelectedPath(snap);
-        DrawHoverInfo(snap);
     }
 
-    // Manhattan radius around the cursor tile to scan for item stacks.
-    // Small enough that hovering reads as "what's under the cursor"
-    // rather than "global inventory".
-    private const int HoverRadius = 3;
+    // Stack label rendered just below a dropped item: white "Name xCount"
+    // text drawn in world-space (scales with camera zoom). Only stacks
+    // within StackLabelRadius Manhattan tiles of the cursor get labelled,
+    // so dense yards don't drown in text.
+    private const int StackLabelFontSize = 11;
+    private const int StackLabelRadius = 2;
 
-    private void DrawHoverInfo(SimSnapshot snap)
+    private void DrawStackLabel(Font? font, TilePos tile, string itemPath, int count)
     {
-        if (snap.Wood.Length == 0) return;
-        var font = ThemeDB.FallbackFont;
         if (font is null) return;
-
-        var mouse = GetLocalMousePosition();
-        int hx = Mathf.FloorToInt(mouse.X / PixelsPerTile);
-        int hy = Mathf.FloorToInt(mouse.Y / PixelsPerTile);
-
-        var entries = new List<(string Name, int Count, int Dist)>();
-        foreach (var w in snap.Wood)
-        {
-            int md = Math.Abs(w.Tile.X - hx) + Math.Abs(w.Tile.Y - hy);
-            if (md > HoverRadius) continue;
-            string name = ItemCatalog.ItemsByPath.TryGetValue(w.ItemPath, out var def)
-                ? def.DisplayName
-                : w.ItemPath;
-            entries.Add((name, w.Count, md));
-        }
-        if (entries.Count == 0) return;
-
-        entries.Sort((a, b) => a.Dist != b.Dist ? a.Dist - b.Dist : b.Count - a.Count);
-
-        const int fontSize = 12;
-        float pad = 4f;
-        float lineH = font.GetHeight(fontSize);
-        float maxW = 0f;
-        var lines = new string[entries.Count];
-        for (int i = 0; i < entries.Count; i++)
-        {
-            lines[i] = $"{entries[i].Name} ×{entries[i].Count}";
-            float w = font.GetStringSize(lines[i], HorizontalAlignment.Left, -1f, fontSize).X;
-            if (w > maxW) maxW = w;
-        }
-        var panelSize = new Vector2(maxW + pad * 2f, lineH * entries.Count + pad * 2f);
-        var anchor = mouse + new Vector2(16f, 16f);
-
-        DrawRect(new Rect2(anchor, panelSize), new Color(0f, 0f, 0f, 0.75f), filled: true);
-        DrawRect(new Rect2(anchor, panelSize), new Color(1f, 1f, 1f, 0.55f), filled: false, width: 1f);
-
-        float ty = anchor.Y + pad + font.GetAscent(fontSize);
-        for (int i = 0; i < lines.Length; i++)
-        {
-            DrawString(font, new Vector2(anchor.X + pad, ty), lines[i],
-                HorizontalAlignment.Left, -1f, fontSize, new Color(1f, 1f, 1f, 0.95f));
-            ty += lineH;
-        }
+        string name = ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def)
+            ? def.DisplayName
+            : itemPath;
+        string text = $"{name} x{count}";
+        var size = font.GetStringSize(text, HorizontalAlignment.Left, -1f, StackLabelFontSize);
+        float cx = (tile.X + 0.5f) * PixelsPerTile;
+        float baseY = (tile.Y + 0.5f) * PixelsPerTile + PixelsPerTile * 0.22f + font.GetAscent(StackLabelFontSize);
+        var pos = new Vector2(cx - size.X * 0.5f, baseY);
+        // Cheap drop shadow so white text stays legible on light tiles.
+        DrawString(font, pos + new Vector2(1f, 1f), text,
+            HorizontalAlignment.Left, -1f, StackLabelFontSize, new Color(0f, 0f, 0f, 0.85f));
+        DrawString(font, pos, text,
+            HorizontalAlignment.Left, -1f, StackLabelFontSize, Colors.White);
     }
 
     private void DrawSelectedPath(Sim.Snapshots.SimSnapshot snap)
