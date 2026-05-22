@@ -105,7 +105,11 @@ public partial class WorldRenderer : Node2D
         if (_groundTex is null || Host is null) return;
 
         var latest = Host.LatestSnapshot;
-        if (latest is not null && (_currSnap is null || latest.Tick != _currSnap.Tick))
+        // Reference compare, not Tick: paused republishes (selection
+        // change, designation while paused) reuse the same Tick but are
+        // a brand new snapshot object — Tick-only check would miss them
+        // and the selection rings/outlines would lag until unpause.
+        if (latest is not null && !ReferenceEquals(latest, _currSnap))
         {
             _prevSnap = _currSnap;
             _currSnap = latest;

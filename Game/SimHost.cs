@@ -206,6 +206,13 @@ public sealed class SimHost : IDisposable
     // only on wall/door changes; pull when SimSnapshot.RoomVersion bumps.
     public int[] CopyRoomTilesForRender() => _sim.CopyRoomTilesForRender();
 
+    private static bool SelectionArrayEquals(int[] a, int[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
+        return true;
+    }
+
     public void Dispose()
     {
         _running = false;
@@ -239,11 +246,26 @@ public sealed class SimHost : IDisposable
                 // tiles, draft state, etc.).
                 lock (_swapLock)
                 {
-                    if (_sim.ApplyQueuedCommands())
+                    bool needPublish = _sim.ApplyQueuedCommands();
+                    int sel = Volatile.Read(ref _selectedDummyId);
+                    var trees = Volatile.Read(ref _selectedTreeIds);
+                    var woods = Volatile.Read(ref _selectedWoodIds);
+                    // Also republish if selection changed while paused so
+                    // pawn rings + tree/wood rings + selected-path update
+                    // without needing a tick to fire.
+                    var cur = Volatile.Read(ref _latest);
+                    if (!needPublish && cur is not null)
                     {
-                        int sel = Volatile.Read(ref _selectedDummyId);
-                        var trees = Volatile.Read(ref _selectedTreeIds);
-                        var woods = Volatile.Read(ref _selectedWoodIds);
+                        int? selBoxed = sel >= 0 ? sel : null;
+                        if (cur.SelectedDummyId != selBoxed
+                            || !SelectionArrayEquals(cur.SelectedTreeIds, trees)
+                            || !SelectionArrayEquals(cur.SelectedWoodIds, woods))
+                        {
+                            needPublish = true;
+                        }
+                    }
+                    if (needPublish)
+                    {
                         Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
                     }
                 }
