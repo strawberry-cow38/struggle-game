@@ -226,8 +226,7 @@ public partial class WorldRenderer : Node2D
             DrawWood(w.Tile);
             if (w.Forbidden) DrawForbiddenMark(w.Tile);
             if (selectedWoodSet is not null && selectedWoodSet.Contains(w.EntityId)) DrawWoodSelectionRing(w.Tile);
-            int md = Math.Abs(w.Tile.X - cursorTileX) + Math.Abs(w.Tile.Y - cursorTileY);
-            if (md <= StackLabelRadius)
+            if (w.Tile.X == cursorTileX && w.Tile.Y == cursorTileY)
             {
                 DrawStackLabel(stackFont, w.Tile, w.ItemPath, w.Count);
             }
@@ -291,11 +290,10 @@ public partial class WorldRenderer : Node2D
     }
 
     // Stack label rendered just below a dropped item: white "Name xCount"
-    // text drawn in world-space (scales with camera zoom). Only stacks
-    // within StackLabelRadius Manhattan tiles of the cursor get labelled,
-    // so dense yards don't drown in text.
+    // text drawn in world-space (scales with camera zoom). Only the
+    // stack on the exact hovered tile gets labelled so dense yards don't
+    // drown in text.
     private const int StackLabelFontSize = 25;
-    private const int StackLabelRadius = 2;
 
     private void DrawStackLabel(Font? font, TilePos tile, string itemPath, int count)
     {
