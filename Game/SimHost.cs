@@ -16,6 +16,7 @@ public sealed class SimHost : IDisposable
     private readonly SimRuntime _sim;
     private readonly Thread _thread;
     private volatile bool _running;
+    private volatile bool _paused;
     private volatile int _tickHz = SimConstants.TickHz;
     private SimSnapshot? _latest;
     private volatile float _actualTps;
@@ -50,6 +51,24 @@ public sealed class SimHost : IDisposable
     {
         if (hz < 1) hz = 1;
         _tickHz = hz;
+    }
+
+    // Pause/resume the sim loop. Used by the harness to hold the sim
+    // still while Godot finishes warming up (loading textures, JITting,
+    // etc.) so the first few captured frames aren't a giant catch-up
+    // burst.
+    public void SetPaused(bool paused) => _paused = paused;
+
+    // Step the sim directly from the caller's thread (intended for the
+    // Godot main thread in harness/video-capture mode). Pair with
+    // SetPaused(true) on the sim loop so it doesn't race the manual
+    // stepper. Publishes a snapshot exactly like the loop would.
+    public void StepManual(float dt)
+    {
+        _sim.Step(dt);
+        int sel = Volatile.Read(ref _selectedDummyId);
+        var trees = Volatile.Read(ref _selectedTreeIds);
+        Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null));
     }
 
     public int? SelectedDummyId
@@ -89,6 +108,13 @@ public sealed class SimHost : IDisposable
             int hz = _tickHz;
             long tickStride = Stopwatch.Frequency / hz;
             float dt = 1f / hz;
+
+            if (_paused)
+            {
+                Thread.Sleep(5);
+                nextTick = sw.ElapsedTicks + tickStride;
+                continue;
+            }
 
             long now = sw.ElapsedTicks;
             if (now >= nextTick)

@@ -28,6 +28,10 @@ public partial class HarnessController : Node2D
     private double _nextSampleAt;
     private double _nextScreenshotAt;
     private double _screenshotEverySec = 5.0;
+    private float _screenshotScale = 1.0f;
+    private double _warmupSec;
+    private bool _warmedUp;
+    private bool _manualSim;
     private int _shotIndex;
     private int _stepIndex;
     private bool _finished;
@@ -51,6 +55,14 @@ public partial class HarnessController : Node2D
         Log($"{{\"event\":\"start\",\"scenario\":\"{Scenario}\",\"tickHz\":{Host.TickHz},\"headless\":{(_headless ? "true" : "false")}}}");
 
         BuildSchedule();
+
+        if (_warmupSec > 0.0 || _manualSim)
+        {
+            // Pause the sim thread. In manual-sim mode we keep it paused
+            // and drive ticks from _Process. In warmup-only mode we
+            // unpause once warmup completes.
+            Host.SetPaused(true);
+        }
     }
 
     private void BuildSchedule()
@@ -97,10 +109,14 @@ public partial class HarnessController : Node2D
                 _schedule.Add((40.0, h => h.Finish("doors complete"), "finish"));
                 break;
             case "doors-video":
-                // High-frame-rate capture for video assembly. Tightens
-                // the timeline so the pass-through happens near the end
-                // and we don't generate thousands of empty frames.
-                _screenshotEverySec = 0.05; // 20 fps
+                // 60fps capture at half resolution. Lower quality keeps the
+                // PNG encode cheap so the main-thread block per screenshot
+                // is small enough that the sim accumulator doesn't pile up
+                // ticks between frames (which used to look like teleports).
+                _screenshotEverySec = 1.0 / 60.0;
+                _screenshotScale = 0.5f;
+                _warmupSec = 2.0;
+                _manualSim = true;
                 _schedule.Add((0.5, h => h.PlaceWall(c - 1, c), "wall W"));
                 _schedule.Add((0.7, h => h.PlaceWall(c + 1, c), "wall E"));
                 _schedule.Add((5.0, h => h.PlaceDoor(c, c), "place door"));
@@ -136,6 +152,22 @@ public partial class HarnessController : Node2D
     {
         if (_finished) return;
         _elapsed += delta;
+
+        if (!_warmedUp)
+        {
+            if (_elapsed < _warmupSec) return;
+            _warmedUp = true;
+            if (!_manualSim) Host.SetPaused(false);
+            _elapsed = 0.0; // restart clock so schedule entries are relative to t=0 after warmup
+        }
+
+        // Manual-sim mode: step the sim exactly once per render frame.
+        // This locks sim-time to render-time so the video captures every
+        // tick with no drift, regardless of how fast Godot is running.
+        if (_manualSim)
+        {
+            Host.StepManual(SimConstants.TickSeconds);
+        }
 
         while (_stepIndex < _schedule.Count && _elapsed >= _schedule[_stepIndex].At)
         {
@@ -197,7 +229,13 @@ public partial class HarnessController : Node2D
         if (tex is null) return;
         var img = tex.GetImage();
         if (img is null) return;
-        var path = Path.Combine(OutputDir, $"shot_{_shotIndex:D3}_t{(int)_elapsed:D3}s.png");
+        if (_screenshotScale > 0f && _screenshotScale < 1.0f)
+        {
+            int w = Math.Max(1, (int)(img.GetWidth() * _screenshotScale));
+            int h = Math.Max(1, (int)(img.GetHeight() * _screenshotScale));
+            img.Resize(w, h, Image.Interpolation.Bilinear);
+        }
+        var path = Path.Combine(OutputDir, $"shot_{_shotIndex:D5}_t{(int)_elapsed:D3}s.png");
         img.SavePng(path);
         _shotIndex++;
         Log($"{{\"event\":\"screenshot\",\"t\":{_elapsed:0.000},\"path\":\"{Json(path)}\"}}");
