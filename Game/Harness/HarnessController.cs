@@ -86,6 +86,15 @@ public partial class HarnessController : Node2D
                 _schedule.Add((6.0, h => h.RecordCount("after-remove"), "record after remove"));
                 _schedule.Add((8.0, h => h.Finish("debug complete"), "finish"));
                 break;
+            case "doors":
+                _schedule.Add((1.0, h => h.PlaceWall(c - 1, c), "wall W"));
+                _schedule.Add((1.5, h => h.PlaceWall(c + 1, c), "wall E"));
+                _schedule.Add((10.0, h => h.PlaceDoor(c, c), "place door"));
+                _schedule.Add((20.0, h => h.DraftLowest(), "draft lowest"));
+                _schedule.Add((21.0, h => h.MoveLowest(c, c + 4, false), "march south through door"));
+                _schedule.Add((30.0, h => h.MoveLowest(c, c - 4, false), "march north back"));
+                _schedule.Add((40.0, h => h.Finish("doors complete"), "finish"));
+                break;
             case "stress":
                 for (int r = 2; r <= 6; r++)
                 {
@@ -183,6 +192,11 @@ public partial class HarnessController : Node2D
     private void PlaceWall(int x, int y)
     {
         Host.QueueCommand(new PlaceWallBlueprintCommand(new TilePos(x, y)));
+    }
+
+    private void PlaceDoor(int x, int y)
+    {
+        Host.QueueCommand(new PlaceDoorBlueprintCommand(new TilePos(x, y)));
     }
 
     private void PlaceRing(int cx, int cy, int r)
