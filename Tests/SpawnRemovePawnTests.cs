@@ -52,6 +52,35 @@ public class SpawnRemovePawnTests
         Assert.Equal(before, CountWanderers(sim));
     }
 
+    [Fact]
+    public void RemoveAllPawns_SimKeepsTickingCleanly()
+    {
+        var sim = new SimRuntime();
+        var ids = new List<int>();
+        sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity e) => ids.Add(e.Id));
+
+        foreach (var id in ids) sim.QueueCommand(new RemoveDummyCommand(id));
+        sim.Step(SimConstants.TickSeconds);
+        Assert.Equal(0, CountWanderers(sim));
+
+        // Tick for a couple of seconds with zero colonists — no exceptions,
+        // no anomalies, snapshot stays well-formed.
+        for (int i = 0; i < 180; i++) sim.Step(SimConstants.TickSeconds);
+        Assert.Equal(0, sim.Watcher.StuckTotal);
+        Assert.Equal(0, sim.Watcher.BrainDeadTotal);
+
+        // Player can still queue blueprints; they just sit (no claimants).
+        int c = SimConstants.MapSize / 2;
+        sim.QueueCommand(new PlaceWallBlueprintCommand(new StruggleGame.Sim.Map.TilePos(c, c)));
+        sim.Step(SimConstants.TickSeconds);
+        Assert.Equal(1, sim.Jobs.Count);
+
+        // Spawning recovers — new pawn shows up at random walkable tile.
+        sim.QueueCommand(new SpawnDummyCommand());
+        sim.Step(SimConstants.TickSeconds);
+        Assert.Equal(1, CountWanderers(sim));
+    }
+
     private static int CountWanderers(SimRuntime sim)
     {
         int n = 0;
