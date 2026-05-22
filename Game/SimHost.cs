@@ -70,8 +70,8 @@ public sealed class SimHost : IDisposable
         _sim.Step(dt);
         int sel = Volatile.Read(ref _selectedDummyId);
         var trees = Volatile.Read(ref _selectedTreeIds);
-        int wood = Volatile.Read(ref _selectedWoodId);
-            Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, wood >= 0 ? wood : null));
+        var woods = Volatile.Read(ref _selectedWoodIds);
+        Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
     }
 
     public int? SelectedDummyId
@@ -96,11 +96,11 @@ public sealed class SimHost : IDisposable
         set { Volatile.Write(ref _selectedStockpileId, value ?? -1); }
     }
 
-    private int _selectedWoodId = -1;
-    public int? SelectedWoodId
+    private int[] _selectedWoodIds = Array.Empty<int>();
+    public int[] SelectedWoodIds
     {
-        get { int v = Volatile.Read(ref _selectedWoodId); return v >= 0 ? v : null; }
-        set { Volatile.Write(ref _selectedWoodId, value ?? -1); }
+        get => Volatile.Read(ref _selectedWoodIds);
+        set => Volatile.Write(ref _selectedWoodIds, value ?? Array.Empty<int>());
     }
 
     // Game→Sim command submission. Drained at the start of every tick.
@@ -151,8 +151,8 @@ public sealed class SimHost : IDisposable
                 _sim.Step(dt);
                 int sel = Volatile.Read(ref _selectedDummyId);
                 var trees = Volatile.Read(ref _selectedTreeIds);
-                int wood = Volatile.Read(ref _selectedWoodId);
-            Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, wood >= 0 ? wood : null));
+                var woods = Volatile.Read(ref _selectedWoodIds);
+                Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
                 ticksThisWindow++;
                 nextTick += tickStride;
                 // If we fell badly behind (paused breakpoint, hz bump, etc.),

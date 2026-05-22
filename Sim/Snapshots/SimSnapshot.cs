@@ -30,8 +30,8 @@ public sealed class SimSnapshot
     // Set of tree entity ids the player has selected. May be empty.
     public int[] SelectedTreeIds { get; }
 
-    // Set when the game has a selected wood/item stack; null otherwise.
-    public int? SelectedWoodId { get; }
+    // Set of wood/item stack entity ids the player has selected. May be empty.
+    public int[] SelectedWoodIds { get; }
 
     public SimSnapshot(
         long tick,
@@ -51,7 +51,7 @@ public sealed class SimSnapshot
         TilePos[]? selectedPath = null,
         TilePos[]? selectedOrders = null,
         int[]? selectedTreeIds = null,
-        int? selectedWoodId = null)
+        int[]? selectedWoodIds = null)
     {
         Tick = tick;
         MapVersion = mapVersion;
@@ -70,7 +70,7 @@ public sealed class SimSnapshot
         SelectedPath = selectedPath;
         SelectedOrders = selectedOrders;
         SelectedTreeIds = selectedTreeIds ?? Array.Empty<int>();
-        SelectedWoodId = selectedWoodId;
+        SelectedWoodIds = selectedWoodIds ?? Array.Empty<int>();
     }
 }
 

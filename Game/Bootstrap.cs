@@ -132,21 +132,28 @@ public partial class Bootstrap : Node2D
                 }
                 return;
             case Key.F:
-                if (_host.SelectedWoodId is int woodId)
+            {
+                var woodIds = _host.SelectedWoodIds;
+                if (woodIds.Length == 0) return;
+                var snap = _host.LatestSnapshot;
+                if (snap is null) return;
+                var idSet = new HashSet<int>(woodIds);
+                int forbidden = 0, haulable = 0;
+                foreach (var w in snap.Wood)
                 {
-                    bool curr = false;
-                    var snap = _host.LatestSnapshot;
-                    if (snap is not null)
-                    {
-                        foreach (var w in snap.Wood)
-                        {
-                            if (w.EntityId == woodId) { curr = w.Forbidden; break; }
-                        }
-                    }
-                    _host.QueueCommand(new Sim.Commands.ForbidStackCommand(woodId, !curr));
-                    GetViewport().SetInputAsHandled();
+                    if (!idSet.Contains(w.EntityId)) continue;
+                    if (w.Forbidden) forbidden++; else haulable++;
                 }
+                bool target = !(forbidden > haulable);
+                foreach (var w in snap.Wood)
+                {
+                    if (!idSet.Contains(w.EntityId)) continue;
+                    if (w.Forbidden == target) continue;
+                    _host.QueueCommand(new Sim.Commands.ForbidStackCommand(w.EntityId, target));
+                }
+                GetViewport().SetInputAsHandled();
                 return;
+            }
             case Key.Space:
                 _host.SetPaused(!_host.IsPaused);
                 GD.Print(_host.IsPaused ? "Sim PAUSED" : "Sim RESUMED");

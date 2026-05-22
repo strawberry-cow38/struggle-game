@@ -136,7 +136,7 @@ public sealed class SimRuntime
 
     public void QueueCommand(ISimCommand cmd) => _commands.Enqueue(cmd);
 
-    public SimSnapshot BuildSnapshot(int? selectedDummyId = null, IReadOnlyCollection<int>? selectedTreeIds = null, int? selectedWoodId = null)
+    public SimSnapshot BuildSnapshot(int? selectedDummyId = null, IReadOnlyCollection<int>? selectedTreeIds = null, IReadOnlyCollection<int>? selectedWoodIds = null)
     {
         var dq = Store.Query<WorldPos, Wanderer>();
         var dummies = new DummyState[dq.Count];
@@ -227,6 +227,14 @@ public sealed class SimRuntime
             foreach (var id in selectedTreeIds) selTreeArr[si++] = id;
         }
 
+        int[]? selWoodArr = null;
+        if (selectedWoodIds is { Count: > 0 })
+        {
+            selWoodArr = new int[selectedWoodIds.Count];
+            int si = 0;
+            foreach (var id in selectedWoodIds) selWoodArr[si++] = id;
+        }
+
         var decons = new List<DeconState>();
         foreach (var job in Jobs.All)
         {
@@ -271,7 +279,7 @@ public sealed class SimRuntime
             dummies, bps, floorBps.ToArray(), trees, woods, decons.ToArray(),
             doorBps.ToArray(), doorRender.ToArray(),
             stockpiles,
-            selectedDummyId, selectedPath, selectedOrders, selTreeArr, selectedWoodId);
+            selectedDummyId, selectedPath, selectedOrders, selTreeArr, selWoodArr);
     }
 
     // Render layer snapshot: assembled from the published MapView's

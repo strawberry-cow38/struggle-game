@@ -8,10 +8,11 @@ using StruggleGame.Sim.Snapshots;
 namespace StruggleGame.Game.Selection;
 
 // LMB click in the world (when no other tool is active) picks the
-// nearest pawn within PickRadiusPx; if none, the nearest tree; if
-// neither, clears all selection. Shift+LMB on a tree toggles it in/out
-// of the multi-tree selection. Double-click LMB selects every tree in
-// the camera viewport (Cities-Skylines style).
+// nearest pawn within PickRadiusPx; if none, the nearest wood stack;
+// if none, the nearest tree; if neither, clears all selection.
+// Shift+LMB on a tree or wood stack toggles it in/out of the
+// multi-selection. Double-click LMB selects every tree (or, if the
+// cursor is on a wood stack, every wood stack) in the camera viewport.
 //
 // RMB on a drafted colonist's selection issues a move order to the
 // clicked tile. Shift+RMB appends to the order queue instead of
@@ -49,27 +50,38 @@ public partial class Selector : Node2D
         var snap = Host!.LatestSnapshot;
         if (snap is null) return;
 
+        var world = GetGlobalMousePosition();
+
         if (doubleClick)
         {
-            SelectAllTreesInView(snap);
+            // Double-click on a wood stack → all wood in view; else trees in view.
+            if (TryPickWood(snap, world, out _))
+            {
+                SelectAllWoodInView(snap);
+            }
+            else
+            {
+                SelectAllTreesInView(snap);
+            }
             return;
         }
 
-        var world = GetGlobalMousePosition();
-
-        // Pawn beats tree if both are within radius.
+        // Pawn beats wood/tree if both are within radius.
         if (TryPickPawn(snap, world, out int pawnId))
         {
             Host.SelectedDummyId = pawnId;
             Host.SelectedTreeIds = Array.Empty<int>();
-            Host.SelectedWoodId = null;
+            Host.SelectedWoodIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
             return;
         }
 
         if (TryPickWood(snap, world, out int woodId))
         {
-            Host.SelectedWoodId = woodId;
+            var set = shift ? new HashSet<int>(Host.SelectedWoodIds) : new HashSet<int>();
+            if (shift && !set.Add(woodId)) set.Remove(woodId);
+            else set.Add(woodId);
+            WriteWoodSelection(set);
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
@@ -84,7 +96,7 @@ public partial class Selector : Node2D
             WriteTreeSelection(set);
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
-            Host.SelectedWoodId = null;
+            Host.SelectedWoodIds = Array.Empty<int>();
             return;
         }
 
@@ -97,7 +109,7 @@ public partial class Selector : Node2D
             Host.SelectedStockpileId = stockId;
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
-            Host.SelectedWoodId = null;
+            Host.SelectedWoodIds = Array.Empty<int>();
             return;
         }
 
@@ -107,7 +119,7 @@ public partial class Selector : Node2D
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
-            Host.SelectedWoodId = null;
+            Host.SelectedWoodIds = Array.Empty<int>();
         }
     }
 
@@ -214,6 +226,43 @@ public partial class Selector : Node2D
         int i = 0;
         foreach (var id in set) arr[i++] = id;
         Host!.SelectedTreeIds = arr;
+    }
+
+    private void WriteWoodSelection(HashSet<int> set)
+    {
+        var arr = new int[set.Count];
+        int i = 0;
+        foreach (var id in set) arr[i++] = id;
+        Host!.SelectedWoodIds = arr;
+    }
+
+    private void SelectAllWoodInView(SimSnapshot snap)
+    {
+        var vp = GetViewport().GetVisibleRect();
+        var canvasXform = GetCanvasTransform().AffineInverse();
+        var topLeft = canvasXform * vp.Position;
+        var bottomRight = canvasXform * (vp.Position + vp.Size);
+        float minX = Mathf.Min(topLeft.X, bottomRight.X);
+        float maxX = Mathf.Max(topLeft.X, bottomRight.X);
+        float minY = Mathf.Min(topLeft.Y, bottomRight.Y);
+        float maxY = Mathf.Max(topLeft.Y, bottomRight.Y);
+
+        var set = new HashSet<int>();
+        foreach (var w in snap.Wood)
+        {
+            float px = (w.Tile.X + 0.5f) * PixelsPerTile;
+            float py = (w.Tile.Y + 0.5f) * PixelsPerTile;
+            if (px < minX || px > maxX) continue;
+            if (py < minY || py > maxY) continue;
+            set.Add(w.EntityId);
+        }
+        WriteWoodSelection(set);
+        if (set.Count > 0)
+        {
+            Host!.SelectedDummyId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedStockpileId = null;
+        }
     }
 
     private bool HandleOrder(bool append)

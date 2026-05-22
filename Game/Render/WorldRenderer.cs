@@ -196,11 +196,14 @@ public partial class WorldRenderer : Node2D
         var mouseLocal = GetLocalMousePosition();
         int cursorTileX = Mathf.FloorToInt(mouseLocal.X / PixelsPerTile);
         int cursorTileY = Mathf.FloorToInt(mouseLocal.Y / PixelsPerTile);
+        var selectedWoodSet = snap.SelectedWoodIds.Length > 0
+            ? new HashSet<int>(snap.SelectedWoodIds)
+            : null;
         foreach (var w in snap.Wood)
         {
             DrawWood(w.Tile);
             if (w.Forbidden) DrawForbiddenMark(w.Tile);
-            if (snap.SelectedWoodId is int selW && w.EntityId == selW) DrawWoodSelectionRing(w.Tile);
+            if (selectedWoodSet is not null && selectedWoodSet.Contains(w.EntityId)) DrawWoodSelectionRing(w.Tile);
             int md = Math.Abs(w.Tile.X - cursorTileX) + Math.Abs(w.Tile.Y - cursorTileY);
             if (md <= StackLabelRadius)
             {
