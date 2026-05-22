@@ -70,7 +70,8 @@ public sealed class SimHost : IDisposable
         _sim.Step(dt);
         int sel = Volatile.Read(ref _selectedDummyId);
         var trees = Volatile.Read(ref _selectedTreeIds);
-        Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null));
+        int wood = Volatile.Read(ref _selectedWoodId);
+            Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, wood >= 0 ? wood : null));
     }
 
     public int? SelectedDummyId
@@ -93,6 +94,13 @@ public sealed class SimHost : IDisposable
     {
         get { int v = Volatile.Read(ref _selectedStockpileId); return v >= 0 ? v : null; }
         set { Volatile.Write(ref _selectedStockpileId, value ?? -1); }
+    }
+
+    private int _selectedWoodId = -1;
+    public int? SelectedWoodId
+    {
+        get { int v = Volatile.Read(ref _selectedWoodId); return v >= 0 ? v : null; }
+        set { Volatile.Write(ref _selectedWoodId, value ?? -1); }
     }
 
     // Game→Sim command submission. Drained at the start of every tick.
@@ -143,7 +151,8 @@ public sealed class SimHost : IDisposable
                 _sim.Step(dt);
                 int sel = Volatile.Read(ref _selectedDummyId);
                 var trees = Volatile.Read(ref _selectedTreeIds);
-                Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null));
+                int wood = Volatile.Read(ref _selectedWoodId);
+            Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, wood >= 0 ? wood : null));
                 ticksThisWindow++;
                 nextTick += tickStride;
                 // If we fell badly behind (paused breakpoint, hz bump, etc.),

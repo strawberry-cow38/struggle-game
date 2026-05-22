@@ -199,6 +199,8 @@ public partial class WorldRenderer : Node2D
         foreach (var w in snap.Wood)
         {
             DrawWood(w.Tile);
+            if (w.Forbidden) DrawForbiddenMark(w.Tile);
+            if (snap.SelectedWoodId is int selW && w.EntityId == selW) DrawWoodSelectionRing(w.Tile);
             int md = Math.Abs(w.Tile.X - cursorTileX) + Math.Abs(w.Tile.Y - cursorTileY);
             if (md <= StackLabelRadius)
             {
@@ -267,7 +269,7 @@ public partial class WorldRenderer : Node2D
     // text drawn in world-space (scales with camera zoom). Only stacks
     // within StackLabelRadius Manhattan tiles of the cursor get labelled,
     // so dense yards don't drown in text.
-    private const int StackLabelFontSize = 17;
+    private const int StackLabelFontSize = 25;
     private const int StackLabelRadius = 2;
 
     private void DrawStackLabel(Font? font, TilePos tile, string itemPath, int count)
@@ -377,6 +379,25 @@ public partial class WorldRenderer : Node2D
         DrawRect(rect, WoodColor, filled: true);
         var hi = new Rect2(rect.Position + new Vector2(0, 1f), new Vector2(rect.Size.X, 2f));
         DrawRect(hi, WoodHighlight, filled: true);
+    }
+
+    private static readonly Color ForbiddenMarkColor = new(0.95f, 0.25f, 0.25f, 0.95f);
+
+    private void DrawForbiddenMark(TilePos tile)
+    {
+        float cx = (tile.X + 0.5f) * PixelsPerTile;
+        float cy = (tile.Y + 0.5f) * PixelsPerTile;
+        float s = PixelsPerTile * 0.28f;
+        DrawLine(new Vector2(cx - s, cy - s), new Vector2(cx + s, cy + s), ForbiddenMarkColor, width: 2.5f);
+        DrawLine(new Vector2(cx - s, cy + s), new Vector2(cx + s, cy - s), ForbiddenMarkColor, width: 2.5f);
+    }
+
+    private void DrawWoodSelectionRing(TilePos tile)
+    {
+        float cx = (tile.X + 0.5f) * PixelsPerTile;
+        float cy = (tile.Y + 0.5f) * PixelsPerTile;
+        float r = PixelsPerTile * 0.45f;
+        DrawArc(new Vector2(cx, cy), r, 0f, Mathf.Tau, 32, SelectionRing, width: 2f, antialiased: true);
     }
 
     private void DrawDeconMark(TilePos tile, float progress)

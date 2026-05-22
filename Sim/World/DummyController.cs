@@ -495,6 +495,7 @@ public sealed class DummyController
         store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) =>
         {
             if (e.HasComponent<HaulReserved>()) return;
+            if (e.HasComponent<Forbidden>()) return;
             if (_topoffReservedThisTick.Contains(e.Id)) return;
             int md = Math.Abs(w.Tile.X - primarySource.X) + Math.Abs(w.Tile.Y - primarySource.Y);
             if (md == 0) return; // primary already handled

@@ -136,7 +136,7 @@ public sealed class SimRuntime
 
     public void QueueCommand(ISimCommand cmd) => _commands.Enqueue(cmd);
 
-    public SimSnapshot BuildSnapshot(int? selectedDummyId = null, IReadOnlyCollection<int>? selectedTreeIds = null)
+    public SimSnapshot BuildSnapshot(int? selectedDummyId = null, IReadOnlyCollection<int>? selectedTreeIds = null, int? selectedWoodId = null)
     {
         var dq = Store.Query<WorldPos, Wanderer>();
         var dummies = new DummyState[dq.Count];
@@ -214,7 +214,10 @@ public sealed class SimRuntime
         var woodQuery = Store.Query<Wood>();
         var woods = new WoodState[woodQuery.Count];
         int wi = 0;
-        woodQuery.ForEachEntity((ref Wood w, Entity _) => { woods[wi++] = new WoodState(w.Tile, w.Count, ItemCatalog.Wood.FullPath); });
+        woodQuery.ForEachEntity((ref Wood w, Entity e) =>
+        {
+            woods[wi++] = new WoodState(e.Id, w.Tile, w.Count, ItemCatalog.Wood.FullPath, e.HasComponent<Forbidden>());
+        });
 
         int[]? selTreeArr = null;
         if (selectedTreeIds is { Count: > 0 })
@@ -268,7 +271,7 @@ public sealed class SimRuntime
             dummies, bps, floorBps.ToArray(), trees, woods, decons.ToArray(),
             doorBps.ToArray(), doorRender.ToArray(),
             stockpiles,
-            selectedDummyId, selectedPath, selectedOrders, selTreeArr);
+            selectedDummyId, selectedPath, selectedOrders, selTreeArr, selectedWoodId);
     }
 
     // Render layer snapshot: assembled from the published MapView's
@@ -853,6 +856,42 @@ public sealed class SimRuntime
     {
         if (carriedEntity.HasComponent<Wood>()) cb.RemoveComponent<Wood>(carriedEntity.Id);
         if (carriedEntity.HasComponent<HaulPayload>()) cb.RemoveComponent<HaulPayload>(carriedEntity.Id);
+    }
+
+    // Toggle the Forbidden marker on a world item entity. Cancels any
+    // in-flight haul job that referenced it (the carrier's abort path
+    // re-drops carried cargo on the spot via DeliverCarrying) and clears
+    // any topoff reservation so the carrier drops it from its pending
+    // pickup list on arrival.
+    public void SetItemForbidden(int entityId, bool forbidden)
+    {
+        if (!Store.TryGetEntityById(entityId, out var ent)) return;
+        if (forbidden)
+        {
+            if (ent.HasComponent<HaulReserved>())
+            {
+                var hr = ent.GetComponent<HaulReserved>();
+                if (!hr.JobId.IsNone)
+                {
+                    CancelJob(hr.JobId);
+                }
+                else
+                {
+                    if (ent.HasComponent<HaulPayload>())
+                    {
+                        var hp = ent.GetComponent<HaulPayload>();
+                        _reservedHaulDests.Remove(hp.DestTile);
+                        ent.RemoveComponent<HaulPayload>();
+                    }
+                    ent.RemoveComponent<HaulReserved>();
+                }
+            }
+            if (!ent.HasComponent<Forbidden>()) ent.AddComponent(new Forbidden());
+        }
+        else
+        {
+            if (ent.HasComponent<Forbidden>()) ent.RemoveComponent<Forbidden>();
+        }
     }
 
     // Sum of all wood stacks at the given tile. Used by HaulSystem to bias

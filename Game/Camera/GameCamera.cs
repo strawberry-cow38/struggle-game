@@ -4,8 +4,8 @@ using StruggleGame.Sim;
 namespace StruggleGame.Game.Camera;
 
 // Camera2D with middle-mouse-button pan and discrete zoom levels stepped
-// by the scroll wheel. Zoom transitions tween smoothly toward the target;
-// pan is direct (mouse-locked) so it feels 1:1.
+// by the scroll wheel. Zoom snaps to the new level immediately; pan is
+// direct (mouse-locked) so it feels 1:1.
 public partial class GameCamera : Camera2D
 {
     private static readonly float[] ZoomLevels = new[]
@@ -14,7 +14,6 @@ public partial class GameCamera : Camera2D
     };
 
     private const int DefaultZoomIndex = 5; // 1.0
-    private const float ZoomTweenSeconds = 0.15f;
 
     // Screen-space pan speed at zoom 1.0 (pixels per second). Scaled by
     // 1/zoom each frame so the world appears to scroll at a consistent
@@ -23,12 +22,12 @@ public partial class GameCamera : Camera2D
     private const float ShiftBoostMultiplier = 3.0f;
 
     private int _zoomIndex = DefaultZoomIndex;
-    private float _targetZoom = ZoomLevels[DefaultZoomIndex];
     private bool _panning;
 
     public override void _Ready()
     {
-        Zoom = new Vector2(_targetZoom, _targetZoom);
+        float z = ZoomLevels[_zoomIndex];
+        Zoom = new Vector2(z, z);
     }
 
     public override void _UnhandledInput(InputEvent @event)
@@ -66,16 +65,6 @@ public partial class GameCamera : Camera2D
     public override void _Process(double delta)
     {
         ApplyKeyPan((float)delta);
-
-        if (!Mathf.IsEqualApprox(Zoom.X, _targetZoom))
-        {
-            // Exponential smoothing toward target. Frame-rate independent.
-            float t = 1f - Mathf.Exp(-(float)delta / ZoomTweenSeconds);
-            float next = Mathf.Lerp(Zoom.X, _targetZoom, t);
-            if (Mathf.Abs(next - _targetZoom) < 0.001f) next = _targetZoom;
-            Zoom = new Vector2(next, next);
-        }
-
         ClampToMap();
     }
 
@@ -112,6 +101,7 @@ public partial class GameCamera : Camera2D
         idx = Mathf.Clamp(idx, 0, ZoomLevels.Length - 1);
         if (idx == _zoomIndex) return;
         _zoomIndex = idx;
-        _targetZoom = ZoomLevels[idx];
+        float z = ZoomLevels[idx];
+        Zoom = new Vector2(z, z);
     }
 }

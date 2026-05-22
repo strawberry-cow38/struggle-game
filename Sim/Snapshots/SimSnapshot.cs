@@ -30,6 +30,9 @@ public sealed class SimSnapshot
     // Set of tree entity ids the player has selected. May be empty.
     public int[] SelectedTreeIds { get; }
 
+    // Set when the game has a selected wood/item stack; null otherwise.
+    public int? SelectedWoodId { get; }
+
     public SimSnapshot(
         long tick,
         long mapVersion,
@@ -47,7 +50,8 @@ public sealed class SimSnapshot
         int? selectedDummyId = null,
         TilePos[]? selectedPath = null,
         TilePos[]? selectedOrders = null,
-        int[]? selectedTreeIds = null)
+        int[]? selectedTreeIds = null,
+        int? selectedWoodId = null)
     {
         Tick = tick;
         MapVersion = mapVersion;
@@ -66,6 +70,7 @@ public sealed class SimSnapshot
         SelectedPath = selectedPath;
         SelectedOrders = selectedOrders;
         SelectedTreeIds = selectedTreeIds ?? Array.Empty<int>();
+        SelectedWoodId = selectedWoodId;
     }
 }
 
@@ -79,7 +84,7 @@ public readonly record struct BlueprintState(TilePos Tile, float Progress);
 // active chop job on the tile.
 public readonly record struct TreeState(int EntityId, TilePos Tile, float ChopProgress, bool HasJob);
 
-public readonly record struct WoodState(TilePos Tile, int Count, string ItemPath);
+public readonly record struct WoodState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden);
 
 // Decon mark on a wall. Progress = 0..1 normalised by DeconSystem.DeconTimeSec.
 public readonly record struct DeconState(TilePos Tile, float Progress);

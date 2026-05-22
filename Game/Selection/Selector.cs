@@ -62,6 +62,17 @@ public partial class Selector : Node2D
         {
             Host.SelectedDummyId = pawnId;
             Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodId = null;
+            Host.SelectedStockpileId = null;
+            return;
+        }
+
+        if (TryPickWood(snap, world, out int woodId))
+        {
+            Host.SelectedWoodId = woodId;
+            Host.SelectedDummyId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedStockpileId = null;
             return;
         }
 
@@ -73,6 +84,7 @@ public partial class Selector : Node2D
             WriteTreeSelection(set);
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
+            Host.SelectedWoodId = null;
             return;
         }
 
@@ -85,6 +97,7 @@ public partial class Selector : Node2D
             Host.SelectedStockpileId = stockId;
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodId = null;
             return;
         }
 
@@ -94,6 +107,7 @@ public partial class Selector : Node2D
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
+            Host.SelectedWoodId = null;
         }
     }
 
@@ -125,6 +139,26 @@ public partial class Selector : Node2D
             {
                 bestDistSq = distSq;
                 id = d.EntityId;
+            }
+        }
+        return id >= 0;
+    }
+
+    private bool TryPickWood(SimSnapshot snap, Vector2 world, out int id)
+    {
+        id = -1;
+        float bestSq = (PixelsPerTile * 0.5f) * (PixelsPerTile * 0.5f);
+        foreach (var w in snap.Wood)
+        {
+            float px = (w.Tile.X + 0.5f) * PixelsPerTile;
+            float py = (w.Tile.Y + 0.5f) * PixelsPerTile;
+            float dx = px - world.X;
+            float dy = py - world.Y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 < bestSq)
+            {
+                bestSq = d2;
+                id = w.EntityId;
             }
         }
         return id >= 0;

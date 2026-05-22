@@ -76,6 +76,9 @@ public partial class Bootstrap : Node2D
         var stockpilePanel = new StockpilePanel { Host = _host, Tools = _tools, Name = "StockpilePanel" };
         AddChild(stockpilePanel);
 
+        var itemInfoPanel = new ItemInfoPanel { Host = _host, Name = "ItemInfoPanel" };
+        AddChild(itemInfoPanel);
+
         var debugBar = new DebugBar { Tools = _tools, Name = "DebugBar" };
         AddChild(debugBar);
 
@@ -122,6 +125,22 @@ public partial class Bootstrap : Node2D
                 if (_host.SelectedDummyId is int id)
                 {
                     _host.QueueCommand(new Sim.Commands.ToggleDraftCommand(id));
+                    GetViewport().SetInputAsHandled();
+                }
+                return;
+            case Key.F:
+                if (_host.SelectedWoodId is int woodId)
+                {
+                    bool curr = false;
+                    var snap = _host.LatestSnapshot;
+                    if (snap is not null)
+                    {
+                        foreach (var w in snap.Wood)
+                        {
+                            if (w.EntityId == woodId) { curr = w.Forbidden; break; }
+                        }
+                    }
+                    _host.QueueCommand(new Sim.Commands.ForbidStackCommand(woodId, !curr));
                     GetViewport().SetInputAsHandled();
                 }
                 return;

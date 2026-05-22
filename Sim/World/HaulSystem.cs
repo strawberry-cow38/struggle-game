@@ -28,6 +28,7 @@ public sealed class HaulSystem
         store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
         {
             if (ent.HasComponent<HaulReserved>()) return;
+            if (ent.HasComponent<Forbidden>()) return;
             candidates.Add(ent);
         });
 

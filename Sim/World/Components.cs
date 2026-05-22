@@ -163,6 +163,13 @@ public struct Carrying : IComponent
     public Jobs.JobId PrimaryJobId;
 }
 
+// Player-applied "do not haul" mark on a world item stack. HaulSystem
+// skips reserving forbidden entities; the topoff scan skips them too.
+// Toggled per-stack from the item info panel or the F key.
+public struct Forbidden : IComponent
+{
+}
+
 // Marks an item entity as already promised to a haul job. Posted by
 // HaulSystem when a Job is created; the same component is removed when
 // the job completes/cancels. Prevents the poster from re-posting a haul

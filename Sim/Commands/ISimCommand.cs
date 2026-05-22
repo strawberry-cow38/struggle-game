@@ -289,6 +289,21 @@ public sealed class SetStockpileCategoryAllowedCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetStockpileCategoryAllowed(StockpileId, CategoryPath, Allowed);
 }
 
+// Toggle the Forbidden marker on a world item stack. Cancels any
+// in-flight haul referencing it so the carrier drops its cargo and
+// the poster won't re-claim it until the player un-forbids.
+public sealed class ForbidStackCommand : ISimCommand
+{
+    public int EntityId { get; }
+    public bool Forbidden { get; }
+    public ForbidStackCommand(int entityId, bool forbidden)
+    {
+        EntityId = entityId;
+        Forbidden = forbidden;
+    }
+    public void Apply(SimRuntime sim) => sim.SetItemForbidden(EntityId, Forbidden);
+}
+
 // Debug bar action: spawn a fresh wanderer at a random walkable tile.
 public sealed class SpawnDummyCommand : ISimCommand
 {
