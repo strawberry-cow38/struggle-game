@@ -33,6 +33,7 @@ public partial class Toolbar : CanvasLayer
 
         AddButton(_hbox, ToolMode.BuildWall, "Wall");
         AddButton(_hbox, ToolMode.Chop, "Chop");
+        AddButton(_hbox, ToolMode.Decon, "Decon");
         AddButton(_hbox, ToolMode.Cancel, "Cancel");
 
         // Absolute positioning against the viewport. CanvasLayer parents

@@ -27,6 +27,7 @@ public sealed class SimRuntime
     private readonly DummyController _dummies;
     private readonly BuildSystem _builds;
     private readonly ChopSystem _chops;
+    private readonly DeconSystem _decons;
     private readonly SafetySystem _safety;
     private readonly ConcurrentQueue<ISimCommand> _commands = new();
     private readonly object _mapLock = new();
@@ -34,6 +35,11 @@ public sealed class SimRuntime
     private readonly Dictionary<TilePos, Entity> _trees = new();
     private readonly Random _spawnRng;
     private const int InitialTreeCount = 50;
+
+    // Walls cost nothing yet, but deconstructing one still drops some
+    // wood — half of a notional 2-wood cost — to give the player a
+    // reason to reclaim their walls.
+    public const int WallDeconWoodReturn = 1;
 
     public SimRuntime(int seed = 1337)
     {
@@ -43,6 +49,7 @@ public sealed class SimRuntime
         _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1);
         _builds = new BuildSystem(this, Jobs);
         _chops = new ChopSystem(this, Jobs);
+        _decons = new DeconSystem(this, Jobs);
         _safety = new SafetySystem(() => MapView, PathService, Watcher);
 
         // Trees go down before colonists so spawn can avoid landing on one.
@@ -59,6 +66,7 @@ public sealed class SimRuntime
         _dummies.Step(Store, dt);
         _builds.Step(Store, dt);
         _chops.Step(Store, dt);
+        _decons.Step(Store, dt);
         _safety.Step(Store, Tick);
         Tick++;
         Watcher.Observe(Tick, Store, Jobs);
@@ -147,8 +155,16 @@ public sealed class SimRuntime
             foreach (var id in selectedTreeIds) selTreeArr[si++] = id;
         }
 
+        var decons = new List<DeconState>();
+        foreach (var job in Jobs.All)
+        {
+            if (job.Kind != JobKind.Deconstruct) continue;
+            var d = job.Entity.GetComponent<Decon>();
+            decons.Add(new DeconState(job.Tile, d.ProgressSec / DeconSystem.DeconTimeSec));
+        }
+
         return new SimSnapshot(
-            Tick, MapVersion, dummies, bps, trees, woods,
+            Tick, MapVersion, dummies, bps, trees, woods, decons.ToArray(),
             selectedDummyId, selectedPath, selectedOrders, selTreeArr);
     }
 
@@ -216,6 +232,23 @@ public sealed class SimRuntime
 
             RebuildMapView();
         }
+        else if (kind == JobKind.Deconstruct)
+        {
+            // Decon marker entity is single-purpose; throw it away.
+            entity.DeleteEntity();
+            lock (_mapLock)
+            {
+                Map.Set(tile, TileType.Grass);
+                _playerWalls.Remove(tile);
+            }
+            for (int n = 0; n < WallDeconWoodReturn; n++)
+            {
+                var wood = Store.CreateEntity();
+                wood.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
+                wood.AddComponent(new Wood { Tile = tile });
+            }
+            RebuildMapView();
+        }
     }
 
     public void CancelJob(JobId id)
@@ -241,6 +274,12 @@ public sealed class SimRuntime
                 tree.ChopProgressSec = 0f;
             }
         }
+        else if (kind == JobKind.Deconstruct)
+        {
+            // Wall stays; throw the marker away with the job. A future
+            // re-designate spawns a fresh marker at 0 progress.
+            entity.DeleteEntity();
+        }
     }
 
     // Try to post a chop job on the tree at this tile. Returns false if
@@ -252,6 +291,30 @@ public sealed class SimRuntime
         var id = Jobs.Post(JobKind.ChopTree, tile, treeEnt);
         return !id.IsNone;
     }
+
+    // Player-built walls only. Procgen walls aren't in _playerWalls so
+    // they can't be deconstructed — keeps the player from gnawing on
+    // the map borders. Spawns a Decon marker entity that the system
+    // ticks; the job owns that entity and deletes it on complete/cancel.
+    public bool TryPostDeconstructJob(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return false;
+        if (Map.Get(tile) != TileType.Wall) return false;
+        if (!_playerWalls.Contains(tile)) return false;
+        if (Jobs.HasTile(tile)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new Decon { Tile = tile, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.Deconstruct, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        return true;
+    }
+
+    public IReadOnlyList<TilePos> PlayerWalls => _playerWalls;
 
     // Drop a tree at a random walkable, unoccupied, tree-free tile.
     public bool SpawnRandomTree()

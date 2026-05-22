@@ -12,6 +12,7 @@ public sealed class SimSnapshot
     public BlueprintState[] Blueprints { get; }
     public TreeState[] Trees { get; }
     public WoodState[] Wood { get; }
+    public DeconState[] Decons { get; }
 
     // Set when the game has a selected colonist; null otherwise.
     public int? SelectedDummyId { get; }
@@ -28,6 +29,7 @@ public sealed class SimSnapshot
         BlueprintState[] blueprints,
         TreeState[] trees,
         WoodState[] wood,
+        DeconState[] decons,
         int? selectedDummyId = null,
         TilePos[]? selectedPath = null,
         TilePos[]? selectedOrders = null,
@@ -39,6 +41,7 @@ public sealed class SimSnapshot
         Blueprints = blueprints;
         Trees = trees;
         Wood = wood;
+        Decons = decons;
         SelectedDummyId = selectedDummyId;
         SelectedPath = selectedPath;
         SelectedOrders = selectedOrders;
@@ -57,3 +60,6 @@ public readonly record struct BlueprintState(TilePos Tile, float Progress);
 public readonly record struct TreeState(int EntityId, TilePos Tile, float ChopProgress, bool HasJob);
 
 public readonly record struct WoodState(TilePos Tile);
+
+// Decon mark on a wall. Progress = 0..1 normalised by DeconSystem.DeconTimeSec.
+public readonly record struct DeconState(TilePos Tile, float Progress);

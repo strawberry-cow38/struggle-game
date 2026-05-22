@@ -38,6 +38,8 @@ public partial class WorldRenderer : Node2D
     private static readonly Color TreeSelectColor = new(0.95f, 0.95f, 0.20f, 1.0f);
     private static readonly Color WoodColor = new(0.55f, 0.35f, 0.18f);
     private static readonly Color WoodHighlight = new(0.78f, 0.55f, 0.28f);
+    private static readonly Color DeconMarkColor = new(1.0f, 0.55f, 0.15f, 0.9f);
+    private static readonly Color DeconProgress = new(1.0f, 0.70f, 0.25f, 1.0f);
 
     public SimHost? Host { get; set; }
 
@@ -85,6 +87,11 @@ public partial class WorldRenderer : Node2D
         foreach (var bp in snap.Blueprints)
         {
             DrawBlueprint(bp.Tile, bp.Progress);
+        }
+
+        foreach (var d in snap.Decons)
+        {
+            DrawDeconMark(d.Tile, d.Progress);
         }
 
         foreach (var w in snap.Wood)
@@ -217,6 +224,24 @@ public partial class WorldRenderer : Node2D
         DrawRect(rect, WoodColor, filled: true);
         var hi = new Rect2(rect.Position + new Vector2(0, 1f), new Vector2(rect.Size.X, 2f));
         DrawRect(hi, WoodHighlight, filled: true);
+    }
+
+    private void DrawDeconMark(TilePos tile, float progress)
+    {
+        float cx = (tile.X + 0.5f) * PixelsPerTile;
+        float cy = (tile.Y + 0.5f) * PixelsPerTile;
+        float s = PixelsPerTile * 0.32f;
+        DrawLine(new Vector2(cx - s, cy - s), new Vector2(cx + s, cy + s), DeconMarkColor, width: 3f);
+        DrawLine(new Vector2(cx - s, cy + s), new Vector2(cx + s, cy - s), DeconMarkColor, width: 3f);
+        if (progress > 0f)
+        {
+            float bw = PixelsPerTile * 0.7f;
+            float bh = 3f;
+            var bg = new Rect2(cx - bw * 0.5f, cy - PixelsPerTile * 0.45f, bw, bh);
+            DrawRect(bg, new Color(0f, 0f, 0f, 0.6f), filled: true);
+            var fg = new Rect2(bg.Position, new Vector2(bw * Mathf.Clamp(progress, 0f, 1f), bh));
+            DrawRect(fg, DeconProgress, filled: true);
+        }
     }
 
     private void DrawBlueprint(TilePos tile, float progress)

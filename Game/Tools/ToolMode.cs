@@ -8,4 +8,5 @@ public enum ToolMode
     SpawnPawn = 3,
     RemovePawn = 4,
     Chop = 5,
+    Decon = 6,
 }

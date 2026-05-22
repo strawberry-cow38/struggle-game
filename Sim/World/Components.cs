@@ -73,3 +73,12 @@ public struct Wood : IComponent
 {
     public TilePos Tile;
 }
+
+// Pending deconstruct order on a wall tile. Job entity carries this;
+// ProgressSec ticks while a colonist is adjacent. On completion the wall
+// reverts to Floor and half its build cost drops as Wood on the tile.
+public struct Decon : IComponent
+{
+    public TilePos Tile;
+    public float ProgressSec;
+}

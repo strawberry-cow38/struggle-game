@@ -118,6 +118,30 @@ public sealed class IssueMoveOrderCommand : ISimCommand
     }
 }
 
+// Post a deconstruct job on every player-built wall whose tile lies in
+// the inclusive rect. Walls from procgen / map border are excluded.
+public sealed class DeconstructWallsInRectCommand : ISimCommand
+{
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public DeconstructWallsInRectCommand(TilePos a, TilePos b) { A = a; B = b; }
+    public void Apply(SimRuntime sim)
+    {
+        int xmin = Math.Min(A.X, B.X), xmax = Math.Max(A.X, B.X);
+        int ymin = Math.Min(A.Y, B.Y), ymax = Math.Max(A.Y, B.Y);
+        // Snapshot the wall list so removals during iteration are safe.
+        var walls = sim.PlayerWalls;
+        var hits = new List<TilePos>();
+        foreach (var tile in walls)
+        {
+            if (tile.X < xmin || tile.X > xmax) continue;
+            if (tile.Y < ymin || tile.Y > ymax) continue;
+            hits.Add(tile);
+        }
+        foreach (var tile in hits) sim.TryPostDeconstructJob(tile);
+    }
+}
+
 // Post chop jobs on every tree whose tile lies in the inclusive rect.
 public sealed class ChopTreesInRectCommand : ISimCommand
 {
