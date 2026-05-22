@@ -33,6 +33,12 @@ public sealed class MapView
     // Tiles occupied by standing trees. Blocks walkability.
     public IReadOnlyList<TilePos> Trees { get; }
 
+    // Door tiles flagged Forbidden by the player. Pathing treats them
+    // as walls — A* skips, the mover refuses to step. Built doors that
+    // aren't forbidden still pass through Walkable normally (gating
+    // happens at the mover via DoorState).
+    public IReadOnlyList<TilePos> ForbiddenDoors { get; }
+
     // Exposed for TileMap.Snapshot to share unchanged chunk byte[]s into
     // the next MapView. Outside callers should go through GetWall/etc.
     internal byte[][] TerrainChunks { get; }
@@ -41,6 +47,7 @@ public sealed class MapView
     internal byte[][] RoofChunks { get; }
 
     private readonly HashSet<TilePos> _treeSet;
+    private readonly HashSet<TilePos> _forbiddenDoorSet;
 
     public MapView(
         long version,
@@ -53,7 +60,8 @@ public sealed class MapView
         byte[][] wallChunks,
         byte[][] roofChunks,
         IReadOnlyList<TilePos> playerWalls,
-        IReadOnlyList<TilePos>? trees = null)
+        IReadOnlyList<TilePos>? trees = null,
+        IReadOnlyList<TilePos>? forbiddenDoors = null)
     {
         Version = version;
         Width = width;
@@ -67,6 +75,8 @@ public sealed class MapView
         PlayerWalls = playerWalls;
         Trees = trees ?? Array.Empty<TilePos>();
         _treeSet = new HashSet<TilePos>(Trees);
+        ForbiddenDoors = forbiddenDoors ?? Array.Empty<TilePos>();
+        _forbiddenDoorSet = new HashSet<TilePos>(ForbiddenDoors);
 
         var wallList = new List<TilePos>();
         for (int y = 0; y < height; y++)
@@ -94,8 +104,15 @@ public sealed class MapView
     public bool HasTree(int x, int y) => _treeSet.Contains(new TilePos(x, y));
     public bool HasTree(TilePos p) => _treeSet.Contains(p);
 
-    public bool Walkable(int x, int y) =>
-        InBounds(x, y) && RawWallByte(x, y) == 0 && !_treeSet.Contains(new TilePos(x, y));
+    public bool Walkable(int x, int y)
+    {
+        if (!InBounds(x, y)) return false;
+        if (RawWallByte(x, y) != 0) return false;
+        var p = new TilePos(x, y);
+        if (_treeSet.Contains(p)) return false;
+        if (_forbiddenDoorSet.Contains(p)) return false;
+        return true;
+    }
     public bool Walkable(TilePos p) => Walkable(p.X, p.Y);
 
     private byte RawTerrainByte(int x, int y) => TerrainChunks[MapChunks.ChunkIndex(x, y, ChunksAcross)][MapChunks.LocalIndex(x, y)];

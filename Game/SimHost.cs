@@ -103,6 +103,30 @@ public sealed class SimHost : IDisposable
         set => Volatile.Write(ref _selectedWoodIds, value ?? Array.Empty<int>());
     }
 
+    // Selected wall tile (player-built or procgen). UI uses this to
+    // gate the WallInfoPanel + its deconstruct button. Stored as a
+    // class wrapper so Volatile.Read/Write can deal in references —
+    // TilePos? doesn't have a Volatile overload.
+    private sealed record TileRef(TilePos Tile);
+    private TileRef? _selectedWallTile;
+    public TilePos? SelectedWallTile
+    {
+        get => Volatile.Read(ref _selectedWallTile)?.Tile;
+        set => Volatile.Write(ref _selectedWallTile, value is TilePos t ? new TileRef(t) : null);
+    }
+
+    // Selected door tile. UI surfaces forbid/locked toggles + decon.
+    private TileRef? _selectedDoorTile;
+    public TilePos? SelectedDoorTile
+    {
+        get => Volatile.Read(ref _selectedDoorTile)?.Tile;
+        set => Volatile.Write(ref _selectedDoorTile, value is TilePos t ? new TileRef(t) : null);
+    }
+
+    // Read-only accessor for the WallInfoPanel: is the wall at this
+    // tile player-built (deconstructable)?
+    public bool IsPlayerWall(TilePos tile) => _sim.PlayerWalls.Contains(tile);
+
     // Game→Sim command submission. Drained at the start of every tick.
     public void QueueCommand(ISimCommand cmd) => _sim.QueueCommand(cmd);
 

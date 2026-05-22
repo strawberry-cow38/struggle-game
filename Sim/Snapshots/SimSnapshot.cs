@@ -90,8 +90,14 @@ public readonly record struct WoodState(int EntityId, TilePos Tile, int Count, s
 public readonly record struct DeconState(TilePos Tile, float Progress);
 
 // Built door's current render state. OpenAmount = 0 (closed) .. 1 (fully
-// open). Orientation drives which axis the door swings on.
-public readonly record struct DoorRenderState(TilePos Tile, DoorOrientation Orientation, float OpenAmount);
+// open). Orientation drives which axis the door swings on. Forbidden +
+// Locked are player toggles surfaced to the info panel.
+public readonly record struct DoorRenderState(
+    TilePos Tile,
+    DoorOrientation Orientation,
+    float OpenAmount,
+    bool Forbidden,
+    bool Locked);
 
 // Render-friendly stockpile zone. Tiles is a frozen snapshot of the
 // zone's tile set as of build time; AllowedItemPaths captures the

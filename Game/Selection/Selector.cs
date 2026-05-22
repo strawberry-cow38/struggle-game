@@ -73,6 +73,8 @@ public partial class Selector : Node2D
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
+            Host.SelectedWallTile = null;
+            Host.SelectedDoorTile = null;
             return;
         }
 
@@ -85,6 +87,8 @@ public partial class Selector : Node2D
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
+            Host.SelectedWallTile = null;
+            Host.SelectedDoorTile = null;
             return;
         }
 
@@ -97,6 +101,8 @@ public partial class Selector : Node2D
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedWallTile = null;
+            Host.SelectedDoorTile = null;
             return;
         }
 
@@ -110,6 +116,33 @@ public partial class Selector : Node2D
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedWallTile = null;
+            Host.SelectedDoorTile = null;
+            return;
+        }
+
+        // Door under cursor wins over wall (door sits "on top" UX-wise).
+        if (TryPickDoor(snap, clickTile))
+        {
+            Host.SelectedDoorTile = clickTile;
+            Host.SelectedWallTile = null;
+            Host.SelectedDummyId = null;
+            Host.SelectedStockpileId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodIds = Array.Empty<int>();
+            return;
+        }
+
+        // Wall on the clicked tile — works for player-built + procgen,
+        // but the panel only enables the decon button for player walls.
+        if (Host.Map.InBounds(clickTile) && Host.Map.GetWall(clickTile) != WallType.None)
+        {
+            Host.SelectedWallTile = clickTile;
+            Host.SelectedDoorTile = null;
+            Host.SelectedDummyId = null;
+            Host.SelectedStockpileId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodIds = Array.Empty<int>();
             return;
         }
 
@@ -120,7 +153,18 @@ public partial class Selector : Node2D
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedWallTile = null;
+            Host.SelectedDoorTile = null;
         }
+    }
+
+    private bool TryPickDoor(SimSnapshot snap, TilePos tile)
+    {
+        foreach (var d in snap.Doors)
+        {
+            if (d.Tile == tile) return true;
+        }
+        return false;
     }
 
     private bool TryPickStockpile(SimSnapshot snap, TilePos tile, out int id)

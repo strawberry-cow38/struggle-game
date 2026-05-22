@@ -54,6 +54,9 @@ public sealed class SimRuntime
     private readonly List<TilePos> _playerWalls = new();
     private readonly Dictionary<TilePos, Entity> _trees = new();
     private readonly Dictionary<TilePos, Entity> _doorMap = new();
+    // Subset of doors flagged Forbidden — passed to MapView so A* + the
+    // mover treat them like walls. Kept in sync with the Door component.
+    private readonly HashSet<TilePos> _forbiddenDoorTiles = new();
     // Door blueprints placed on top of a built wall: the wall must
     // deconstruct first. Map tile → the parked DoorBlueprint entity so
     // CompleteJob(Deconstruct) knows to chain a DoorBuild job.
@@ -238,7 +241,7 @@ public sealed class SimRuntime
         var decons = new List<DeconState>();
         foreach (var job in Jobs.All)
         {
-            if (job.Kind != JobKind.Deconstruct) continue;
+            if (job.Kind != JobKind.Deconstruct && job.Kind != JobKind.DoorDeconstruct) continue;
             var d = job.Entity.GetComponent<Decon>();
             decons.Add(new DeconState(job.Tile, d.ProgressSec / DeconSystem.DeconTimeSec));
         }
@@ -258,7 +261,7 @@ public sealed class SimRuntime
         doorQuery.ForEachEntity((ref Door d, Entity _) =>
         {
             float open = Math.Clamp(d.ProgressSec / DoorSystem.OpenTimeSec, 0f, 1f);
-            doorRender.Add(new DoorRenderState(d.Tile, d.Orientation, open));
+            doorRender.Add(new DoorRenderState(d.Tile, d.Orientation, open, d.Forbidden, d.Locked));
         });
 
         var stockpiles = new StockpileState[_stockpiles.Count];
@@ -390,6 +393,7 @@ public sealed class SimRuntime
         {
             // Transmute the blueprint entity into the live door: drop
             // DoorBlueprint, add Door at Closed. Same tile, same id.
+            // New doors default Locked=true (enemies stub); Forbidden=false.
             var bp = entity.GetComponent<DoorBlueprint>();
             entity.RemoveComponent<DoorBlueprint>();
             entity.AddComponent(new Door
@@ -400,11 +404,32 @@ public sealed class SimRuntime
                 ProgressSec = 0f,
                 WantsOpen = false,
                 IdleSec = 0f,
+                Forbidden = false,
+                Locked = true,
             });
             _doorMap[tile] = entity;
             // Doors don't affect walkability, so no map rebuild — but
             // they DO bound rooms, so flag the room layer dirty.
             _roomsDirty = true;
+        }
+        else if (kind == JobKind.DoorDeconstruct)
+        {
+            // Delete the marker entity. The door entity itself lives in
+            // _doorMap — drop it now that decon is complete.
+            entity.DeleteEntity();
+            if (_doorMap.TryGetValue(tile, out var doorEnt))
+            {
+                _doorMap.Remove(tile);
+                _forbiddenDoorTiles.Remove(tile);
+                doorEnt.DeleteEntity();
+            }
+            if (WallDeconWoodReturn > 0)
+            {
+                var wood = Store.CreateEntity();
+                wood.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
+                wood.AddComponent(new Wood { Tile = tile, Count = WallDeconWoodReturn });
+            }
+            RebuildMapView();
         }
     }
 
@@ -459,6 +484,11 @@ public sealed class SimRuntime
             // Floor stays; throw the marker away. Re-designate spawns fresh.
             entity.DeleteEntity();
         }
+        else if (kind == JobKind.DoorDeconstruct)
+        {
+            // Door stays; throw the marker away.
+            entity.DeleteEntity();
+        }
         else if (kind == JobKind.Haul)
         {
             // Wood entity survives the cancel — only the routing intent
@@ -506,6 +536,48 @@ public sealed class SimRuntime
     }
 
     public IReadOnlyList<TilePos> PlayerWalls => _playerWalls;
+
+    // Post a door-deconstruct job. The door entity sticks around until
+    // completion; the job carries a fresh Decon marker so DeconSystem
+    // ticks progress without trampling Door state.
+    public bool TryPostDoorDeconstructJob(TilePos tile)
+    {
+        if (!_doorMap.ContainsKey(tile)) return false;
+        if (Jobs.HasTile(tile)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new Decon { Tile = tile, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.DoorDeconstruct, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        return true;
+    }
+
+    // Flip a built door's Forbidden flag. Forbidden = treated as a
+    // wall by pathing; the map view rebuilds so A* picks up the new
+    // walkability instantly.
+    public void SetDoorForbidden(TilePos tile, bool forbidden)
+    {
+        if (!_doorMap.TryGetValue(tile, out var doorEnt)) return;
+        ref var door = ref doorEnt.GetComponent<Door>();
+        if (door.Forbidden == forbidden) return;
+        door.Forbidden = forbidden;
+        if (forbidden) _forbiddenDoorTiles.Add(tile);
+        else _forbiddenDoorTiles.Remove(tile);
+        RebuildMapView();
+    }
+
+    // Flip a built door's Locked flag. Stub — no enemy code consumes
+    // it yet, so the bool just rides on the Door component.
+    public void SetDoorLocked(TilePos tile, bool locked)
+    {
+        if (!_doorMap.TryGetValue(tile, out var doorEnt)) return;
+        ref var door = ref doorEnt.GetComponent<Door>();
+        door.Locked = locked;
+    }
 
     // Post a floor-deconstruct job. Floors hidden under a wall are
     // skipped — the wall takes precedence; decon the wall first.
@@ -1040,7 +1112,14 @@ public sealed class SimRuntime
             foreach (var t in _trees.Keys) treeTiles[idx++] = t;
             // Pass the previously published view so the new snapshot
             // can reuse chunk refs that weren't touched this tick.
-            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles);
+            TilePos[]? forbidden = null;
+            if (_forbiddenDoorTiles.Count > 0)
+            {
+                forbidden = new TilePos[_forbiddenDoorTiles.Count];
+                int fi = 0;
+                foreach (var t in _forbiddenDoorTiles) forbidden[fi++] = t;
+            }
+            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden);
         }
         Volatile.Write(ref _mapView, newView);
     }

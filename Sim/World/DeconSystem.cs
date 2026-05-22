@@ -31,7 +31,7 @@ public sealed class DeconSystem
             var job = _jobs.Get(target.JobId);
             if (job is null) return;
             bool isFloor = job.Kind == JobKind.FloorDeconstruct;
-            if (job.Kind != JobKind.Deconstruct && !isFloor) return;
+            if (job.Kind != JobKind.Deconstruct && !isFloor && job.Kind != JobKind.DoorDeconstruct) return;
             if (job.State != JobState.Open && job.State != JobState.Claimed) return;
 
             bool inRange = isFloor

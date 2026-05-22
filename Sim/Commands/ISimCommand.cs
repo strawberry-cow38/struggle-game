@@ -321,6 +321,45 @@ public sealed class ForbidStackCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetItemForbidden(EntityId, Forbidden);
 }
 
+// Post a single Deconstruct job on a player-built wall tile. Sourced
+// from the wall info panel's button (not the rect designator).
+public sealed class PostWallDeconCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public PostWallDeconCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.TryPostDeconstructJob(Tile);
+}
+
+// Post a single DoorDeconstruct job on a built door tile. Sourced from
+// the door info panel's button.
+public sealed class PostDoorDeconCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public PostDoorDeconCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.TryPostDoorDeconstructJob(Tile);
+}
+
+// Toggle Forbidden on the door at this tile. Forbidden = pathing
+// treats it as a wall and the door refuses to open.
+public sealed class SetDoorForbiddenCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public bool Forbidden { get; }
+    public SetDoorForbiddenCommand(TilePos tile, bool forbidden)
+    { Tile = tile; Forbidden = forbidden; }
+    public void Apply(SimRuntime sim) => sim.SetDoorForbidden(Tile, Forbidden);
+}
+
+// Toggle Locked on the door. Stub flag — no enemy code reads it yet.
+public sealed class SetDoorLockedCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public bool Locked { get; }
+    public SetDoorLockedCommand(TilePos tile, bool locked)
+    { Tile = tile; Locked = locked; }
+    public void Apply(SimRuntime sim) => sim.SetDoorLocked(Tile, Locked);
+}
+
 // Debug bar action: spawn a fresh wanderer at a random walkable tile.
 public sealed class SpawnDummyCommand : ISimCommand
 {

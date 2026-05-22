@@ -124,6 +124,12 @@ public struct Door : IComponent
     public float ProgressSec;
     public bool WantsOpen;
     public float IdleSec;
+    // Player-toggled. Forbidden doors refuse to open — they path as a
+    // wall (MapView.Walkable returns false). Locked doors still open
+    // for friendlies; the bool is a stub for an enemies pass that
+    // hasn't shipped yet. Defaults: Locked=true, Forbidden=false.
+    public bool Forbidden;
+    public bool Locked;
 }
 
 // Pending door blueprint on a tile. Built by an adjacent colonist like

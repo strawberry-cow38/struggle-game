@@ -110,7 +110,8 @@ public sealed class TileMap
         long version,
         MapView? previous = null,
         IReadOnlyList<TilePos>? playerWalls = null,
-        IReadOnlyList<TilePos>? trees = null)
+        IReadOnlyList<TilePos>? trees = null,
+        IReadOnlyList<TilePos>? forbiddenDoors = null)
     {
         var terrainChunks = BuildChunks(_terrain, _terrainChunkDirty, previous?.TerrainChunks);
         var flooringChunks = BuildChunks(_flooring, _flooringChunkDirty, previous?.FlooringChunks);
@@ -126,7 +127,8 @@ public sealed class TileMap
             version, Width, Height, ChunksAcross, ChunksDown,
             terrainChunks, flooringChunks, wallChunks, roofChunks,
             playerWalls ?? Array.Empty<TilePos>(),
-            trees);
+            trees,
+            forbiddenDoors);
     }
 
     private byte[][] BuildChunks(byte[] flat, bool[] dirty, byte[][]? prev)

@@ -31,11 +31,26 @@ public sealed class DoorSystem
         var q = store.Query<Door>();
         q.ForEachEntity((ref Door door, Entity _) =>
         {
+            // Forbidden = treated as a wall; refuse every open trigger.
+            // Drop any stale WantsOpen so a future un-forbid starts clean.
+            if (door.Forbidden)
+            {
+                door.WantsOpen = false;
+                if (door.State == DoorState.Opening)
+                {
+                    door.State = DoorState.Closing;
+                }
+                if (door.State == DoorState.Open)
+                {
+                    door.State = DoorState.Closing;
+                    door.ProgressSec = OpenTimeSec;
+                }
+            }
             bool blocked = blockedTiles.Contains(door.Tile);
             switch (door.State)
             {
                 case DoorState.Closed:
-                    if (door.WantsOpen || blocked)
+                    if (!door.Forbidden && (door.WantsOpen || blocked))
                     {
                         door.State = DoorState.Opening;
                         door.ProgressSec = 0f;

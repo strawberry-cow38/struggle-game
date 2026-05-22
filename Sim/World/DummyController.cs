@@ -340,6 +340,7 @@ public sealed class DummyController
                 && job.Kind != JobKind.FloorBuild
                 && job.Kind != JobKind.FloorDeconstruct
                 && job.Kind != JobKind.DoorBuild
+                && job.Kind != JobKind.DoorDeconstruct
                 && job.Kind != JobKind.Haul) continue;
             if (job.State != JobState.Open) continue;
             int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
