@@ -395,7 +395,7 @@ public partial class WorldRenderer : Node2D
         float cx = (door.Tile.X + 0.5f) * PixelsPerTile;
         float cy = (door.Tile.Y + 0.5f) * PixelsPerTile;
         float panelLen = PixelsPerTile;
-        float panelThick = PixelsPerTile;
+        float panelThick = PixelsPerTile * 0.30f;
 
         float angle = door.OpenAmount * (Mathf.Pi * 0.5f);
         Vector2 pivot;
