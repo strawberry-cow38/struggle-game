@@ -134,6 +134,54 @@ public partial class HarnessController : Node2D
                 _schedule.Add((14.0, h => h.MoveLowest(c, c - 4, false), "march back through"));
                 _schedule.Add((19.0, h => h.Finish("doors-video complete"), "finish"));
                 break;
+            case "rooms-video":
+                // Build a small enclosed box near center, then drop a door,
+                // then a pawn walks through it. Renderer tints the interior
+                // tiles once the wall ring closes; tint persists across the
+                // door swing because doors count as room boundaries too.
+                if (MovieMode)
+                {
+                    _screenshotEverySec = double.PositiveInfinity;
+                }
+                else
+                {
+                    _screenshotEverySec = 1.0 / 60.0;
+                    _screenshotScale = 0.5f;
+                }
+                _warmupSec = 2.0;
+                _manualSim = true;
+                // 5x5 outer wall ring with a gap at south-center for the door.
+                {
+                    int x0 = c - 2, x1 = c + 2;
+                    int y0 = c - 2, y1 = c + 2;
+                    double at = 0.3;
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        int xc = x;
+                        _schedule.Add((at, h => h.PlaceWall(xc, y0), $"wall top x={xc}"));
+                        at += 0.1;
+                    }
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        if (x == c) continue; // gap for the door
+                        int xc = x;
+                        _schedule.Add((at, h => h.PlaceWall(xc, y1), $"wall bot x={xc}"));
+                        at += 0.1;
+                    }
+                    for (int y = y0 + 1; y <= y1 - 1; y++)
+                    {
+                        int yc = y;
+                        _schedule.Add((at, h => h.PlaceWall(x0, yc), $"wall L y={yc}"));
+                        _schedule.Add((at + 0.05, h => h.PlaceWall(x1, yc), $"wall R y={yc}"));
+                        at += 0.1;
+                    }
+                }
+                _schedule.Add((16.0, h => h.PlaceDoor(c, c + 2), "place door in gap"));
+                _schedule.Add((22.0, h => h.DraftLowest(), "draft lowest"));
+                _schedule.Add((22.5, h => h.MoveLowest(c, c, false), "march into room"));
+                _schedule.Add((28.0, h => h.MoveLowest(c, c + 6, false), "march back out"));
+                _schedule.Add((34.0, h => h.Finish("rooms-video complete"), "finish"));
+                break;
             case "stress":
                 for (int r = 2; r <= 6; r++)
                 {

@@ -19,9 +19,13 @@ namespace StruggleGame.Sim.World;
 // shape.
 public sealed class DummyController
 {
-    private static readonly (int dx, int dy)[] FourNeighbors = new (int, int)[]
+    // 8-connected (cardinals + diagonals). Pawns must stand exactly one
+    // tile from a blueprint center in any direction to work on it, so the
+    // approach picker considers all 8 neighbors.
+    private static readonly (int dx, int dy)[] EightNeighbors = new (int, int)[]
     {
         (1, 0), (-1, 0), (0, 1), (0, -1),
+        (1, 1), (1, -1), (-1, 1), (-1, -1),
     };
 
     public delegate bool DoorLookup(TilePos tile, out Entity entity);
@@ -154,7 +158,7 @@ public sealed class DummyController
                 path.Waypoints = null;
                 path.Index = 0;
             }
-            else if (IsAdjacent4(here, job.Tile))
+            else if (IsAdjacent8(here, job.Tile))
             {
                 // Standing next to it — BuildSystem advances progress.
                 path.Waypoints = null;
@@ -206,7 +210,7 @@ public sealed class DummyController
     {
         TilePos best = default;
         int bestDist = int.MaxValue;
-        foreach (var (dx, dy) in FourNeighbors)
+        foreach (var (dx, dy) in EightNeighbors)
         {
             int nx = target.X + dx;
             int ny = target.Y + dy;
@@ -285,11 +289,11 @@ public sealed class DummyController
         }
     }
 
-    private static bool IsAdjacent4(TilePos a, TilePos b)
+    private static bool IsAdjacent8(TilePos a, TilePos b)
     {
         int dx = Math.Abs(a.X - b.X);
         int dy = Math.Abs(a.Y - b.Y);
-        return dx + dy == 1;
+        return dx <= 1 && dy <= 1 && (dx + dy) > 0;
     }
 
     private void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt, MapView view)

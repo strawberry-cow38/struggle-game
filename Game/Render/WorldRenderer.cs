@@ -17,12 +17,20 @@ public partial class WorldRenderer : Node2D
 
     private ImageTexture? _grassTex;
     private ImageTexture? _wallOverlayTex;
-    private ImageTexture? _floorOverlayTex;
+    private ImageTexture? _roomOverlayTex;
+    // Cached flooring layer (one byte per tile). Drawn per-frame as small
+    // DrawRects rather than as a giant per-pixel texture overlay — the
+    // old (mapSize*PixelsPerTile)^2 image was 1GB at 256x256 tiles and
+    // froze the main thread for seconds every time a blueprint finished
+    // (because the renderer eagerly rebuilt every overlay on MapVersion
+    // bump, including floors).
+    private byte[]? _floorBytes;
     private int _mapPixelWidth;
     private int _mapPixelHeight;
     private int _mapWidth;
     private int _mapHeight;
     private long _lastMapVersion = -1;
+    private long _lastRoomVersion = -1;
 
     // Snapshot pair used for render-side interpolation. _prevSnap is the
     // last snapshot we drew from, _currSnap is the next one. We render at
@@ -114,16 +122,22 @@ public partial class WorldRenderer : Node2D
         {
             var wallBytes = Host!.CopyLayerForRender(MapLayer.Wall);
             _wallOverlayTex = BuildWallOverlay(wallBytes, _mapWidth, _mapHeight);
-            var floorBytes = Host!.CopyLayerForRender(MapLayer.Flooring);
-            _floorOverlayTex = BuildFloorOverlay(floorBytes, _mapWidth, _mapHeight);
+            _floorBytes = Host!.CopyLayerForRender(MapLayer.Flooring);
             _lastMapVersion = snap.MapVersion;
+        }
+        if (snap is not null && snap.RoomVersion != _lastRoomVersion)
+        {
+            var roomTiles = Host!.CopyRoomTilesForRender();
+            _roomOverlayTex = BuildRoomOverlay(roomTiles, _mapWidth, _mapHeight);
+            _lastRoomVersion = snap.RoomVersion;
         }
 
         var mapRect = new Rect2(0, 0, _mapPixelWidth, _mapPixelHeight);
         DrawTextureRect(_grassTex, mapRect, tile: true);
-        if (_floorOverlayTex is not null)
+        DrawFlooringTiles();
+        if (_roomOverlayTex is not null)
         {
-            DrawTextureRect(_floorOverlayTex, mapRect, tile: false);
+            DrawTextureRect(_roomOverlayTex, mapRect, tile: false);
         }
         if (_wallOverlayTex is not null)
         {
@@ -500,38 +514,74 @@ public partial class WorldRenderer : Node2D
         }
     }
 
-    private static ImageTexture BuildFloorOverlay(byte[] tiles, int width, int height)
+    // Draws floored tiles as per-tile wood rects with two darker plank
+    // lines. Iterates the cached _floorBytes; skips empty tiles. Cheap
+    // even for big maps because the cost scales with floored-tile count,
+    // not map area.
+    private void DrawFlooringTiles()
     {
-        // Per-tile pattern: solid wood with a darker horizontal plank line.
-        int texW = width * PixelsPerTile;
-        int texH = height * PixelsPerTile;
-        var img = Image.CreateEmpty(texW, texH, false, Image.Format.Rgba8);
-        var transparent = new Color(0f, 0f, 0f, 0f);
-        // Fill transparent first.
-        for (int py = 0; py < texH; py++)
-        {
-            for (int px = 0; px < texW; px++)
-            {
-                img.SetPixel(px, py, transparent);
-            }
-        }
+        if (_floorBytes is null) return;
         int plankY1 = PixelsPerTile / 3;
         int plankY2 = (PixelsPerTile * 2) / 3;
-        for (int ty = 0; ty < height; ty++)
+        for (int ty = 0; ty < _mapHeight; ty++)
         {
-            for (int tx = 0; tx < width; tx++)
+            int row = ty * _mapWidth;
+            float oy = ty * PixelsPerTile;
+            for (int tx = 0; tx < _mapWidth; tx++)
             {
-                if (tiles[ty * width + tx] == 0) continue;
-                int ox = tx * PixelsPerTile;
-                int oy = ty * PixelsPerTile;
-                for (int yy = 0; yy < PixelsPerTile; yy++)
+                if (_floorBytes[row + tx] == 0) continue;
+                float ox = tx * PixelsPerTile;
+                DrawRect(new Rect2(ox, oy, PixelsPerTile, PixelsPerTile), WoodFloorColor, filled: true);
+                DrawRect(new Rect2(ox, oy + plankY1, PixelsPerTile, 1f), WoodFloorPlank, filled: true);
+                DrawRect(new Rect2(ox, oy + plankY2, PixelsPerTile, 1f), WoodFloorPlank, filled: true);
+            }
+        }
+    }
+
+    // Per-tile translucent tint, one hue per room id. Skips id 0
+    // (barriers — walls + doors) and skips the largest room (treated as
+     // "outdoor") so the player only sees indoor areas tinted. Deterministic
+    // golden-angle hue picker keeps adjacent rooms visually distinct.
+    private static ImageTexture BuildRoomOverlay(int[] roomTiles, int width, int height)
+    {
+        var img = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
+        var transparent = new Color(0f, 0f, 0f, 0f);
+
+        // Tally tiles per room; the biggest is "outdoor" and not painted.
+        int maxId = 0;
+        for (int i = 0; i < roomTiles.Length; i++)
+            if (roomTiles[i] > maxId) maxId = roomTiles[i];
+        int outdoorId = 0;
+        if (maxId > 0)
+        {
+            var counts = new int[maxId + 1];
+            for (int i = 0; i < roomTiles.Length; i++)
+            {
+                int id = roomTiles[i];
+                if (id > 0) counts[id]++;
+            }
+            int bestCount = -1;
+            for (int id = 1; id <= maxId; id++)
+            {
+                if (counts[id] > bestCount) { bestCount = counts[id]; outdoorId = id; }
+            }
+        }
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int id = roomTiles[y * width + x];
+                if (id == 0 || id == outdoorId)
                 {
-                    var c = (yy == plankY1 || yy == plankY2) ? WoodFloorPlank : WoodFloorColor;
-                    for (int xx = 0; xx < PixelsPerTile; xx++)
-                    {
-                        img.SetPixel(ox + xx, oy + yy, c);
-                    }
+                    img.SetPixel(x, y, transparent);
+                    continue;
                 }
+                // Golden-angle hue spread keeps colors well separated.
+                float hue = (id * 0.6180339887f) % 1f;
+                var c = Color.FromHsv(hue, 0.55f, 1.0f);
+                c.A = 0.40f;
+                img.SetPixel(x, y, c);
             }
         }
         return ImageTexture.CreateFromImage(img);

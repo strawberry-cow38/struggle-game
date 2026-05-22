@@ -51,8 +51,10 @@ public sealed class BuildSystem
             int pty = (int)pos.Y;
             int dx = Math.Abs(ptx - btx);
             int dy = Math.Abs(pty - bty);
-            // 4-connected adjacency only (no diagonal "reach").
-            if (dx + dy != 1) return;
+            // Chebyshev-1: pawn must stand on one of the 8 neighbors of
+            // the blueprint tile (cardinals + diagonals). Same tile or
+            // 2+ tiles away does not advance progress.
+            if (dx > 1 || dy > 1 || (dx == 0 && dy == 0)) return;
 
             ref var blueprint = ref job.Entity.GetComponent<Blueprint>();
             blueprint.ProgressSec += dt;

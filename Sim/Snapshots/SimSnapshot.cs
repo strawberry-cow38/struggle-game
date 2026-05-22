@@ -9,6 +9,8 @@ public sealed class SimSnapshot
 {
     public long Tick { get; }
     public long MapVersion { get; }
+    public long RoomVersion { get; }
+    public int RoomCount { get; }
     public DummyState[] Dummies { get; }
     public BlueprintState[] Blueprints { get; }
     public BlueprintState[] FloorBlueprints { get; }
@@ -29,6 +31,8 @@ public sealed class SimSnapshot
     public SimSnapshot(
         long tick,
         long mapVersion,
+        long roomVersion,
+        int roomCount,
         DummyState[] dummies,
         BlueprintState[] blueprints,
         BlueprintState[] floorBlueprints,
@@ -44,6 +48,8 @@ public sealed class SimSnapshot
     {
         Tick = tick;
         MapVersion = mapVersion;
+        RoomVersion = roomVersion;
+        RoomCount = roomCount;
         Dummies = dummies;
         Blueprints = blueprints;
         FloorBlueprints = floorBlueprints;

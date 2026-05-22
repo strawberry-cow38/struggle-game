@@ -38,7 +38,8 @@ public sealed class ChopSystem
 
             int dx = Math.Abs((int)pos.X - job.Tile.X);
             int dy = Math.Abs((int)pos.Y - job.Tile.Y);
-            if (dx + dy != 1) return;
+            // Chebyshev-1: must stand on one of the 8 neighbors.
+            if (dx > 1 || dy > 1 || (dx == 0 && dy == 0)) return;
 
             ref var tree = ref job.Entity.GetComponent<Tree>();
             tree.ChopProgressSec += dt;

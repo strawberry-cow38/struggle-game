@@ -17,9 +17,20 @@ public sealed class SimRuntime
     public JobBoard Jobs { get; } = new();
     public long Tick { get; private set; }
     public long MapVersion { get; private set; }
+    public long RoomVersion { get; private set; }
+    public int RoomCount { get; private set; }
+    private int[] _roomTiles = Array.Empty<int>();
 
     private MapView _mapView = null!;
     public MapView MapView => Volatile.Read(ref _mapView);
+
+    // Wall/door mutations within a single Step() coalesce into one
+    // rebuild at end-of-tick instead of N immediate rebuilds. A 5x5 wall
+    // ring all finishing in the same tick was previously cloning the
+    // 256x256x4 map arrays and re-flood-filling rooms once per wall —
+    // long enough to look like a hard freeze on the render thread.
+    private bool _mapDirty;
+    private bool _roomsDirty;
 
     public PathService PathService { get; }
     public SimWatcher Watcher { get; } = new();
@@ -61,7 +72,10 @@ public sealed class SimRuntime
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
-        RebuildMapView();
+        // Initial view + room layer must exist before pawns spawn; force
+        // the rebuild now rather than waiting for the first Step().
+        DoRebuildMapView();
+        DoRecomputeRooms();
 
         int center = SimConstants.MapSize / 2;
         for (int i = 0; i < 3; i++) SpawnDummy(center, center);
@@ -78,6 +92,10 @@ public sealed class SimRuntime
         _doorBuilds.Step(Store, dt);
         _doors.Step(Store, dt);
         _safety.Step(Store, Tick);
+        // Coalesced rebuild: one map clone + one room flood-fill per tick
+        // even if N walls/doors mutated this tick.
+        if (_mapDirty) { DoRebuildMapView(); _mapDirty = false; }
+        if (_roomsDirty) { DoRecomputeRooms(); _roomsDirty = false; }
         Tick++;
         Watcher.Observe(Tick, Store, Jobs);
     }
@@ -201,7 +219,8 @@ public sealed class SimRuntime
         });
 
         return new SimSnapshot(
-            Tick, MapVersion, dummies, bps, floorBps.ToArray(), trees, woods, decons.ToArray(),
+            Tick, MapVersion, RoomVersion, RoomCount,
+            dummies, bps, floorBps.ToArray(), trees, woods, decons.ToArray(),
             doorBps.ToArray(), doorRender.ToArray(),
             selectedDummyId, selectedPath, selectedOrders, selTreeArr);
     }
@@ -319,6 +338,9 @@ public sealed class SimRuntime
                 IdleSec = 0f,
             });
             _doorMap[tile] = entity;
+            // Doors don't affect walkability, so no map rebuild — but
+            // they DO bound rooms, so flag the room layer dirty.
+            _roomsDirty = true;
         }
     }
 
@@ -474,7 +496,16 @@ public sealed class SimRuntime
         return false;
     }
 
+    // Mark the map view as needing a rebuild this tick. Cheap; the actual
+    // clone-and-publish runs once at end of Step().
     private void RebuildMapView()
+    {
+        _mapDirty = true;
+        // Rooms also need to refresh whenever walls change.
+        _roomsDirty = true;
+    }
+
+    private void DoRebuildMapView()
     {
         MapView newView;
         lock (_mapLock)
@@ -486,6 +517,31 @@ public sealed class SimRuntime
             newView = Map.Snapshot(MapVersion, _playerWalls.ToArray(), treeTiles);
         }
         Volatile.Write(ref _mapView, newView);
+    }
+
+    // Rebuild the room layer from the current wall + door state.
+    // 4-connected BFS over the whole map; runs at most once per tick via
+    // the _roomsDirty coalesce flag.
+    private void DoRecomputeRooms()
+    {
+        int w = Map.Width, h = Map.Height;
+        int n = w * h;
+        if (_roomTiles.Length != n) _roomTiles = new int[n];
+        int count;
+        lock (_mapLock)
+        {
+            count = RoomMap.Compute(w, h, Map.RawWalls, _doorMap.Keys, _roomTiles);
+        }
+        RoomCount = count;
+        RoomVersion++;
+    }
+
+    public int[] CopyRoomTilesForRender()
+    {
+        lock (_mapLock)
+        {
+            return (int[])_roomTiles.Clone();
+        }
     }
 
     // Pick a random walkable, unoccupied tile and drop a fresh wanderer

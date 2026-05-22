@@ -10,7 +10,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "build fcbe767+1 (render interp)";
+    private const string BuildTag = "build fcbe767+5 (no floor megatex)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
@@ -75,7 +75,8 @@ public partial class HudOverlay : CanvasLayer
         float fps = (float)Engine.GetFramesPerSecond();
         float tps = Host.ActualTps;
         float speed = Host.TickHz / (float)SimConstants.TickHz;
-        _label.Text = $"FPS  {fps:0}\nTPS  {tps:0} / {Host.TickHz}\nSPEED {speed:0.##}x";
+        int rooms = Host.LatestSnapshot?.RoomCount ?? 0;
+        _label.Text = $"FPS  {fps:0}\nTPS  {tps:0} / {Host.TickHz}\nSPEED {speed:0.##}x\nROOMS {rooms}";
 
         var w = Host.Watcher;
         var recent = w.Recent;

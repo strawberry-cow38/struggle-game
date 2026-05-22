@@ -90,6 +90,10 @@ public sealed class SimHost : IDisposable
     // when MapVersion changes.
     public byte[] CopyLayerForRender(MapLayer layer) => _sim.CopyLayerForRender(layer);
 
+    // Per-tile room ids (0 = barrier/wall/door, 1..n = room id). Recomputed
+    // only on wall/door changes; pull when SimSnapshot.RoomVersion bumps.
+    public int[] CopyRoomTilesForRender() => _sim.CopyRoomTilesForRender();
+
     public void Dispose()
     {
         _running = false;
