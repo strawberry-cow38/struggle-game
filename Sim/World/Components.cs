@@ -72,6 +72,7 @@ public struct Tree : IComponent
 public struct Wood : IComponent
 {
     public TilePos Tile;
+    public int Count;
 }
 
 // Pending deconstruct order on a wall tile. Job entity carries this;
@@ -145,6 +146,7 @@ public struct Carrying : IComponent
     public string ItemPath;
     public TilePos DestTile;
     public int StockpileId;
+    public int Count;
 }
 
 // Marks an item entity as already promised to a haul job. Posted by
@@ -164,4 +166,5 @@ public struct HaulPayload : IComponent
     public TilePos DestTile;
     public int StockpileId;
     public string ItemPath;
+    public int Count;
 }

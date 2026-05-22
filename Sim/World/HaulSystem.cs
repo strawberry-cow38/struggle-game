@@ -35,20 +35,32 @@ public sealed class HaulSystem
         {
             var w = ent.GetComponent<Wood>();
             var sourceTile = w.Tile;
-            // Already on an allowed stockpile tile? Leave it.
-            if (_sim.TryGetStockpileAt(sourceTile, out var pileHere)
-                && pileHere.Allows(ItemCatalog.Wood))
-            {
-                continue;
-            }
-            if (!_sim.TryFindBestHaulDest(sourceTile, ItemCatalog.Wood,
+            int count = w.Count;
+
+            bool onAllowedStockpile = _sim.TryGetStockpileAt(sourceTile, out var pileHere)
+                && pileHere.Allows(ItemCatalog.Wood);
+
+            if (!_sim.TryFindBestHaulDest(sourceTile, ItemCatalog.Wood, count,
                 out var destTile, out var stockpileId)) continue;
+
+            // Already on an allowed stockpile tile: only post a merge haul
+            // if the dest is a different tile, already holds the same item,
+            // and is a strictly bigger pile. Strict-bigger prevents two
+            // equal piles from both posting a haul into each other (which
+            // would just swap them) and keeps consolidation unambiguous.
+            if (onAllowedStockpile)
+            {
+                if (destTile == sourceTile) continue;
+                int existing = _sim.WoodCountAtTile(destTile);
+                if (existing <= count) continue;
+            }
 
             ent.AddComponent(new HaulPayload
             {
                 DestTile = destTile,
                 StockpileId = stockpileId,
                 ItemPath = ItemCatalog.Wood.FullPath,
+                Count = count,
             });
             var id = _jobs.Post(JobKind.Haul, sourceTile, ent);
             if (id.IsNone)

@@ -74,6 +74,11 @@ public sealed class SimRuntime
     // reason to reclaim their walls.
     public const int WallDeconWoodReturn = 1;
 
+    // Per-tile stacking cap for wood piles. Carriers and the merge pass
+    // never combine two stacks past this size; an in-progress stack with
+    // remaining room is a valid haul destination.
+    public const int WoodMaxStack = 75;
+
     public SimRuntime(int seed = 1337)
     {
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
@@ -81,8 +86,8 @@ public sealed class SimRuntime
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
         _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor);
         _dummies.OnHaulPickup = (carriedEnt, jobId, cb) => OnHaulPickedUp(carriedEnt, cb);
-        _dummies.OnHaulDeliver = (carriedEnt, jobId, originalDest, dropTile, cb)
-            => CompleteHaulJob(jobId, carriedEnt, originalDest, dropTile, cb);
+        _dummies.OnHaulDeliver = (carriedEnt, jobId, originalDest, dropTile, count, cb)
+            => CompleteHaulJob(jobId, carriedEnt, originalDest, dropTile, count, cb);
         _builds = new BuildSystem(this, Jobs);
         _chops = new ChopSystem(this, Jobs);
         _decons = new DeconSystem(this, Jobs);
@@ -114,6 +119,7 @@ public sealed class SimRuntime
         _doorBuilds.Step(Store, dt);
         _doors.Step(Store, dt);
         _hauls.Step(Store, dt);
+        MergeCoincidentWood();
         _safety.Step(Store, Tick);
         // Coalesced rebuild: one map clone + one room flood-fill per tick
         // even if N walls/doors mutated this tick.
@@ -319,7 +325,7 @@ public sealed class SimRuntime
 
             var wood = Store.CreateEntity();
             wood.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
-            wood.AddComponent(new Wood { Tile = tile });
+            wood.AddComponent(new Wood { Tile = tile, Count = 1 });
 
             RebuildMapView();
         }
@@ -333,11 +339,11 @@ public sealed class SimRuntime
                 Map.SetWall(tile, WallType.None);
                 _playerWalls.Remove(tile);
             }
-            for (int n = 0; n < WallDeconWoodReturn; n++)
+            if (WallDeconWoodReturn > 0)
             {
                 var wood = Store.CreateEntity();
                 wood.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
-                wood.AddComponent(new Wood { Tile = tile });
+                wood.AddComponent(new Wood { Tile = tile, Count = WallDeconWoodReturn });
             }
             RebuildMapView();
             // Chain: a door blueprint was parked waiting on this decon.
@@ -740,25 +746,30 @@ public sealed class SimRuntime
     public void ReleaseHaulDest(TilePos tile) => _reservedHaulDests.Remove(tile);
     public bool IsHaulDestReserved(TilePos tile) => _reservedHaulDests.Contains(tile);
 
-    // Walks the player's zones (highest priority first; create-order tiebreak)
-    // and picks the closest free cell that accepts the item. A free cell is
-    // a stockpile tile not currently holding any wood entity and not already
-    // promised to another in-flight haul.
     public bool TryFindBestHaulDest(TilePos source, ItemDef def, out TilePos dest, out int stockpileId)
+        => TryFindBestHaulDest(source, def, 1, out dest, out stockpileId);
+
+    // Walks the player's zones (highest priority first; create-order tiebreak)
+    // and picks the best cell that accepts the item. A cell is valid if it's
+    // empty OR holds the same item with room for countToMove. Merge bias:
+    // within a zone, a partial-stack tile with the most existing items wins
+    // over an empty tile; final tiebreak is distance.
+    public bool TryFindBestHaulDest(TilePos source, ItemDef def, int countToMove, out TilePos dest, out int stockpileId)
     {
         dest = default;
         stockpileId = 0;
 
-        // Build occupancy snapshot once.
-        var occupied = new HashSet<TilePos>(_reservedHaulDests);
+        // Map each tile to the wood entity sitting on it (if any) and its
+        // count, so the picker can score partial-stack merges.
+        var woodAt = new Dictionary<TilePos, int>();
         Store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
         {
-            // The source wood itself doesn't count — its tile is the pickup.
-            if (w.Tile == source) return;
-            occupied.Add(w.Tile);
+            if (w.Tile == source) return; // source tile doesn't block itself
+            woodAt[w.Tile] = w.Count;
         });
 
         StockpilePriority bestPriority = StockpilePriority.Low - 1;
+        int bestStack = -1;
         int bestDist = int.MaxValue;
 
         foreach (var pile in _stockpiles)
@@ -768,20 +779,30 @@ public sealed class SimRuntime
             if (pile.Priority < bestPriority) continue;
 
             TilePos pileBest = default;
+            int pileBestStack = -1;
             int pileBestDist = int.MaxValue;
             foreach (var t in pile.Tiles)
             {
-                if (occupied.Contains(t)) continue;
+                if (_reservedHaulDests.Contains(t)) continue;
+                int existing = woodAt.TryGetValue(t, out var c) ? c : 0;
+                if (existing > 0 && existing + countToMove > WoodMaxStack) continue;
                 int d = Math.Abs(t.X - source.X) + Math.Abs(t.Y - source.Y);
-                if (d < pileBestDist) { pileBestDist = d; pileBest = t; }
+                // Bigger existing stack wins (merge bias); break ties by distance.
+                if (existing > pileBestStack || (existing == pileBestStack && d < pileBestDist))
+                {
+                    pileBestStack = existing;
+                    pileBestDist = d;
+                    pileBest = t;
+                }
             }
-            if (pileBestDist == int.MaxValue) continue;
+            if (pileBestStack < 0) continue;
 
-            // Higher priority always wins; equal priority -> distance.
             if (pile.Priority > bestPriority
-                || (pile.Priority == bestPriority && pileBestDist < bestDist))
+                || (pile.Priority == bestPriority && pileBestStack > bestStack)
+                || (pile.Priority == bestPriority && pileBestStack == bestStack && pileBestDist < bestDist))
             {
                 bestPriority = pile.Priority;
+                bestStack = pileBestStack;
                 bestDist = pileBestDist;
                 dest = pileBest;
                 stockpileId = pile.Id;
@@ -795,13 +816,13 @@ public sealed class SimRuntime
     // originalDest and dropTile differ only in the fallback path where
     // the planned dest became invalid mid-flight (stockpile deleted/shrunk)
     // and the carrier drops at its current tile instead.
-    public void CompleteHaulJob(JobId jobId, Entity carriedEntity, TilePos originalDest, TilePos dropTile, CommandBuffer cb)
+    public void CompleteHaulJob(JobId jobId, Entity carriedEntity, TilePos originalDest, TilePos dropTile, int carriedCount, CommandBuffer cb)
     {
         _reservedHaulDests.Remove(originalDest);
         var job = Jobs.Get(jobId);
         if (job is not null) Jobs.Complete(jobId);
         if (carriedEntity.HasComponent<HaulReserved>()) cb.RemoveComponent<HaulReserved>(carriedEntity.Id);
-        cb.AddComponent(carriedEntity.Id, new Wood { Tile = dropTile });
+        cb.AddComponent(carriedEntity.Id, new Wood { Tile = dropTile, Count = carriedCount });
         cb.AddComponent(carriedEntity.Id, new WorldPos { X = dropTile.X + 0.5f, Y = dropTile.Y + 0.5f });
     }
 
@@ -815,6 +836,54 @@ public sealed class SimRuntime
         if (carriedEntity.HasComponent<HaulPayload>()) cb.RemoveComponent<HaulPayload>(carriedEntity.Id);
     }
 
+    // Sum of all wood stacks at the given tile. Used by HaulSystem to bias
+    // merge-haul destinations and by gameplay queries (e.g. a future "X
+    // logs ready" tooltip).
+    public int WoodCountAtTile(TilePos tile)
+    {
+        int total = 0;
+        Store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
+        {
+            if (w.Tile == tile) total += w.Count;
+        });
+        return total;
+    }
+
+    // End-of-tick consolidator: any two unreserved wood entities on the
+    // same tile whose combined count fits in one stack collapse into one
+    // entity. The result is at-most-one wood entity per tile, which is
+    // what TryFindBestHaulDest assumes.
+    private void MergeCoincidentWood()
+    {
+        var byTile = new Dictionary<TilePos, Entity>();
+        var mergeOps = new List<(int destId, int amt)>();
+        var deletes = new List<Entity>();
+        Store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) =>
+        {
+            if (e.HasComponent<HaulReserved>()) return;
+            if (byTile.TryGetValue(w.Tile, out var existing))
+            {
+                int existingCount = existing.GetComponent<Wood>().Count;
+                if (existingCount + w.Count <= WoodMaxStack)
+                {
+                    mergeOps.Add((existing.Id, w.Count));
+                    deletes.Add(e);
+                }
+                return;
+            }
+            byTile[w.Tile] = e;
+        });
+        foreach (var (id, amt) in mergeOps)
+        {
+            if (Store.TryGetEntityById(id, out var dest))
+            {
+                ref var dw = ref dest.GetComponent<Wood>();
+                dw.Count += amt;
+            }
+        }
+        foreach (var e in deletes) e.DeleteEntity();
+    }
+
     private bool HasWallAt(int x, int y)
     {
         if (!Map.InBounds(new TilePos(x, y))) return false;
@@ -823,11 +892,11 @@ public sealed class SimRuntime
 
     // Spawn a free wood pile at the given tile. Used by haul tests and
     // future debug tooling — gameplay drops wood via chop/decon.
-    public Entity SpawnWoodPile(TilePos tile)
+    public Entity SpawnWoodPile(TilePos tile, int count = 1)
     {
         var w = Store.CreateEntity();
         w.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
-        w.AddComponent(new Wood { Tile = tile });
+        w.AddComponent(new Wood { Tile = tile, Count = count });
         return w;
     }
 

@@ -108,7 +108,7 @@ public sealed class ToggleDraftCommand : ISimCommand
                         here = c.DestTile;
                     }
                     var cb = sim.Store.GetCommandBuffer();
-                    sim.CompleteHaulJob(bt.JobId, cargo, c.DestTile, here, cb);
+                    sim.CompleteHaulJob(bt.JobId, cargo, c.DestTile, here, c.Count, cb);
                     cb.Playback();
                 }
                 ent.RemoveComponent<Carrying>();

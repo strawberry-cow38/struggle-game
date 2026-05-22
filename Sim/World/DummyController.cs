@@ -39,7 +39,7 @@ public sealed class DummyController
     // Optional callback for haul completion. Set by SimRuntime so we
     // don't need to plumb the runtime through the controller's surface.
     public Action<Friflo.Engine.ECS.Entity, JobId, CommandBuffer>? OnHaulPickup;
-    public Action<Friflo.Engine.ECS.Entity, JobId, TilePos, TilePos, CommandBuffer>? OnHaulDeliver;
+    public Action<Friflo.Engine.ECS.Entity, JobId, TilePos, TilePos, int, CommandBuffer>? OnHaulDeliver;
 
     public DummyController(
         PathService paths,
@@ -129,7 +129,7 @@ public sealed class DummyController
                     var c = entity.GetComponent<Carrying>();
                     if (store.TryGetEntityById(c.CarriedEntityId, out var cargo))
                     {
-                        OnHaulDeliver?.Invoke(cargo, bt.JobId, c.DestTile, here, cb);
+                        OnHaulDeliver?.Invoke(cargo, bt.JobId, c.DestTile, here, c.Count, cb);
                     }
                     cb.RemoveComponent<Carrying>(entity.Id);
                 }
@@ -179,7 +179,7 @@ public sealed class DummyController
                     var c = entity.GetComponent<Carrying>();
                     if (store.TryGetEntityById(c.CarriedEntityId, out var cargo))
                     {
-                        OnHaulDeliver?.Invoke(cargo, bt.JobId, c.DestTile, here, cb);
+                        OnHaulDeliver?.Invoke(cargo, bt.JobId, c.DestTile, here, c.Count, cb);
                     }
                     cb.RemoveComponent<Carrying>(entity.Id);
                 }
@@ -365,6 +365,7 @@ public sealed class DummyController
                     ItemPath = hp.ItemPath,
                     DestTile = hp.DestTile,
                     StockpileId = hp.StockpileId,
+                    Count = hp.Count,
                 });
                 OnHaulPickup?.Invoke(job.Entity, job.Id, cb);
             }
@@ -374,7 +375,7 @@ public sealed class DummyController
                 var c = entity.GetComponent<Carrying>();
                 if (store.TryGetEntityById(c.CarriedEntityId, out var cargo))
                 {
-                    OnHaulDeliver?.Invoke(cargo, job.Id, originalDest, here, cb);
+                    OnHaulDeliver?.Invoke(cargo, job.Id, originalDest, here, c.Count, cb);
                 }
                 else
                 {
@@ -396,7 +397,7 @@ public sealed class DummyController
                     var c = entity.GetComponent<Carrying>();
                     if (store.TryGetEntityById(c.CarriedEntityId, out var cargo))
                     {
-                        OnHaulDeliver?.Invoke(cargo, job.Id, originalDest, here, cb);
+                        OnHaulDeliver?.Invoke(cargo, job.Id, originalDest, here, c.Count, cb);
                     }
                     cb.RemoveComponent<Carrying>(entity.Id);
                 }

@@ -1,4 +1,5 @@
 using Friflo.Engine.ECS;
+using StruggleGame.Sim.Map;
 
 namespace StruggleGame.Sim.World;
 
@@ -18,13 +19,23 @@ public sealed class DoorSystem
 
     public void Step(EntityStore store, float dt)
     {
+        // Items on a door tile physically wedge it open — collect the
+        // occupied tiles once so the door loop below is a pure lookup.
+        var blockedTiles = new HashSet<TilePos>();
+        store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) =>
+        {
+            if (e.HasComponent<HaulReserved>()) return;
+            blockedTiles.Add(w.Tile);
+        });
+
         var q = store.Query<Door>();
         q.ForEachEntity((ref Door door, Entity _) =>
         {
+            bool blocked = blockedTiles.Contains(door.Tile);
             switch (door.State)
             {
                 case DoorState.Closed:
-                    if (door.WantsOpen)
+                    if (door.WantsOpen || blocked)
                     {
                         door.State = DoorState.Opening;
                         door.ProgressSec = 0f;
@@ -48,6 +59,10 @@ public sealed class DoorSystem
                         door.IdleSec = 0f;
                         door.WantsOpen = false;
                     }
+                    else if (blocked)
+                    {
+                        door.IdleSec = 0f;
+                    }
                     else if (door.IdleSec >= AutoCloseSec)
                     {
                         door.State = DoorState.Closing;
@@ -55,9 +70,9 @@ public sealed class DoorSystem
                     }
                     break;
                 case DoorState.Closing:
-                    if (door.WantsOpen)
+                    if (door.WantsOpen || blocked)
                     {
-                        // Caught a pawn mid-close — reverse course.
+                        // Caught a pawn (or item blocking the swing) mid-close.
                         door.State = DoorState.Opening;
                         door.WantsOpen = false;
                         break;

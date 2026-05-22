@@ -135,6 +135,129 @@ public class HaulTests
         Assert.Equal(0, CountHaulJobs(sim));
     }
 
+    [Fact]
+    public void TwoFreeWoodOnSameTile_MergeIntoOneStack()
+    {
+        var sim = new SimRuntime();
+        var tile = NearbyWalkable(sim, new TilePos(50, 50));
+        sim.SpawnWoodPile(tile, 5);
+        sim.SpawnWoodPile(tile, 7);
+
+        // The merge pass runs each Step; one tick is enough.
+        sim.Step(SimConstants.TickSeconds);
+
+        int entities = 0;
+        int total = 0;
+        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) =>
+        {
+            if (w.Tile != tile) return;
+            entities++;
+            total += w.Count;
+        });
+        Assert.Equal(1, entities);
+        Assert.Equal(12, total);
+    }
+
+    [Fact]
+    public void FreeWood_PrefersPartialStackOnStockpile_OverEmptyTile()
+    {
+        var sim = new SimRuntime();
+        var partial = NearbyWalkable(sim, new TilePos(50, 50));
+        var empty = NearbyWalkableNotEqual(sim, new TilePos(52, 50), partial);
+        // Single stockpile spanning both tiles, so priority + zone are equal.
+        sim.QueueCommand(new CreateStockpileRectCommand(
+            new TilePos(Math.Min(partial.X, empty.X), Math.Min(partial.Y, empty.Y)),
+            new TilePos(Math.Max(partial.X, empty.X), Math.Max(partial.Y, empty.Y))));
+        sim.Step(SimConstants.TickSeconds);
+
+        sim.SpawnWoodPile(partial, 10);
+        var src = NearbyWalkableNotEqual(sim, new TilePos(46, 46), partial);
+        var src2 = NearbyWalkableNotEqual(sim, src, empty);
+        sim.SpawnWoodPile(src2, 1);
+
+        var dest = sim.TryFindBestHaulDest(src2, ItemCatalog.Wood, out var picked, out _);
+        Assert.True(dest);
+        Assert.Equal(partial, picked);
+    }
+
+    [Fact]
+    public void PartialStackOnStockpile_GetsMergedIntoLargerStockpileStack()
+    {
+        var sim = new SimRuntime();
+        var big = NearbyWalkable(sim, new TilePos(50, 50));
+        var small = NearbyWalkableNotEqual(sim, new TilePos(54, 50), big);
+        sim.QueueCommand(new CreateStockpileRectCommand(
+            new TilePos(Math.Min(big.X, small.X), Math.Min(big.Y, small.Y)),
+            new TilePos(Math.Max(big.X, small.X), Math.Max(big.Y, small.Y))));
+        sim.Step(SimConstants.TickSeconds);
+
+        sim.SpawnWoodPile(big, 20);
+        sim.SpawnWoodPile(small, 3);
+
+        bool merged = false;
+        for (int i = 0; i < 8000; i++)
+        {
+            sim.Step(SimConstants.TickSeconds);
+            int bigCount = WoodCountAtTile(sim, big);
+            int smallCount = WoodCountAtTile(sim, small);
+            if (bigCount == 23 && smallCount == 0) { merged = true; break; }
+        }
+        Assert.True(merged, "small partial stack should consolidate onto the bigger pile");
+    }
+
+    [Fact]
+    public void Door_StaysOpenWhileWoodSitsOnTile()
+    {
+        // Build a door, drop wood on it, wait past AutoCloseSec, and the
+        // door must still be Open (not Closed or Closing).
+        var sim = new SimRuntime();
+        // Pick a buildable tile away from the spawn cluster.
+        TilePos tile = default;
+        bool found = false;
+        for (int r = 5; r < SimConstants.MapSize && !found; r++)
+        {
+            for (int dy = -r; dy <= r && !found; dy++)
+                for (int dx = -r; dx <= r && !found; dx++)
+                {
+                    var t = new TilePos(SimConstants.MapSize / 2 + dx, SimConstants.MapSize / 2 + dy);
+                    if (!sim.MapView.Walkable(t)) continue;
+                    if (sim.TreeTiles.Contains(t)) continue;
+                    var l = new TilePos(t.X - 1, t.Y);
+                    var rr = new TilePos(t.X + 1, t.Y);
+                    if (!sim.MapView.Walkable(l) || !sim.MapView.Walkable(rr)) continue;
+                    if (sim.TreeTiles.Contains(l) || sim.TreeTiles.Contains(rr)) continue;
+                    tile = t; found = true;
+                }
+        }
+        Assert.True(found, "could not find buildable door tile");
+
+        sim.QueueCommand(new PlaceWallBlueprintCommand(new TilePos(tile.X - 1, tile.Y)));
+        sim.QueueCommand(new PlaceWallBlueprintCommand(new TilePos(tile.X + 1, tile.Y)));
+        for (int i = 0; i < 1200; i++) sim.Step(SimConstants.TickSeconds);
+
+        sim.QueueCommand(new PlaceDoorBlueprintCommand(tile));
+        for (int i = 0; i < 1500; i++) sim.Step(SimConstants.TickSeconds);
+        Assert.True(sim.TryGetDoor(tile, out var doorEnt));
+
+        sim.SpawnWoodPile(tile, 1);
+
+        // Run well past AutoCloseSec — door must NOT close.
+        int ticks = (int)(((DoorSystem.AutoCloseSec + DoorSystem.OpenTimeSec) * 4f / SimConstants.TickSeconds) + 5);
+        for (int i = 0; i < ticks; i++) sim.Step(SimConstants.TickSeconds);
+
+        Assert.Equal(DoorState.Open, doorEnt.GetComponent<Door>().State);
+    }
+
+    private static int WoodCountAtTile(SimRuntime sim, TilePos t)
+    {
+        int total = 0;
+        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) =>
+        {
+            if (w.Tile == t) total += w.Count;
+        });
+        return total;
+    }
+
     // ---- helpers ----
 
     private static int CountHaulJobs(SimRuntime sim)
