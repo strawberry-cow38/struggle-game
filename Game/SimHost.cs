@@ -164,6 +164,18 @@ public sealed class SimHost : IDisposable
 
             if (_paused)
             {
+                // Pause freezes the systems but not the player. Drain any
+                // queued designations / assignments / toggles so they take
+                // effect immediately, then republish the snapshot so the
+                // UI reflects the new state (forbid X marks, blueprint
+                // tiles, draft state, etc.).
+                if (_sim.ApplyQueuedCommands())
+                {
+                    int sel = Volatile.Read(ref _selectedDummyId);
+                    var trees = Volatile.Read(ref _selectedTreeIds);
+                    var woods = Volatile.Read(ref _selectedWoodIds);
+                    Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
+                }
                 Thread.Sleep(5);
                 nextTick = sw.ElapsedTicks + tickStride;
                 continue;

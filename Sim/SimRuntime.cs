@@ -139,6 +139,23 @@ public sealed class SimRuntime
 
     public void QueueCommand(ISimCommand cmd) => _commands.Enqueue(cmd);
 
+    // Drain the pending command queue without running any systems.
+    // Used by SimHost while paused so designations + assignments
+    // (forbid, decon, build, draft, …) apply immediately instead of
+    // sitting in the queue until the sim is resumed. Returns true if at
+    // least one command was applied, so the host knows to republish the
+    // render snapshot. Map / room rebuild flags coalesce the same way
+    // they do in Step().
+    public bool ApplyQueuedCommands()
+    {
+        bool any = false;
+        while (_commands.TryDequeue(out var cmd)) { cmd.Apply(this); any = true; }
+        if (!any) return false;
+        if (_mapDirty) { DoRebuildMapView(); _mapDirty = false; }
+        if (_roomsDirty) { DoRecomputeRooms(); _roomsDirty = false; }
+        return true;
+    }
+
     public SimSnapshot BuildSnapshot(int? selectedDummyId = null, IReadOnlyCollection<int>? selectedTreeIds = null, IReadOnlyCollection<int>? selectedWoodIds = null)
     {
         var dq = Store.Query<WorldPos, Wanderer>();
