@@ -92,3 +92,45 @@ public struct FloorBlueprint : IComponent
     public TilePos Tile;
     public float ProgressSec;
 }
+
+// Orientation of a door, determined at placement from the flanking
+// walls. Horizontal = walls to its east + west (door swings on a
+// north-south axis); Vertical = walls to its north + south.
+public enum DoorOrientation : byte
+{
+    Horizontal = 0,
+    Vertical = 1,
+}
+
+public enum DoorState : byte
+{
+    Closed = 0,
+    Opening = 1,
+    Open = 2,
+    Closing = 3,
+}
+
+// A built door at a tile. Doesn't block pathing (the mover gates on
+// State instead). When a pawn wants to cross, the mover flips
+// WantsOpen so DoorSystem will start the opening animation; the pawn
+// holds at the prev tile until State == Open. Auto-closes after a
+// brief idle.
+public struct Door : IComponent
+{
+    public TilePos Tile;
+    public DoorOrientation Orientation;
+    public DoorState State;
+    public float ProgressSec;
+    public bool WantsOpen;
+    public float IdleSec;
+}
+
+// Pending door blueprint on a tile. Built by an adjacent colonist like
+// a wall; on completion the entity gains a Door component and the
+// blueprint marker is replaced.
+public struct DoorBlueprint : IComponent
+{
+    public TilePos Tile;
+    public DoorOrientation Orientation;
+    public float ProgressSec;
+}

@@ -29,11 +29,14 @@ public sealed class SimRuntime
     private readonly ChopSystem _chops;
     private readonly DeconSystem _decons;
     private readonly FloorSystem _floors;
+    private readonly DoorBuildSystem _doorBuilds;
+    private readonly DoorSystem _doors;
     private readonly SafetySystem _safety;
     private readonly ConcurrentQueue<ISimCommand> _commands = new();
     private readonly object _mapLock = new();
     private readonly List<TilePos> _playerWalls = new();
     private readonly Dictionary<TilePos, Entity> _trees = new();
+    private readonly Dictionary<TilePos, Entity> _doorMap = new();
     private readonly Random _spawnRng;
     private const int InitialTreeCount = 50;
 
@@ -47,11 +50,13 @@ public sealed class SimRuntime
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
         _spawnRng = new Random(seed + 7);
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
-        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1);
+        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor);
         _builds = new BuildSystem(this, Jobs);
         _chops = new ChopSystem(this, Jobs);
         _decons = new DeconSystem(this, Jobs);
         _floors = new FloorSystem(this, Jobs);
+        _doorBuilds = new DoorBuildSystem(this, Jobs);
+        _doors = new DoorSystem();
         _safety = new SafetySystem(() => MapView, PathService, Watcher);
 
         // Trees go down before colonists so spawn can avoid landing on one.
@@ -70,6 +75,8 @@ public sealed class SimRuntime
         _chops.Step(Store, dt);
         _decons.Step(Store, dt);
         _floors.Step(Store, dt);
+        _doorBuilds.Step(Store, dt);
+        _doors.Step(Store, dt);
         _safety.Step(Store, Tick);
         Tick++;
         Watcher.Observe(Tick, Store, Jobs);
@@ -77,6 +84,9 @@ public sealed class SimRuntime
 
     public IReadOnlyCollection<TilePos> TreeTiles => _trees.Keys;
     public bool TryGetTree(TilePos tile, out Entity entity) => _trees.TryGetValue(tile, out entity!);
+
+    public IReadOnlyCollection<TilePos> DoorTiles => _doorMap.Keys;
+    public bool TryGetDoor(TilePos tile, out Entity entity) => _doorMap.TryGetValue(tile, out entity!);
 
     public void QueueCommand(ISimCommand cmd) => _commands.Enqueue(cmd);
 
@@ -174,8 +184,25 @@ public sealed class SimRuntime
             decons.Add(new DeconState(job.Tile, d.ProgressSec / DeconSystem.DeconTimeSec));
         }
 
+        var doorBps = new List<BlueprintState>();
+        foreach (var job in Jobs.All)
+        {
+            if (job.Kind != JobKind.DoorBuild) continue;
+            var bp = job.Entity.GetComponent<DoorBlueprint>();
+            doorBps.Add(new BlueprintState(job.Tile, bp.ProgressSec / DoorBuildSystem.DoorTimeSec));
+        }
+
+        var doorRender = new List<DoorRenderState>();
+        var doorQuery = Store.Query<Door>();
+        doorQuery.ForEachEntity((ref Door d, Entity _) =>
+        {
+            float open = Math.Clamp(d.ProgressSec / DoorSystem.OpenTimeSec, 0f, 1f);
+            doorRender.Add(new DoorRenderState(d.Tile, d.Orientation, open));
+        });
+
         return new SimSnapshot(
             Tick, MapVersion, dummies, bps, floorBps.ToArray(), trees, woods, decons.ToArray(),
+            doorBps.ToArray(), doorRender.ToArray(),
             selectedDummyId, selectedPath, selectedOrders, selTreeArr);
     }
 
@@ -203,6 +230,7 @@ public sealed class SimRuntime
         if (!Map.InBounds(tile)) return false;
         if (Map.GetWall(tile) != WallType.None) return false;
         if (_trees.ContainsKey(tile)) return false;
+        if (_doorMap.ContainsKey(tile)) return false;
         if (Jobs.HasTile(tile)) return false;
 
         var e = Store.CreateEntity();
@@ -275,6 +303,23 @@ public sealed class SimRuntime
             }
             RebuildMapView();
         }
+        else if (kind == JobKind.DoorBuild)
+        {
+            // Transmute the blueprint entity into the live door: drop
+            // DoorBlueprint, add Door at Closed. Same tile, same id.
+            var bp = entity.GetComponent<DoorBlueprint>();
+            entity.RemoveComponent<DoorBlueprint>();
+            entity.AddComponent(new Door
+            {
+                Tile = tile,
+                Orientation = bp.Orientation,
+                State = DoorState.Closed,
+                ProgressSec = 0f,
+                WantsOpen = false,
+                IdleSec = 0f,
+            });
+            _doorMap[tile] = entity;
+        }
     }
 
     public void CancelJob(JobId id)
@@ -307,6 +352,10 @@ public sealed class SimRuntime
             entity.DeleteEntity();
         }
         else if (kind == JobKind.FloorBuild)
+        {
+            entity.DeleteEntity();
+        }
+        else if (kind == JobKind.DoorBuild)
         {
             entity.DeleteEntity();
         }
@@ -365,6 +414,44 @@ public sealed class SimRuntime
             return false;
         }
         return true;
+    }
+
+    // Post a door blueprint. Orientation derives from flanking walls:
+    // walls east+west = horizontal door; walls north+south = vertical.
+    // Rejects if neither pair exists, if a wall/tree/door already sits
+    // on the tile, or if another job covers it.
+    public bool TryPlaceDoorBlueprint(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return false;
+        if (Map.GetWall(tile) != WallType.None) return false;
+        if (_trees.ContainsKey(tile)) return false;
+        if (_doorMap.ContainsKey(tile)) return false;
+        if (Jobs.HasTile(tile)) return false;
+
+        bool wallW = HasWallAt(tile.X - 1, tile.Y);
+        bool wallE = HasWallAt(tile.X + 1, tile.Y);
+        bool wallN = HasWallAt(tile.X, tile.Y - 1);
+        bool wallS = HasWallAt(tile.X, tile.Y + 1);
+        DoorOrientation orientation;
+        if (wallE && wallW) orientation = DoorOrientation.Horizontal;
+        else if (wallN && wallS) orientation = DoorOrientation.Vertical;
+        else return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new DoorBlueprint { Tile = tile, Orientation = orientation, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.DoorBuild, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        return true;
+    }
+
+    private bool HasWallAt(int x, int y)
+    {
+        if (!Map.InBounds(new TilePos(x, y))) return false;
+        return Map.GetWall(new TilePos(x, y)) != WallType.None;
     }
 
     // Drop a tree at a random walkable, unoccupied, tree-free tile.

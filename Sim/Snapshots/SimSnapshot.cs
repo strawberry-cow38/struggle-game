@@ -1,4 +1,5 @@
 using StruggleGame.Sim.Map;
+using StruggleGame.Sim.World;
 
 namespace StruggleGame.Sim.Snapshots;
 
@@ -14,6 +15,8 @@ public sealed class SimSnapshot
     public TreeState[] Trees { get; }
     public WoodState[] Wood { get; }
     public DeconState[] Decons { get; }
+    public BlueprintState[] DoorBlueprints { get; }
+    public DoorRenderState[] Doors { get; }
 
     // Set when the game has a selected colonist; null otherwise.
     public int? SelectedDummyId { get; }
@@ -32,6 +35,8 @@ public sealed class SimSnapshot
         TreeState[] trees,
         WoodState[] wood,
         DeconState[] decons,
+        BlueprintState[] doorBlueprints,
+        DoorRenderState[] doors,
         int? selectedDummyId = null,
         TilePos[]? selectedPath = null,
         TilePos[]? selectedOrders = null,
@@ -45,6 +50,8 @@ public sealed class SimSnapshot
         Trees = trees;
         Wood = wood;
         Decons = decons;
+        DoorBlueprints = doorBlueprints;
+        Doors = doors;
         SelectedDummyId = selectedDummyId;
         SelectedPath = selectedPath;
         SelectedOrders = selectedOrders;
@@ -66,3 +73,7 @@ public readonly record struct WoodState(TilePos Tile);
 
 // Decon mark on a wall. Progress = 0..1 normalised by DeconSystem.DeconTimeSec.
 public readonly record struct DeconState(TilePos Tile, float Progress);
+
+// Built door's current render state. OpenAmount = 0 (closed) .. 1 (fully
+// open). Orientation drives which axis the door swings on.
+public readonly record struct DoorRenderState(TilePos Tile, DoorOrientation Orientation, float OpenAmount);

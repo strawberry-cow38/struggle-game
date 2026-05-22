@@ -32,6 +32,7 @@ public partial class Toolbar : CanvasLayer
         AddChild(_hbox);
 
         AddButton(_hbox, ToolMode.BuildWall, "Wall");
+        AddButton(_hbox, ToolMode.Door, "Door");
         AddButton(_hbox, ToolMode.Floor, "Floor");
         AddButton(_hbox, ToolMode.Chop, "Chop");
         AddButton(_hbox, ToolMode.Decon, "Decon");

@@ -10,4 +10,5 @@ public enum ToolMode
     Chop = 5,
     Decon = 6,
     Floor = 7,
+    Door = 8,
 }

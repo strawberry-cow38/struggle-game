@@ -24,10 +24,13 @@ public sealed class DummyController
         (1, 0), (-1, 0), (0, 1), (0, -1),
     };
 
+    public delegate bool DoorLookup(TilePos tile, out Entity entity);
+
     private readonly PathService _paths;
     private readonly JobBoard _jobs;
     private readonly Func<MapView> _viewProvider;
     private readonly Action<JobId> _cancelJob;
+    private readonly DoorLookup _tryGetDoor;
     private readonly Random _rng;
 
     public DummyController(
@@ -35,12 +38,14 @@ public sealed class DummyController
         JobBoard jobs,
         Func<MapView> viewProvider,
         Action<JobId> cancelJob,
-        int seed)
+        int seed,
+        DoorLookup tryGetDoor)
     {
         _paths = paths;
         _jobs = jobs;
         _viewProvider = viewProvider;
         _cancelJob = cancelJob;
+        _tryGetDoor = tryGetDoor;
         _rng = new Random(seed);
     }
 
@@ -232,7 +237,8 @@ public sealed class DummyController
             if (job.Kind != JobKind.WallBuild
                 && job.Kind != JobKind.ChopTree
                 && job.Kind != JobKind.Deconstruct
-                && job.Kind != JobKind.FloorBuild) continue;
+                && job.Kind != JobKind.FloorBuild
+                && job.Kind != JobKind.DoorBuild) continue;
             if (job.State != JobState.Open) continue;
             int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
             if (d >= bestDist) continue;
@@ -286,7 +292,7 @@ public sealed class DummyController
         return dx + dy == 1;
     }
 
-    private static void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt)
+    private void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt)
     {
         if (path.Waypoints is null || path.Index >= path.Waypoints.Count) return;
 
@@ -294,6 +300,21 @@ public sealed class DummyController
         while (remaining > 0f && path.Index < path.Waypoints.Count)
         {
             var target = path.Waypoints[path.Index];
+
+            // Door gate: if the next tile holds a door that isn't fully
+            // open yet, flag it as wanting to open and freeze in place
+            // until DoorSystem advances State to Open.
+            if (_tryGetDoor(target, out var doorEnt))
+            {
+                ref var door = ref doorEnt.GetComponent<Door>();
+                if (door.State != DoorState.Open)
+                {
+                    door.WantsOpen = true;
+                    return;
+                }
+                door.IdleSec = 0f;
+            }
+
             float tx = target.X + 0.5f;
             float ty = target.Y + 0.5f;
             float dx = tx - pos.X;

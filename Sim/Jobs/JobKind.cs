@@ -8,4 +8,5 @@ public enum JobKind : byte
     ChopTree = 2,
     Deconstruct = 3,
     FloorBuild = 4,
+    DoorBuild = 5,
 }

@@ -18,6 +18,15 @@ public sealed class PlaceWallBlueprintCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.TryPlaceWallBlueprint(Tile);
 }
 
+// Single-tile door designation. Orientation is derived inside
+// TryPlaceDoorBlueprint from the flanking wall layout.
+public sealed class PlaceDoorBlueprintCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public PlaceDoorBlueprintCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.TryPlaceDoorBlueprint(Tile);
+}
+
 // Drag-rect wood-floor designation. Posts one FloorBuild blueprint per
 // tile in the rect that's eligible (no wall, no existing wood floor,
 // no other job).
