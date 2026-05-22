@@ -57,7 +57,7 @@ public sealed class DummyController
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity entity) =>
         {
             Plan(ref pos, ref path, entity, cb, view);
-            AdvanceAlongPath(ref pos, ref path, dt);
+            AdvanceAlongPath(ref pos, ref path, dt, view);
         });
         cb.Playback();
     }
@@ -292,7 +292,7 @@ public sealed class DummyController
         return dx + dy == 1;
     }
 
-    private void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt)
+    private void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt, MapView view)
     {
         if (path.Waypoints is null || path.Index >= path.Waypoints.Count) return;
 
@@ -313,6 +313,16 @@ public sealed class DummyController
                     return;
                 }
                 door.IdleSec = 0f;
+            }
+            else if (!view.Walkable(target))
+            {
+                // A wall (or other blocker) appeared on the planned route
+                // after this path was computed. Drop the stale waypoints
+                // so the planner re-routes next tick instead of marching
+                // the pawn onto unwalkable terrain.
+                path.Waypoints = null;
+                path.Index = 0;
+                return;
             }
 
             float tx = target.X + 0.5f;
