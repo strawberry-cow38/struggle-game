@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
+using StruggleGame.Sim.Diagnostics;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
 
@@ -23,6 +24,7 @@ public sealed class SimHost : IDisposable
     private int _selectedDummyId = -1;
 
     public TileMap Map => _sim.Map;
+    public SimWatcher Watcher => _sim.Watcher;
 
     public int TickHz => _tickHz;
 

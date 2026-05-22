@@ -1,6 +1,7 @@
 using Godot;
 using StruggleGame.Game.Camera;
 using StruggleGame.Game.Designation;
+using StruggleGame.Game.Harness;
 using StruggleGame.Game.Render;
 using StruggleGame.Game.Selection;
 using StruggleGame.Game.Tools;
@@ -49,6 +50,30 @@ public partial class Bootstrap : Node2D
 
         var toolbar = new Toolbar { Tools = _tools, Name = "Toolbar" };
         AddChild(toolbar);
+
+        TryStartHarness();
+    }
+
+    private void TryStartHarness()
+    {
+        string? scenario = null;
+        string? outDir = null;
+        foreach (var arg in OS.GetCmdlineArgs())
+        {
+            if (arg == "--harness") scenario ??= "default";
+            else if (arg.StartsWith("--harness=")) scenario = arg.Substring("--harness=".Length);
+            else if (arg.StartsWith("--harness-out=")) outDir = arg.Substring("--harness-out=".Length);
+        }
+        if (scenario is null || _host is null) return;
+
+        var harness = new HarnessController
+        {
+            Host = _host,
+            Scenario = scenario,
+            OutputDir = outDir ?? string.Empty,
+            Name = "Harness",
+        };
+        AddChild(harness);
     }
 
     public override void _UnhandledInput(InputEvent @event)

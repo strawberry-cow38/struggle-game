@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Friflo.Engine.ECS;
 using StruggleGame.Sim.Commands;
+using StruggleGame.Sim.Diagnostics;
 using StruggleGame.Sim.Jobs;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Pathfinding;
@@ -21,6 +22,7 @@ public sealed class SimRuntime
     public MapView MapView => Volatile.Read(ref _mapView);
 
     public PathService PathService { get; }
+    public SimWatcher Watcher { get; } = new();
 
     private readonly DummyController _dummies;
     private readonly BuildSystem _builds;
@@ -46,6 +48,7 @@ public sealed class SimRuntime
         _dummies.Step(Store, dt);
         _builds.Step(Store, dt);
         Tick++;
+        Watcher.Observe(Tick, Store, Jobs);
     }
 
     public void QueueCommand(ISimCommand cmd) => _commands.Enqueue(cmd);
