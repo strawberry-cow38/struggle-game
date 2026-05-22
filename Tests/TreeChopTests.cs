@@ -45,6 +45,9 @@ public class TreeChopTests
         }
         Assert.NotNull(targetTile);
         var tile = targetTile!.Value;
+        // Force mature so the chop designator accepts the tile.
+        Assert.True(sim.TryGetTree(tile, out var treeEnt));
+        treeEnt.GetComponent<Growth>().Stage = 1f;
 
         sim.QueueCommand(new ChopTreesInRectCommand(tile, tile));
         // Run enough ticks for a colonist to walk + chop (2s) + complete.
@@ -73,6 +76,8 @@ public class TreeChopTests
     {
         var sim = new SimRuntime();
         var tile = sim.TreeTiles.First();
+        Assert.True(sim.TryGetTree(tile, out var treeEnt));
+        treeEnt.GetComponent<Growth>().Stage = 1f;
         sim.QueueCommand(new ChopTreesInRectCommand(tile, tile));
         sim.QueueCommand(new ChopTreesInRectCommand(tile, tile));
         sim.Step(SimConstants.TickSeconds);

@@ -40,6 +40,7 @@ public sealed class SimRuntime
     private readonly DummyController _dummies;
     private readonly BuildSystem _builds;
     private readonly ChopSystem _chops;
+    private readonly GrowthSystem _growth;
     private readonly DeconSystem _decons;
     private readonly FloorSystem _floors;
     private readonly DoorBuildSystem _doorBuilds;
@@ -82,6 +83,14 @@ public sealed class SimRuntime
     // remaining room is a valid haul destination.
     public const int WoodMaxStack = 75;
 
+    // Yield from a fully-grown tree. Trees below 50% growth ramp linearly
+    // from 0 → WoodPerTreeFull; trees at 50% or above yield the full amount.
+    public const int WoodPerTreeFull = 25;
+
+    // Growth threshold below which the chop designator refuses to post a
+    // ChopTree job — the "cut plants" designator handles immature trees.
+    public const float ChopMinGrowthStage = 0.5f;
+
     public SimRuntime(int seed = 1337)
     {
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
@@ -92,6 +101,7 @@ public sealed class SimRuntime
         _dummies.OnHaulDeliver = (carrierEntity, dropTile, cb) => DeliverCarrying(carrierEntity, dropTile, cb);
         _builds = new BuildSystem(this, Jobs);
         _chops = new ChopSystem(this, Jobs);
+        _growth = new GrowthSystem(this);
         _decons = new DeconSystem(this, Jobs);
         _floors = new FloorSystem(this, Jobs);
         _doorBuilds = new DoorBuildSystem(this, Jobs);
@@ -116,6 +126,7 @@ public sealed class SimRuntime
         _dummies.Step(Store, dt);
         _builds.Step(Store, dt);
         _chops.Step(Store, dt);
+        _growth.Step(Store, dt);
         _decons.Step(Store, dt);
         _floors.Step(Store, dt);
         _doorBuilds.Step(Store, dt);
@@ -273,7 +284,8 @@ public sealed class SimRuntime
         {
             var tc = ent.GetComponent<Tree>();
             bool hasJob = Jobs.GetByTile(tile)?.Kind == JobKind.ChopTree;
-            trees[k++] = new TreeState(ent.Id, tile, tc.ChopProgressSec / ChopSystem.ChopTimeSec, hasJob);
+            float stage = ent.HasComponent<Growth>() ? ent.GetComponent<Growth>().Stage : 1f;
+            trees[k++] = new TreeState(ent.Id, tile, tc.ChopProgressSec / ChopSystem.ChopTimeSec, hasJob, stage);
         }
 
         var woodQuery = Store.Query<Wood>();
@@ -398,14 +410,19 @@ public sealed class SimRuntime
         }
         else if (kind == JobKind.ChopTree)
         {
-            // The job entity IS the tree. Delete it, drop a wood pile,
-            // and rebuild the map view so the tile becomes walkable.
+            // The job entity IS the tree. Yield ramps with growth — full
+            // wood at ≥50% growth (chop never lands on younger trees, but
+            // guard anyway), linear ramp below.
+            float stage = entity.HasComponent<Growth>() ? entity.GetComponent<Growth>().Stage : 1f;
+            int yield = stage >= ChopMinGrowthStage
+                ? WoodPerTreeFull
+                : Math.Max(1, (int)Math.Round(WoodPerTreeFull * stage / ChopMinGrowthStage));
             _trees.Remove(tile);
             entity.DeleteEntity();
 
             var wood = Store.CreateEntity();
             wood.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
-            wood.AddComponent(new Wood { Tile = tile, Count = 1 });
+            wood.AddComponent(new Wood { Tile = tile, Count = yield });
 
             RebuildMapView();
         }
@@ -576,11 +593,14 @@ public sealed class SimRuntime
     }
 
     // Try to post a chop job on the tree at this tile. Returns false if
-    // the tile has no tree or already has a job.
+    // the tile has no tree, already has a job, or holds an immature tree
+    // (the "cut plants" designator targets those instead).
     public bool TryPostChopJob(TilePos tile)
     {
         if (!_trees.TryGetValue(tile, out var treeEnt)) return false;
         if (Jobs.HasTile(tile)) return false;
+        float stage = treeEnt.HasComponent<Growth>() ? treeEnt.GetComponent<Growth>().Stage : 1f;
+        if (stage < ChopMinGrowthStage) return false;
         var id = Jobs.Post(JobKind.ChopTree, tile, treeEnt);
         return !id.IsNone;
     }
@@ -1262,7 +1282,10 @@ public sealed class SimRuntime
         return w;
     }
 
-    // Drop a tree at a random walkable, unoccupied, tree-free tile.
+    // Drop a tree at a random walkable, unoccupied, tree-free tile. Initial
+    // growth stage is randomized so a fresh map has a mix of mature trees
+    // and saplings; later regrowth (world-engine target restock) should
+    // call SpawnTreeAt with stage=0 so trees grow in visibly.
     public bool SpawnRandomTree()
     {
         for (int attempts = 0; attempts < 512; attempts++)
@@ -1274,13 +1297,38 @@ public sealed class SimRuntime
             if (_trees.ContainsKey(tile)) continue;
             if (IsOccupied(x, y)) continue;
 
-            var e = Store.CreateEntity();
-            e.AddComponent(new Tree { Tile = tile, ChopProgressSec = 0f });
-            _trees[tile] = e;
+            float stage = 0.3f + (float)_spawnRng.NextDouble() * 0.7f;
+            SpawnTreeAt(tile, stage);
             return true;
         }
         return false;
     }
+
+    public Entity SpawnTreeAt(TilePos tile, float growthStage)
+    {
+        var e = Store.CreateEntity();
+        e.AddComponent(new Tree { Tile = tile, ChopProgressSec = 0f });
+        e.AddComponent(new Growth { Stage = Math.Clamp(growthStage, 0f, 1f) });
+        _trees[tile] = e;
+        return e;
+    }
+
+    // Tile is "outdoors" (light = 100%) when it's not enclosed by any
+    // player-built room. RoomMap leaves outdoor / barrier tiles at room
+    // id 0; indoor rooms get ids 1..N. Light stub: outdoor = grow,
+    // indoor = no grow. Real per-tile light comes later.
+    public bool IsTileOutdoor(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return false;
+        int w = Map.Width;
+        int idx = tile.Y * w + tile.X;
+        if (idx < 0 || idx >= _roomTiles.Length) return false;
+        return _roomTiles[idx] == 0;
+    }
+
+    // Stub: whole map is 21°C, comfortable for everything. Per-map
+    // temperature + biomes hook in here later.
+    public bool IsTileGrowTemperature(TilePos tile) => true;
 
     // Mark the map view as needing a rebuild this tick. Cheap; the actual
     // clone-and-publish runs once at end of Step().

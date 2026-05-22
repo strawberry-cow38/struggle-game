@@ -360,14 +360,17 @@ public partial class WorldRenderer : Node2D
     private void DrawTree(Sim.Snapshots.TreeState t, HashSet<int>? selectedTrees)
     {
         var center = new Vector2((t.Tile.X + 0.5f) * PixelsPerTile, (t.Tile.Y + 0.5f) * PixelsPerTile);
-        float trunkW = PixelsPerTile * 0.18f;
-        float trunkH = PixelsPerTile * 0.40f;
+        // Visually grow with stage. Saplings start at ~35% scale so they
+        // still read as a tree (not invisible) and mature at 1.0.
+        float scale = 0.35f + 0.65f * Mathf.Clamp(t.GrowthStage, 0f, 1f);
+        float trunkW = PixelsPerTile * 0.18f * scale;
+        float trunkH = PixelsPerTile * 0.40f * scale;
         var trunkRect = new Rect2(center.X - trunkW * 0.5f, center.Y, trunkW, trunkH);
         DrawRect(trunkRect, TrunkColor, filled: true);
 
-        float canopyR = PixelsPerTile * 0.42f;
-        DrawCircle(center + new Vector2(0, -PixelsPerTile * 0.10f), canopyR, CanopyDark);
-        DrawCircle(center + new Vector2(0, -PixelsPerTile * 0.12f), canopyR * 0.78f, CanopyColor);
+        float canopyR = PixelsPerTile * 0.42f * scale;
+        DrawCircle(center + new Vector2(0, -PixelsPerTile * 0.10f * scale), canopyR, CanopyDark);
+        DrawCircle(center + new Vector2(0, -PixelsPerTile * 0.12f * scale), canopyR * 0.78f, CanopyColor);
 
         if (t.HasJob)
         {

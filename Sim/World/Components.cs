@@ -67,6 +67,16 @@ public struct Tree : IComponent
     public float ChopProgressSec;
 }
 
+// Growth state for plants (trees, crops, anything that progresses over
+// time toward maturity). Stage = 0..1. GrowthSystem advances Stage when
+// the host tile is outdoors (light ≥ 51% stub) and within comfortable
+// temperature. Spawn-time stage seeds variety so a fresh map shows
+// mature + sapling trees mixed.
+public struct Growth : IComponent
+{
+    public float Stage;
+}
+
 // Dropped log pile on the ground. Doesn't block walking. No interaction
 // yet — placeholder for future hauling.
 public struct Wood : IComponent

@@ -98,7 +98,7 @@ public readonly record struct BlueprintState(TilePos Tile, float Progress, bool 
 // EntityId lets the game thread reference a tree (selection, hit-test).
 // ChopProgress = 0..1 normalised by ChopSystem.ChopTimeSec; 0 if no
 // active chop job on the tile.
-public readonly record struct TreeState(int EntityId, TilePos Tile, float ChopProgress, bool HasJob);
+public readonly record struct TreeState(int EntityId, TilePos Tile, float ChopProgress, bool HasJob, float GrowthStage);
 
 public readonly record struct WoodState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden);
 

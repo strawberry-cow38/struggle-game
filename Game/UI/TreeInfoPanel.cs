@@ -139,14 +139,16 @@ public partial class TreeInfoPanel : CanvasLayer
         {
             _nameLabel.Text = "Tree";
             _tileLabel.Text = $"Tile: ({t1.Tile.X}, {t1.Tile.Y})";
+            int growPct = Mathf.Clamp((int)Mathf.Round(t1.GrowthStage * 100f), 0, 100);
+            string growth = $"Growth {growPct}%";
             if (t1.HasJob)
             {
                 int pct = Mathf.Clamp((int)Mathf.Round(t1.ChopProgress * 100f), 0, 100);
-                _stateLabel.Text = $"Chop job queued ({pct}%)";
+                _stateLabel.Text = $"Chop job queued ({pct}%)\n{growth}";
             }
             else
             {
-                _stateLabel.Text = "Standing";
+                _stateLabel.Text = $"Standing\n{growth}";
             }
         }
         else
