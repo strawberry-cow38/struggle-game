@@ -142,6 +142,20 @@ public partial class Bootstrap : Node2D
                 return;
             case Key.F:
             {
+                // Door selected: toggle Forbidden on it.
+                if (_host.SelectedDoorTile is Sim.Map.TilePos dTile)
+                {
+                    var dsnap = _host.LatestSnapshot;
+                    if (dsnap is null) return;
+                    bool curForbidden = false;
+                    foreach (var d in dsnap.Doors)
+                    {
+                        if (d.Tile == dTile) { curForbidden = d.Forbidden; break; }
+                    }
+                    _host.QueueCommand(new Sim.Commands.SetDoorForbiddenCommand(dTile, !curForbidden));
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
                 var woodIds = _host.SelectedWoodIds;
                 if (woodIds.Length == 0) return;
                 var snap = _host.LatestSnapshot;

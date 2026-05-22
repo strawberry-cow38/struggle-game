@@ -74,6 +74,7 @@ public partial class WorldRenderer : Node2D
     private static readonly Color DoorBlueprintBorder = new(0.85f, 0.65f, 1.00f, 0.85f);
     private static readonly Color DoorPanelColor = new(0.55f, 0.36f, 0.20f);
     private static readonly Color DoorPanelEdge = new(0.30f, 0.18f, 0.08f);
+    private static readonly Color DoorForbidMark = new(0.95f, 0.18f, 0.18f, 0.95f);
     private static readonly Color StockpileFill = new(0.95f, 0.85f, 0.25f, 0.12f);
     private static readonly Color StockpileBorder = new(1.00f, 0.90f, 0.35f, 0.85f);
     private static readonly Color StockpileSelectedBorder = new(1.00f, 1.00f, 0.20f, 1.00f);
@@ -518,6 +519,20 @@ public partial class WorldRenderer : Node2D
         DrawLine(p1, p2, DoorPanelEdge, width: 2f);
         DrawLine(p2, p3, DoorPanelEdge, width: 2f);
         DrawLine(p3, p0, DoorPanelEdge, width: 2f);
+
+        if (door.Forbidden)
+        {
+            // Red X over the tile so the player can see at a glance which
+            // doors are walled off. Drawn on the tile rect (not the swung
+            // panel) so it stays readable regardless of open amount.
+            float left = door.Tile.X * PixelsPerTile;
+            float top = door.Tile.Y * PixelsPerTile;
+            float right = left + PixelsPerTile;
+            float bottom = top + PixelsPerTile;
+            float inset = PixelsPerTile * 0.18f;
+            DrawLine(new Vector2(left + inset, top + inset), new Vector2(right - inset, bottom - inset), DoorForbidMark, width: 3f);
+            DrawLine(new Vector2(right - inset, top + inset), new Vector2(left + inset, bottom - inset), DoorForbidMark, width: 3f);
+        }
     }
 
     // Faint yellow fill over every tile in the zone, plus a 1px outline
