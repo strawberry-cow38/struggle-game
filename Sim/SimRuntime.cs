@@ -327,6 +327,7 @@ public sealed class SimRuntime
                 Map.SetWall(tile, WallType.Stone);
                 _playerWalls.Add(tile);
             }
+            RefreshDoorOrientationsAround(tile);
             RebuildMapView();
         }
         else if (kind == JobKind.ChopTree)
@@ -352,6 +353,7 @@ public sealed class SimRuntime
                 Map.SetWall(tile, WallType.None);
                 _playerWalls.Remove(tile);
             }
+            RefreshDoorOrientationsAround(tile);
             if (WallDeconWoodReturn > 0)
             {
                 var wood = Store.CreateEntity();
@@ -396,10 +398,13 @@ public sealed class SimRuntime
             // New doors default Locked=true (enemies stub); Forbidden=false.
             var bp = entity.GetComponent<DoorBlueprint>();
             entity.RemoveComponent<DoorBlueprint>();
+            // Walls may have changed since the blueprint was placed —
+            // recompute orientation from the live wall layer.
+            var builtOrientation = ComputeDoorOrientation(tile, bp.Orientation);
             entity.AddComponent(new Door
             {
                 Tile = tile,
-                Orientation = bp.Orientation,
+                Orientation = builtOrientation,
                 State = DoorState.Closed,
                 ProgressSec = 0f,
                 WantsOpen = false,
@@ -650,14 +655,7 @@ public sealed class SimRuntime
         if (_doorMap.ContainsKey(tile)) return false;
         if (_pendingDoorAfterDecon.ContainsKey(tile)) return false;
 
-        bool wallW = HasWallAt(tile.X - 1, tile.Y);
-        bool wallE = HasWallAt(tile.X + 1, tile.Y);
-        bool wallN = HasWallAt(tile.X, tile.Y - 1);
-        bool wallS = HasWallAt(tile.X, tile.Y + 1);
-        DoorOrientation orientation;
-        if (wallE && wallW) orientation = DoorOrientation.Horizontal;
-        else if (wallN && wallS) orientation = DoorOrientation.Vertical;
-        else orientation = DoorOrientation.Horizontal;
+        var orientation = ComputeDoorOrientation(tile);
 
         // Replace a wall blueprint at the same tile (cancel it first).
         var existing = Jobs.GetByTile(tile);
@@ -1072,6 +1070,45 @@ public sealed class SimRuntime
     {
         if (!Map.InBounds(new TilePos(x, y))) return false;
         return Map.GetWall(new TilePos(x, y)) != WallType.None;
+    }
+
+    // Pick door orientation from the four cardinal neighbors of the tile.
+    // E+W walls → horizontal (door swings into the N/S corridor); N+S
+    // walls → vertical. Fallback when neither pair is present: keep the
+    // current orientation if known, else Horizontal. Used at blueprint
+    // time, at build completion (walls may have shifted while the bp
+    // sat), and whenever an adjacent wall is added or removed.
+    private DoorOrientation ComputeDoorOrientation(TilePos tile, DoorOrientation? current = null)
+    {
+        bool wallW = HasWallAt(tile.X - 1, tile.Y);
+        bool wallE = HasWallAt(tile.X + 1, tile.Y);
+        bool wallN = HasWallAt(tile.X, tile.Y - 1);
+        bool wallS = HasWallAt(tile.X, tile.Y + 1);
+        if (wallE && wallW) return DoorOrientation.Horizontal;
+        if (wallN && wallS) return DoorOrientation.Vertical;
+        return current ?? DoorOrientation.Horizontal;
+    }
+
+    // After a wall toggles at `changed`, any door sitting in one of the
+    // four cardinal neighbors may now have a different best orientation.
+    // Update the Door component in place; renderer + DoorRenderState will
+    // pick the new value on the next snapshot.
+    private void RefreshDoorOrientationsAround(TilePos changed)
+    {
+        Span<TilePos> neighbors = stackalloc TilePos[4]
+        {
+            new TilePos(changed.X - 1, changed.Y),
+            new TilePos(changed.X + 1, changed.Y),
+            new TilePos(changed.X, changed.Y - 1),
+            new TilePos(changed.X, changed.Y + 1),
+        };
+        foreach (var n in neighbors)
+        {
+            if (!_doorMap.TryGetValue(n, out var ent)) continue;
+            ref var door = ref ent.GetComponent<Door>();
+            var want = ComputeDoorOrientation(n, door.Orientation);
+            if (want != door.Orientation) door.Orientation = want;
+        }
     }
 
     // Spawn a free wood pile at the given tile. Used by haul tests and
