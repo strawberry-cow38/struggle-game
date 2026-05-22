@@ -16,7 +16,9 @@ public sealed class SimSnapshot
     public BlueprintState[] Blueprints { get; }
     public BlueprintState[] FloorBlueprints { get; }
     public TreeState[] Trees { get; }
+    public CropState[] Crops { get; }
     public WoodState[] Wood { get; }
+    public ItemPileState[] ItemPiles { get; }
     public DeconState[] Decons { get; }
     public BlueprintState[] DoorBlueprints { get; }
     public DoorRenderState[] Doors { get; }
@@ -42,7 +44,9 @@ public sealed class SimSnapshot
         BlueprintState[] blueprints,
         BlueprintState[] floorBlueprints,
         TreeState[] trees,
+        CropState[] crops,
         WoodState[] wood,
+        ItemPileState[] itemPiles,
         DeconState[] decons,
         BlueprintState[] doorBlueprints,
         DoorRenderState[] doors,
@@ -61,7 +65,9 @@ public sealed class SimSnapshot
         Blueprints = blueprints;
         FloorBlueprints = floorBlueprints;
         Trees = trees;
+        Crops = crops;
         Wood = wood;
+        ItemPiles = itemPiles;
         Decons = decons;
         DoorBlueprints = doorBlueprints;
         Doors = doors;
@@ -101,6 +107,21 @@ public readonly record struct BlueprintState(TilePos Tile, float Progress, bool 
 public readonly record struct TreeState(int EntityId, TilePos Tile, float ChopProgress, bool HasJob, float GrowthStage);
 
 public readonly record struct WoodState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden);
+
+// A planted crop. WorkProgress = 0..1 normalised by the active job's
+// duration (CutPlantSystem.CutTimeSec for CutPlants, HarvestSystem.HarvestTimeSec
+// for Harvest); 0 if no job. JobKind distinguishes the two for rendering.
+public readonly record struct CropState(
+    int EntityId,
+    TilePos Tile,
+    CropKind Kind,
+    float GrowthStage,
+    float WorkProgress,
+    Jobs.JobKind? ActiveJob);
+
+// Dropped non-wood item pile (carrots etc). Not haulable yet; lives on
+// the ground for visualization only.
+public readonly record struct ItemPileState(int EntityId, TilePos Tile, int Count, string ItemPath);
 
 // Decon mark on a wall. Progress = 0..1 normalised by DeconSystem.DeconTimeSec.
 public readonly record struct DeconState(TilePos Tile, float Progress, bool Forbidden);

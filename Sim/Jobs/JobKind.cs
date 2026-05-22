@@ -12,4 +12,6 @@ public enum JobKind : byte
     Haul = 6,
     FloorDeconstruct = 7,
     DoorDeconstruct = 8,
+    CutPlants = 9,
+    Harvest = 10,
 }

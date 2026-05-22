@@ -340,7 +340,9 @@ public sealed class DummyController
                 && job.Kind != JobKind.FloorDeconstruct
                 && job.Kind != JobKind.DoorBuild
                 && job.Kind != JobKind.DoorDeconstruct
-                && job.Kind != JobKind.Haul) continue;
+                && job.Kind != JobKind.Haul
+                && job.Kind != JobKind.CutPlants
+                && job.Kind != JobKind.Harvest) continue;
             if (job.State != JobState.Open) continue;
             if (job.Forbidden) continue;
             // A pawn still hauling (forbidden cargo retained from a prior

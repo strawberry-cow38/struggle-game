@@ -240,6 +240,20 @@ public partial class WorldRenderer : Node2D
             DrawTree(t, selectedTreeSet);
         }
 
+        foreach (var c in snap.Crops)
+        {
+            DrawCrop(c);
+        }
+
+        foreach (var p in snap.ItemPiles)
+        {
+            DrawItemPile(p);
+            if (p.Tile.X == cursorTileX && p.Tile.Y == cursorTileY)
+            {
+                DrawStackLabel(stackFont, p.Tile, p.ItemPath, p.Count);
+            }
+        }
+
         float radius = PixelsPerTile * 0.35f;
         var labelFont = ThemeDB.FallbackFont;
         const int labelFontSize = 14;
@@ -394,6 +408,62 @@ public partial class WorldRenderer : Node2D
         {
             DrawArc(center, canopyR + 3f, 0f, Mathf.Tau, 36, TreeSelectColor, width: 2f, antialiased: true);
         }
+    }
+
+    private static readonly Color CarrotBody = new(0.95f, 0.55f, 0.12f);
+    private static readonly Color CarrotBodyDark = new(0.78f, 0.40f, 0.08f);
+    private static readonly Color CarrotLeaf = new(0.30f, 0.70f, 0.20f);
+    private static readonly Color CutMarkColor = new(0.95f, 0.85f, 0.20f, 0.95f);
+    private static readonly Color HarvestMarkColor = new(1.0f, 0.55f, 0.20f, 0.95f);
+
+    private void DrawCrop(Sim.Snapshots.CropState c)
+    {
+        var center = new Vector2((c.Tile.X + 0.5f) * PixelsPerTile, (c.Tile.Y + 0.5f) * PixelsPerTile);
+        float scale = 0.30f + 0.70f * Mathf.Clamp(c.GrowthStage, 0f, 1f);
+
+        // Orange wedge for the carrot body, point-down.
+        float bodyH = PixelsPerTile * 0.32f * scale;
+        float bodyW = PixelsPerTile * 0.28f * scale;
+        var p0 = center + new Vector2(-bodyW * 0.5f, -bodyH * 0.10f);
+        var p1 = center + new Vector2(bodyW * 0.5f, -bodyH * 0.10f);
+        var p2 = center + new Vector2(0f, bodyH);
+        DrawColoredPolygon(new[] { p0, p1, p2 }, CarrotBody);
+        DrawLine(p0, p2, CarrotBodyDark, width: 1f);
+        DrawLine(p1, p2, CarrotBodyDark, width: 1f);
+
+        // Green leaves on top.
+        float leafH = PixelsPerTile * 0.28f * scale;
+        var top = center + new Vector2(0f, -bodyH * 0.10f);
+        DrawLine(top, top + new Vector2(0f, -leafH), CarrotLeaf, width: 2f);
+        DrawLine(top, top + new Vector2(-leafH * 0.5f, -leafH * 0.85f), CarrotLeaf, width: 2f);
+        DrawLine(top, top + new Vector2(leafH * 0.5f, -leafH * 0.85f), CarrotLeaf, width: 2f);
+
+        if (c.ActiveJob is StruggleGame.Sim.Jobs.JobKind kind)
+        {
+            var mark = kind == StruggleGame.Sim.Jobs.JobKind.Harvest ? HarvestMarkColor : CutMarkColor;
+            float s = PixelsPerTile * 0.28f;
+            DrawLine(center + new Vector2(-s, -s), center + new Vector2(s, s), mark, width: 2.5f);
+            DrawLine(center + new Vector2(-s, s), center + new Vector2(s, -s), mark, width: 2.5f);
+
+            if (c.WorkProgress > 0f)
+            {
+                float bw = PixelsPerTile * 0.6f;
+                float bh = 3f;
+                var barBg = new Rect2(center.X - bw * 0.5f, center.Y - PixelsPerTile * 0.55f, bw, bh);
+                DrawRect(barBg, new Color(0f, 0f, 0f, 0.6f), filled: true);
+                var barFg = new Rect2(barBg.Position, new Vector2(bw * Mathf.Clamp(c.WorkProgress, 0f, 1f), bh));
+                DrawRect(barFg, new Color(1f, 0.9f, 0.2f, 1f), filled: true);
+            }
+        }
+    }
+
+    private void DrawItemPile(Sim.Snapshots.ItemPileState p)
+    {
+        // Generic non-wood pile. Carrots = small orange dot stack.
+        var center = new Vector2((p.Tile.X + 0.5f) * PixelsPerTile, (p.Tile.Y + 0.5f) * PixelsPerTile);
+        float r = PixelsPerTile * 0.16f;
+        DrawCircle(center, r, CarrotBody);
+        DrawArc(center, r, 0f, Mathf.Tau, 18, CarrotBodyDark, width: 1f, antialiased: true);
     }
 
     private void DrawWood(TilePos tile)

@@ -15,4 +15,6 @@ public enum ToolMode
     StockpileExpand = 10,
     StockpileShrink = 11,
     FloorDecon = 12,
+    CutPlants = 13,
+    Harvest = 14,
 }

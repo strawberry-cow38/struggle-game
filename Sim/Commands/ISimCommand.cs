@@ -210,7 +210,8 @@ public sealed class DeconstructFloorsInRectCommand : ISimCommand
     }
 }
 
-// Post chop jobs on every tree whose tile lies in the inclusive rect.
+// Post chop jobs on every mature tree (≥50% growth) whose tile lies in
+// the inclusive rect. Immature trees fall through to CutPlants instead.
 public sealed class ChopTreesInRectCommand : ISimCommand
 {
     public TilePos A { get; }
@@ -225,6 +226,51 @@ public sealed class ChopTreesInRectCommand : ISimCommand
             if (tile.X < xmin || tile.X > xmax) continue;
             if (tile.Y < ymin || tile.Y > ymax) continue;
             sim.TryPostChopJob(tile);
+        }
+    }
+}
+
+// Post CutPlants jobs across the rect. Targets immature trees (<50%)
+// and crops at any growth stage.
+public sealed class CutPlantsInRectCommand : ISimCommand
+{
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public CutPlantsInRectCommand(TilePos a, TilePos b) { A = a; B = b; }
+    public void Apply(SimRuntime sim)
+    {
+        int xmin = Math.Min(A.X, B.X), xmax = Math.Max(A.X, B.X);
+        int ymin = Math.Min(A.Y, B.Y), ymax = Math.Max(A.Y, B.Y);
+        foreach (var tile in sim.TreeTiles)
+        {
+            if (tile.X < xmin || tile.X > xmax) continue;
+            if (tile.Y < ymin || tile.Y > ymax) continue;
+            sim.TryPostCutPlantJob(tile);
+        }
+        foreach (var tile in sim.CropTiles)
+        {
+            if (tile.X < xmin || tile.X > xmax) continue;
+            if (tile.Y < ymin || tile.Y > ymax) continue;
+            sim.TryPostCutPlantJob(tile);
+        }
+    }
+}
+
+// Post Harvest jobs on every crop in the rect that's at ≥75% growth.
+public sealed class HarvestInRectCommand : ISimCommand
+{
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public HarvestInRectCommand(TilePos a, TilePos b) { A = a; B = b; }
+    public void Apply(SimRuntime sim)
+    {
+        int xmin = Math.Min(A.X, B.X), xmax = Math.Max(A.X, B.X);
+        int ymin = Math.Min(A.Y, B.Y), ymax = Math.Max(A.Y, B.Y);
+        foreach (var tile in sim.CropTiles)
+        {
+            if (tile.X < xmin || tile.X > xmax) continue;
+            if (tile.Y < ymin || tile.Y > ymax) continue;
+            sim.TryPostHarvestJob(tile);
         }
     }
 }

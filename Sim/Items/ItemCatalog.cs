@@ -74,12 +74,16 @@ public static class ItemCatalog
     public static readonly ItemCategory Resources;
     public static readonly ItemCategory ResourcesWood;
     public static readonly ItemDef Wood;
+    public static readonly ItemCategory ResourcesFood;
+    public static readonly ItemDef Carrot;
 
     static ItemCatalog()
     {
         Resources = RegisterCategory("Resources", "Resources");
         ResourcesWood = RegisterCategory("Wood", "Wood", Resources);
         Wood = RegisterItem("Wood", "Wood", ResourcesWood, weight: 1f, bulk: 1f);
+        ResourcesFood = RegisterCategory("Food", "Food", Resources);
+        Carrot = RegisterItem("Carrot", "Carrot", ResourcesFood, weight: 0.05f, bulk: 0.05f);
     }
 
     public static ItemCategory RegisterCategory(string id, string displayName, ItemCategory? parent = null)

@@ -77,12 +77,40 @@ public struct Growth : IComponent
     public float Stage;
 }
 
+public enum CropKind : byte
+{
+    Carrot = 0,
+}
+
+// A planted crop on a tile. Doesn't block walking. Lifecycle: planted
+// (Growth.Stage = 0) → grows → harvestable at ≥75% → harvested (yields
+// carrots scaling linearly 1→4 between 75%–100%). Cut by the CutPlants
+// designator at any stage (no yield). WorkProgressSec drives both
+// cut-plant and harvest jobs.
+public struct Crop : IComponent
+{
+    public TilePos Tile;
+    public CropKind Kind;
+    public float WorkProgressSec;
+}
+
 // Dropped log pile on the ground. Doesn't block walking. No interaction
 // yet — placeholder for future hauling.
 public struct Wood : IComponent
 {
     public TilePos Tile;
     public int Count;
+}
+
+// Generic dropped item pile (carrots today, other yields later). Doesn't
+// block walking. Not yet haulable — haul + stockpile filters still key
+// off the Wood component. ItemPath identifies the kind so the renderer +
+// (eventually) haul system can dispatch.
+public struct ItemPile : IComponent
+{
+    public TilePos Tile;
+    public int Count;
+    public string ItemPath;
 }
 
 // Pending deconstruct order on a wall tile. Job entity carries this;

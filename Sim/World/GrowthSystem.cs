@@ -33,5 +33,12 @@ public sealed class GrowthSystem
             if (!_sim.IsTileGrowTemperature(t.Tile)) return;
             g.Stage = Math.Min(1f, g.Stage + dt * perSec);
         });
+        store.Query<Growth, Crop>().ForEachEntity((ref Growth g, ref Crop c, Entity _) =>
+        {
+            if (g.Stage >= 1f) return;
+            if (!_sim.IsTileOutdoor(c.Tile)) return;
+            if (!_sim.IsTileGrowTemperature(c.Tile)) return;
+            g.Stage = Math.Min(1f, g.Stage + dt * perSec);
+        });
     }
 }

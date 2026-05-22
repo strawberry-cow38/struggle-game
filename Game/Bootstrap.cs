@@ -40,6 +40,12 @@ public partial class Bootstrap : Node2D
         var chopDesignator = new ChopDesignator { Host = _host, Tools = _tools, Name = "ChopDesignator" };
         AddChild(chopDesignator);
 
+        var cutPlantsDesignator = new CutPlantsDesignator { Host = _host, Tools = _tools, Name = "CutPlantsDesignator" };
+        AddChild(cutPlantsDesignator);
+
+        var harvestDesignator = new HarvestDesignator { Host = _host, Tools = _tools, Name = "HarvestDesignator" };
+        AddChild(harvestDesignator);
+
         var deconDesignator = new DeconDesignator { Host = _host, Tools = _tools, Name = "DeconDesignator" };
         AddChild(deconDesignator);
 

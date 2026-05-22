@@ -41,6 +41,8 @@ public sealed class SimRuntime
     private readonly BuildSystem _builds;
     private readonly ChopSystem _chops;
     private readonly GrowthSystem _growth;
+    private readonly CutPlantSystem _cuts;
+    private readonly HarvestSystem _harvests;
     private readonly DeconSystem _decons;
     private readonly FloorSystem _floors;
     private readonly DoorBuildSystem _doorBuilds;
@@ -54,6 +56,7 @@ public sealed class SimRuntime
     private readonly object _mapLock = new();
     private readonly List<TilePos> _playerWalls = new();
     private readonly Dictionary<TilePos, Entity> _trees = new();
+    private readonly Dictionary<TilePos, Entity> _crops = new();
     private readonly Dictionary<TilePos, Entity> _doorMap = new();
     // Subset of doors flagged Forbidden — passed to MapView so A* + the
     // mover treat them like walls. Kept in sync with the Door component.
@@ -72,6 +75,9 @@ public sealed class SimRuntime
     public IReadOnlyList<Stockpile> Stockpiles => _stockpiles;
     private readonly Random _spawnRng;
     private const int InitialTreeCount = 50;
+    // Scattered demo crops at world gen so the cut/harvest designators
+    // have something to chew on before a grow-zone UI exists.
+    private const int InitialCarrotCount = 25;
 
     // Walls cost nothing yet, but deconstructing one still drops some
     // wood — half of a notional 2-wood cost — to give the player a
@@ -91,6 +97,13 @@ public sealed class SimRuntime
     // ChopTree job — the "cut plants" designator handles immature trees.
     public const float ChopMinGrowthStage = 0.5f;
 
+    // Crop harvest band. Below HarvestMinGrowthStage = no yield (cut
+    // only). Linear ramp from CarrotMinYield → CarrotMaxYield between
+    // HarvestMinGrowthStage and 1.0.
+    public const float HarvestMinGrowthStage = 0.75f;
+    public const int CarrotMinYield = 1;
+    public const int CarrotMaxYield = 4;
+
     public SimRuntime(int seed = 1337)
     {
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
@@ -102,6 +115,8 @@ public sealed class SimRuntime
         _builds = new BuildSystem(this, Jobs);
         _chops = new ChopSystem(this, Jobs);
         _growth = new GrowthSystem(this);
+        _cuts = new CutPlantSystem(this, Jobs);
+        _harvests = new HarvestSystem(this, Jobs);
         _decons = new DeconSystem(this, Jobs);
         _floors = new FloorSystem(this, Jobs);
         _doorBuilds = new DoorBuildSystem(this, Jobs);
@@ -111,6 +126,7 @@ public sealed class SimRuntime
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
+        for (int i = 0; i < InitialCarrotCount; i++) SpawnRandomCarrot();
         // Initial view + room layer must exist before pawns spawn; force
         // the rebuild now rather than waiting for the first Step().
         DoRebuildMapView();
@@ -127,6 +143,8 @@ public sealed class SimRuntime
         _builds.Step(Store, dt);
         _chops.Step(Store, dt);
         _growth.Step(Store, dt);
+        _cuts.Step(Store, dt);
+        _harvests.Step(Store, dt);
         _decons.Step(Store, dt);
         _floors.Step(Store, dt);
         _doorBuilds.Step(Store, dt);
@@ -296,6 +314,34 @@ public sealed class SimRuntime
             woods[wi++] = new WoodState(e.Id, w.Tile, w.Count, ItemCatalog.Wood.FullPath, e.HasComponent<Forbidden>());
         });
 
+        var crops = new CropState[_crops.Count];
+        int ci = 0;
+        foreach (var (cTile, cEnt) in _crops)
+        {
+            var cc = cEnt.GetComponent<Crop>();
+            float cStage = cEnt.HasComponent<Growth>() ? cEnt.GetComponent<Growth>().Stage : 0f;
+            var job = Jobs.GetByTile(cTile);
+            JobKind? activeKind = null;
+            float work = 0f;
+            if (job is not null && (job.Kind == JobKind.CutPlants || job.Kind == JobKind.Harvest))
+            {
+                activeKind = job.Kind;
+                float denom = job.Kind == JobKind.Harvest
+                    ? HarvestSystem.HarvestTimeSec
+                    : CutPlantSystem.CutTimeSec;
+                work = cc.WorkProgressSec / denom;
+            }
+            crops[ci++] = new CropState(cEnt.Id, cTile, cc.Kind, cStage, work, activeKind);
+        }
+
+        var pileQuery = Store.Query<ItemPile>();
+        var piles = new ItemPileState[pileQuery.Count];
+        int pi = 0;
+        pileQuery.ForEachEntity((ref ItemPile p, Entity e) =>
+        {
+            piles[pi++] = new ItemPileState(e.Id, p.Tile, p.Count, p.ItemPath);
+        });
+
         int[]? selTreeArr = null;
         if (selectedTreeIds is { Count: > 0 })
         {
@@ -357,7 +403,7 @@ public sealed class SimRuntime
 
         return new SimSnapshot(
             Tick, MapVersion, RoomVersion, RoomCount,
-            dummies, bps, floorBps.ToArray(), trees, woods, decons.ToArray(),
+            dummies, bps, floorBps.ToArray(), trees, crops, woods, piles, decons.ToArray(),
             doorBps.ToArray(), doorRender.ToArray(),
             stockpiles,
             selectedDummyId, selectedPath, selectedOrders, selTreeArr, selWoodArr);
@@ -425,6 +471,58 @@ public sealed class SimRuntime
             wood.AddComponent(new Wood { Tile = tile, Count = yield });
 
             RebuildMapView();
+        }
+        else if (kind == JobKind.CutPlants)
+        {
+            if (entity.HasComponent<Tree>())
+            {
+                // Immature tree: linear-ramp wood from 0 → WoodPerTreeFull
+                // between stage 0 and ChopMinGrowthStage. Always at least 1
+                // so a player-issued cut still returns a token amount.
+                float stage = entity.HasComponent<Growth>() ? entity.GetComponent<Growth>().Stage : 0f;
+                int yield = Math.Max(1, (int)Math.Round(WoodPerTreeFull * stage / ChopMinGrowthStage));
+                _trees.Remove(tile);
+                entity.DeleteEntity();
+                var wood = Store.CreateEntity();
+                wood.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
+                wood.AddComponent(new Wood { Tile = tile, Count = yield });
+                RebuildMapView();
+            }
+            else if (entity.HasComponent<Crop>())
+            {
+                // Crops cut at any stage yield nothing — the verb exists
+                // to clear ground (e.g. reclaim a grow zone) without
+                // waiting for harvestability.
+                _crops.Remove(tile);
+                entity.DeleteEntity();
+            }
+        }
+        else if (kind == JobKind.Harvest)
+        {
+            if (!entity.HasComponent<Crop>()) return;
+            var crop = entity.GetComponent<Crop>();
+            float stage = entity.HasComponent<Growth>() ? entity.GetComponent<Growth>().Stage : 0f;
+            int yield = CarrotMinYield;
+            if (stage >= 1f) yield = CarrotMaxYield;
+            else if (stage >= HarvestMinGrowthStage)
+            {
+                float t = (stage - HarvestMinGrowthStage) / (1f - HarvestMinGrowthStage);
+                yield = (int)Math.Round(CarrotMinYield + (CarrotMaxYield - CarrotMinYield) * t);
+            }
+            _crops.Remove(tile);
+            entity.DeleteEntity();
+            // Generic ItemPile drop. Carrots aren't haulable yet (haul +
+            // stockpile machinery still hardcodes the Wood component);
+            // the pile just sits on the ground for now and reads via the
+            // ItemPile snapshot.
+            string itemPath = crop.Kind switch
+            {
+                CropKind.Carrot => Items.ItemCatalog.Carrot.FullPath,
+                _ => Items.ItemCatalog.Carrot.FullPath,
+            };
+            var drop = Store.CreateEntity();
+            drop.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
+            drop.AddComponent(new ItemPile { Tile = tile, Count = yield, ItemPath = itemPath });
         }
         else if (kind == JobKind.Deconstruct)
         {
@@ -1311,6 +1409,67 @@ public sealed class SimRuntime
         e.AddComponent(new Growth { Stage = Math.Clamp(growthStage, 0f, 1f) });
         _trees[tile] = e;
         return e;
+    }
+
+    public IReadOnlyCollection<TilePos> CropTiles => _crops.Keys;
+    public bool TryGetCrop(TilePos tile, out Entity entity) => _crops.TryGetValue(tile, out entity!);
+
+    public bool SpawnRandomCarrot()
+    {
+        for (int attempts = 0; attempts < 512; attempts++)
+        {
+            int x = _spawnRng.Next(Map.Width);
+            int y = _spawnRng.Next(Map.Height);
+            if (!Map.Walkable(x, y)) continue;
+            var tile = new TilePos(x, y);
+            if (_trees.ContainsKey(tile)) continue;
+            if (_crops.ContainsKey(tile)) continue;
+            if (IsOccupied(x, y)) continue;
+            float stage = (float)_spawnRng.NextDouble();
+            SpawnCropAt(tile, CropKind.Carrot, stage);
+            return true;
+        }
+        return false;
+    }
+
+    public Entity SpawnCropAt(TilePos tile, CropKind kind, float growthStage)
+    {
+        var e = Store.CreateEntity();
+        e.AddComponent(new Crop { Tile = tile, Kind = kind, WorkProgressSec = 0f });
+        e.AddComponent(new Growth { Stage = Math.Clamp(growthStage, 0f, 1f) });
+        _crops[tile] = e;
+        return e;
+    }
+
+    // CutPlants targets immature trees AND crops at any stage. Returns
+    // false if nothing cuttable is on the tile or a job already sits on it.
+    public bool TryPostCutPlantJob(TilePos tile)
+    {
+        if (Jobs.HasTile(tile)) return false;
+        if (_trees.TryGetValue(tile, out var treeEnt))
+        {
+            float stage = treeEnt.HasComponent<Growth>() ? treeEnt.GetComponent<Growth>().Stage : 1f;
+            if (stage >= ChopMinGrowthStage) return false; // mature trees use chop
+            var id = Jobs.Post(JobKind.CutPlants, tile, treeEnt);
+            return !id.IsNone;
+        }
+        if (_crops.TryGetValue(tile, out var cropEnt))
+        {
+            var id = Jobs.Post(JobKind.CutPlants, tile, cropEnt);
+            return !id.IsNone;
+        }
+        return false;
+    }
+
+    // Harvest only targets crops at ≥75% growth.
+    public bool TryPostHarvestJob(TilePos tile)
+    {
+        if (Jobs.HasTile(tile)) return false;
+        if (!_crops.TryGetValue(tile, out var cropEnt)) return false;
+        float stage = cropEnt.HasComponent<Growth>() ? cropEnt.GetComponent<Growth>().Stage : 0f;
+        if (stage < HarvestMinGrowthStage) return false;
+        var id = Jobs.Post(JobKind.Harvest, tile, cropEnt);
+        return !id.IsNone;
     }
 
     // Tile is "outdoors" (light = 100%) when it's not enclosed by any
