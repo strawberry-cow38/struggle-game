@@ -123,7 +123,12 @@ public sealed class SimHost : IDisposable
         {
             int hz = _tickHz;
             long tickStride = Stopwatch.Frequency / hz;
-            float dt = 1f / hz;
+            // Speed control: dt is fixed at the canonical tick step, so a
+            // higher tickHz fires more sim ticks per wall-second and the
+            // sim advances faster than realtime. Using 1f/hz here would
+            // make every speed setting feel identical because the extra
+            // ticks would each cover proportionally less sim time.
+            float dt = SimConstants.TickSeconds;
 
             if (_paused)
             {
