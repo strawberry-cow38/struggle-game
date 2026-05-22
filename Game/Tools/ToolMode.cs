@@ -7,4 +7,5 @@ public enum ToolMode
     Cancel = 2,
     SpawnPawn = 3,
     RemovePawn = 4,
+    Chop = 5,
 }

@@ -22,15 +22,28 @@ public sealed class MapView
     // uses this so colonists hover around real player structures.
     public IReadOnlyList<TilePos> PlayerWalls { get; }
 
-    private readonly TileType[] _tiles;
+    // Tiles occupied by standing trees. Blocks walkability and surfaces
+    // through Trees for renderer + chop designator hit-tests.
+    public IReadOnlyList<TilePos> Trees { get; }
 
-    public MapView(long version, int width, int height, TileType[] tiles, IReadOnlyList<TilePos> playerWalls)
+    private readonly TileType[] _tiles;
+    private readonly HashSet<TilePos> _treeSet;
+
+    public MapView(
+        long version,
+        int width,
+        int height,
+        TileType[] tiles,
+        IReadOnlyList<TilePos> playerWalls,
+        IReadOnlyList<TilePos>? trees = null)
     {
         Version = version;
         Width = width;
         Height = height;
         _tiles = tiles;
         PlayerWalls = playerWalls;
+        Trees = trees ?? Array.Empty<TilePos>();
+        _treeSet = new HashSet<TilePos>(Trees);
 
         var walls = new List<TilePos>();
         for (int y = 0; y < height; y++)
@@ -50,7 +63,11 @@ public sealed class MapView
     public bool InBounds(int x, int y) => (uint)x < (uint)Width && (uint)y < (uint)Height;
     public bool InBounds(TilePos p) => InBounds(p.X, p.Y);
 
-    public bool Walkable(int x, int y) => InBounds(x, y) && _tiles[y * Width + x] != TileType.Wall;
+    public bool HasTree(int x, int y) => _treeSet.Contains(new TilePos(x, y));
+    public bool HasTree(TilePos p) => _treeSet.Contains(p);
+
+    public bool Walkable(int x, int y) =>
+        InBounds(x, y) && _tiles[y * Width + x] != TileType.Wall && !_treeSet.Contains(new TilePos(x, y));
     public bool Walkable(TilePos p) => Walkable(p.X, p.Y);
 
     public ReadOnlySpan<TileType> RawTiles => _tiles;

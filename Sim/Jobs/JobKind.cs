@@ -5,4 +5,5 @@ namespace StruggleGame.Sim.Jobs;
 public enum JobKind : byte
 {
     WallBuild = 1,
+    ChopTree = 2,
 }

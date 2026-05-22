@@ -118,6 +118,25 @@ public sealed class IssueMoveOrderCommand : ISimCommand
     }
 }
 
+// Post chop jobs on every tree whose tile lies in the inclusive rect.
+public sealed class ChopTreesInRectCommand : ISimCommand
+{
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public ChopTreesInRectCommand(TilePos a, TilePos b) { A = a; B = b; }
+    public void Apply(SimRuntime sim)
+    {
+        int xmin = Math.Min(A.X, B.X), xmax = Math.Max(A.X, B.X);
+        int ymin = Math.Min(A.Y, B.Y), ymax = Math.Max(A.Y, B.Y);
+        foreach (var tile in sim.TreeTiles)
+        {
+            if (tile.X < xmin || tile.X > xmax) continue;
+            if (tile.Y < ymin || tile.Y > ymax) continue;
+            sim.TryPostChopJob(tile);
+        }
+    }
+}
+
 // Debug bar action: spawn a fresh wanderer at a random walkable tile.
 public sealed class SpawnDummyCommand : ISimCommand
 {

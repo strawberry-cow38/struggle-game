@@ -3,19 +3,19 @@ using StruggleGame.Game.Tools;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Map;
+using StruggleGame.Sim.Snapshots;
 
 namespace StruggleGame.Game.Selection;
 
-// LMB click in the world (when no other tool is active) selects the
-// nearest colonist within a small pixel radius; clicking empty space
-// deselects. Selection lives on SimHost so the sim thread can include
-// the selected pawn's path in the snapshot.
+// LMB click in the world (when no other tool is active) picks the
+// nearest pawn within PickRadiusPx; if none, the nearest tree; if
+// neither, clears all selection. Shift+LMB on a tree toggles it in/out
+// of the multi-tree selection. Double-click LMB selects every tree in
+// the camera viewport (Cities-Skylines style).
 //
 // RMB on a drafted colonist's selection issues a move order to the
 // clicked tile. Shift+RMB appends to the order queue instead of
-// replacing it. If the right-clicked target had multiple actions (no
-// such targets exist yet), a context menu would open instead — for now
-// move is the only valid action.
+// replacing it.
 public partial class Selector : Node2D
 {
     private const float PickRadiusPx = SimConstants.PixelsPerTile * 0.6f;
@@ -32,7 +32,7 @@ public partial class Selector : Node2D
 
         if (mb.ButtonIndex == MouseButton.Left)
         {
-            HandleSelect();
+            HandleSelect(mb.ShiftPressed, mb.DoubleClick);
             GetViewport().SetInputAsHandled();
         }
         else if (mb.ButtonIndex == MouseButton.Right)
@@ -44,13 +44,48 @@ public partial class Selector : Node2D
         }
     }
 
-    private void HandleSelect()
+    private void HandleSelect(bool shift, bool doubleClick)
     {
-        var world = GetGlobalMousePosition();
         var snap = Host!.LatestSnapshot;
         if (snap is null) return;
 
-        int bestId = -1;
+        if (doubleClick)
+        {
+            SelectAllTreesInView(snap);
+            return;
+        }
+
+        var world = GetGlobalMousePosition();
+
+        // Pawn beats tree if both are within radius.
+        if (TryPickPawn(snap, world, out int pawnId))
+        {
+            Host.SelectedDummyId = pawnId;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            return;
+        }
+
+        if (TryPickTree(snap, world, out int treeId))
+        {
+            var set = shift ? new HashSet<int>(Host.SelectedTreeIds) : new HashSet<int>();
+            if (shift && !set.Add(treeId)) set.Remove(treeId);
+            else set.Add(treeId);
+            WriteTreeSelection(set);
+            Host.SelectedDummyId = null;
+            return;
+        }
+
+        // Empty click — clear all selection (unless shift, which preserves).
+        if (!shift)
+        {
+            Host.SelectedDummyId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+        }
+    }
+
+    private bool TryPickPawn(SimSnapshot snap, Vector2 world, out int id)
+    {
+        id = -1;
         float bestDistSq = PickRadiusPx * PickRadiusPx;
         foreach (var d in snap.Dummies)
         {
@@ -62,11 +97,62 @@ public partial class Selector : Node2D
             if (distSq < bestDistSq)
             {
                 bestDistSq = distSq;
-                bestId = d.EntityId;
+                id = d.EntityId;
             }
         }
+        return id >= 0;
+    }
 
-        Host.SelectedDummyId = bestId >= 0 ? bestId : null;
+    private bool TryPickTree(SimSnapshot snap, Vector2 world, out int id)
+    {
+        id = -1;
+        float bestSq = (PixelsPerTile * 0.5f) * (PixelsPerTile * 0.5f);
+        foreach (var t in snap.Trees)
+        {
+            float px = (t.Tile.X + 0.5f) * PixelsPerTile;
+            float py = (t.Tile.Y + 0.5f) * PixelsPerTile;
+            float dx = px - world.X;
+            float dy = py - world.Y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 < bestSq)
+            {
+                bestSq = d2;
+                id = t.EntityId;
+            }
+        }
+        return id >= 0;
+    }
+
+    private void SelectAllTreesInView(SimSnapshot snap)
+    {
+        var vp = GetViewport().GetVisibleRect();
+        var canvasXform = GetCanvasTransform().AffineInverse();
+        var topLeft = canvasXform * vp.Position;
+        var bottomRight = canvasXform * (vp.Position + vp.Size);
+        float minX = Mathf.Min(topLeft.X, bottomRight.X);
+        float maxX = Mathf.Max(topLeft.X, bottomRight.X);
+        float minY = Mathf.Min(topLeft.Y, bottomRight.Y);
+        float maxY = Mathf.Max(topLeft.Y, bottomRight.Y);
+
+        var set = new HashSet<int>();
+        foreach (var t in snap.Trees)
+        {
+            float px = (t.Tile.X + 0.5f) * PixelsPerTile;
+            float py = (t.Tile.Y + 0.5f) * PixelsPerTile;
+            if (px < minX || px > maxX) continue;
+            if (py < minY || py > maxY) continue;
+            set.Add(t.EntityId);
+        }
+        WriteTreeSelection(set);
+        if (set.Count > 0) Host!.SelectedDummyId = null;
+    }
+
+    private void WriteTreeSelection(HashSet<int> set)
+    {
+        var arr = new int[set.Count];
+        int i = 0;
+        foreach (var id in set) arr[i++] = id;
+        Host!.SelectedTreeIds = arr;
     }
 
     private bool HandleOrder(bool append)

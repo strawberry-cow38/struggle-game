@@ -10,28 +10,39 @@ public sealed class SimSnapshot
     public long MapVersion { get; }
     public DummyState[] Dummies { get; }
     public BlueprintState[] Blueprints { get; }
+    public TreeState[] Trees { get; }
+    public WoodState[] Wood { get; }
 
     // Set when the game has a selected colonist; null otherwise.
     public int? SelectedDummyId { get; }
     public TilePos[]? SelectedPath { get; }
     public TilePos[]? SelectedOrders { get; }
 
+    // Set of tree entity ids the player has selected. May be empty.
+    public int[] SelectedTreeIds { get; }
+
     public SimSnapshot(
         long tick,
         long mapVersion,
         DummyState[] dummies,
         BlueprintState[] blueprints,
+        TreeState[] trees,
+        WoodState[] wood,
         int? selectedDummyId = null,
         TilePos[]? selectedPath = null,
-        TilePos[]? selectedOrders = null)
+        TilePos[]? selectedOrders = null,
+        int[]? selectedTreeIds = null)
     {
         Tick = tick;
         MapVersion = mapVersion;
         Dummies = dummies;
         Blueprints = blueprints;
+        Trees = trees;
+        Wood = wood;
         SelectedDummyId = selectedDummyId;
         SelectedPath = selectedPath;
         SelectedOrders = selectedOrders;
+        SelectedTreeIds = selectedTreeIds ?? Array.Empty<int>();
     }
 }
 
@@ -39,3 +50,10 @@ public readonly record struct DummyState(int EntityId, float X, float Y, string 
 
 // Progress = 0..1 normalised by BuildSystem.BuildTimeSec.
 public readonly record struct BlueprintState(TilePos Tile, float Progress);
+
+// EntityId lets the game thread reference a tree (selection, hit-test).
+// ChopProgress = 0..1 normalised by ChopSystem.ChopTimeSec; 0 if no
+// active chop job on the tile.
+public readonly record struct TreeState(int EntityId, TilePos Tile, float ChopProgress, bool HasJob);
+
+public readonly record struct WoodState(TilePos Tile);

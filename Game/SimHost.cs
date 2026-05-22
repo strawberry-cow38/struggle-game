@@ -23,6 +23,10 @@ public sealed class SimHost : IDisposable
     // and the sim thread can read each tick without locking.
     private int _selectedDummyId = -1;
 
+    // Tree selection set. Game thread writes via SelectedTreeIds setter
+    // (replaces atomically); sim thread reads via Volatile each tick.
+    private int[] _selectedTreeIds = Array.Empty<int>();
+
     public TileMap Map => _sim.Map;
     public SimWatcher Watcher => _sim.Watcher;
 
@@ -52,6 +56,12 @@ public sealed class SimHost : IDisposable
     {
         get { int v = Volatile.Read(ref _selectedDummyId); return v >= 0 ? v : null; }
         set { Volatile.Write(ref _selectedDummyId, value ?? -1); }
+    }
+
+    public int[] SelectedTreeIds
+    {
+        get => Volatile.Read(ref _selectedTreeIds);
+        set => Volatile.Write(ref _selectedTreeIds, value ?? Array.Empty<int>());
     }
 
     // Game→Sim command submission. Drained at the start of every tick.
@@ -85,7 +95,8 @@ public sealed class SimHost : IDisposable
             {
                 _sim.Step(dt);
                 int sel = Volatile.Read(ref _selectedDummyId);
-                Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null));
+                var trees = Volatile.Read(ref _selectedTreeIds);
+                Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null));
                 ticksThisWindow++;
                 nextTick += tickStride;
                 // If we fell badly behind (paused breakpoint, hz bump, etc.),

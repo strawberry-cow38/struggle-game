@@ -31,6 +31,13 @@ public partial class WorldRenderer : Node2D
     private static readonly Color PathTargetColor = new(1.0f, 0.92f, 0.10f, 1.0f);
     private static readonly Color DraftedRing = new(1.0f, 0.25f, 0.20f, 1.0f);
     private static readonly Color OrderMarker = new(1.0f, 0.40f, 0.20f, 0.95f);
+    private static readonly Color TrunkColor = new(0.32f, 0.20f, 0.10f);
+    private static readonly Color CanopyColor = new(0.20f, 0.50f, 0.18f);
+    private static readonly Color CanopyDark = new(0.12f, 0.34f, 0.10f);
+    private static readonly Color TreeMarkColor = new(1.0f, 0.40f, 0.20f, 0.85f);
+    private static readonly Color TreeSelectColor = new(0.95f, 0.95f, 0.20f, 1.0f);
+    private static readonly Color WoodColor = new(0.55f, 0.35f, 0.18f);
+    private static readonly Color WoodHighlight = new(0.78f, 0.55f, 0.28f);
 
     public SimHost? Host { get; set; }
 
@@ -78,6 +85,19 @@ public partial class WorldRenderer : Node2D
         foreach (var bp in snap.Blueprints)
         {
             DrawBlueprint(bp.Tile, bp.Progress);
+        }
+
+        foreach (var w in snap.Wood)
+        {
+            DrawWood(w.Tile);
+        }
+
+        var selectedTreeSet = snap.SelectedTreeIds.Length > 0
+            ? new HashSet<int>(snap.SelectedTreeIds)
+            : null;
+        foreach (var t in snap.Trees)
+        {
+            DrawTree(t, selectedTreeSet);
         }
 
         float radius = PixelsPerTile * 0.35f;
@@ -150,6 +170,53 @@ public partial class WorldRenderer : Node2D
                 DrawCircle(oc, r, OrderMarker);
             }
         }
+    }
+
+    private void DrawTree(Sim.Snapshots.TreeState t, HashSet<int>? selectedTrees)
+    {
+        var center = new Vector2((t.Tile.X + 0.5f) * PixelsPerTile, (t.Tile.Y + 0.5f) * PixelsPerTile);
+        float trunkW = PixelsPerTile * 0.18f;
+        float trunkH = PixelsPerTile * 0.40f;
+        var trunkRect = new Rect2(center.X - trunkW * 0.5f, center.Y, trunkW, trunkH);
+        DrawRect(trunkRect, TrunkColor, filled: true);
+
+        float canopyR = PixelsPerTile * 0.42f;
+        DrawCircle(center + new Vector2(0, -PixelsPerTile * 0.10f), canopyR, CanopyDark);
+        DrawCircle(center + new Vector2(0, -PixelsPerTile * 0.12f), canopyR * 0.78f, CanopyColor);
+
+        if (t.HasJob)
+        {
+            // Orange diagonal slash marking a pending chop.
+            float s = PixelsPerTile * 0.30f;
+            DrawLine(center + new Vector2(-s, -s), center + new Vector2(s, s), TreeMarkColor, width: 3f);
+            DrawLine(center + new Vector2(-s, s), center + new Vector2(s, -s), TreeMarkColor, width: 3f);
+
+            if (t.ChopProgress > 0f)
+            {
+                float bw = PixelsPerTile * 0.6f;
+                float bh = 3f;
+                var barBg = new Rect2(center.X - bw * 0.5f, center.Y - PixelsPerTile * 0.60f, bw, bh);
+                DrawRect(barBg, new Color(0f, 0f, 0f, 0.6f), filled: true);
+                var barFg = new Rect2(barBg.Position, new Vector2(bw * Mathf.Clamp(t.ChopProgress, 0f, 1f), bh));
+                DrawRect(barFg, new Color(1f, 0.9f, 0.2f, 1f), filled: true);
+            }
+        }
+
+        if (selectedTrees is not null && selectedTrees.Contains(t.EntityId))
+        {
+            DrawArc(center, canopyR + 3f, 0f, Mathf.Tau, 36, TreeSelectColor, width: 2f, antialiased: true);
+        }
+    }
+
+    private void DrawWood(TilePos tile)
+    {
+        var center = new Vector2((tile.X + 0.5f) * PixelsPerTile, (tile.Y + 0.5f) * PixelsPerTile);
+        float logW = PixelsPerTile * 0.55f;
+        float logH = PixelsPerTile * 0.20f;
+        var rect = new Rect2(center.X - logW * 0.5f, center.Y - logH * 0.5f, logW, logH);
+        DrawRect(rect, WoodColor, filled: true);
+        var hi = new Rect2(rect.Position + new Vector2(0, 1f), new Vector2(rect.Size.X, 2f));
+        DrawRect(hi, WoodHighlight, filled: true);
     }
 
     private void DrawBlueprint(TilePos tile, float progress)

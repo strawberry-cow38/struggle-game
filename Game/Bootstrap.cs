@@ -34,6 +34,9 @@ public partial class Bootstrap : Node2D
         var cancelDesignator = new CancelDesignator { Host = _host, Tools = _tools, Name = "CancelDesignator" };
         AddChild(cancelDesignator);
 
+        var chopDesignator = new ChopDesignator { Host = _host, Tools = _tools, Name = "ChopDesignator" };
+        AddChild(chopDesignator);
+
         var spawnDesignator = new SpawnPawnDesignator { Host = _host, Tools = _tools, Name = "SpawnPawnDesignator" };
         AddChild(spawnDesignator);
 

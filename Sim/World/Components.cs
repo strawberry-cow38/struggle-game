@@ -57,3 +57,19 @@ public struct OrderQueue : IComponent
 {
     public List<TilePos>? Tiles;
 }
+
+// A tree planted on a tile. Blocks walkability. Felled by a ChopTree
+// job; on completion the tree entity is deleted and a Wood entity drops
+// on the same tile.
+public struct Tree : IComponent
+{
+    public TilePos Tile;
+    public float ChopProgressSec;
+}
+
+// Dropped log pile on the ground. Doesn't block walking. No interaction
+// yet — placeholder for future hauling.
+public struct Wood : IComponent
+{
+    public TilePos Tile;
+}

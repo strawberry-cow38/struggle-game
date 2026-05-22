@@ -64,6 +64,14 @@ public partial class HarnessController : Node2D
                 _schedule.Add((12.0, h => h.MoveLowest(c - 8, c - 8, false), "move drafted SW"));
                 _schedule.Add((15.0, h => h.Finish("quick complete"), "finish"));
                 break;
+            case "chop":
+                // Verify trees exist, chop rect drops a wood pile.
+                _schedule.Add((1.0, h => h.RecordTreeCount("start"), "record trees"));
+                _schedule.Add((2.0, h => h.ChopRect(0, 0, SimConstants.MapSize - 1, SimConstants.MapSize - 1), "chop all"));
+                _schedule.Add((3.0, h => h.RecordTreeCount("after-chop-cmd"), "record"));
+                _schedule.Add((20.0, h => h.RecordTreeCount("late"), "record late"));
+                _schedule.Add((22.0, h => h.Finish("chop complete"), "finish"));
+                break;
             case "debug":
                 // Verify spawn/remove machinery. Start count is 3, spawn 5,
                 // expect 8, remove the lowest-id pawn, expect 7.
@@ -151,6 +159,8 @@ public partial class HarnessController : Node2D
         sb.Append(",\"building\":").Append(building);
         sb.Append(",\"drafted\":").Append(drafted);
         sb.Append(",\"blueprints\":").Append(snap.Blueprints.Length);
+        sb.Append(",\"trees\":").Append(snap.Trees.Length);
+        sb.Append(",\"wood\":").Append(snap.Wood.Length);
         sb.Append(",\"stuck\":").Append(w.StuckTotal);
         sb.Append(",\"braindead\":").Append(w.BrainDeadTotal);
         sb.Append('}');
@@ -211,6 +221,20 @@ public partial class HarnessController : Node2D
     private void RemoveLowest()
     {
         if (LowestPawnId() is int id) Host.QueueCommand(new RemoveDummyCommand(id));
+    }
+
+    private void ChopRect(int x0, int y0, int x1, int y1)
+    {
+        Host.QueueCommand(new ChopTreesInRectCommand(new TilePos(x0, y0), new TilePos(x1, y1)));
+    }
+
+    private void RecordTreeCount(string label)
+    {
+        var snap = Host.LatestSnapshot;
+        int trees = snap?.Trees.Length ?? -1;
+        int wood = snap?.Wood.Length ?? -1;
+        _events.Add($"trees[{label}]={trees} wood={wood}");
+        Log($"{{\"event\":\"trees\",\"label\":\"{Json(label)}\",\"trees\":{trees},\"wood\":{wood}}}");
     }
 
     private void RecordCount(string label)
