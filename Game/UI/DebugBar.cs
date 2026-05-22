@@ -9,6 +9,7 @@ namespace StruggleGame.Game.UI;
 public partial class DebugBar : CanvasLayer
 {
     public ToolService? Tools { get; set; }
+    public SimHost? Host { get; set; }
 
     private const int ButtonHeight = 36;
     private const int ButtonGap = 6;
@@ -33,6 +34,7 @@ public partial class DebugBar : CanvasLayer
         AddLabel(_hbox, "Actions");
         AddButton(_hbox, ToolMode.SpawnPawn, "Spawn Pawn");
         AddButton(_hbox, ToolMode.RemovePawn, "Remove Pawn");
+        AddOneShotButton(_hbox, "Reroll Map", () => Host?.Reroll(System.Environment.TickCount));
 
         _hbox.Resized += Reposition;
         GetTree().Root.SizeChanged += Reposition;
@@ -84,6 +86,20 @@ public partial class DebugBar : CanvasLayer
         };
         parent.AddChild(btn);
         _buttons[mode] = btn;
+    }
+
+    // Non-toggle button — fires its action once on click and doesn't sit
+    // in the _buttons map (no ToolMode to track).
+    private static void AddOneShotButton(HBoxContainer parent, string label, Action onPress)
+    {
+        var btn = new Button
+        {
+            Text = label,
+            CustomMinimumSize = new Vector2(0, ButtonHeight),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        btn.Pressed += () => onPress();
+        parent.AddChild(btn);
     }
 
     private void OnModeChanged(ToolMode mode)

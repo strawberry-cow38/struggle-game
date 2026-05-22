@@ -13,7 +13,11 @@ namespace StruggleGame.Game;
 // touch SimRuntime.Store directly.
 public sealed class SimHost : IDisposable
 {
-    private readonly SimRuntime _sim;
+    // Swapped wholesale by Reroll; loop reads it each tick. Reference
+    // writes are atomic in the CLR, but we also take _swapLock during
+    // Step() so a reroll never lands mid-tick.
+    private SimRuntime _sim;
+    private readonly object _swapLock = new();
     private readonly Thread _thread;
     private volatile bool _running;
     private volatile bool _paused;
@@ -38,12 +42,35 @@ public sealed class SimHost : IDisposable
 
     public float ActualTps => _actualTps;
 
-    public SimHost()
+    public SimHost() : this(1337) { }
+
+    public SimHost(int seed)
     {
-        _sim = new SimRuntime();
+        _sim = new SimRuntime(seed);
         _running = true;
         _thread = new Thread(Loop) { IsBackground = true, Name = "Sim" };
         _thread.Start();
+    }
+
+    // Wipe the current sim and spin up a fresh one with a new seed. All
+    // pawn/tile/tree selections are cleared because their entity ids and
+    // tile contents are about to belong to a different world. Pause state
+    // is preserved.
+    public void Reroll(int seed)
+    {
+        lock (_swapLock)
+        {
+            _sim = new SimRuntime(seed);
+            Volatile.Write(ref _selectedDummyId, -1);
+            Volatile.Write(ref _selectedDummyIds, Array.Empty<int>());
+            Volatile.Write(ref _selectedTreeIds, Array.Empty<int>());
+            Volatile.Write(ref _selectedWoodIds, Array.Empty<int>());
+            Volatile.Write(ref _selectedStockpileId, -1);
+            Volatile.Write(ref _selectedWallTiles, Array.Empty<TilePos>());
+            Volatile.Write(ref _selectedDoorTiles, Array.Empty<TilePos>());
+            Volatile.Write(ref _selectedBlueprintTiles, Array.Empty<TilePos>());
+            Volatile.Write(ref _latest, _sim.BuildSnapshot(null, null, null));
+        }
     }
 
     public SimSnapshot? LatestSnapshot => Volatile.Read(ref _latest);
@@ -70,11 +97,14 @@ public sealed class SimHost : IDisposable
     // stepper. Publishes a snapshot exactly like the loop would.
     public void StepManual(float dt)
     {
-        _sim.Step(dt);
-        int sel = Volatile.Read(ref _selectedDummyId);
-        var trees = Volatile.Read(ref _selectedTreeIds);
-        var woods = Volatile.Read(ref _selectedWoodIds);
-        Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
+        lock (_swapLock)
+        {
+            _sim.Step(dt);
+            int sel = Volatile.Read(ref _selectedDummyId);
+            var trees = Volatile.Read(ref _selectedTreeIds);
+            var woods = Volatile.Read(ref _selectedWoodIds);
+            Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
+        }
     }
 
     public int? SelectedDummyId
@@ -207,12 +237,15 @@ public sealed class SimHost : IDisposable
                 // effect immediately, then republish the snapshot so the
                 // UI reflects the new state (forbid X marks, blueprint
                 // tiles, draft state, etc.).
-                if (_sim.ApplyQueuedCommands())
+                lock (_swapLock)
                 {
-                    int sel = Volatile.Read(ref _selectedDummyId);
-                    var trees = Volatile.Read(ref _selectedTreeIds);
-                    var woods = Volatile.Read(ref _selectedWoodIds);
-                    Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
+                    if (_sim.ApplyQueuedCommands())
+                    {
+                        int sel = Volatile.Read(ref _selectedDummyId);
+                        var trees = Volatile.Read(ref _selectedTreeIds);
+                        var woods = Volatile.Read(ref _selectedWoodIds);
+                        Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
+                    }
                 }
                 Thread.Sleep(5);
                 nextTick = sw.ElapsedTicks + tickStride;
@@ -222,11 +255,14 @@ public sealed class SimHost : IDisposable
             long now = sw.ElapsedTicks;
             if (now >= nextTick)
             {
-                _sim.Step(dt);
-                int sel = Volatile.Read(ref _selectedDummyId);
-                var trees = Volatile.Read(ref _selectedTreeIds);
-                var woods = Volatile.Read(ref _selectedWoodIds);
-                Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
+                lock (_swapLock)
+                {
+                    _sim.Step(dt);
+                    int sel = Volatile.Read(ref _selectedDummyId);
+                    var trees = Volatile.Read(ref _selectedTreeIds);
+                    var woods = Volatile.Read(ref _selectedWoodIds);
+                    Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
+                }
                 ticksThisWindow++;
                 nextTick += tickStride;
                 // If we fell badly behind (paused breakpoint, hz bump, etc.),

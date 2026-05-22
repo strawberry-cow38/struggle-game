@@ -19,7 +19,9 @@ public partial class Bootstrap : Node2D
 
     public override void _Ready()
     {
-        _host = new SimHost();
+        // Fresh world every launch. Harness still gets the deterministic
+        // SimHost() default via --harness wiring elsewhere.
+        _host = new SimHost(System.Environment.TickCount);
         GD.Print(
             $"Struggle Game booted. Tile = {SimConstants.TileMeters}m, " +
             $"Tick = {SimConstants.TickHz}Hz, Map = {SimConstants.MapSize}x{SimConstants.MapSize}.");
@@ -95,7 +97,7 @@ public partial class Bootstrap : Node2D
         var blueprintInfoPanel = new BlueprintInfoPanel { Host = _host, Name = "BlueprintInfoPanel" };
         AddChild(blueprintInfoPanel);
 
-        var debugBar = new DebugBar { Tools = _tools, Name = "DebugBar" };
+        var debugBar = new DebugBar { Tools = _tools, Host = _host, Name = "DebugBar" };
         AddChild(debugBar);
 
         _menu = new MainMenuPanel { Host = _host, Name = "MainMenu" };
