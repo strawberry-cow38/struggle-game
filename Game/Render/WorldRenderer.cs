@@ -1,6 +1,7 @@
 using Godot;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Map;
+using StruggleGame.Sim.Snapshots;
 using StruggleGame.Sim.World;
 using TileMap = StruggleGame.Sim.Map.TileMap;
 
@@ -22,6 +23,17 @@ public partial class WorldRenderer : Node2D
     private int _mapWidth;
     private int _mapHeight;
     private long _lastMapVersion = -1;
+
+    // Snapshot pair used for render-side interpolation. _prevSnap is the
+    // last snapshot we drew from, _currSnap is the next one. We render at
+    // alpha across the wall-clock interval between them so visible motion
+    // is smooth even when the render rate is much lower than the sim's
+    // tick rate (which would otherwise show snapshot-to-snapshot jumps).
+    private SimSnapshot? _prevSnap;
+    private SimSnapshot? _currSnap;
+    private ulong _currSnapStartMs;
+    private Dictionary<int, DummyState>? _prevDummyByIdScratch;
+    private Dictionary<TilePos, DoorRenderState>? _prevDoorByTileScratch;
 
     private static readonly Color WallColor = new(0.18f, 0.16f, 0.14f);
     private static readonly Color DummyColor = new(0.95f, 0.55f, 0.20f);
@@ -75,14 +87,34 @@ public partial class WorldRenderer : Node2D
     {
         if (_grassTex is null || Host is null) return;
 
-        var snap = Host.LatestSnapshot;
+        var latest = Host.LatestSnapshot;
+        if (latest is not null && (_currSnap is null || latest.Tick != _currSnap.Tick))
+        {
+            _prevSnap = _currSnap;
+            _currSnap = latest;
+            _currSnapStartMs = Time.GetTicksMsec();
+        }
+        var snap = _currSnap ?? latest;
+
+        // Wall-clock alpha into the [_prevSnap, _currSnap] interval, clamped
+        // to [0,1]. Used to lerp pawn positions and door open amounts so
+        // motion looks smooth between sim ticks regardless of render fps.
+        float interpAlpha = 1f;
+        if (_prevSnap is not null && Host is not null)
+        {
+            float tickIntervalMs = 1000f / Math.Max(1, Host.TickHz);
+            float elapsed = Time.GetTicksMsec() - _currSnapStartMs;
+            interpAlpha = elapsed / tickIntervalMs;
+            if (interpAlpha < 0f) interpAlpha = 0f;
+            if (interpAlpha > 1f) interpAlpha = 1f;
+        }
 
         // Rebuild overlays if the sim mutated the map since last frame.
         if (snap is not null && snap.MapVersion != _lastMapVersion)
         {
-            var wallBytes = Host.CopyLayerForRender(MapLayer.Wall);
+            var wallBytes = Host!.CopyLayerForRender(MapLayer.Wall);
             _wallOverlayTex = BuildWallOverlay(wallBytes, _mapWidth, _mapHeight);
-            var floorBytes = Host.CopyLayerForRender(MapLayer.Flooring);
+            var floorBytes = Host!.CopyLayerForRender(MapLayer.Flooring);
             _floorOverlayTex = BuildFloorOverlay(floorBytes, _mapWidth, _mapHeight);
             _lastMapVersion = snap.MapVersion;
         }
@@ -115,9 +147,20 @@ public partial class WorldRenderer : Node2D
             DrawDoorBlueprint(dbp.Tile, dbp.Progress);
         }
 
+        _prevDoorByTileScratch ??= new Dictionary<TilePos, DoorRenderState>();
+        _prevDoorByTileScratch.Clear();
+        if (_prevSnap is not null && interpAlpha < 1f)
+        {
+            foreach (var pd in _prevSnap.Doors) _prevDoorByTileScratch[pd.Tile] = pd;
+        }
         foreach (var door in snap.Doors)
         {
-            DrawDoor(door);
+            float openAmount = door.OpenAmount;
+            if (_prevDoorByTileScratch.TryGetValue(door.Tile, out var pd))
+            {
+                openAmount = Mathf.Lerp(pd.OpenAmount, door.OpenAmount, interpAlpha);
+            }
+            DrawDoor(new DoorRenderState(door.Tile, door.Orientation, openAmount));
         }
 
         foreach (var d in snap.Decons)
@@ -142,9 +185,22 @@ public partial class WorldRenderer : Node2D
         var labelFont = ThemeDB.FallbackFont;
         const int labelFontSize = 14;
         var labelOffset = new Vector2(0f, -PixelsPerTile * 0.6f);
+        _prevDummyByIdScratch ??= new Dictionary<int, DummyState>();
+        _prevDummyByIdScratch.Clear();
+        if (_prevSnap is not null && interpAlpha < 1f)
+        {
+            foreach (var pd in _prevSnap.Dummies) _prevDummyByIdScratch[pd.EntityId] = pd;
+        }
         foreach (var d in snap.Dummies)
         {
-            var center = new Vector2(d.X * PixelsPerTile, d.Y * PixelsPerTile);
+            float drawX = d.X;
+            float drawY = d.Y;
+            if (_prevDummyByIdScratch.TryGetValue(d.EntityId, out var prev))
+            {
+                drawX = Mathf.Lerp(prev.X, d.X, interpAlpha);
+                drawY = Mathf.Lerp(prev.Y, d.Y, interpAlpha);
+            }
+            var center = new Vector2(drawX * PixelsPerTile, drawY * PixelsPerTile);
             DrawCircle(center, radius, DummyColor);
             if (d.Drafted)
             {
