@@ -41,6 +41,7 @@ public sealed class SimRuntime
     private readonly BuildSystem _builds;
     private readonly ChopSystem _chops;
     private readonly GrowthSystem _growth;
+    private readonly TreeRegrowSystem _regrow;
     private readonly CutPlantSystem _cuts;
     private readonly HarvestSystem _harvests;
     private readonly DeconSystem _decons;
@@ -75,6 +76,10 @@ public sealed class SimRuntime
     public IReadOnlyList<Stockpile> Stockpiles => _stockpiles;
     private readonly Random _spawnRng;
     private const int InitialTreeCount = 50;
+    // World engine restocks toward this count over time, biased away from
+    // player structures. Same as InitialTreeCount for now — could diverge
+    // later if biomes or weather thin trees out.
+    public const int TargetTreeCount = 50;
     // Scattered demo crops at world gen so the cut/harvest designators
     // have something to chew on before a grow-zone UI exists.
     private const int InitialCarrotCount = 25;
@@ -115,6 +120,7 @@ public sealed class SimRuntime
         _builds = new BuildSystem(this, Jobs);
         _chops = new ChopSystem(this, Jobs);
         _growth = new GrowthSystem(this);
+        _regrow = new TreeRegrowSystem(this);
         _cuts = new CutPlantSystem(this, Jobs);
         _harvests = new HarvestSystem(this, Jobs);
         _decons = new DeconSystem(this, Jobs);
@@ -143,6 +149,7 @@ public sealed class SimRuntime
         _builds.Step(Store, dt);
         _chops.Step(Store, dt);
         _growth.Step(Store, dt);
+        _regrow.Step(dt);
         _cuts.Step(Store, dt);
         _harvests.Step(Store, dt);
         _decons.Step(Store, dt);
@@ -1409,6 +1416,72 @@ public sealed class SimRuntime
         e.AddComponent(new Growth { Stage = Math.Clamp(growthStage, 0f, 1f) });
         _trees[tile] = e;
         return e;
+    }
+
+    public int TreeCount => _trees.Count;
+
+    // World-engine restock pick. Caller (TreeRegrowSystem) gates the call
+    // rate; this one method does the "find a candidate, drop a sapling"
+    // step. Candidate tile must be walkable, outdoor, unoccupied, and have
+    // a clear bufferTiles-Chebyshev ring around it (no player walls /
+    // doors / floors / stockpiles / blueprints). New trees spawn at
+    // stage 0 so growth is visible.
+    public bool TryRegrowTreeSomewhere(int bufferTiles)
+    {
+        for (int attempts = 0; attempts < 64; attempts++)
+        {
+            int x = _spawnRng.Next(Map.Width);
+            int y = _spawnRng.Next(Map.Height);
+            if (!Map.Walkable(x, y)) continue;
+            var tile = new TilePos(x, y);
+            if (_trees.ContainsKey(tile)) continue;
+            if (_crops.ContainsKey(tile)) continue;
+            if (IsOccupied(x, y)) continue;
+            if (!IsTileOutdoor(tile)) continue;
+            if (IsTileNearPlayerStructure(tile, bufferTiles)) continue;
+            SpawnTreeAt(tile, 0f);
+            return true;
+        }
+        return false;
+    }
+
+    // Chebyshev ring scan + blueprint sweep. Returns true if any cell
+    // within `radius` of `t` hosts a built wall / built floor / door /
+    // stockpile tile, or if a wall/floor/door blueprint sits in the same
+    // ring. Used to keep regrowth from crowding the player's base.
+    public bool IsTileNearPlayerStructure(TilePos t, int radius)
+    {
+        int xmin = Math.Max(0, t.X - radius);
+        int xmax = Math.Min(Map.Width - 1, t.X + radius);
+        int ymin = Math.Max(0, t.Y - radius);
+        int ymax = Math.Min(Map.Height - 1, t.Y + radius);
+        for (int y = ymin; y <= ymax; y++)
+        {
+            for (int x = xmin; x <= xmax; x++)
+            {
+                if (Map.GetWall(x, y) != WallType.None) return true;
+                if (Map.GetFlooring(x, y) != FlooringType.None) return true;
+                var p = new TilePos(x, y);
+                if (_doorMap.ContainsKey(p)) return true;
+                if (_stockpileByTile.ContainsKey(p)) return true;
+            }
+        }
+        bool near = false;
+        Store.Query<Blueprint>().ForEachEntity((ref Blueprint b, Entity _) =>
+        {
+            if (Math.Abs(b.Tile.X - t.X) <= radius && Math.Abs(b.Tile.Y - t.Y) <= radius) near = true;
+        });
+        if (near) return true;
+        Store.Query<FloorBlueprint>().ForEachEntity((ref FloorBlueprint b, Entity _) =>
+        {
+            if (Math.Abs(b.Tile.X - t.X) <= radius && Math.Abs(b.Tile.Y - t.Y) <= radius) near = true;
+        });
+        if (near) return true;
+        Store.Query<DoorBlueprint>().ForEachEntity((ref DoorBlueprint b, Entity _) =>
+        {
+            if (Math.Abs(b.Tile.X - t.X) <= radius && Math.Abs(b.Tile.Y - t.Y) <= radius) near = true;
+        });
+        return near;
     }
 
     public IReadOnlyCollection<TilePos> CropTiles => _crops.Keys;
