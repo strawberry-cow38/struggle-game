@@ -622,6 +622,14 @@ public sealed class DummyController
             if (_tryGetDoor(target, out var doorEnt))
             {
                 ref var door = ref doorEnt.GetComponent<Door>();
+                if (door.Forbidden)
+                {
+                    // Door was forbidden after path was planned. Treat as a
+                    // wall: drop stale waypoints, let planner re-route.
+                    path.Waypoints = null;
+                    path.Index = 0;
+                    return;
+                }
                 if (door.State != DoorState.Open)
                 {
                     door.WantsOpen = true;
