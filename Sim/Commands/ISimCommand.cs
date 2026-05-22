@@ -1,4 +1,5 @@
 using StruggleGame.Sim.Map;
+using StruggleGame.Sim.Stockpiles;
 using StruggleGame.Sim.World;
 
 namespace StruggleGame.Sim.Commands;
@@ -186,6 +187,81 @@ public sealed class ChopTreesInRectCommand : ISimCommand
             sim.TryPostChopJob(tile);
         }
     }
+}
+
+// Create a new stockpile zone from the inclusive rect [A..B]. Tiles
+// already claimed by another zone are skipped — zones don't overlap.
+public sealed class CreateStockpileRectCommand : ISimCommand
+{
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public CreateStockpileRectCommand(TilePos a, TilePos b) { A = a; B = b; }
+    public void Apply(SimRuntime sim) => sim.CreateStockpileRect(A, B);
+}
+
+// Add the free tiles of [A..B] to an existing zone (compound shape).
+public sealed class ExpandStockpileRectCommand : ISimCommand
+{
+    public int StockpileId { get; }
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public ExpandStockpileRectCommand(int id, TilePos a, TilePos b)
+    { StockpileId = id; A = a; B = b; }
+    public void Apply(SimRuntime sim) => sim.ExpandStockpileRect(StockpileId, A, B);
+}
+
+// Subtract the tiles of [A..B] from an existing zone (shrink).
+public sealed class ShrinkStockpileRectCommand : ISimCommand
+{
+    public int StockpileId { get; }
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public ShrinkStockpileRectCommand(int id, TilePos a, TilePos b)
+    { StockpileId = id; A = a; B = b; }
+    public void Apply(SimRuntime sim) => sim.ShrinkStockpileRect(StockpileId, A, B);
+}
+
+public sealed class DeleteStockpileCommand : ISimCommand
+{
+    public int StockpileId { get; }
+    public DeleteStockpileCommand(int id) { StockpileId = id; }
+    public void Apply(SimRuntime sim) => sim.DeleteStockpile(StockpileId);
+}
+
+public sealed class RenameStockpileCommand : ISimCommand
+{
+    public int StockpileId { get; }
+    public string Name { get; }
+    public RenameStockpileCommand(int id, string name) { StockpileId = id; Name = name; }
+    public void Apply(SimRuntime sim) => sim.RenameStockpile(StockpileId, Name);
+}
+
+public sealed class SetStockpilePriorityCommand : ISimCommand
+{
+    public int StockpileId { get; }
+    public StockpilePriority Priority { get; }
+    public SetStockpilePriorityCommand(int id, StockpilePriority p) { StockpileId = id; Priority = p; }
+    public void Apply(SimRuntime sim) => sim.SetStockpilePriority(StockpileId, Priority);
+}
+
+public sealed class SetStockpileItemAllowedCommand : ISimCommand
+{
+    public int StockpileId { get; }
+    public string ItemPath { get; }
+    public bool Allowed { get; }
+    public SetStockpileItemAllowedCommand(int id, string itemPath, bool allowed)
+    { StockpileId = id; ItemPath = itemPath; Allowed = allowed; }
+    public void Apply(SimRuntime sim) => sim.SetStockpileItemAllowed(StockpileId, ItemPath, Allowed);
+}
+
+public sealed class SetStockpileCategoryAllowedCommand : ISimCommand
+{
+    public int StockpileId { get; }
+    public string CategoryPath { get; }
+    public bool Allowed { get; }
+    public SetStockpileCategoryAllowedCommand(int id, string categoryPath, bool allowed)
+    { StockpileId = id; CategoryPath = categoryPath; Allowed = allowed; }
+    public void Apply(SimRuntime sim) => sim.SetStockpileCategoryAllowed(StockpileId, CategoryPath, Allowed);
 }
 
 // Debug bar action: spawn a fresh wanderer at a random walkable tile.

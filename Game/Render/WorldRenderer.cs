@@ -70,6 +70,8 @@ public partial class WorldRenderer : Node2D
     private static readonly Color DoorBlueprintBorder = new(0.85f, 0.65f, 1.00f, 0.85f);
     private static readonly Color DoorPanelColor = new(0.55f, 0.36f, 0.20f);
     private static readonly Color DoorPanelEdge = new(0.30f, 0.18f, 0.08f);
+    private static readonly Color StockpileFill = new(0.95f, 0.85f, 0.25f, 0.12f);
+    private static readonly Color StockpileBorder = new(1.00f, 0.90f, 0.35f, 0.85f);
 
     public SimHost? Host { get; set; }
 
@@ -145,6 +147,11 @@ public partial class WorldRenderer : Node2D
         }
 
         if (snap is null) return;
+
+        foreach (var sp in snap.Stockpiles)
+        {
+            DrawStockpile(sp);
+        }
 
         foreach (var bp in snap.Blueprints)
         {
@@ -495,6 +502,35 @@ public partial class WorldRenderer : Node2D
         DrawLine(p1, p2, DoorPanelEdge, width: 2f);
         DrawLine(p2, p3, DoorPanelEdge, width: 2f);
         DrawLine(p3, p0, DoorPanelEdge, width: 2f);
+    }
+
+    // Faint yellow fill over every tile in the zone, plus a 1px outline
+    // on the perimeter edges (edges that face a tile outside the zone).
+    // Iterating per-tile + per-edge keeps compound shapes correct without
+    // an extra polygon pass.
+    private void DrawStockpile(StruggleGame.Sim.Snapshots.StockpileState sp)
+    {
+        var set = new HashSet<TilePos>(sp.Tiles);
+        foreach (var t in sp.Tiles)
+        {
+            var rect = new Rect2(t.X * PixelsPerTile, t.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+            DrawRect(rect, StockpileFill, filled: true);
+        }
+        foreach (var t in sp.Tiles)
+        {
+            float x0 = t.X * PixelsPerTile;
+            float y0 = t.Y * PixelsPerTile;
+            float x1 = x0 + PixelsPerTile;
+            float y1 = y0 + PixelsPerTile;
+            if (!set.Contains(new TilePos(t.X, t.Y - 1)))
+                DrawLine(new Vector2(x0, y0), new Vector2(x1, y0), StockpileBorder, width: 2f);
+            if (!set.Contains(new TilePos(t.X, t.Y + 1)))
+                DrawLine(new Vector2(x0, y1), new Vector2(x1, y1), StockpileBorder, width: 2f);
+            if (!set.Contains(new TilePos(t.X - 1, t.Y)))
+                DrawLine(new Vector2(x0, y0), new Vector2(x0, y1), StockpileBorder, width: 2f);
+            if (!set.Contains(new TilePos(t.X + 1, t.Y)))
+                DrawLine(new Vector2(x1, y0), new Vector2(x1, y1), StockpileBorder, width: 2f);
+        }
     }
 
     private void DrawFloorBlueprint(TilePos tile, float progress)

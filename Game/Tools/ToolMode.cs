@@ -11,4 +11,5 @@ public enum ToolMode
     Decon = 6,
     Floor = 7,
     Door = 8,
+    Stockpile = 9,
 }

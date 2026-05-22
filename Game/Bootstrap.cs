@@ -46,6 +46,9 @@ public partial class Bootstrap : Node2D
         var doorDesignator = new DoorDesignator { Host = _host, Tools = _tools, Name = "DoorDesignator" };
         AddChild(doorDesignator);
 
+        var stockpileDesignator = new StockpileDesignator { Host = _host, Tools = _tools, Name = "StockpileDesignator" };
+        AddChild(stockpileDesignator);
+
         var spawnDesignator = new SpawnPawnDesignator { Host = _host, Tools = _tools, Name = "SpawnPawnDesignator" };
         AddChild(spawnDesignator);
 

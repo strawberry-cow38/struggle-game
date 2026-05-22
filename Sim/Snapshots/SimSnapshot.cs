@@ -1,4 +1,5 @@
 using StruggleGame.Sim.Map;
+using StruggleGame.Sim.Stockpiles;
 using StruggleGame.Sim.World;
 
 namespace StruggleGame.Sim.Snapshots;
@@ -19,6 +20,7 @@ public sealed class SimSnapshot
     public DeconState[] Decons { get; }
     public BlueprintState[] DoorBlueprints { get; }
     public DoorRenderState[] Doors { get; }
+    public StockpileState[] Stockpiles { get; }
 
     // Set when the game has a selected colonist; null otherwise.
     public int? SelectedDummyId { get; }
@@ -41,6 +43,7 @@ public sealed class SimSnapshot
         DeconState[] decons,
         BlueprintState[] doorBlueprints,
         DoorRenderState[] doors,
+        StockpileState[] stockpiles,
         int? selectedDummyId = null,
         TilePos[]? selectedPath = null,
         TilePos[]? selectedOrders = null,
@@ -58,6 +61,7 @@ public sealed class SimSnapshot
         Decons = decons;
         DoorBlueprints = doorBlueprints;
         Doors = doors;
+        Stockpiles = stockpiles;
         SelectedDummyId = selectedDummyId;
         SelectedPath = selectedPath;
         SelectedOrders = selectedOrders;
@@ -83,3 +87,15 @@ public readonly record struct DeconState(TilePos Tile, float Progress);
 // Built door's current render state. OpenAmount = 0 (closed) .. 1 (fully
 // open). Orientation drives which axis the door swings on.
 public readonly record struct DoorRenderState(TilePos Tile, DoorOrientation Orientation, float OpenAmount);
+
+// Render-friendly stockpile zone. Tiles is a frozen snapshot of the
+// zone's tile set as of build time; AllowedItemPaths captures the
+// filter so the panel UI doesn't need to ask the sim back. Both
+// arrays may be empty (zero-tile zone is legal during expand/shrink
+// mid-edit).
+public readonly record struct StockpileState(
+    int Id,
+    string Name,
+    StockpilePriority Priority,
+    TilePos[] Tiles,
+    string[] AllowedItemPaths);

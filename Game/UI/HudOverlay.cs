@@ -10,7 +10,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "build item-catalog (stockpiles ph1)";
+    private const string BuildTag = "build stockpile-zones (stockpiles ph2)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;

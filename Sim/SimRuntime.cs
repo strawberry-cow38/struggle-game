@@ -2,10 +2,12 @@ using System.Collections.Concurrent;
 using Friflo.Engine.ECS;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Diagnostics;
+using StruggleGame.Sim.Items;
 using StruggleGame.Sim.Jobs;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Pathfinding;
 using StruggleGame.Sim.Snapshots;
+using StruggleGame.Sim.Stockpiles;
 using StruggleGame.Sim.World;
 
 namespace StruggleGame.Sim;
@@ -52,6 +54,14 @@ public sealed class SimRuntime
     // deconstruct first. Map tile → the parked DoorBlueprint entity so
     // CompleteJob(Deconstruct) knows to chain a DoorBuild job.
     private readonly Dictionary<TilePos, Entity> _pendingDoorAfterDecon = new();
+
+    // Stockpile zones. Ordered list (player-creation order = display
+    // order). Tile-claim is exclusive: a tile may only belong to one
+    // zone so haul routing has no ambiguity.
+    private readonly List<Stockpile> _stockpiles = new();
+    private readonly Dictionary<TilePos, Stockpile> _stockpileByTile = new();
+    private int _nextStockpileId = 1;
+    public IReadOnlyList<Stockpile> Stockpiles => _stockpiles;
     private readonly Random _spawnRng;
     private const int InitialTreeCount = 50;
 
@@ -224,10 +234,24 @@ public sealed class SimRuntime
             doorRender.Add(new DoorRenderState(d.Tile, d.Orientation, open));
         });
 
+        var stockpiles = new StockpileState[_stockpiles.Count];
+        for (int si = 0; si < _stockpiles.Count; si++)
+        {
+            var p = _stockpiles[si];
+            var tiles = new TilePos[p.Tiles.Count];
+            int ti = 0;
+            foreach (var t in p.Tiles) tiles[ti++] = t;
+            var allowed = new string[p.AllowedItemPaths.Count];
+            int ai = 0;
+            foreach (var path in p.AllowedItemPaths) allowed[ai++] = path;
+            stockpiles[si] = new StockpileState(p.Id, p.Name, p.Priority, tiles, allowed);
+        }
+
         return new SimSnapshot(
             Tick, MapVersion, RoomVersion, RoomCount,
             dummies, bps, floorBps.ToArray(), trees, woods, decons.ToArray(),
             doorBps.ToArray(), doorRender.ToArray(),
+            stockpiles,
             selectedDummyId, selectedPath, selectedOrders, selTreeArr);
     }
 
@@ -518,6 +542,133 @@ public sealed class SimRuntime
             return false;
         }
         return true;
+    }
+
+    // Create a stockpile zone covering the inclusive rect [a..b].
+    // Tiles already claimed by another stockpile are skipped — zones
+    // don't overlap. Returns the new stockpile's id, or 0 if the rect
+    // produced zero free tiles.
+    public int CreateStockpileRect(TilePos a, TilePos b)
+    {
+        int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
+        int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
+        var tiles = new List<TilePos>();
+        for (int y = ymin; y <= ymax; y++)
+        {
+            for (int x = xmin; x <= xmax; x++)
+            {
+                var t = new TilePos(x, y);
+                if (!Map.InBounds(t)) continue;
+                if (_stockpileByTile.ContainsKey(t)) continue;
+                tiles.Add(t);
+            }
+        }
+        if (tiles.Count == 0) return 0;
+
+        int id = _nextStockpileId++;
+        var name = $"Stockpile {id}";
+        var pile = new Stockpile(id, name, StockpilePriority.Normal, tiles);
+        _stockpiles.Add(pile);
+        foreach (var t in tiles) _stockpileByTile[t] = pile;
+        return id;
+    }
+
+    // Add the free tiles of [a..b] to an existing stockpile (compound
+    // shapes — phase 5 UI calls this from the panel). Skips tiles
+    // already claimed by *any* zone (including this one). Returns the
+    // count of newly added tiles.
+    public int ExpandStockpileRect(int stockpileId, TilePos a, TilePos b)
+    {
+        var pile = FindStockpile(stockpileId);
+        if (pile is null) return 0;
+        int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
+        int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
+        int added = 0;
+        for (int y = ymin; y <= ymax; y++)
+        {
+            for (int x = xmin; x <= xmax; x++)
+            {
+                var t = new TilePos(x, y);
+                if (!Map.InBounds(t)) continue;
+                if (_stockpileByTile.ContainsKey(t)) continue;
+                pile.Tiles.Add(t);
+                _stockpileByTile[t] = pile;
+                added++;
+            }
+        }
+        return added;
+    }
+
+    // Remove the rect's tiles from a stockpile (subtract / shrink).
+    // A zone that loses every tile remains — the panel still exists so
+    // the player can re-expand. Returns the count of removed tiles.
+    public int ShrinkStockpileRect(int stockpileId, TilePos a, TilePos b)
+    {
+        var pile = FindStockpile(stockpileId);
+        if (pile is null) return 0;
+        int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
+        int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
+        int removed = 0;
+        for (int y = ymin; y <= ymax; y++)
+        {
+            for (int x = xmin; x <= xmax; x++)
+            {
+                var t = new TilePos(x, y);
+                if (!pile.Tiles.Remove(t)) continue;
+                _stockpileByTile.Remove(t);
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    public bool DeleteStockpile(int stockpileId)
+    {
+        var pile = FindStockpile(stockpileId);
+        if (pile is null) return false;
+        foreach (var t in pile.Tiles) _stockpileByTile.Remove(t);
+        _stockpiles.Remove(pile);
+        return true;
+    }
+
+    public bool RenameStockpile(int stockpileId, string name)
+    {
+        var pile = FindStockpile(stockpileId);
+        if (pile is null) return false;
+        pile.Name = name;
+        return true;
+    }
+
+    public bool SetStockpilePriority(int stockpileId, StockpilePriority priority)
+    {
+        var pile = FindStockpile(stockpileId);
+        if (pile is null) return false;
+        pile.Priority = priority;
+        return true;
+    }
+
+    public bool SetStockpileItemAllowed(int stockpileId, string itemPath, bool allowed)
+    {
+        var pile = FindStockpile(stockpileId);
+        if (pile is null) return false;
+        if (allowed) pile.AllowedItemPaths.Add(itemPath);
+        else pile.AllowedItemPaths.Remove(itemPath);
+        return true;
+    }
+
+    public bool SetStockpileCategoryAllowed(int stockpileId, string categoryPath, bool allowed)
+    {
+        var pile = FindStockpile(stockpileId);
+        if (pile is null) return false;
+        if (!ItemCatalog.CategoriesByPath.TryGetValue(categoryPath, out var cat)) return false;
+        pile.SetCategoryAllowed(cat, allowed);
+        return true;
+    }
+
+    private Stockpile? FindStockpile(int id)
+    {
+        foreach (var p in _stockpiles) if (p.Id == id) return p;
+        return null;
     }
 
     private bool HasWallAt(int x, int y)
