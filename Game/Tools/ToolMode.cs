@@ -5,4 +5,6 @@ public enum ToolMode
     None = 0,
     BuildWall = 1,
     Cancel = 2,
+    SpawnPawn = 3,
+    RemovePawn = 4,
 }

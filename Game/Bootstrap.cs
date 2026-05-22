@@ -1,5 +1,6 @@
 using Godot;
 using StruggleGame.Game.Camera;
+using StruggleGame.Game.Debug;
 using StruggleGame.Game.Designation;
 using StruggleGame.Game.Harness;
 using StruggleGame.Game.Render;
@@ -33,6 +34,12 @@ public partial class Bootstrap : Node2D
         var cancelDesignator = new CancelDesignator { Host = _host, Tools = _tools, Name = "CancelDesignator" };
         AddChild(cancelDesignator);
 
+        var spawnDesignator = new SpawnPawnDesignator { Host = _host, Tools = _tools, Name = "SpawnPawnDesignator" };
+        AddChild(spawnDesignator);
+
+        var removeDesignator = new RemovePawnDesignator { Host = _host, Tools = _tools, Name = "RemovePawnDesignator" };
+        AddChild(removeDesignator);
+
         var selector = new Selector { Host = _host, Tools = _tools, Name = "Selector" };
         AddChild(selector);
 
@@ -50,6 +57,9 @@ public partial class Bootstrap : Node2D
 
         var toolbar = new Toolbar { Tools = _tools, Name = "Toolbar" };
         AddChild(toolbar);
+
+        var debugBar = new DebugBar { Tools = _tools, Name = "DebugBar" };
+        AddChild(debugBar);
 
         TryStartHarness();
     }

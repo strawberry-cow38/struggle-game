@@ -11,7 +11,7 @@ public class SimWatcherTests
     [Fact]
     public void IdlePawnsDoNotTripBrainDead_WhenWandering()
     {
-        // 100-pawn default sim, no jobs. Wander loop should keep them
+        // Default-pawn sim, no jobs. Wander loop should keep them
         // moving so the watcher records no anomalies after ~12s of ticks.
         var sim = new SimRuntime();
         int ticks = SimWatcher.BrainDeadTicks + 60; // a bit over threshold

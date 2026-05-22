@@ -64,6 +64,20 @@ public partial class HarnessController : Node2D
                 _schedule.Add((12.0, h => h.MoveLowest(c - 8, c - 8, false), "move drafted SW"));
                 _schedule.Add((15.0, h => h.Finish("quick complete"), "finish"));
                 break;
+            case "debug":
+                // Verify spawn/remove machinery. Start count is 3, spawn 5,
+                // expect 8, remove the lowest-id pawn, expect 7.
+                _schedule.Add((1.0, h => h.RecordCount("start"), "record count"));
+                for (int i = 0; i < 5; i++)
+                {
+                    double at = 2.0 + i * 0.2;
+                    _schedule.Add((at, h => h.SpawnPawn(), "spawn pawn"));
+                }
+                _schedule.Add((4.0, h => h.RecordCount("after-spawn"), "record after spawn"));
+                _schedule.Add((5.0, h => h.RemoveLowest(), "remove lowest"));
+                _schedule.Add((6.0, h => h.RecordCount("after-remove"), "record after remove"));
+                _schedule.Add((8.0, h => h.Finish("debug complete"), "finish"));
+                break;
             case "stress":
                 for (int r = 2; r <= 6; r++)
                 {
@@ -187,6 +201,24 @@ public partial class HarnessController : Node2D
     private void DraftLowest()
     {
         if (LowestPawnId() is int id) Host.QueueCommand(new ToggleDraftCommand(id));
+    }
+
+    private void SpawnPawn()
+    {
+        Host.QueueCommand(new SpawnDummyCommand());
+    }
+
+    private void RemoveLowest()
+    {
+        if (LowestPawnId() is int id) Host.QueueCommand(new RemoveDummyCommand(id));
+    }
+
+    private void RecordCount(string label)
+    {
+        var snap = Host.LatestSnapshot;
+        int n = snap?.Dummies.Length ?? -1;
+        _events.Add($"count[{label}]={n}");
+        Log($"{{\"event\":\"count\",\"label\":\"{Json(label)}\",\"count\":{n}}}");
     }
 
     private void MoveLowest(int x, int y, bool append)

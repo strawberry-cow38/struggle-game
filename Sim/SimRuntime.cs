@@ -30,6 +30,7 @@ public sealed class SimRuntime
     private readonly ConcurrentQueue<ISimCommand> _commands = new();
     private readonly object _mapLock = new();
     private readonly List<TilePos> _playerWalls = new();
+    private readonly Random _spawnRng;
 
     public SimRuntime(int seed = 1337)
     {
@@ -39,9 +40,10 @@ public sealed class SimRuntime
         _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1);
         _builds = new BuildSystem(this, Jobs);
         _safety = new SafetySystem(() => MapView, PathService, Watcher);
+        _spawnRng = new Random(seed + 7);
 
         int center = SimConstants.MapSize / 2;
-        for (int i = 0; i < 100; i++) SpawnDummy(center, center);
+        for (int i = 0; i < 3; i++) SpawnDummy(center, center);
     }
 
     public void Step(float dt)
@@ -176,6 +178,47 @@ public sealed class SimRuntime
         var entity = job.Entity;
         Jobs.Cancel(id);
         entity.DeleteEntity();
+    }
+
+    // Pick a random walkable, unoccupied tile and drop a fresh wanderer
+    // there. Returns false if no usable tile was found (extremely small or
+    // densely packed maps).
+    public bool SpawnRandomDummy()
+    {
+        for (int attempts = 0; attempts < 512; attempts++)
+        {
+            int x = _spawnRng.Next(Map.Width);
+            int y = _spawnRng.Next(Map.Height);
+            if (!Map.Walkable(x, y)) continue;
+            if (IsOccupied(x, y)) continue;
+            var e = Store.CreateEntity();
+            e.AddComponent(new WorldPos { X = x + 0.5f, Y = y + 0.5f });
+            e.AddComponent(new PathFollower());
+            e.AddComponent(new Wanderer());
+            return true;
+        }
+        return false;
+    }
+
+    // Delete a colonist by entity id. Releases any claimed job and
+    // discards any in-flight path request so we don't leak handles.
+    public bool RemoveDummy(int entityId)
+    {
+        if (!Store.TryGetEntityById(entityId, out var ent)) return false;
+        if (!ent.HasComponent<Wanderer>()) return false;
+        if (ent.HasComponent<BuildTarget>())
+        {
+            var bt = ent.GetComponent<BuildTarget>();
+            Jobs.Release(bt.JobId);
+            ent.RemoveComponent<BuildTarget>();
+        }
+        if (ent.HasComponent<PathFollower>())
+        {
+            ref var pf = ref ent.GetComponent<PathFollower>();
+            if (pf.PendingPathId != 0) PathService.Discard(pf.PendingPathId);
+        }
+        ent.DeleteEntity();
+        return true;
     }
 
     private void SpawnDummy(int tileX, int tileY)

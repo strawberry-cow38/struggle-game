@@ -117,3 +117,17 @@ public sealed class IssueMoveOrderCommand : ISimCommand
         oq.Tiles.Add(Tile);
     }
 }
+
+// Debug bar action: spawn a fresh wanderer at a random walkable tile.
+public sealed class SpawnDummyCommand : ISimCommand
+{
+    public void Apply(SimRuntime sim) => sim.SpawnRandomDummy();
+}
+
+// Debug bar action: delete a wanderer by entity id (point-and-click).
+public sealed class RemoveDummyCommand : ISimCommand
+{
+    public int EntityId { get; }
+    public RemoveDummyCommand(int entityId) { EntityId = entityId; }
+    public void Apply(SimRuntime sim) => sim.RemoveDummy(EntityId);
+}
