@@ -15,6 +15,7 @@ public partial class Bootstrap : Node2D
 {
     private SimHost? _host;
     private readonly ToolService _tools = new();
+    private UI.MainMenuPanel? _menu;
 
     public override void _Ready()
     {
@@ -96,6 +97,9 @@ public partial class Bootstrap : Node2D
 
         var debugBar = new DebugBar { Tools = _tools, Name = "DebugBar" };
         AddChild(debugBar);
+
+        _menu = new MainMenuPanel { Host = _host, Name = "MainMenu" };
+        AddChild(_menu);
 
         TryStartHarness();
     }
@@ -241,6 +245,10 @@ public partial class Bootstrap : Node2D
             case Key.Space:
                 _host.SetPaused(!_host.IsPaused);
                 GD.Print(_host.IsPaused ? "Sim PAUSED" : "Sim RESUMED");
+                GetViewport().SetInputAsHandled();
+                return;
+            case Key.Escape:
+                _menu?.Open();
                 GetViewport().SetInputAsHandled();
                 return;
             default: return;
