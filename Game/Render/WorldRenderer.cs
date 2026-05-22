@@ -267,7 +267,7 @@ public partial class WorldRenderer : Node2D
     // text drawn in world-space (scales with camera zoom). Only stacks
     // within StackLabelRadius Manhattan tiles of the cursor get labelled,
     // so dense yards don't drown in text.
-    private const int StackLabelFontSize = 11;
+    private const int StackLabelFontSize = 17;
     private const int StackLabelRadius = 2;
 
     private void DrawStackLabel(Font? font, TilePos tile, string itemPath, int count)
