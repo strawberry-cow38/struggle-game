@@ -45,15 +45,20 @@ public sealed class HaulSystem
                 out var destTile, out var stockpileId)) continue;
 
             // Already on an allowed stockpile tile: only post a merge haul
-            // if the dest is a different tile, already holds the same item,
-            // and is a strictly bigger pile. Strict-bigger prevents two
-            // equal piles from both posting a haul into each other (which
-            // would just swap them) and keeps consolidation unambiguous.
+            // if dest is a different tile that holds at least as much. The
+            // (y,x) tiebreak makes equal piles consolidate onto the lower
+            // tile (one direction wins, no swap loop).
             if (onAllowedStockpile)
             {
                 if (destTile == sourceTile) continue;
                 int existing = _sim.WoodCountAtTile(destTile);
-                if (existing <= count) continue;
+                if (existing < count) continue;
+                if (existing == count)
+                {
+                    bool destIsLower = destTile.Y < sourceTile.Y
+                        || (destTile.Y == sourceTile.Y && destTile.X < sourceTile.X);
+                    if (!destIsLower) continue;
+                }
             }
 
             ent.AddComponent(new HaulPayload
