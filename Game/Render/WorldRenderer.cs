@@ -70,8 +70,8 @@ public partial class WorldRenderer : Node2D
         // Rebuild wall overlay if the sim mutated the map since last frame.
         if (snap is not null && snap.MapVersion != _lastMapVersion)
         {
-            var tileBytes = Host.CopyTilesForRender();
-            _wallOverlayTex = BuildWallOverlay(tileBytes, _mapWidth, _mapHeight);
+            var wallBytes = Host.CopyLayerForRender(MapLayer.Wall);
+            _wallOverlayTex = BuildWallOverlay(wallBytes, _mapWidth, _mapHeight);
             _lastMapVersion = snap.MapVersion;
         }
 
@@ -347,7 +347,7 @@ public partial class WorldRenderer : Node2D
         {
             for (int x = 0; x < width; x++)
             {
-                bool wall = tiles[y * width + x] == (byte)TileType.Wall;
+                bool wall = tiles[y * width + x] != 0;
                 img.SetPixel(x, y, wall ? WallColor : transparent);
             }
         }

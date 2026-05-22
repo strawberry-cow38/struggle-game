@@ -20,7 +20,7 @@ public class DeconTests
         // Place + build the wall first.
         sim.QueueCommand(new PlaceWallBlueprintCommand(tile));
         for (int i = 0; i < 1200; i++) sim.Step(SimConstants.TickSeconds);
-        Assert.Equal(TileType.Wall, sim.Map.Get(tile));
+        Assert.Equal(WallType.Stone, sim.Map.GetWall(tile));
         Assert.Contains(tile, sim.PlayerWalls);
 
         int woodBefore = CountWood(sim);
@@ -29,7 +29,7 @@ public class DeconTests
         sim.QueueCommand(new DeconstructWallsInRectCommand(tile, tile));
         for (int i = 0; i < 1200; i++) sim.Step(SimConstants.TickSeconds);
 
-        Assert.Equal(TileType.Grass, sim.Map.Get(tile));
+        Assert.Equal(WallType.None, sim.Map.GetWall(tile));
         Assert.DoesNotContain(tile, sim.PlayerWalls);
         Assert.True(sim.MapView.Walkable(tile));
         Assert.Equal(woodBefore + SimRuntime.WallDeconWoodReturn, CountWood(sim));
@@ -45,7 +45,7 @@ public class DeconTests
         TilePos? wall = null;
         for (int y = 0; y < sim.Map.Height && wall is null; y++)
             for (int x = 0; x < sim.Map.Width; x++)
-                if (sim.Map.Get(new TilePos(x, y)) == TileType.Wall) { wall = new TilePos(x, y); break; }
+                if (sim.Map.GetWall(new TilePos(x, y)) != WallType.None) { wall = new TilePos(x, y); break; }
         Assert.NotNull(wall);
 
         sim.QueueCommand(new DeconstructWallsInRectCommand(wall!.Value, wall.Value));
@@ -61,7 +61,7 @@ public class DeconTests
 
         sim.QueueCommand(new PlaceWallBlueprintCommand(tile));
         for (int i = 0; i < 1200; i++) sim.Step(SimConstants.TickSeconds);
-        Assert.Equal(TileType.Wall, sim.Map.Get(tile));
+        Assert.Equal(WallType.Stone, sim.Map.GetWall(tile));
 
         sim.QueueCommand(new DeconstructWallsInRectCommand(tile, tile));
         sim.Step(SimConstants.TickSeconds);
@@ -71,7 +71,7 @@ public class DeconTests
         sim.Step(SimConstants.TickSeconds);
 
         Assert.Equal(0, CountDeconJobs(sim));
-        Assert.Equal(TileType.Wall, sim.Map.Get(tile));
+        Assert.Equal(WallType.Stone, sim.Map.GetWall(tile));
         Assert.Contains(tile, sim.PlayerWalls);
     }
 

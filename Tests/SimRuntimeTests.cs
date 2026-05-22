@@ -43,13 +43,13 @@ public class TileMapTests
         var map = TileMap.GenerateDefault(64, 64);
         for (int x = 0; x < 64; x++)
         {
-            Assert.Equal(TileType.Wall, map.Get(x, 0));
-            Assert.Equal(TileType.Wall, map.Get(x, 63));
+            Assert.Equal(WallType.Stone, map.GetWall(x, 0));
+            Assert.Equal(WallType.Stone, map.GetWall(x, 63));
         }
         for (int y = 0; y < 64; y++)
         {
-            Assert.Equal(TileType.Wall, map.Get(0, y));
-            Assert.Equal(TileType.Wall, map.Get(63, y));
+            Assert.Equal(WallType.Stone, map.GetWall(0, y));
+            Assert.Equal(WallType.Stone, map.GetWall(63, y));
         }
     }
 
@@ -83,7 +83,7 @@ public class AStarTests
     public void Blocked_ReturnsNull()
     {
         var map = new TileMap(5, 5);
-        for (int y = 0; y < 5; y++) map.Set(2, y, TileType.Wall);
+        for (int y = 0; y < 5; y++) map.SetWall(2, y, WallType.Stone);
         var astar = new AStar(5, 5);
 
         var path = astar.FindPath(map.Snapshot(0), new TilePos(0, 0), new TilePos(4, 4));
@@ -95,7 +95,7 @@ public class AStarTests
     public void StartOnWall_ReturnsNull()
     {
         var map = new TileMap(5, 5);
-        map.Set(0, 0, TileType.Wall);
+        map.SetWall(0, 0, WallType.Stone);
         var astar = new AStar(5, 5);
 
         var path = astar.FindPath(map.Snapshot(0), new TilePos(0, 0), new TilePos(4, 4));

@@ -33,7 +33,7 @@ public class BuildBlockingTests
         Assert.True((int)pos.X == bpTile.X && (int)pos.Y == bpTile.Y,
             $"Blocker drafted-walk failed: pos=({pos.X:0.0},{pos.Y:0.0}), bp=({bpTile.X},{bpTile.Y})");
 
-        Assert.NotEqual(TileType.Wall, sim.Map.Get(bpTile));
+        Assert.Equal(WallType.None, sim.Map.GetWall(bpTile));
         // Job should still be live (not cancelled), waiting for tile to clear.
         var job = sim.Jobs.GetByTile(bpTile);
         Assert.NotNull(job);
@@ -52,13 +52,13 @@ public class BuildBlockingTests
         sim.Step(SimConstants.TickSeconds);
         sim.QueueCommand(new IssueMoveOrderCommand(blocker.Id, bpTile, false));
         for (int i = 0; i < 600; i++) sim.Step(SimConstants.TickSeconds);
-        Assert.NotEqual(TileType.Wall, sim.Map.Get(bpTile));
+        Assert.Equal(WallType.None, sim.Map.GetWall(bpTile));
 
         // Order the blocker to walk well away from the tile.
         sim.QueueCommand(new IssueMoveOrderCommand(blocker.Id, new TilePos(c - 8, c - 8), false));
         for (int i = 0; i < 600; i++) sim.Step(SimConstants.TickSeconds);
 
-        Assert.Equal(TileType.Wall, sim.Map.Get(bpTile));
+        Assert.Equal(WallType.Stone, sim.Map.GetWall(bpTile));
     }
 
     private static Entity FindWandererOffTile(SimRuntime sim, TilePos tile)

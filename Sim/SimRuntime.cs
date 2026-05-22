@@ -168,24 +168,29 @@ public sealed class SimRuntime
             selectedDummyId, selectedPath, selectedOrders, selTreeArr);
     }
 
-    // Snapshot of the tile array taken under a lock so a parallel write
-    // can't tear it. Game uses this to rebuild the wall overlay texture
+    // Snapshot of each layer taken under a lock so a parallel write
+    // can't tear it. Game uses these to rebuild the overlay textures
     // when MapVersion changes.
-    public byte[] CopyTilesForRender()
+    public byte[] CopyLayerForRender(MapLayer layer)
     {
         lock (_mapLock)
         {
-            var src = Map.RawTiles;
-            var copy = new byte[src.Length];
-            for (int k = 0; k < src.Length; k++) copy[k] = (byte)src[k];
-            return copy;
+            ReadOnlySpan<byte> src = layer switch
+            {
+                MapLayer.Terrain => Map.RawTerrain,
+                MapLayer.Flooring => Map.RawFlooring,
+                MapLayer.Wall => Map.RawWalls,
+                MapLayer.Roof => Map.RawRoofs,
+                _ => throw new ArgumentOutOfRangeException(nameof(layer)),
+            };
+            return src.ToArray();
         }
     }
 
     public bool TryPlaceWallBlueprint(TilePos tile)
     {
         if (!Map.InBounds(tile)) return false;
-        if (Map.Get(tile) == TileType.Wall) return false;
+        if (Map.GetWall(tile) != WallType.None) return false;
         if (_trees.ContainsKey(tile)) return false;
         if (Jobs.HasTile(tile)) return false;
 
@@ -214,7 +219,7 @@ public sealed class SimRuntime
             entity.DeleteEntity();
             lock (_mapLock)
             {
-                Map.Set(tile, TileType.Wall);
+                Map.SetWall(tile, WallType.Stone);
                 _playerWalls.Add(tile);
             }
             RebuildMapView();
@@ -238,7 +243,8 @@ public sealed class SimRuntime
             entity.DeleteEntity();
             lock (_mapLock)
             {
-                Map.Set(tile, TileType.Grass);
+                // Wall layer only — terrain underneath stays put.
+                Map.SetWall(tile, WallType.None);
                 _playerWalls.Remove(tile);
             }
             for (int n = 0; n < WallDeconWoodReturn; n++)
@@ -299,7 +305,7 @@ public sealed class SimRuntime
     public bool TryPostDeconstructJob(TilePos tile)
     {
         if (!Map.InBounds(tile)) return false;
-        if (Map.Get(tile) != TileType.Wall) return false;
+        if (Map.GetWall(tile) == WallType.None) return false;
         if (!_playerWalls.Contains(tile)) return false;
         if (Jobs.HasTile(tile)) return false;
 

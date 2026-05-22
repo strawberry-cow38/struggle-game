@@ -69,7 +69,7 @@ public sealed class SimHost : IDisposable
 
     // Threadsafe map snapshot for rebuilding the wall overlay texture
     // when MapVersion changes.
-    public byte[] CopyTilesForRender() => _sim.CopyTilesForRender();
+    public byte[] CopyLayerForRender(MapLayer layer) => _sim.CopyLayerForRender(layer);
 
     public void Dispose()
     {
