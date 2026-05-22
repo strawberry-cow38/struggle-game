@@ -76,8 +76,9 @@ public sealed class SimSnapshot
 
 public readonly record struct DummyState(int EntityId, float X, float Y, string Job, bool Drafted, bool Carrying);
 
-// Progress = 0..1 normalised by BuildSystem.BuildTimeSec.
-public readonly record struct BlueprintState(TilePos Tile, float Progress);
+// Progress = 0..1 normalised by BuildSystem.BuildTimeSec. Forbidden
+// blueprints are skipped by builders and rendered with a red X overlay.
+public readonly record struct BlueprintState(TilePos Tile, float Progress, bool Forbidden);
 
 // EntityId lets the game thread reference a tree (selection, hit-test).
 // ChopProgress = 0..1 normalised by ChopSystem.ChopTimeSec; 0 if no
@@ -87,7 +88,7 @@ public readonly record struct TreeState(int EntityId, TilePos Tile, float ChopPr
 public readonly record struct WoodState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden);
 
 // Decon mark on a wall. Progress = 0..1 normalised by DeconSystem.DeconTimeSec.
-public readonly record struct DeconState(TilePos Tile, float Progress);
+public readonly record struct DeconState(TilePos Tile, float Progress, bool Forbidden);
 
 // Built door's current render state. OpenAmount = 0 (closed) .. 1 (fully
 // open). Orientation drives which axis the door swings on. Forbidden +

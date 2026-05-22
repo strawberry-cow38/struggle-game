@@ -44,10 +44,33 @@ public sealed class JobBoard
     {
         if (!_byId.TryGetValue(id, out var job)) return false;
         if (job.State != JobState.Open) return false;
+        if (job.Forbidden) return false;
         job.State = JobState.Claimed;
         job.Claimant = claimant;
         Version++;
         return true;
+    }
+
+    // Flip the Forbidden flag on a job. Forbidden = no future TryClaim
+    // succeeds; any active claim is released so the worker re-plans.
+    public bool SetForbidden(JobId id, bool forbidden)
+    {
+        if (!_byId.TryGetValue(id, out var job)) return false;
+        if (job.Forbidden == forbidden) return false;
+        job.Forbidden = forbidden;
+        if (forbidden && job.State == JobState.Claimed)
+        {
+            job.State = JobState.Open;
+            job.Claimant = default;
+        }
+        Version++;
+        return true;
+    }
+
+    public bool SetForbiddenByTile(TilePos tile, bool forbidden)
+    {
+        if (!_byTile.TryGetValue(tile, out var id)) return false;
+        return SetForbidden(id, forbidden);
     }
 
     public void Release(JobId id)

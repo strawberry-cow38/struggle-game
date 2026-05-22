@@ -343,6 +343,7 @@ public sealed class DummyController
                 && job.Kind != JobKind.DoorDeconstruct
                 && job.Kind != JobKind.Haul) continue;
             if (job.State != JobState.Open) continue;
+            if (job.Forbidden) continue;
             int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
             if (d >= bestDist) continue;
             TilePos approach;

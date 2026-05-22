@@ -22,6 +22,10 @@ public sealed class Job
     public JobState State { get; internal set; }
     public Entity Claimant { get; internal set; }
     public float Score { get; internal set; }
+    // Forbidden = workers won't claim this job and any current claim is
+    // released. Used by the blueprint info panel's Forbid toggle so the
+    // player can park a blueprint without cancelling it.
+    public bool Forbidden { get; internal set; }
 
     internal Job(JobId id, JobKind kind, TilePos tile, Entity entity)
     {
@@ -32,5 +36,6 @@ public sealed class Job
         State = JobState.Open;
         Claimant = default;
         Score = 0f;
+        Forbidden = false;
     }
 }

@@ -123,6 +123,16 @@ public sealed class SimHost : IDisposable
         set => Volatile.Write(ref _selectedDoorTile, value is TilePos t ? new TileRef(t) : null);
     }
 
+    // Selected blueprint tile. Any pending wall/floor/door blueprint or
+    // chop/decon/haul job is reachable from this — BlueprintInfoPanel
+    // surfaces Forbid + Cancel against the underlying job.
+    private TileRef? _selectedBlueprintTile;
+    public TilePos? SelectedBlueprintTile
+    {
+        get => Volatile.Read(ref _selectedBlueprintTile)?.Tile;
+        set => Volatile.Write(ref _selectedBlueprintTile, value is TilePos t ? new TileRef(t) : null);
+    }
+
     // Read-only accessor for the WallInfoPanel: is the wall at this
     // tile player-built (deconstructable)?
     public bool IsPlayerWall(TilePos tile) => _sim.PlayerWalls.Contains(tile);

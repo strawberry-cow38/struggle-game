@@ -371,6 +371,26 @@ public sealed class SetDoorPriorityCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetDoorPriority(Tile, Priority);
 }
 
+// Toggle Forbidden on a queued build / decon / chop / haul job by tile.
+// Sourced from the blueprint info panel's Forbid toggle.
+public sealed class SetJobForbiddenCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public bool Forbidden { get; }
+    public SetJobForbiddenCommand(TilePos tile, bool forbidden)
+    { Tile = tile; Forbidden = forbidden; }
+    public void Apply(SimRuntime sim) => sim.SetJobForbidden(Tile, Forbidden);
+}
+
+// Cancel a queued job by tile. Sourced from the blueprint info panel's
+// Cancel button — single-tile sibling of CancelJobsInRectCommand.
+public sealed class CancelJobAtTileCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public CancelJobAtTileCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.CancelJobAtTile(Tile);
+}
+
 // Debug bar action: spawn a fresh wanderer at a random walkable tile.
 public sealed class SpawnDummyCommand : ISimCommand
 {

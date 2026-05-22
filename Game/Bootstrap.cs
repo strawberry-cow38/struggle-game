@@ -91,6 +91,9 @@ public partial class Bootstrap : Node2D
         var doorInfoPanel = new DoorInfoPanel { Host = _host, Name = "DoorInfoPanel" };
         AddChild(doorInfoPanel);
 
+        var blueprintInfoPanel = new BlueprintInfoPanel { Host = _host, Name = "BlueprintInfoPanel" };
+        AddChild(blueprintInfoPanel);
+
         var debugBar = new DebugBar { Tools = _tools, Name = "DebugBar" };
         AddChild(debugBar);
 

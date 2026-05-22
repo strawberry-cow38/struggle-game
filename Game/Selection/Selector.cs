@@ -83,6 +83,7 @@ public partial class Selector : Node2D
             Host.SelectedStockpileId = null;
             Host.SelectedWallTile = null;
             Host.SelectedDoorTile = null;
+            Host.SelectedBlueprintTile = null;
             return;
         }
 
@@ -97,6 +98,7 @@ public partial class Selector : Node2D
             Host.SelectedStockpileId = null;
             Host.SelectedWallTile = null;
             Host.SelectedDoorTile = null;
+            Host.SelectedBlueprintTile = null;
             return;
         }
 
@@ -111,6 +113,7 @@ public partial class Selector : Node2D
             Host.SelectedWoodIds = Array.Empty<int>();
             Host.SelectedWallTile = null;
             Host.SelectedDoorTile = null;
+            Host.SelectedBlueprintTile = null;
             return;
         }
 
@@ -126,6 +129,7 @@ public partial class Selector : Node2D
             Host.SelectedWoodIds = Array.Empty<int>();
             Host.SelectedWallTile = null;
             Host.SelectedDoorTile = null;
+            Host.SelectedBlueprintTile = null;
             return;
         }
 
@@ -133,6 +137,23 @@ public partial class Selector : Node2D
         if (TryPickDoor(snap, clickTile))
         {
             Host.SelectedDoorTile = clickTile;
+            Host.SelectedWallTile = null;
+            Host.SelectedBlueprintTile = null;
+            Host.SelectedDummyId = null;
+            Host.SelectedStockpileId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodIds = Array.Empty<int>();
+            return;
+        }
+
+        // Blueprint / decon mark / chop / haul job on the clicked tile.
+        // Beats walls so a decon mark over a wall is reachable; gets
+        // beaten by built doors. Wall blueprint tiles have no real wall
+        // so there's no conflict to worry about.
+        if (TryPickBlueprint(snap, clickTile))
+        {
+            Host.SelectedBlueprintTile = clickTile;
+            Host.SelectedDoorTile = null;
             Host.SelectedWallTile = null;
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
@@ -147,6 +168,7 @@ public partial class Selector : Node2D
         {
             Host.SelectedWallTile = clickTile;
             Host.SelectedDoorTile = null;
+            Host.SelectedBlueprintTile = null;
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
@@ -163,6 +185,7 @@ public partial class Selector : Node2D
             Host.SelectedWoodIds = Array.Empty<int>();
             Host.SelectedWallTile = null;
             Host.SelectedDoorTile = null;
+            Host.SelectedBlueprintTile = null;
         }
     }
 
@@ -172,6 +195,15 @@ public partial class Selector : Node2D
         {
             if (d.Tile == tile) return true;
         }
+        return false;
+    }
+
+    private bool TryPickBlueprint(SimSnapshot snap, TilePos tile)
+    {
+        foreach (var b in snap.Blueprints)      { if (b.Tile == tile) return true; }
+        foreach (var b in snap.FloorBlueprints) { if (b.Tile == tile) return true; }
+        foreach (var b in snap.DoorBlueprints)  { if (b.Tile == tile) return true; }
+        foreach (var d in snap.Decons)          { if (d.Tile == tile) return true; }
         return false;
     }
 

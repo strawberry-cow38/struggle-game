@@ -139,6 +139,23 @@ public sealed class SimRuntime
 
     public void QueueCommand(ISimCommand cmd) => _commands.Enqueue(cmd);
 
+    // Flip a blueprint / job's Forbidden flag by tile. Workers stop
+    // claiming it while forbidden; any active claim is released so the
+    // current builder re-plans next tick.
+    public bool SetJobForbidden(TilePos tile, bool forbidden)
+        => Jobs.SetForbiddenByTile(tile, forbidden);
+
+    // Cancel a blueprint / job by tile. Drops the backing entity for
+    // build-style jobs so it doesn't leak. Mirrors the rect-cancel path
+    // but single-tile — sourced from the blueprint info panel button.
+    public bool CancelJobAtTile(TilePos tile)
+    {
+        var job = Jobs.GetByTile(tile);
+        if (job is null) return false;
+        CancelJob(job.Id);
+        return true;
+    }
+
     // Drain the pending command queue without running any systems.
     // Used by SimHost while paused so designations + assignments
     // (forbid, decon, build, draft, …) apply immediately instead of
@@ -210,7 +227,7 @@ public sealed class SimRuntime
         {
             if (job.Kind != JobKind.WallBuild) continue;
             var bp = job.Entity.GetComponent<Blueprint>();
-            bps[j++] = new BlueprintState(job.Tile, bp.ProgressSec / BuildSystem.BuildTimeSec);
+            bps[j++] = new BlueprintState(job.Tile, bp.ProgressSec / BuildSystem.BuildTimeSec, job.Forbidden);
         }
         if (j < bps.Length) Array.Resize(ref bps, j);
 
@@ -219,7 +236,7 @@ public sealed class SimRuntime
         {
             if (job.Kind != JobKind.FloorBuild) continue;
             var bp = job.Entity.GetComponent<FloorBlueprint>();
-            floorBps.Add(new BlueprintState(job.Tile, bp.ProgressSec / FloorSystem.FloorTimeSec));
+            floorBps.Add(new BlueprintState(job.Tile, bp.ProgressSec / FloorSystem.FloorTimeSec, job.Forbidden));
         }
 
         var trees = new TreeState[_trees.Count];
@@ -260,7 +277,7 @@ public sealed class SimRuntime
         {
             if (job.Kind != JobKind.Deconstruct && job.Kind != JobKind.DoorDeconstruct) continue;
             var d = job.Entity.GetComponent<Decon>();
-            decons.Add(new DeconState(job.Tile, d.ProgressSec / DeconSystem.DeconTimeSec));
+            decons.Add(new DeconState(job.Tile, d.ProgressSec / DeconSystem.DeconTimeSec, job.Forbidden));
         }
 
         // Include both active door-build blueprints and ones parked
@@ -270,7 +287,11 @@ public sealed class SimRuntime
         var doorBps = new List<BlueprintState>();
         Store.Query<DoorBlueprint>().ForEachEntity((ref DoorBlueprint bp, Entity _) =>
         {
-            doorBps.Add(new BlueprintState(bp.Tile, bp.ProgressSec / DoorBuildSystem.DoorTimeSec));
+            // Door blueprints can live without an active job (parked
+            // waiting for a wall decon) — look up the job by tile to
+            // surface the Forbidden flag when one exists.
+            bool forbidden = Jobs.GetByTile(bp.Tile)?.Forbidden ?? false;
+            doorBps.Add(new BlueprintState(bp.Tile, bp.ProgressSec / DoorBuildSystem.DoorTimeSec, forbidden));
         });
 
         var doorRender = new List<DoorRenderState>();

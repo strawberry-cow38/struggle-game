@@ -75,6 +75,7 @@ public partial class WorldRenderer : Node2D
     private static readonly Color DoorPanelColor = new(0.55f, 0.36f, 0.20f);
     private static readonly Color DoorPanelEdge = new(0.30f, 0.18f, 0.08f);
     private static readonly Color DoorForbidMark = new(0.95f, 0.18f, 0.18f, 0.95f);
+    private static readonly Color SelectionOutline = new(0.30f, 0.95f, 1.00f, 1.00f);
     private static readonly Color StockpileFill = new(0.95f, 0.85f, 0.25f, 0.12f);
     private static readonly Color StockpileBorder = new(1.00f, 0.90f, 0.35f, 0.85f);
     private static readonly Color StockpileSelectedBorder = new(1.00f, 1.00f, 0.20f, 1.00f);
@@ -163,16 +164,19 @@ public partial class WorldRenderer : Node2D
         foreach (var bp in snap.Blueprints)
         {
             DrawBlueprint(bp.Tile, bp.Progress);
+            if (bp.Forbidden) DrawForbidX(bp.Tile);
         }
 
         foreach (var fbp in snap.FloorBlueprints)
         {
             DrawFloorBlueprint(fbp.Tile, fbp.Progress);
+            if (fbp.Forbidden) DrawForbidX(fbp.Tile);
         }
 
         foreach (var dbp in snap.DoorBlueprints)
         {
             DrawDoorBlueprint(dbp.Tile, dbp.Progress);
+            if (dbp.Forbidden) DrawForbidX(dbp.Tile);
         }
 
         _prevDoorByTileScratch ??= new Dictionary<TilePos, DoorRenderState>();
@@ -194,6 +198,16 @@ public partial class WorldRenderer : Node2D
         foreach (var d in snap.Decons)
         {
             DrawDeconMark(d.Tile, d.Progress);
+            if (d.Forbidden) DrawForbidX(d.Tile);
+        }
+
+        // Selection outlines for buildings + blueprints / jobs. Sit on
+        // top of the tile fills so the cyan ring is always visible.
+        if (Host is not null)
+        {
+            if (Host.SelectedWallTile is TilePos selW) DrawSelectionOutline(selW);
+            if (Host.SelectedDoorTile is TilePos selD) DrawSelectionOutline(selD);
+            if (Host.SelectedBlueprintTile is TilePos selB) DrawSelectionOutline(selB);
         }
 
         var stackFont = ThemeDB.FallbackFont;
@@ -564,6 +578,32 @@ public partial class WorldRenderer : Node2D
             if (!set.Contains(new TilePos(t.X + 1, t.Y)))
                 DrawLine(new Vector2(x1, y0), new Vector2(x1, y1), border, width: borderW);
         }
+    }
+
+    // Cyan ring around a selected tile (wall / door / blueprint / job).
+    // Two pixels inset so it doesn't overdraw the tile's own border art.
+    private void DrawSelectionOutline(TilePos tile)
+    {
+        float inset = 1.5f;
+        var rect = new Rect2(
+            tile.X * PixelsPerTile + inset,
+            tile.Y * PixelsPerTile + inset,
+            PixelsPerTile - inset * 2f,
+            PixelsPerTile - inset * 2f);
+        DrawRect(rect, SelectionOutline, filled: false, width: 3f);
+    }
+
+    // Red X over a tile — same look as the door forbid mark, reused for
+    // blueprints / jobs the player has flagged Forbidden.
+    private void DrawForbidX(TilePos tile)
+    {
+        float left = tile.X * PixelsPerTile;
+        float top = tile.Y * PixelsPerTile;
+        float right = left + PixelsPerTile;
+        float bottom = top + PixelsPerTile;
+        float inset = PixelsPerTile * 0.18f;
+        DrawLine(new Vector2(left + inset, top + inset), new Vector2(right - inset, bottom - inset), DoorForbidMark, width: 3f);
+        DrawLine(new Vector2(right - inset, top + inset), new Vector2(left + inset, bottom - inset), DoorForbidMark, width: 3f);
     }
 
     private void DrawFloorBlueprint(TilePos tile, float progress)
