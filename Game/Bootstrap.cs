@@ -192,6 +192,52 @@ public partial class Bootstrap : Node2D
                 GetViewport().SetInputAsHandled();
                 return;
             }
+            case Key.B:
+            {
+                // Post chop jobs for every selected tree.
+                var treeIds = _host.SelectedTreeIds;
+                if (treeIds.Length == 0) return;
+                var bsnap = _host.LatestSnapshot;
+                if (bsnap is null) return;
+                var idSet = new HashSet<int>(treeIds);
+                foreach (var tr in bsnap.Trees)
+                {
+                    if (!idSet.Contains(tr.EntityId)) continue;
+                    if (tr.HasJob) continue;
+                    _host.QueueCommand(new Sim.Commands.ChopTreesInRectCommand(tr.Tile, tr.Tile));
+                }
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+            case Key.C:
+            {
+                // Cancel every selected blueprint / queued job.
+                var bpTiles = _host.SelectedBlueprintTiles;
+                if (bpTiles.Length == 0) return;
+                foreach (var t in bpTiles)
+                    _host.QueueCommand(new Sim.Commands.CancelJobAtTileCommand(t));
+                _host.SelectedBlueprintTiles = Array.Empty<Sim.Map.TilePos>();
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+            case Key.X:
+            {
+                // Decon selected walls (player-built only) + doors.
+                bool any = false;
+                foreach (var t in _host.SelectedWallTiles)
+                {
+                    if (!_host.IsPlayerWall(t)) continue;
+                    _host.QueueCommand(new Sim.Commands.PostWallDeconCommand(t));
+                    any = true;
+                }
+                foreach (var t in _host.SelectedDoorTiles)
+                {
+                    _host.QueueCommand(new Sim.Commands.PostDoorDeconCommand(t));
+                    any = true;
+                }
+                if (any) GetViewport().SetInputAsHandled();
+                return;
+            }
             case Key.Space:
                 _host.SetPaused(!_host.IsPaused);
                 GD.Print(_host.IsPaused ? "Sim PAUSED" : "Sim RESUMED");
