@@ -9,6 +9,7 @@ public enum SimAnomalyKind
 {
     Stuck,
     BrainDead,
+    Rescued,
 }
 
 public readonly record struct SimAnomaly(long Tick, int EntityId, SimAnomalyKind Kind, string Detail);
@@ -52,10 +53,18 @@ public sealed class SimWatcher
     private SimAnomaly[] _publish = Array.Empty<SimAnomaly>();
     private int _stuckTotal;
     private int _brainDeadTotal;
+    private int _rescuedTotal;
 
     public int StuckTotal => Volatile.Read(ref _stuckTotal);
     public int BrainDeadTotal => Volatile.Read(ref _brainDeadTotal);
+    public int RescuedTotal => Volatile.Read(ref _rescuedTotal);
     public SimAnomaly[] Recent => Volatile.Read(ref _publish);
+
+    public void RecordRescue(long tick, int entityId, TilePos from, TilePos to)
+    {
+        Report(tick, entityId, SimAnomalyKind.Rescued, $"wall {from.X},{from.Y} -> {to.X},{to.Y}");
+        Interlocked.Increment(ref _rescuedTotal);
+    }
 
     public void Observe(long tick, EntityStore store, JobBoard jobs)
     {

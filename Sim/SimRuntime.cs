@@ -26,6 +26,7 @@ public sealed class SimRuntime
 
     private readonly DummyController _dummies;
     private readonly BuildSystem _builds;
+    private readonly SafetySystem _safety;
     private readonly ConcurrentQueue<ISimCommand> _commands = new();
     private readonly object _mapLock = new();
     private readonly List<TilePos> _playerWalls = new();
@@ -37,6 +38,7 @@ public sealed class SimRuntime
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
         _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1);
         _builds = new BuildSystem(this, Jobs);
+        _safety = new SafetySystem(() => MapView, PathService, Watcher);
 
         int center = SimConstants.MapSize / 2;
         for (int i = 0; i < 100; i++) SpawnDummy(center, center);
@@ -47,6 +49,7 @@ public sealed class SimRuntime
         while (_commands.TryDequeue(out var cmd)) cmd.Apply(this);
         _dummies.Step(Store, dt);
         _builds.Step(Store, dt);
+        _safety.Step(Store, Tick);
         Tick++;
         Watcher.Observe(Tick, Store, Jobs);
     }

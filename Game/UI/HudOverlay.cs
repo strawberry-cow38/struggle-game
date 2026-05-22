@@ -10,7 +10,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "build f434a6b+1 (block-on-occupied)";
+    private const string BuildTag = "build bf7c893+1 (wall-rescue)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
@@ -80,7 +80,7 @@ public partial class HudOverlay : CanvasLayer
         var w = Host.Watcher;
         var recent = w.Recent;
         var sb = new System.Text.StringBuilder();
-        sb.Append($"STUCK {w.StuckTotal}   DEAD {w.BrainDeadTotal}");
+        sb.Append($"STUCK {w.StuckTotal}   DEAD {w.BrainDeadTotal}   RESCUE {w.RescuedTotal}");
         int show = Math.Min(5, recent.Length);
         for (int i = recent.Length - show; i < recent.Length; i++)
         {
