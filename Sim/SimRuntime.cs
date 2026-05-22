@@ -377,6 +377,15 @@ public sealed class SimRuntime
             }
             RebuildMapView();
         }
+        else if (kind == JobKind.FloorDeconstruct)
+        {
+            entity.DeleteEntity();
+            lock (_mapLock)
+            {
+                Map.SetFlooring(tile, FlooringType.None);
+            }
+            RebuildMapView();
+        }
         else if (kind == JobKind.DoorBuild)
         {
             // Transmute the blueprint entity into the live door: drop
@@ -445,6 +454,11 @@ public sealed class SimRuntime
         {
             entity.DeleteEntity();
         }
+        else if (kind == JobKind.FloorDeconstruct)
+        {
+            // Floor stays; throw the marker away. Re-designate spawns fresh.
+            entity.DeleteEntity();
+        }
         else if (kind == JobKind.Haul)
         {
             // Wood entity survives the cancel — only the routing intent
@@ -492,6 +506,26 @@ public sealed class SimRuntime
     }
 
     public IReadOnlyList<TilePos> PlayerWalls => _playerWalls;
+
+    // Post a floor-deconstruct job. Floors hidden under a wall are
+    // skipped — the wall takes precedence; decon the wall first.
+    public bool TryPostFloorDeconJob(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return false;
+        if (Map.GetFlooring(tile) != FlooringType.Wood) return false;
+        if (Map.GetWall(tile) != WallType.None) return false;
+        if (Jobs.HasTile(tile)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new Decon { Tile = tile, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.FloorDeconstruct, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        return true;
+    }
 
     // Post a wood-floor blueprint on this tile. Rejects if a wall
     // already exists (walls block floors), if the tile already has the

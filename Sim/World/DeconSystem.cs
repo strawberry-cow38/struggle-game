@@ -29,10 +29,15 @@ public sealed class DeconSystem
         workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
         {
             var job = _jobs.Get(target.JobId);
-            if (job is null || job.Kind != JobKind.Deconstruct) return;
+            if (job is null) return;
+            bool isFloor = job.Kind == JobKind.FloorDeconstruct;
+            if (job.Kind != JobKind.Deconstruct && !isFloor) return;
             if (job.State != JobState.Open && job.State != JobState.Claimed) return;
 
-            if (!BuildAdjacency.InRange(pos.X, pos.Y, job.Tile.X, job.Tile.Y)) return;
+            bool inRange = isFloor
+                ? BuildAdjacency.InRangeOrOnTile(pos.X, pos.Y, job.Tile.X, job.Tile.Y)
+                : BuildAdjacency.InRange(pos.X, pos.Y, job.Tile.X, job.Tile.Y);
+            if (!inRange) return;
 
             ref var decon = ref job.Entity.GetComponent<Decon>();
             decon.ProgressSec += dt;

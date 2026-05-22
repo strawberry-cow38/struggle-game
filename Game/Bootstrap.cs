@@ -40,6 +40,9 @@ public partial class Bootstrap : Node2D
         var deconDesignator = new DeconDesignator { Host = _host, Tools = _tools, Name = "DeconDesignator" };
         AddChild(deconDesignator);
 
+        var floorDeconDesignator = new FloorDeconDesignator { Host = _host, Tools = _tools, Name = "FloorDeconDesignator" };
+        AddChild(floorDeconDesignator);
+
         var floorDesignator = new FloorDesignator { Host = _host, Tools = _tools, Name = "FloorDesignator" };
         AddChild(floorDesignator);
 

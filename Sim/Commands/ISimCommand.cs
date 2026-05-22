@@ -195,6 +195,23 @@ public sealed class DeconstructWallsInRectCommand : ISimCommand
     }
 }
 
+// Post a FloorDeconstruct job on every wood-floor tile in the rect.
+// Tiles hidden under a wall are skipped (wall must be decon'd first).
+public sealed class DeconstructFloorsInRectCommand : ISimCommand
+{
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public DeconstructFloorsInRectCommand(TilePos a, TilePos b) { A = a; B = b; }
+    public void Apply(SimRuntime sim)
+    {
+        int xmin = Math.Min(A.X, B.X), xmax = Math.Max(A.X, B.X);
+        int ymin = Math.Min(A.Y, B.Y), ymax = Math.Max(A.Y, B.Y);
+        for (int y = ymin; y <= ymax; y++)
+            for (int x = xmin; x <= xmax; x++)
+                sim.TryPostFloorDeconJob(new TilePos(x, y));
+    }
+}
+
 // Post chop jobs on every tree whose tile lies in the inclusive rect.
 public sealed class ChopTreesInRectCommand : ISimCommand
 {

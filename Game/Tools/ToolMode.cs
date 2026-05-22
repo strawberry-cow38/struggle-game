@@ -14,4 +14,5 @@ public enum ToolMode
     Stockpile = 9,
     StockpileExpand = 10,
     StockpileShrink = 11,
+    FloorDecon = 12,
 }

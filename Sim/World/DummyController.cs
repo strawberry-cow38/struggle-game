@@ -198,7 +198,7 @@ public sealed class DummyController
                 HandleHaul(ref pos, ref path, entity, cb, view, job, here, store);
                 return;
             }
-            else if (job.Kind == JobKind.FloorBuild)
+            else if (job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct)
             {
                 // Floors don't block movement and the worker can stand on
                 // the tile itself — approach = job.Tile, adjacency permissive.
@@ -338,6 +338,7 @@ public sealed class DummyController
                 && job.Kind != JobKind.ChopTree
                 && job.Kind != JobKind.Deconstruct
                 && job.Kind != JobKind.FloorBuild
+                && job.Kind != JobKind.FloorDeconstruct
                 && job.Kind != JobKind.DoorBuild
                 && job.Kind != JobKind.Haul) continue;
             if (job.State != JobState.Open) continue;
@@ -345,7 +346,7 @@ public sealed class DummyController
             if (d >= bestDist) continue;
             TilePos approach;
             bool isHaul = job.Kind == JobKind.Haul;
-            bool isFloor = job.Kind == JobKind.FloorBuild;
+            bool isFloor = job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct;
             if (isHaul || isFloor)
             {
                 // Haul pickup walks onto the source tile itself, not a
