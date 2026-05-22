@@ -170,6 +170,10 @@ public sealed class SimRuntime
         if (!any) return false;
         if (_mapDirty) { DoRebuildMapView(); _mapDirty = false; }
         if (_roomsDirty) { DoRecomputeRooms(); _roomsDirty = false; }
+        // Bump Tick so info panels (which dedupe re-renders on snap.Tick)
+        // pick up the new decon marks / blueprints / forbid flags while
+        // the sim is paused. No systems ran, so no gameplay timer advances.
+        Tick++;
         return true;
     }
 
