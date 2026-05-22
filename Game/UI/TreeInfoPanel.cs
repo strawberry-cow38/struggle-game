@@ -5,9 +5,10 @@ using StruggleGame.Sim.Snapshots;
 
 namespace StruggleGame.Game.UI;
 
-// Right-side panel for a single selected tree. Mirrors ItemInfoPanel's
-// look. Shows tile + chop progress + job state, with Chop / Cancel
-// buttons that wrap the existing rect commands at a 1x1 rect.
+// Right-side panel for the selected tree(s). Mirrors ItemInfoPanel.
+// Single selection shows tile + chop progress. Multi-selection shows
+// aggregate counts. Chop / Cancel buttons fire one 1x1 rect command
+// per selected tree so the existing rect plumbing handles every tile.
 public partial class TreeInfoPanel : CanvasLayer
 {
     public SimHost? Host { get; set; }
@@ -23,7 +24,8 @@ public partial class TreeInfoPanel : CanvasLayer
     private Button _chopBtn = null!;
     private Button _cancelBtn = null!;
 
-    private int _shownEntityId = -1;
+    private int _shownCount = -1;
+    private int _shownFirstId = -1;
     private long _lastSnapshotTick = -1;
 
     public override void _Ready()
@@ -90,32 +92,18 @@ public partial class TreeInfoPanel : CanvasLayer
         if (Host is null) return;
         var ids = Host.SelectedTreeIds;
         var snap = Host.LatestSnapshot;
-        // Only show for single-tree selection — multi-tree uses the
-        // designator flow (rect-chop), no per-tile panel needed.
-        if (ids.Length != 1 || snap is null)
+        if (ids.Length == 0 || snap is null)
         {
-            if (_root.Visible) { _root.Visible = false; _shownEntityId = -1; }
-            return;
-        }
-        int id = ids[0];
-        TreeState? found = null;
-        foreach (var t in snap.Trees)
-        {
-            if (t.EntityId == id) { found = t; break; }
-        }
-        if (found is null)
-        {
-            // Tree felled — clear selection.
-            Host.SelectedTreeIds = Array.Empty<int>();
-            _root.Visible = false;
-            _shownEntityId = -1;
+            if (_root.Visible) { _root.Visible = false; _shownCount = -1; }
             return;
         }
         if (!_root.Visible) _root.Visible = true;
-        if (found.Value.EntityId != _shownEntityId || snap.Tick != _lastSnapshotTick)
+        int first = ids[0];
+        if (ids.Length != _shownCount || first != _shownFirstId || snap.Tick != _lastSnapshotTick)
         {
-            Render(found.Value);
-            _shownEntityId = found.Value.EntityId;
+            Render(snap, ids);
+            _shownCount = ids.Length;
+            _shownFirstId = first;
             _lastSnapshotTick = snap.Tick;
         }
     }
@@ -127,37 +115,65 @@ public partial class TreeInfoPanel : CanvasLayer
         _root.Size = new Vector2(PanelWidth, _root.Size.Y);
     }
 
-    private void Render(TreeState t)
+    private void Render(SimSnapshot snap, int[] ids)
     {
-        _nameLabel.Text = "Tree";
-        _tileLabel.Text = $"Tile: ({t.Tile.X}, {t.Tile.Y})";
-        if (t.HasJob)
+        var idSet = new HashSet<int>(ids);
+        int withJob = 0, standing = 0, missing = 0;
+        TreeState? first = null;
+        foreach (var t in snap.Trees)
         {
-            int pct = Mathf.Clamp((int)Mathf.Round(t.ChopProgress * 100f), 0, 100);
-            _stateLabel.Text = $"Chop job queued ({pct}%)";
-            _chopBtn.Disabled = true;
-            _cancelBtn.Disabled = false;
+            if (!idSet.Contains(t.EntityId)) continue;
+            if (first is null) first = t;
+            if (t.HasJob) withJob++; else standing++;
+            idSet.Remove(t.EntityId);
+        }
+        // Anything left in idSet was felled out from under the selection.
+        missing = idSet.Count;
+        if (missing > 0 && withJob + standing == 0)
+        {
+            Host!.SelectedTreeIds = Array.Empty<int>();
+            return;
+        }
+
+        if (ids.Length == 1 && first is TreeState t1)
+        {
+            _nameLabel.Text = "Tree";
+            _tileLabel.Text = $"Tile: ({t1.Tile.X}, {t1.Tile.Y})";
+            if (t1.HasJob)
+            {
+                int pct = Mathf.Clamp((int)Mathf.Round(t1.ChopProgress * 100f), 0, 100);
+                _stateLabel.Text = $"Chop job queued ({pct}%)";
+            }
+            else
+            {
+                _stateLabel.Text = "Standing";
+            }
         }
         else
         {
-            _stateLabel.Text = "Standing";
-            _chopBtn.Disabled = false;
-            _cancelBtn.Disabled = true;
+            _nameLabel.Text = $"Trees ({ids.Length})";
+            _tileLabel.Text = first is TreeState f
+                ? $"First: ({f.Tile.X}, {f.Tile.Y})"
+                : "";
+            _stateLabel.Text = $"{withJob} queued · {standing} standing";
         }
+        _chopBtn.Disabled = standing == 0;
+        _cancelBtn.Disabled = withJob == 0;
     }
 
     private void OnChopPressed()
     {
         if (Host is null) return;
         var ids = Host.SelectedTreeIds;
-        if (ids.Length != 1) return;
+        if (ids.Length == 0) return;
         var snap = Host.LatestSnapshot;
         if (snap is null) return;
+        var idSet = new HashSet<int>(ids);
         foreach (var t in snap.Trees)
         {
-            if (t.EntityId != ids[0]) continue;
+            if (!idSet.Contains(t.EntityId)) continue;
+            if (t.HasJob) continue;
             Host.QueueCommand(new ChopTreesInRectCommand(t.Tile, t.Tile));
-            return;
         }
     }
 
@@ -165,14 +181,15 @@ public partial class TreeInfoPanel : CanvasLayer
     {
         if (Host is null) return;
         var ids = Host.SelectedTreeIds;
-        if (ids.Length != 1) return;
+        if (ids.Length == 0) return;
         var snap = Host.LatestSnapshot;
         if (snap is null) return;
+        var idSet = new HashSet<int>(ids);
         foreach (var t in snap.Trees)
         {
-            if (t.EntityId != ids[0]) continue;
+            if (!idSet.Contains(t.EntityId)) continue;
+            if (!t.HasJob) continue;
             Host.QueueCommand(new CancelJobsInRectCommand(t.Tile, t.Tile));
-            return;
         }
     }
 }
