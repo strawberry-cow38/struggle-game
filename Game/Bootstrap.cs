@@ -114,10 +114,10 @@ public partial class Bootstrap : Node2D
 
         switch (k.Keycode)
         {
-            case Key.Key1: _host.SetTickHz(60); break;
-            case Key.Key2: _host.SetTickHz(120); break;
-            case Key.Key3: _host.SetTickHz(180); break;
-            case Key.Key4: _host.SetTickHz(360); break;
+            case Key.Key1: _host.SetTickHz(60); _host.SetPaused(false); break;
+            case Key.Key2: _host.SetTickHz(120); _host.SetPaused(false); break;
+            case Key.Key3: _host.SetTickHz(180); _host.SetPaused(false); break;
+            case Key.Key4: _host.SetTickHz(360); _host.SetPaused(false); break;
             case Key.R:
                 if (_host.SelectedDummyId is int id)
                 {
