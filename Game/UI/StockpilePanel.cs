@@ -226,8 +226,8 @@ public partial class StockpilePanel : CanvasLayer
         bool nameMatch = string.IsNullOrEmpty(filter) || cat.DisplayName.ToLowerInvariant().Contains(filter);
 
         var item = _filterTree.CreateItem(parent);
-        item.SetText(0, cat.DisplayName);
         item.SetCellMode(0, TreeItem.TreeCellMode.Check);
+        item.SetText(0, cat.DisplayName);
         item.SetEditable(0, true);
         item.SetMetadata(0, "cat:" + cat.FullPath);
         // A category checkbox is "checked" iff every item beneath it is
@@ -249,8 +249,8 @@ public partial class StockpilePanel : CanvasLayer
             bool itemMatch = string.IsNullOrEmpty(filter) || def.DisplayName.ToLowerInvariant().Contains(filter);
             if (!itemMatch && !nameMatch) continue;
             var leaf = _filterTree.CreateItem(item);
-            leaf.SetText(0, def.DisplayName);
             leaf.SetCellMode(0, TreeItem.TreeCellMode.Check);
+            leaf.SetText(0, def.DisplayName);
             leaf.SetEditable(0, true);
             leaf.SetMetadata(0, "item:" + def.FullPath);
             leaf.SetChecked(0, allowed.Contains(def.FullPath));
