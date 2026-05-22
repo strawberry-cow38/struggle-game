@@ -206,6 +206,70 @@ public class HaulTests
     }
 
     [Fact]
+    public void Carrier_BatchesTwoNearbyPilesInOneDeliveryRound()
+    {
+        // Two small wood piles within HaulTopoffRadius should both be
+        // picked up by a single carrier on one trip and end up at the
+        // same stockpile dest (merged by the end-of-tick consolidator).
+        var sim = new SimRuntime();
+        var dest = NearbyWalkable(sim, new TilePos(80, 80));
+        sim.QueueCommand(new CreateStockpileRectCommand(dest, dest));
+        sim.Step(SimConstants.TickSeconds);
+
+        var primary = NearbyWalkableNotEqual(sim, new TilePos(40, 40), dest);
+        var secondary = NearbyWalkableNotEqual(sim, new TilePos(primary.X + 1, primary.Y), dest);
+        int md = Math.Abs(primary.X - secondary.X) + Math.Abs(primary.Y - secondary.Y);
+        Assert.InRange(md, 1, SimConstants.HaulTopoffRadius);
+
+        sim.SpawnWoodPile(primary, 5);
+        sim.SpawnWoodPile(secondary, 7);
+
+        bool delivered = false;
+        for (int i = 0; i < 8000; i++)
+        {
+            sim.Step(SimConstants.TickSeconds);
+            if (WoodCountAtTile(sim, dest) == 12
+                && !WoodAtTile(sim, primary)
+                && !WoodAtTile(sim, secondary))
+            {
+                delivered = true;
+                break;
+            }
+        }
+        Assert.True(delivered, "both nearby piles should consolidate at the dest");
+    }
+
+    [Fact]
+    public void Carrier_DoesNotBatchBeyondInventoryCap()
+    {
+        // Primary pile already saturates a colonist's carry capacity
+        // (Weight * Count == MaxCarryWeight), so the topoff scan must
+        // not reserve the neighbor. The neighbor stays where it was
+        // until it gets its own primary haul.
+        var sim = new SimRuntime();
+        var dest = NearbyWalkable(sim, new TilePos(80, 80));
+        sim.QueueCommand(new CreateStockpileRectCommand(dest, dest));
+        sim.Step(SimConstants.TickSeconds);
+
+        var primary = NearbyWalkableNotEqual(sim, new TilePos(40, 40), dest);
+        var neighbor = NearbyWalkableNotEqual(sim, new TilePos(primary.X + 1, primary.Y), dest);
+        int cap = (int)(SimConstants.MaxCarryWeight / ItemCatalog.Wood.Weight);
+        sim.SpawnWoodPile(primary, cap);
+        sim.SpawnWoodPile(neighbor, 4);
+
+        // Run until something reaches the dest. The first arrival must
+        // be just the primary (cap units) — not primary + neighbor.
+        int firstAtDest = 0;
+        for (int i = 0; i < 8000; i++)
+        {
+            sim.Step(SimConstants.TickSeconds);
+            int dc = WoodCountAtTile(sim, dest);
+            if (dc > 0) { firstAtDest = dc; break; }
+        }
+        Assert.Equal(cap, firstAtDest);
+    }
+
+    [Fact]
     public void Door_StaysOpenWhileWoodSitsOnTile()
     {
         // Build a door, drop wood on it, wait past AutoCloseSec, and the

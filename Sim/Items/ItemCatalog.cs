@@ -38,12 +38,19 @@ public sealed class ItemDef
     public string Id { get; }
     public string DisplayName { get; }
     public ItemCategory Category { get; }
+    // Per-unit carry cost. A colonist's inventory caps both: weight is
+    // mass-like (one heavy item; bulk is volume-like (one fluffy item).
+    // Tuned in concert with SimConstants.MaxCarryWeight / MaxCarryBulk.
+    public float Weight { get; }
+    public float Bulk { get; }
 
-    internal ItemDef(string id, string displayName, ItemCategory category)
+    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk)
     {
         Id = id;
         DisplayName = displayName;
         Category = category;
+        Weight = weight;
+        Bulk = bulk;
     }
 
     public string FullPath => $"{Category.FullPath}/{Id}";
@@ -72,7 +79,7 @@ public static class ItemCatalog
     {
         Resources = RegisterCategory("Resources", "Resources");
         ResourcesWood = RegisterCategory("Wood", "Wood", Resources);
-        Wood = RegisterItem("Wood", "Wood", ResourcesWood);
+        Wood = RegisterItem("Wood", "Wood", ResourcesWood, weight: 1f, bulk: 1f);
     }
 
     public static ItemCategory RegisterCategory(string id, string displayName, ItemCategory? parent = null)
@@ -87,9 +94,9 @@ public static class ItemCatalog
         return cat;
     }
 
-    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category)
+    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f)
     {
-        var item = new ItemDef(id, displayName, category);
+        var item = new ItemDef(id, displayName, category, weight, bulk);
         if (!_itemsByPath.TryAdd(item.FullPath, item))
         {
             throw new InvalidOperationException($"Item already registered at path '{item.FullPath}'.");

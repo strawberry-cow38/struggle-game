@@ -79,7 +79,7 @@ public readonly record struct BlueprintState(TilePos Tile, float Progress);
 // active chop job on the tile.
 public readonly record struct TreeState(int EntityId, TilePos Tile, float ChopProgress, bool HasJob);
 
-public readonly record struct WoodState(TilePos Tile);
+public readonly record struct WoodState(TilePos Tile, int Count, string ItemPath);
 
 // Decon mark on a wall. Progress = 0..1 normalised by DeconSystem.DeconTimeSec.
 public readonly record struct DeconState(TilePos Tile, float Progress);

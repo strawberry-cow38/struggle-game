@@ -85,9 +85,8 @@ public sealed class SimRuntime
         _spawnRng = new Random(seed + 7);
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
         _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor);
-        _dummies.OnHaulPickup = (carriedEnt, jobId, cb) => OnHaulPickedUp(carriedEnt, cb);
-        _dummies.OnHaulDeliver = (carriedEnt, jobId, originalDest, dropTile, count, cb)
-            => CompleteHaulJob(jobId, carriedEnt, originalDest, dropTile, count, cb);
+        _dummies.OnHaulPickup = (carriedEnt, cb) => OnHaulPickedUp(carriedEnt, cb);
+        _dummies.OnHaulDeliver = (carrying, dropTile, cb) => DeliverCarrying(carrying, dropTile, cb);
         _builds = new BuildSystem(this, Jobs);
         _chops = new ChopSystem(this, Jobs);
         _decons = new DeconSystem(this, Jobs);
@@ -215,7 +214,7 @@ public sealed class SimRuntime
         var woodQuery = Store.Query<Wood>();
         var woods = new WoodState[woodQuery.Count];
         int wi = 0;
-        woodQuery.ForEachEntity((ref Wood w, Entity _) => { woods[wi++] = new WoodState(w.Tile); });
+        woodQuery.ForEachEntity((ref Wood w, Entity _) => { woods[wi++] = new WoodState(w.Tile, w.Count, ItemCatalog.Wood.FullPath); });
 
         int[]? selTreeArr = null;
         if (selectedTreeIds is { Count: > 0 })
@@ -811,19 +810,39 @@ public sealed class SimRuntime
         return stockpileId != 0;
     }
 
-    // Pawn delivered a carried item. Re-anchors the wood at dropTile,
-    // completes the job, and releases the original dest reservation.
-    // originalDest and dropTile differ only in the fallback path where
-    // the planned dest became invalid mid-flight (stockpile deleted/shrunk)
-    // and the carrier drops at its current tile instead.
-    public void CompleteHaulJob(JobId jobId, Entity carriedEntity, TilePos originalDest, TilePos dropTile, int carriedCount, CommandBuffer cb)
+    // Pawn (re-)anchors every carried slot at dropTile, completes the
+    // primary haul job, releases the dest reservation, and frees any
+    // topoff reservations that the pawn never managed to physically pick
+    // up so HaulSystem can re-post them. dropTile is usually the planned
+    // DestTile, but the carrier passes its current tile instead when
+    // delivery aborts (drafted mid-haul, dest blocked).
+    public void DeliverCarrying(Carrying c, TilePos dropTile, CommandBuffer cb)
     {
-        _reservedHaulDests.Remove(originalDest);
-        var job = Jobs.Get(jobId);
-        if (job is not null) Jobs.Complete(jobId);
-        if (carriedEntity.HasComponent<HaulReserved>()) cb.RemoveComponent<HaulReserved>(carriedEntity.Id);
-        cb.AddComponent(carriedEntity.Id, new Wood { Tile = dropTile, Count = carriedCount });
-        cb.AddComponent(carriedEntity.Id, new WorldPos { X = dropTile.X + 0.5f, Y = dropTile.Y + 0.5f });
+        _reservedHaulDests.Remove(c.DestTile);
+        if (!c.PrimaryJobId.IsNone)
+        {
+            var job = Jobs.Get(c.PrimaryJobId);
+            if (job is not null) Jobs.Complete(c.PrimaryJobId);
+        }
+        if (c.Slots is not null)
+        {
+            foreach (var slot in c.Slots)
+            {
+                if (!Store.TryGetEntityById(slot.EntityId, out var e)) continue;
+                if (e.HasComponent<HaulReserved>()) cb.RemoveComponent<HaulReserved>(e.Id);
+                cb.AddComponent(e.Id, new Wood { Tile = dropTile, Count = slot.Count });
+                cb.AddComponent(e.Id, new WorldPos { X = dropTile.X + 0.5f, Y = dropTile.Y + 0.5f });
+            }
+        }
+        if (c.PendingPickupIds is not null)
+        {
+            foreach (var pid in c.PendingPickupIds)
+            {
+                if (!Store.TryGetEntityById(pid, out var pe)) continue;
+                if (pe.HasComponent<HaulReserved>()) cb.RemoveComponent<HaulReserved>(pe.Id);
+                if (pe.HasComponent<HaulPayload>()) cb.RemoveComponent<HaulPayload>(pe.Id);
+            }
+        }
     }
 
     // Called by DummyController when it actually picks up an item from

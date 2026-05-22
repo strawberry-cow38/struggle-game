@@ -136,17 +136,31 @@ public struct DoorBlueprint : IComponent
     public float ProgressSec;
 }
 
-// A pawn carrying an item to a stockpile destination. CarriedEntityId
-// points at the in-flight item entity (e.g. the original Wood entity,
-// kept alive so completion is a single component-update rather than
-// a delete/recreate). DestTile is the chosen stockpile cell.
+// One item in a pawn's carry inventory. Each slot references an
+// existing item entity (Wood today, more later) kept alive across
+// the haul so completion is a re-anchor rather than delete/recreate.
+public struct CarriedSlot
+{
+    public int EntityId;
+    public string ItemPath;
+    public int Count;
+}
+
+// A pawn carrying one or more items to a single stockpile destination.
+// Slots holds items already physically picked up (their world Wood +
+// WorldPos components have been removed). PendingPickupIds holds
+// additional item entities the pawn has reserved via HaulReserved +
+// HaulPayload during the topoff scan; the pawn walks to each before
+// heading to DestTile. PrimaryJobId references the originating Haul
+// job (the one that drove the claim) so completion / cancellation
+// can find it; topoff pickups are reservation-only with no Job.
 public struct Carrying : IComponent
 {
-    public int CarriedEntityId;
-    public string ItemPath;
+    public List<CarriedSlot>? Slots;
+    public List<int>? PendingPickupIds;
     public TilePos DestTile;
     public int StockpileId;
-    public int Count;
+    public Jobs.JobId PrimaryJobId;
 }
 
 // Marks an item entity as already promised to a haul job. Posted by

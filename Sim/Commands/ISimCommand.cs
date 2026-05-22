@@ -90,27 +90,25 @@ public sealed class ToggleDraftCommand : ISimCommand
         if (ent.HasComponent<BuildTarget>())
         {
             var bt = ent.GetComponent<BuildTarget>();
-            // Mid-haul carriers drop the cargo at their current tile so
-            // the wood doesn't vanish when the draft toggles.
+            // Mid-haul carriers drop every carried + reserved item at
+            // their current tile so the wood doesn't vanish when the
+            // draft toggles.
             if (ent.HasComponent<Carrying>())
             {
                 var c = ent.GetComponent<Carrying>();
-                if (sim.Store.TryGetEntityById(c.CarriedEntityId, out var cargo))
+                TilePos here;
+                if (ent.HasComponent<WorldPos>())
                 {
-                    TilePos here;
-                    if (ent.HasComponent<WorldPos>())
-                    {
-                        var wp = ent.GetComponent<WorldPos>();
-                        here = new TilePos((int)wp.X, (int)wp.Y);
-                    }
-                    else
-                    {
-                        here = c.DestTile;
-                    }
-                    var cb = sim.Store.GetCommandBuffer();
-                    sim.CompleteHaulJob(bt.JobId, cargo, c.DestTile, here, c.Count, cb);
-                    cb.Playback();
+                    var wp = ent.GetComponent<WorldPos>();
+                    here = new TilePos((int)wp.X, (int)wp.Y);
                 }
+                else
+                {
+                    here = c.DestTile;
+                }
+                var cb = sim.Store.GetCommandBuffer();
+                sim.DeliverCarrying(c, here, cb);
+                cb.Playback();
                 ent.RemoveComponent<Carrying>();
             }
             else

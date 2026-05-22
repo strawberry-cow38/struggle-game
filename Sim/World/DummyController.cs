@@ -1,4 +1,5 @@
 using Friflo.Engine.ECS;
+using StruggleGame.Sim.Items;
 using StruggleGame.Sim.Jobs;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Pathfinding;
@@ -38,8 +39,17 @@ public sealed class DummyController
     private readonly Random _rng;
     // Optional callback for haul completion. Set by SimRuntime so we
     // don't need to plumb the runtime through the controller's surface.
-    public Action<Friflo.Engine.ECS.Entity, JobId, CommandBuffer>? OnHaulPickup;
-    public Action<Friflo.Engine.ECS.Entity, JobId, TilePos, TilePos, int, CommandBuffer>? OnHaulDeliver;
+    // Fires when a pawn physically picks up one item entity. Hooked by
+    // SimRuntime to strip world-side Wood + HaulPayload from the entity.
+    public Action<Friflo.Engine.ECS.Entity, CommandBuffer>? OnHaulPickup;
+    // Fires when a pawn drops its entire inventory at a tile (either
+    // planned DestTile or a fallback tile on abort). Hooked by SimRuntime
+    // to re-anchor every slot, complete the primary job, and free any
+    // never-picked-up topoff reservations.
+    public Action<Carrying, TilePos, CommandBuffer>? OnHaulDeliver;
+    // Scratch set populated each Step() so a single tick of topoff scans
+    // doesn't reserve the same item for two different carriers.
+    private readonly HashSet<int> _topoffReservedThisTick = new();
 
     public DummyController(
         PathService paths,
@@ -61,6 +71,7 @@ public sealed class DummyController
     {
         var view = _viewProvider();
         var cb = store.GetCommandBuffer();
+        _topoffReservedThisTick.Clear();
         var query = store.Query<WorldPos, PathFollower, Wanderer>();
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity entity) =>
         {
@@ -122,15 +133,13 @@ public sealed class DummyController
             if (entity.HasComponent<BuildTarget>())
             {
                 var bt = entity.GetComponent<BuildTarget>();
-                // Mid-haul: cancel so the dest reservation releases, then
-                // drop the carried item where the carrier stands.
+                // Mid-haul: drop every carried + reserved item where the
+                // carrier stands. OnHaulDeliver handles job completion +
+                // dest-reservation release + freeing topoff reservations.
                 if (entity.HasComponent<Carrying>())
                 {
                     var c = entity.GetComponent<Carrying>();
-                    if (store.TryGetEntityById(c.CarriedEntityId, out var cargo))
-                    {
-                        OnHaulDeliver?.Invoke(cargo, bt.JobId, c.DestTile, here, c.Count, cb);
-                    }
+                    OnHaulDeliver?.Invoke(c, here, cb);
                     cb.RemoveComponent<Carrying>(entity.Id);
                 }
                 else
@@ -177,10 +186,7 @@ public sealed class DummyController
                 if (entity.HasComponent<Carrying>())
                 {
                     var c = entity.GetComponent<Carrying>();
-                    if (store.TryGetEntityById(c.CarriedEntityId, out var cargo))
-                    {
-                        OnHaulDeliver?.Invoke(cargo, bt.JobId, c.DestTile, here, c.Count, cb);
-                    }
+                    OnHaulDeliver?.Invoke(c, here, cb);
                     cb.RemoveComponent<Carrying>(entity.Id);
                 }
                 cb.RemoveComponent<BuildTarget>(entity.Id);
@@ -317,9 +323,13 @@ public sealed class DummyController
         return true;
     }
 
-    // Two-phase: walk to pickup tile → pickup; walk to dest tile → drop.
-    // The dest is read from the carrier's Carrying component (set at
-    // pickup time) so the runtime owns the source of truth.
+    // Multi-pickup haul: walk to primary pickup tile (job.Tile) → pickup
+    // + topoff scan → walk each pending pickup tile in nearest order →
+    // walk to dest tile → drop the whole inventory. Capacity is gated by
+    // SimConstants.MaxCarryWeight + MaxCarryBulk using each ItemDef's
+    // per-unit Weight/Bulk. Topoffs share the primary's DestTile rather
+    // than picking their own — the merge pass + HaulSystem clean up any
+    // overflow next tick.
     private void HandleHaul(
         ref WorldPos pos,
         ref PathFollower path,
@@ -330,28 +340,13 @@ public sealed class DummyController
         TilePos here,
         EntityStore store)
     {
-        bool carrying = entity.HasComponent<Carrying>();
-        TilePos target;
-        TilePos originalDest = default;
-        if (!carrying)
+        if (!entity.HasComponent<Carrying>())
         {
-            target = job.Tile;
-        }
-        else
-        {
-            var c = entity.GetComponent<Carrying>();
-            target = c.DestTile;
-            originalDest = c.DestTile;
-        }
-
-        if (here == target)
-        {
-            path.Waypoints = null;
-            path.Index = 0;
-
-            if (!carrying)
+            // Phase 1: walk to primary pickup tile.
+            if (here == job.Tile)
             {
-                // Pickup: validate wood entity still present.
+                path.Waypoints = null;
+                path.Index = 0;
                 if (!job.Entity.HasComponent<HaulPayload>())
                 {
                     _cancelJob(job.Id);
@@ -359,31 +354,86 @@ public sealed class DummyController
                     return;
                 }
                 var hp = job.Entity.GetComponent<HaulPayload>();
+                var slots = new List<CarriedSlot>
+                {
+                    new CarriedSlot { EntityId = job.Entity.Id, ItemPath = hp.ItemPath, Count = hp.Count },
+                };
+                var pending = new List<int>();
+                ScanTopoffs(store, cb, slots, pending, here, hp.DestTile);
                 cb.AddComponent(entity.Id, new Carrying
                 {
-                    CarriedEntityId = job.Entity.Id,
-                    ItemPath = hp.ItemPath,
+                    Slots = slots,
+                    PendingPickupIds = pending,
                     DestTile = hp.DestTile,
                     StockpileId = hp.StockpileId,
-                    Count = hp.Count,
+                    PrimaryJobId = job.Id,
                 });
-                OnHaulPickup?.Invoke(job.Entity, job.Id, cb);
+                OnHaulPickup?.Invoke(job.Entity, cb);
+                return;
             }
-            else
+
+            if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
             {
-                // Dropoff.
-                var c = entity.GetComponent<Carrying>();
-                if (store.TryGetEntityById(c.CarriedEntityId, out var cargo))
+                if (!view.Walkable(job.Tile))
                 {
-                    OnHaulDeliver?.Invoke(cargo, job.Id, originalDest, here, c.Count, cb);
+                    _cancelJob(job.Id);
+                    cb.RemoveComponent<BuildTarget>(entity.Id);
+                    return;
+                }
+                path.PendingPathId = _paths.Request(here, job.Tile);
+            }
+            return;
+        }
+
+        // Phase 2: carrying. Visit pending pickups (nearest first) before
+        // heading to DestTile.
+        var c = entity.GetComponent<Carrying>();
+        TilePos? pickupTile = null;
+        int pickupEntityId = 0;
+        if (c.PendingPickupIds is { Count: > 0 })
+        {
+            int bestDist = int.MaxValue;
+            foreach (var pid in c.PendingPickupIds)
+            {
+                if (!store.TryGetEntityById(pid, out var pe)) continue;
+                if (!pe.HasComponent<Wood>()) continue;
+                var ptile = pe.GetComponent<Wood>().Tile;
+                int d = Math.Abs(ptile.X - here.X) + Math.Abs(ptile.Y - here.Y);
+                if (d < bestDist) { bestDist = d; pickupTile = ptile; pickupEntityId = pid; }
+            }
+        }
+
+        var target = pickupTile ?? c.DestTile;
+
+        if (here == target)
+        {
+            path.Waypoints = null;
+            path.Index = 0;
+
+            if (pickupTile is not null)
+            {
+                if (store.TryGetEntityById(pickupEntityId, out var pe)
+                    && pe.HasComponent<HaulPayload>()
+                    && pe.HasComponent<Wood>())
+                {
+                    var hp = pe.GetComponent<HaulPayload>();
+                    ref var live = ref entity.GetComponent<Carrying>();
+                    live.Slots!.Add(new CarriedSlot { EntityId = pe.Id, ItemPath = hp.ItemPath, Count = hp.Count });
+                    live.PendingPickupIds!.Remove(pickupEntityId);
+                    OnHaulPickup?.Invoke(pe, cb);
                 }
                 else
                 {
-                    _cancelJob(job.Id);
+                    ref var live = ref entity.GetComponent<Carrying>();
+                    live.PendingPickupIds!.Remove(pickupEntityId);
                 }
-                cb.RemoveComponent<Carrying>(entity.Id);
-                cb.RemoveComponent<BuildTarget>(entity.Id);
+                return;
             }
+
+            // Dropoff at primary DestTile.
+            OnHaulDeliver?.Invoke(c, here, cb);
+            cb.RemoveComponent<Carrying>(entity.Id);
+            cb.RemoveComponent<BuildTarget>(entity.Id);
             return;
         }
 
@@ -391,20 +441,87 @@ public sealed class DummyController
         {
             if (!view.Walkable(target))
             {
-                _cancelJob(job.Id);
-                if (carrying)
+                if (pickupTile is not null)
                 {
-                    var c = entity.GetComponent<Carrying>();
-                    if (store.TryGetEntityById(c.CarriedEntityId, out var cargo))
+                    // Topoff blocked off — drop the reservation and try a
+                    // different pending pickup (or the dest) next tick.
+                    if (store.TryGetEntityById(pickupEntityId, out var pe))
                     {
-                        OnHaulDeliver?.Invoke(cargo, job.Id, originalDest, here, c.Count, cb);
+                        if (pe.HasComponent<HaulReserved>()) cb.RemoveComponent<HaulReserved>(pe.Id);
+                        if (pe.HasComponent<HaulPayload>()) cb.RemoveComponent<HaulPayload>(pe.Id);
                     }
-                    cb.RemoveComponent<Carrying>(entity.Id);
+                    ref var live = ref entity.GetComponent<Carrying>();
+                    live.PendingPickupIds!.Remove(pickupEntityId);
+                    return;
                 }
+                // Dest blocked: drop everything here, abort.
+                OnHaulDeliver?.Invoke(c, here, cb);
+                cb.RemoveComponent<Carrying>(entity.Id);
                 cb.RemoveComponent<BuildTarget>(entity.Id);
                 return;
             }
             path.PendingPathId = _paths.Request(here, target);
+        }
+    }
+
+    // Looks for unreserved item entities of the same kind within
+    // SimConstants.HaulTopoffRadius of the primary pickup tile and
+    // reserves as many as fit in the pawn's remaining Weight + Bulk
+    // capacity. Each reserved entity gets HaulReserved (JobId.None — it's
+    // a piggyback pickup, not a posted job) + a HaulPayload pointing at
+    // the primary's DestTile, plus its id appended to pendingIds.
+    private void ScanTopoffs(
+        EntityStore store,
+        CommandBuffer cb,
+        List<CarriedSlot> slots,
+        List<int> pendingIds,
+        TilePos primarySource,
+        TilePos dest)
+    {
+        float wUsed = 0f, bUsed = 0f;
+        foreach (var s in slots)
+        {
+            if (!ItemCatalog.ItemsByPath.TryGetValue(s.ItemPath, out var d)) continue;
+            wUsed += d.Weight * s.Count;
+            bUsed += d.Bulk * s.Count;
+        }
+        float wRem = SimConstants.MaxCarryWeight - wUsed;
+        float bRem = SimConstants.MaxCarryBulk - bUsed;
+        if (wRem <= 0f || bRem <= 0f) return;
+
+        // Snapshot candidates first so the nested query can't see any
+        // mutations we'd queue mid-iteration.
+        var candidates = new List<(Entity Ent, int Count, string Path, int Dist)>();
+        store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) =>
+        {
+            if (e.HasComponent<HaulReserved>()) return;
+            if (_topoffReservedThisTick.Contains(e.Id)) return;
+            int md = Math.Abs(w.Tile.X - primarySource.X) + Math.Abs(w.Tile.Y - primarySource.Y);
+            if (md == 0) return; // primary already handled
+            if (md > SimConstants.HaulTopoffRadius) return;
+            candidates.Add((e, w.Count, ItemCatalog.Wood.FullPath, md));
+        });
+        candidates.Sort((a, b) => a.Dist - b.Dist);
+
+        foreach (var cand in candidates)
+        {
+            if (!ItemCatalog.ItemsByPath.TryGetValue(cand.Path, out var def)) continue;
+            float w = def.Weight * cand.Count;
+            float b = def.Bulk * cand.Count;
+            if (w > wRem || b > bRem) continue;
+            cb.AddComponent(cand.Ent.Id, new HaulPayload
+            {
+                DestTile = dest,
+                StockpileId = 0,
+                ItemPath = cand.Path,
+                Count = cand.Count,
+            });
+            cb.AddComponent(cand.Ent.Id, new HaulReserved { JobId = JobId.None });
+            pendingIds.Add(cand.Ent.Id);
+            _topoffReservedThisTick.Add(cand.Ent.Id);
+            wRem -= w;
+            bRem -= b;
+            if (wRem <= 0f || bRem <= 0f) break;
         }
     }
 

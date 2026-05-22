@@ -1,5 +1,6 @@
 using Godot;
 using StruggleGame.Sim;
+using StruggleGame.Sim.Items;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
 using StruggleGame.Sim.World;
@@ -251,6 +252,62 @@ public partial class WorldRenderer : Node2D
         }
 
         DrawSelectedPath(snap);
+        DrawHoverInfo(snap);
+    }
+
+    // Manhattan radius around the cursor tile to scan for item stacks.
+    // Small enough that hovering reads as "what's under the cursor"
+    // rather than "global inventory".
+    private const int HoverRadius = 3;
+
+    private void DrawHoverInfo(SimSnapshot snap)
+    {
+        if (snap.Wood.Length == 0) return;
+        var font = ThemeDB.FallbackFont;
+        if (font is null) return;
+
+        var mouse = GetLocalMousePosition();
+        int hx = Mathf.FloorToInt(mouse.X / PixelsPerTile);
+        int hy = Mathf.FloorToInt(mouse.Y / PixelsPerTile);
+
+        var entries = new List<(string Name, int Count, int Dist)>();
+        foreach (var w in snap.Wood)
+        {
+            int md = Math.Abs(w.Tile.X - hx) + Math.Abs(w.Tile.Y - hy);
+            if (md > HoverRadius) continue;
+            string name = ItemCatalog.ItemsByPath.TryGetValue(w.ItemPath, out var def)
+                ? def.DisplayName
+                : w.ItemPath;
+            entries.Add((name, w.Count, md));
+        }
+        if (entries.Count == 0) return;
+
+        entries.Sort((a, b) => a.Dist != b.Dist ? a.Dist - b.Dist : b.Count - a.Count);
+
+        const int fontSize = 12;
+        float pad = 4f;
+        float lineH = font.GetHeight(fontSize);
+        float maxW = 0f;
+        var lines = new string[entries.Count];
+        for (int i = 0; i < entries.Count; i++)
+        {
+            lines[i] = $"{entries[i].Name} ×{entries[i].Count}";
+            float w = font.GetStringSize(lines[i], HorizontalAlignment.Left, -1f, fontSize).X;
+            if (w > maxW) maxW = w;
+        }
+        var panelSize = new Vector2(maxW + pad * 2f, lineH * entries.Count + pad * 2f);
+        var anchor = mouse + new Vector2(16f, 16f);
+
+        DrawRect(new Rect2(anchor, panelSize), new Color(0f, 0f, 0f, 0.75f), filled: true);
+        DrawRect(new Rect2(anchor, panelSize), new Color(1f, 1f, 1f, 0.55f), filled: false, width: 1f);
+
+        float ty = anchor.Y + pad + font.GetAscent(fontSize);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            DrawString(font, new Vector2(anchor.X + pad, ty), lines[i],
+                HorizontalAlignment.Left, -1f, fontSize, new Color(1f, 1f, 1f, 0.95f));
+            ty += lineH;
+        }
     }
 
     private void DrawSelectedPath(Sim.Snapshots.SimSnapshot snap)

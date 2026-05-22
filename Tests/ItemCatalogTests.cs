@@ -43,4 +43,11 @@ public class ItemCatalogTests
     {
         Assert.Same(ItemCatalog.Wood, ItemCatalog.ItemsByPath["Resources/Wood/Wood"]);
     }
+
+    [Fact]
+    public void Wood_HasNonZeroWeightAndBulk()
+    {
+        Assert.True(ItemCatalog.Wood.Weight > 0f);
+        Assert.True(ItemCatalog.Wood.Bulk > 0f);
+    }
 }
