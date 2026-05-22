@@ -89,7 +89,13 @@ public sealed class TileMap
     public bool InBounds(int x, int y) => (uint)x < (uint)Width && (uint)y < (uint)Height;
     public bool InBounds(TilePos p) => InBounds(p.X, p.Y);
 
-    public bool Walkable(int x, int y) => InBounds(x, y) && _walls[Index(x, y)] == 0;
+    // Outermost ring is a magic border — impassable but not a wall. Keeps
+    // pawns inside the map without showing as a stone wall they could
+    // try to deconstruct or that would enclose the map as a "room".
+    public bool IsBorder(int x, int y) => x == 0 || y == 0 || x == Width - 1 || y == Height - 1;
+    public bool IsBorder(TilePos p) => IsBorder(p.X, p.Y);
+
+    public bool Walkable(int x, int y) => InBounds(x, y) && !IsBorder(x, y) && _walls[Index(x, y)] == 0;
     public bool Walkable(TilePos p) => Walkable(p.X, p.Y);
 
     public ReadOnlySpan<byte> RawTerrain => _terrain;
@@ -192,25 +198,17 @@ public sealed class TileMap
             {
                 int wx = cx + rng.Next(-2, 3);
                 int wy = cy + rng.Next(-2, 3);
-                if (map.InBounds(wx, wy))
+                if (map.InBounds(wx, wy) && !map.IsBorder(wx, wy))
                 {
                     map.SetWall(wx, wy, WallType.Stone);
                 }
             }
         }
 
-        // Border of walls so the dummy can't path off the edge.
-        for (int x = 0; x < width; x++)
-        {
-            map.SetWall(x, 0, WallType.Stone);
-            map.SetWall(x, height - 1, WallType.Stone);
-        }
-        for (int y = 0; y < height; y++)
-        {
-            map.SetWall(0, y, WallType.Stone);
-            map.SetWall(width - 1, y, WallType.Stone);
-        }
-
+        // No border walls — the outer ring is a magic border (IsBorder)
+        // that Walkable refuses to enter, so pawns still can't path off
+        // the edge and the renderer doesn't draw stone walls around the
+        // map perimeter.
         return map;
     }
 }

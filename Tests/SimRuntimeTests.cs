@@ -38,18 +38,27 @@ public class SimRuntimeTests
 public class TileMapTests
 {
     [Fact]
-    public void Border_IsAllWalls()
+    public void Border_IsImpassableButNotAWall()
     {
+        // Magic border: not a stone wall in the layer (so it doesn't
+        // render / get treated as a deconstructable wall), but Walkable
+        // still refuses to enter it so pawns can't path off the edge.
         var map = TileMap.GenerateDefault(64, 64);
         for (int x = 0; x < 64; x++)
         {
-            Assert.Equal(WallType.Stone, map.GetWall(x, 0));
-            Assert.Equal(WallType.Stone, map.GetWall(x, 63));
+            Assert.True(map.IsBorder(x, 0));
+            Assert.True(map.IsBorder(x, 63));
+            Assert.Equal(WallType.None, map.GetWall(x, 0));
+            Assert.Equal(WallType.None, map.GetWall(x, 63));
+            Assert.False(map.Walkable(x, 0));
+            Assert.False(map.Walkable(x, 63));
         }
         for (int y = 0; y < 64; y++)
         {
-            Assert.Equal(WallType.Stone, map.GetWall(0, y));
-            Assert.Equal(WallType.Stone, map.GetWall(63, y));
+            Assert.True(map.IsBorder(0, y));
+            Assert.True(map.IsBorder(63, y));
+            Assert.False(map.Walkable(0, y));
+            Assert.False(map.Walkable(63, y));
         }
     }
 
@@ -69,14 +78,16 @@ public class AStarTests
     [Fact]
     public void StraightLine_Open()
     {
+        // y=0 / y=9 / x=0 / x=9 are magic border on a 10x10 map, so the
+        // path runs along an interior row.
         var map = new TileMap(10, 10);
         var astar = new AStar(10, 10);
 
-        var path = astar.FindPath(map.Snapshot(0), new TilePos(0, 0), new TilePos(9, 0));
+        var path = astar.FindPath(map.Snapshot(0), new TilePos(1, 1), new TilePos(8, 1));
 
         Assert.NotNull(path);
-        Assert.Equal(new TilePos(0, 0), path![0]);
-        Assert.Equal(new TilePos(9, 0), path[^1]);
+        Assert.Equal(new TilePos(1, 1), path![0]);
+        Assert.Equal(new TilePos(8, 1), path[^1]);
     }
 
     [Fact]

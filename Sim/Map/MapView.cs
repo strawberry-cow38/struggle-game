@@ -126,6 +126,10 @@ public sealed class MapView
     public bool InBounds(int x, int y) => (uint)x < (uint)Width && (uint)y < (uint)Height;
     public bool InBounds(TilePos p) => InBounds(p.X, p.Y);
 
+    // Outermost ring = magic border (matches TileMap.IsBorder).
+    public bool IsBorder(int x, int y) => x == 0 || y == 0 || x == Width - 1 || y == Height - 1;
+    public bool IsBorder(TilePos p) => IsBorder(p.X, p.Y);
+
     public bool HasTree(int x, int y) => _treeSet.Contains(new TilePos(x, y));
     public bool HasTree(TilePos p) => _treeSet.Contains(p);
 
@@ -148,6 +152,7 @@ public sealed class MapView
     public bool Walkable(int x, int y)
     {
         if (!InBounds(x, y)) return false;
+        if (IsBorder(x, y)) return false;
         if (RawWallByte(x, y) != 0) return false;
         var p = new TilePos(x, y);
         if (_treeSet.Contains(p)) return false;

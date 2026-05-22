@@ -1237,10 +1237,10 @@ public sealed class SimRuntime
         int w = Map.Width, h = Map.Height;
         int n = w * h;
         if (_roomTiles.Length != n) _roomTiles = new int[n];
-        // Walls come from the published MapView so the room flood-fill
-        // is consistent with whatever Walkable() returns this tick.
-        var walls = _mapView.AssembleFlat(MapLayer.Wall);
-        int count = RoomMap.Compute(w, h, walls, _doorMap.Keys, _roomTiles);
+        // Only player walls + doors enclose rooms. Procgen walls are
+        // terrain, not room boundaries — empty maps should report 0
+        // rooms. Outdoor (border-touching) components also collapse to 0.
+        int count = RoomMap.Compute(w, h, _playerWalls, _doorMap.Keys, _roomTiles);
         RoomCount = count;
         RoomVersion++;
     }

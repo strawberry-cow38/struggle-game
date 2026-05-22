@@ -11,7 +11,8 @@ public class RoomTests
     [Fact]
     public void RoomMap_FloodFillsConnectedNonBarrierTiles()
     {
-        // 5x5 with border walls and a vertical divider at x=2.
+        // 5x5 with a player-built vertical divider at x=2. Outer ring is
+        // the magic border (RoomMap treats it as barrier automatically).
         // Layout:
         //   #####
         //   #.#.#
@@ -19,54 +20,73 @@ public class RoomTests
         //   #.#.#
         //   #####
         const int w = 5, h = 5;
-        var walls = new byte[w * h];
-        for (int x = 0; x < w; x++) { walls[x] = 1; walls[(h - 1) * w + x] = 1; }
-        for (int y = 0; y < h; y++) { walls[y * w] = 1; walls[y * w + (w - 1)] = 1; }
-        for (int y = 1; y < h - 1; y++) walls[y * w + 2] = 1;
+        var divider = new[] { new TilePos(2, 1), new TilePos(2, 2), new TilePos(2, 3) };
 
         var ids = new int[w * h];
-        int count = RoomMap.Compute(w, h, walls, Array.Empty<TilePos>(), ids);
+        int count = RoomMap.Compute(w, h, divider, Array.Empty<TilePos>(), ids);
 
-        Assert.Equal(2, count);
-        // Left and right interior tiles should each be one room.
-        Assert.Equal(ids[1 * w + 1], ids[3 * w + 1]);
-        Assert.Equal(ids[1 * w + 3], ids[3 * w + 3]);
-        Assert.NotEqual(ids[1 * w + 1], ids[1 * w + 3]);
-        // Border + divider tiles are 0.
+        // Both pockets touch the border-adjacent ring (x=1 / x=3), so
+        // they're outdoor and counted as 0 rooms.
+        Assert.Equal(0, count);
+        Assert.Equal(0, ids[1 * w + 1]);
+        Assert.Equal(0, ids[1 * w + 3]);
         Assert.Equal(0, ids[0]);
         Assert.Equal(0, ids[1 * w + 2]);
     }
 
     [Fact]
+    public void RoomMap_EnclosedPocketIsAroom()
+    {
+        // 7x7 with a 3x3 player wall ring around (3,3) leaving the
+        // center as a single enclosed tile. Outside is outdoor, center
+        // pocket is one real room.
+        const int w = 7, h = 7;
+        var walls = new[]
+        {
+            new TilePos(2, 2), new TilePos(3, 2), new TilePos(4, 2),
+            new TilePos(2, 3),                    new TilePos(4, 3),
+            new TilePos(2, 4), new TilePos(3, 4), new TilePos(4, 4),
+        };
+
+        var ids = new int[w * h];
+        int count = RoomMap.Compute(w, h, walls, Array.Empty<TilePos>(), ids);
+
+        Assert.Equal(1, count);
+        Assert.Equal(1, ids[3 * w + 3]);
+        // Outside is outdoor.
+        Assert.Equal(0, ids[1 * w + 1]);
+    }
+
+    [Fact]
     public void RoomMap_DoorCountsAsBarrier()
     {
-        // Same layout but the divider has a door at the middle row.
-        const int w = 5, h = 5;
-        var walls = new byte[w * h];
-        for (int x = 0; x < w; x++) { walls[x] = 1; walls[(h - 1) * w + x] = 1; }
-        for (int y = 0; y < h; y++) { walls[y * w] = 1; walls[y * w + (w - 1)] = 1; }
-        for (int y = 1; y < h - 1; y++) walls[y * w + 2] = 1;
-        // Punch a hole in the wall layer where the door sits, then mark
-        // the tile as a door so RoomMap still treats it as a barrier.
-        walls[2 * w + 2] = 0;
-        var doors = new[] { new TilePos(2, 2) };
+        // Same 3x3 ring but with a door at the south edge. Door is a
+        // barrier so the center is still enclosed (count = 1).
+        const int w = 7, h = 7;
+        var walls = new[]
+        {
+            new TilePos(2, 2), new TilePos(3, 2), new TilePos(4, 2),
+            new TilePos(2, 3),                    new TilePos(4, 3),
+            new TilePos(2, 4),                    new TilePos(4, 4),
+        };
+        var doors = new[] { new TilePos(3, 4) };
 
         var ids = new int[w * h];
         int count = RoomMap.Compute(w, h, walls, doors, ids);
 
-        Assert.Equal(2, count);
-        Assert.NotEqual(ids[1 * w + 1], ids[1 * w + 3]);
-        Assert.Equal(0, ids[2 * w + 2]);
+        Assert.Equal(1, count);
+        Assert.Equal(1, ids[3 * w + 3]);
+        Assert.Equal(0, ids[4 * w + 3]);
     }
 
     [Fact]
     public void SimRuntime_BuildingWallsCreatesRooms()
     {
-        // Procgen border walls already enclose one giant outdoor "room".
+        // Fresh sim has no player walls → 0 rooms (procgen walls and the
+        // magic border don't enclose rooms by themselves).
         var sim = new SimRuntime();
         long startVer = sim.RoomVersion;
-        int startRooms = sim.RoomCount;
-        Assert.True(startRooms >= 1);
+        Assert.Equal(0, sim.RoomCount);
 
         // Wall in a tiny 3x3 box around a center tile to carve out a
         // second room. Pick a spot near map center that's already
@@ -111,7 +131,7 @@ public class RoomTests
         }
         for (int i = 0; i < 4000; i++) sim.Step(SimConstants.TickSeconds);
 
-        Assert.True(sim.RoomCount > startRooms);
+        Assert.True(sim.RoomCount >= 1);
         Assert.True(sim.RoomVersion > startVer);
     }
 }
