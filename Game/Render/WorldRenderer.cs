@@ -50,7 +50,6 @@ public partial class WorldRenderer : Node2D
     private static readonly Color DoorBlueprintBorder = new(0.85f, 0.65f, 1.00f, 0.85f);
     private static readonly Color DoorPanelColor = new(0.55f, 0.36f, 0.20f);
     private static readonly Color DoorPanelEdge = new(0.30f, 0.18f, 0.08f);
-    private static readonly Color DoorJambColor = new(0.32f, 0.22f, 0.14f);
 
     public SimHost? Host { get; set; }
 
@@ -390,49 +389,28 @@ public partial class WorldRenderer : Node2D
 
     private void DrawDoor(StruggleGame.Sim.Snapshots.DoorRenderState door)
     {
+        // Door panel fills the whole tile when closed and swings on a
+        // hinge at one tile edge. No separate jamb decoration — the
+        // entire tile is the door.
         float cx = (door.Tile.X + 0.5f) * PixelsPerTile;
         float cy = (door.Tile.Y + 0.5f) * PixelsPerTile;
-        float panelLen = PixelsPerTile * 0.45f;
-        float panelThick = PixelsPerTile * 0.20f;
-        float jambLen = PixelsPerTile * 0.20f;
-        float jambThick = PixelsPerTile * 0.20f;
+        float panelLen = PixelsPerTile;
+        float panelThick = PixelsPerTile;
 
-        // Wall-thickness stubs at the two flanking jambs so the door
-        // reads as set into the wall.
-        if (door.Orientation == DoorOrientation.Horizontal)
-        {
-            var leftJamb = new Rect2(cx - PixelsPerTile * 0.5f, cy - jambThick * 0.5f, jambLen, jambThick);
-            var rightJamb = new Rect2(cx + PixelsPerTile * 0.5f - jambLen, cy - jambThick * 0.5f, jambLen, jambThick);
-            DrawRect(leftJamb, DoorJambColor, filled: true);
-            DrawRect(rightJamb, DoorJambColor, filled: true);
-        }
-        else
-        {
-            var topJamb = new Rect2(cx - jambThick * 0.5f, cy - PixelsPerTile * 0.5f, jambThick, jambLen);
-            var botJamb = new Rect2(cx - jambThick * 0.5f, cy + PixelsPerTile * 0.5f - jambLen, jambThick, jambLen);
-            DrawRect(topJamb, DoorJambColor, filled: true);
-            DrawRect(botJamb, DoorJambColor, filled: true);
-        }
-
-        // The swinging panel: pinned at one jamb, rotated by OpenAmount.
-        // Horizontal door: panel runs along X when closed, swings toward
-        // +Y. Vertical door: panel runs along Y when closed, swings
-        // toward +X. Rotation 0 → π/2 as OpenAmount 0 → 1.
         float angle = door.OpenAmount * (Mathf.Pi * 0.5f);
         Vector2 pivot;
         Vector2 closedDir;
         if (door.Orientation == DoorOrientation.Horizontal)
         {
-            pivot = new Vector2(cx - PixelsPerTile * 0.5f + jambLen, cy);
+            pivot = new Vector2(cx - PixelsPerTile * 0.5f, cy);
             closedDir = new Vector2(1f, 0f);
         }
         else
         {
-            pivot = new Vector2(cx, cy - PixelsPerTile * 0.5f + jambLen);
+            pivot = new Vector2(cx, cy - PixelsPerTile * 0.5f);
             closedDir = new Vector2(0f, 1f);
         }
         var perp = new Vector2(-closedDir.Y, closedDir.X);
-        // Rotate closedDir by -angle (swing inward toward +Y or +X).
         var dir = new Vector2(
             closedDir.X * Mathf.Cos(angle) - perp.X * Mathf.Sin(angle),
             closedDir.Y * Mathf.Cos(angle) - perp.Y * Mathf.Sin(angle));
@@ -443,10 +421,10 @@ public partial class WorldRenderer : Node2D
         var p3 = pivot + dir * panelLen - perpDir * (panelThick * 0.5f);
         var pts = new Vector2[] { p0, p1, p2, p3 };
         DrawColoredPolygon(pts, DoorPanelColor);
-        DrawLine(p0, p1, DoorPanelEdge, width: 1f);
-        DrawLine(p1, p2, DoorPanelEdge, width: 1f);
-        DrawLine(p2, p3, DoorPanelEdge, width: 1f);
-        DrawLine(p3, p0, DoorPanelEdge, width: 1f);
+        DrawLine(p0, p1, DoorPanelEdge, width: 2f);
+        DrawLine(p1, p2, DoorPanelEdge, width: 2f);
+        DrawLine(p2, p3, DoorPanelEdge, width: 2f);
+        DrawLine(p3, p0, DoorPanelEdge, width: 2f);
     }
 
     private void DrawFloorBlueprint(TilePos tile, float progress)

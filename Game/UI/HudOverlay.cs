@@ -10,7 +10,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "build bf7c893+7 (doors)";
+    private const string BuildTag = "build ce31266+1 (door full tile)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
