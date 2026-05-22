@@ -10,7 +10,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "build 27a0718+1 (float adjacency + chunked map)";
+    private const string BuildTag = "build 415effd (float adjacency + chunked map)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
