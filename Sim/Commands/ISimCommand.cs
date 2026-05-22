@@ -18,6 +18,24 @@ public sealed class PlaceWallBlueprintCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.TryPlaceWallBlueprint(Tile);
 }
 
+// Drag-rect wood-floor designation. Posts one FloorBuild blueprint per
+// tile in the rect that's eligible (no wall, no existing wood floor,
+// no other job).
+public sealed class FloorRectBlueprintCommand : ISimCommand
+{
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public FloorRectBlueprintCommand(TilePos a, TilePos b) { A = a; B = b; }
+    public void Apply(SimRuntime sim)
+    {
+        int xmin = Math.Min(A.X, B.X), xmax = Math.Max(A.X, B.X);
+        int ymin = Math.Min(A.Y, B.Y), ymax = Math.Max(A.Y, B.Y);
+        for (int y = ymin; y <= ymax; y++)
+            for (int x = xmin; x <= xmax; x++)
+                sim.TryPlaceFloorBlueprint(new TilePos(x, y));
+    }
+}
+
 // Cancel every job whose tile lies in the inclusive rect. Used by the
 // drag-rect cancel designator. Currently affects WallBuild jobs; future
 // kinds get whatever cancel semantics they need.

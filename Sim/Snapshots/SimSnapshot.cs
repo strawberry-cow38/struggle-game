@@ -10,6 +10,7 @@ public sealed class SimSnapshot
     public long MapVersion { get; }
     public DummyState[] Dummies { get; }
     public BlueprintState[] Blueprints { get; }
+    public BlueprintState[] FloorBlueprints { get; }
     public TreeState[] Trees { get; }
     public WoodState[] Wood { get; }
     public DeconState[] Decons { get; }
@@ -27,6 +28,7 @@ public sealed class SimSnapshot
         long mapVersion,
         DummyState[] dummies,
         BlueprintState[] blueprints,
+        BlueprintState[] floorBlueprints,
         TreeState[] trees,
         WoodState[] wood,
         DeconState[] decons,
@@ -39,6 +41,7 @@ public sealed class SimSnapshot
         MapVersion = mapVersion;
         Dummies = dummies;
         Blueprints = blueprints;
+        FloorBlueprints = floorBlueprints;
         Trees = trees;
         Wood = wood;
         Decons = decons;

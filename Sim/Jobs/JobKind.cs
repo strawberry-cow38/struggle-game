@@ -7,4 +7,5 @@ public enum JobKind : byte
     WallBuild = 1,
     ChopTree = 2,
     Deconstruct = 3,
+    FloorBuild = 4,
 }

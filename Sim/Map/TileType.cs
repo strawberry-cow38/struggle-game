@@ -14,6 +14,7 @@ public enum TerrainType : byte
 public enum FlooringType : byte
 {
     None = 0,
+    Wood = 1,
 }
 
 public enum WallType : byte

@@ -229,7 +229,10 @@ public sealed class DummyController
         int bestDist = int.MaxValue;
         foreach (var job in _jobs.All)
         {
-            if (job.Kind != JobKind.WallBuild && job.Kind != JobKind.ChopTree && job.Kind != JobKind.Deconstruct) continue;
+            if (job.Kind != JobKind.WallBuild
+                && job.Kind != JobKind.ChopTree
+                && job.Kind != JobKind.Deconstruct
+                && job.Kind != JobKind.FloorBuild) continue;
             if (job.State != JobState.Open) continue;
             int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
             if (d >= bestDist) continue;

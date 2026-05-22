@@ -28,6 +28,7 @@ public sealed class SimRuntime
     private readonly BuildSystem _builds;
     private readonly ChopSystem _chops;
     private readonly DeconSystem _decons;
+    private readonly FloorSystem _floors;
     private readonly SafetySystem _safety;
     private readonly ConcurrentQueue<ISimCommand> _commands = new();
     private readonly object _mapLock = new();
@@ -50,6 +51,7 @@ public sealed class SimRuntime
         _builds = new BuildSystem(this, Jobs);
         _chops = new ChopSystem(this, Jobs);
         _decons = new DeconSystem(this, Jobs);
+        _floors = new FloorSystem(this, Jobs);
         _safety = new SafetySystem(() => MapView, PathService, Watcher);
 
         // Trees go down before colonists so spawn can avoid landing on one.
@@ -67,6 +69,7 @@ public sealed class SimRuntime
         _builds.Step(Store, dt);
         _chops.Step(Store, dt);
         _decons.Step(Store, dt);
+        _floors.Step(Store, dt);
         _safety.Step(Store, Tick);
         Tick++;
         Watcher.Observe(Tick, Store, Jobs);
@@ -133,6 +136,14 @@ public sealed class SimRuntime
         }
         if (j < bps.Length) Array.Resize(ref bps, j);
 
+        var floorBps = new List<BlueprintState>();
+        foreach (var job in Jobs.All)
+        {
+            if (job.Kind != JobKind.FloorBuild) continue;
+            var bp = job.Entity.GetComponent<FloorBlueprint>();
+            floorBps.Add(new BlueprintState(job.Tile, bp.ProgressSec / FloorSystem.FloorTimeSec));
+        }
+
         var trees = new TreeState[_trees.Count];
         int k = 0;
         foreach (var (tile, ent) in _trees)
@@ -164,7 +175,7 @@ public sealed class SimRuntime
         }
 
         return new SimSnapshot(
-            Tick, MapVersion, dummies, bps, trees, woods, decons.ToArray(),
+            Tick, MapVersion, dummies, bps, floorBps.ToArray(), trees, woods, decons.ToArray(),
             selectedDummyId, selectedPath, selectedOrders, selTreeArr);
     }
 
@@ -255,6 +266,15 @@ public sealed class SimRuntime
             }
             RebuildMapView();
         }
+        else if (kind == JobKind.FloorBuild)
+        {
+            entity.DeleteEntity();
+            lock (_mapLock)
+            {
+                Map.SetFlooring(tile, FlooringType.Wood);
+            }
+            RebuildMapView();
+        }
     }
 
     public void CancelJob(JobId id)
@@ -284,6 +304,10 @@ public sealed class SimRuntime
         {
             // Wall stays; throw the marker away with the job. A future
             // re-designate spawns a fresh marker at 0 progress.
+            entity.DeleteEntity();
+        }
+        else if (kind == JobKind.FloorBuild)
+        {
             entity.DeleteEntity();
         }
     }
@@ -321,6 +345,27 @@ public sealed class SimRuntime
     }
 
     public IReadOnlyList<TilePos> PlayerWalls => _playerWalls;
+
+    // Post a wood-floor blueprint on this tile. Rejects if a wall
+    // already exists (walls block floors), if the tile already has the
+    // target flooring, or if any other job sits on the tile.
+    public bool TryPlaceFloorBlueprint(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return false;
+        if (Map.GetWall(tile) != WallType.None) return false;
+        if (Map.GetFlooring(tile) == FlooringType.Wood) return false;
+        if (Jobs.HasTile(tile)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new FloorBlueprint { Tile = tile, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.FloorBuild, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        return true;
+    }
 
     // Drop a tree at a random walkable, unoccupied, tree-free tile.
     public bool SpawnRandomTree()

@@ -82,3 +82,13 @@ public struct Decon : IComponent
     public TilePos Tile;
     public float ProgressSec;
 }
+
+// Pending wood-flooring blueprint on a tile. Floor sits atop terrain;
+// walls can be raised on top of it. ProgressSec advances while a
+// builder is adjacent; on completion the flooring layer becomes Wood
+// and the entity is deleted.
+public struct FloorBlueprint : IComponent
+{
+    public TilePos Tile;
+    public float ProgressSec;
+}

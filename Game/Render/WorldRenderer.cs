@@ -15,6 +15,7 @@ public partial class WorldRenderer : Node2D
 
     private ImageTexture? _grassTex;
     private ImageTexture? _wallOverlayTex;
+    private ImageTexture? _floorOverlayTex;
     private int _mapPixelWidth;
     private int _mapPixelHeight;
     private int _mapWidth;
@@ -40,6 +41,10 @@ public partial class WorldRenderer : Node2D
     private static readonly Color WoodHighlight = new(0.78f, 0.55f, 0.28f);
     private static readonly Color DeconMarkColor = new(1.0f, 0.55f, 0.15f, 0.9f);
     private static readonly Color DeconProgress = new(1.0f, 0.70f, 0.25f, 1.0f);
+    private static readonly Color WoodFloorColor = new(0.50f, 0.34f, 0.18f, 1.0f);
+    private static readonly Color WoodFloorPlank = new(0.36f, 0.24f, 0.12f, 1.0f);
+    private static readonly Color FloorBlueprintFill = new(0.85f, 0.55f, 0.25f, 0.30f);
+    private static readonly Color FloorBlueprintBorder = new(0.95f, 0.70f, 0.35f, 0.85f);
 
     public SimHost? Host { get; set; }
 
@@ -67,16 +72,22 @@ public partial class WorldRenderer : Node2D
 
         var snap = Host.LatestSnapshot;
 
-        // Rebuild wall overlay if the sim mutated the map since last frame.
+        // Rebuild overlays if the sim mutated the map since last frame.
         if (snap is not null && snap.MapVersion != _lastMapVersion)
         {
             var wallBytes = Host.CopyLayerForRender(MapLayer.Wall);
             _wallOverlayTex = BuildWallOverlay(wallBytes, _mapWidth, _mapHeight);
+            var floorBytes = Host.CopyLayerForRender(MapLayer.Flooring);
+            _floorOverlayTex = BuildFloorOverlay(floorBytes, _mapWidth, _mapHeight);
             _lastMapVersion = snap.MapVersion;
         }
 
         var mapRect = new Rect2(0, 0, _mapPixelWidth, _mapPixelHeight);
         DrawTextureRect(_grassTex, mapRect, tile: true);
+        if (_floorOverlayTex is not null)
+        {
+            DrawTextureRect(_floorOverlayTex, mapRect, tile: false);
+        }
         if (_wallOverlayTex is not null)
         {
             DrawTextureRect(_wallOverlayTex, mapRect, tile: false);
@@ -87,6 +98,11 @@ public partial class WorldRenderer : Node2D
         foreach (var bp in snap.Blueprints)
         {
             DrawBlueprint(bp.Tile, bp.Progress);
+        }
+
+        foreach (var fbp in snap.FloorBlueprints)
+        {
+            DrawFloorBlueprint(fbp.Tile, fbp.Progress);
         }
 
         foreach (var d in snap.Decons)
@@ -336,6 +352,60 @@ public partial class WorldRenderer : Node2D
             }
         }
 
+        return ImageTexture.CreateFromImage(img);
+    }
+
+    private void DrawFloorBlueprint(TilePos tile, float progress)
+    {
+        var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+        DrawRect(rect, FloorBlueprintFill, filled: true);
+        DrawRect(rect, FloorBlueprintBorder, filled: false, width: 2f);
+        if (progress > 0f)
+        {
+            float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
+            var bar = new Rect2(
+                rect.Position.X,
+                rect.Position.Y + (PixelsPerTile - h),
+                PixelsPerTile,
+                h);
+            DrawRect(bar, BlueprintProgress, filled: true);
+        }
+    }
+
+    private static ImageTexture BuildFloorOverlay(byte[] tiles, int width, int height)
+    {
+        // Per-tile pattern: solid wood with a darker horizontal plank line.
+        int texW = width * PixelsPerTile;
+        int texH = height * PixelsPerTile;
+        var img = Image.CreateEmpty(texW, texH, false, Image.Format.Rgba8);
+        var transparent = new Color(0f, 0f, 0f, 0f);
+        // Fill transparent first.
+        for (int py = 0; py < texH; py++)
+        {
+            for (int px = 0; px < texW; px++)
+            {
+                img.SetPixel(px, py, transparent);
+            }
+        }
+        int plankY1 = PixelsPerTile / 3;
+        int plankY2 = (PixelsPerTile * 2) / 3;
+        for (int ty = 0; ty < height; ty++)
+        {
+            for (int tx = 0; tx < width; tx++)
+            {
+                if (tiles[ty * width + tx] == 0) continue;
+                int ox = tx * PixelsPerTile;
+                int oy = ty * PixelsPerTile;
+                for (int yy = 0; yy < PixelsPerTile; yy++)
+                {
+                    var c = (yy == plankY1 || yy == plankY2) ? WoodFloorPlank : WoodFloorColor;
+                    for (int xx = 0; xx < PixelsPerTile; xx++)
+                    {
+                        img.SetPixel(ox + xx, oy + yy, c);
+                    }
+                }
+            }
+        }
         return ImageTexture.CreateFromImage(img);
     }
 

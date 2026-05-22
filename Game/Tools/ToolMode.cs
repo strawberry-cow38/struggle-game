@@ -9,4 +9,5 @@ public enum ToolMode
     RemovePawn = 4,
     Chop = 5,
     Decon = 6,
+    Floor = 7,
 }
