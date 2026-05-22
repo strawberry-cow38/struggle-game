@@ -187,7 +187,7 @@ public partial class WorldRenderer : Node2D
             {
                 openAmount = Mathf.Lerp(pd.OpenAmount, door.OpenAmount, interpAlpha);
             }
-            DrawDoor(new DoorRenderState(door.Tile, door.Orientation, openAmount, door.Forbidden, door.Locked));
+            DrawDoor(new DoorRenderState(door.Tile, door.Orientation, openAmount, door.Forbidden, door.Locked, door.Priority));
         }
 
         foreach (var d in snap.Decons)

@@ -3,6 +3,7 @@ using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
+using StruggleGame.Sim.World;
 
 namespace StruggleGame.Game.UI;
 
@@ -24,6 +25,8 @@ public partial class DoorInfoPanel : CanvasLayer
     private Label _stateLabel = null!;
     private CheckBox _forbidChk = null!;
     private CheckBox _lockedChk = null!;
+    private Button _priorityBtn = null!;
+    private DoorPriority _shownPriority = DoorPriority.Medium;
     private Button _deconBtn = null!;
 
     private TilePos? _shownTile;
@@ -77,6 +80,10 @@ public partial class DoorInfoPanel : CanvasLayer
         _lockedChk = new CheckBox { Text = "Locked (blocks enemies — stub)" };
         _lockedChk.Toggled += OnLockedToggled;
         vbox.AddChild(_lockedChk);
+
+        _priorityBtn = new Button { Text = "Priority: Medium", CustomMinimumSize = new Vector2(0, 28) };
+        _priorityBtn.Pressed += OnPriorityCycled;
+        vbox.AddChild(_priorityBtn);
 
         _deconBtn = new Button { Text = "Deconstruct", CustomMinimumSize = new Vector2(0, 28) };
         _deconBtn.Pressed += OnDeconPressed;
@@ -139,6 +146,35 @@ public partial class DoorInfoPanel : CanvasLayer
         _forbidChk.ButtonPressed = d0.Forbidden;
         _lockedChk.ButtonPressed = d0.Locked;
         _suppressToggle = false;
+        _shownPriority = d0.Priority;
+        _priorityBtn.Text = $"Priority: {PriorityLabel(d0.Priority)}";
+    }
+
+    private static string PriorityLabel(DoorPriority p) => p switch
+    {
+        DoorPriority.ExitOnly => "Exit Only",
+        DoorPriority.Low      => "Low",
+        DoorPriority.Medium   => "Medium",
+        DoorPriority.High     => "High",
+        _                     => p.ToString(),
+    };
+
+    private static DoorPriority NextPriority(DoorPriority p) => p switch
+    {
+        DoorPriority.ExitOnly => DoorPriority.Low,
+        DoorPriority.Low      => DoorPriority.Medium,
+        DoorPriority.Medium   => DoorPriority.High,
+        DoorPriority.High     => DoorPriority.ExitOnly,
+        _                     => DoorPriority.Medium,
+    };
+
+    private void OnPriorityCycled()
+    {
+        if (Host is null) return;
+        var tile = Host.SelectedDoorTile;
+        if (tile is null) return;
+        var next = NextPriority(_shownPriority);
+        Host.QueueCommand(new SetDoorPriorityCommand(tile.Value, next));
     }
 
     private void OnForbidToggled(bool pressed)

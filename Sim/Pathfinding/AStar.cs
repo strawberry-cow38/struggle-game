@@ -113,11 +113,11 @@ public sealed class AStar
 
     private int Index(int x, int y) => y * _width + x;
 
-    // Octile distance scaled by the minimum tile cost (currently 0.8
-    // for wood floor). A* requires the heuristic to never overestimate
-    // the remaining cost; with weighted tiles, scaling by the floor
-    // keeps it admissible.
-    private const float MinTileCost = 0.8f;
+    // Octile distance scaled by the minimum tile cost (currently 0.6
+    // for High-priority doors; 0.8 for wood floor). A* requires the
+    // heuristic to never overestimate the remaining cost; scaling by
+    // the floor keeps it admissible.
+    private const float MinTileCost = 0.6f;
     private static float Heuristic(TilePos a, TilePos b)
     {
         int dx = Math.Abs(a.X - b.X);

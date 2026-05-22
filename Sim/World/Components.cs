@@ -111,6 +111,38 @@ public enum DoorState : byte
     Closing = 3,
 }
 
+// Player-set traversal priority for a door. Lower priority = higher
+// path cost = pawns avoid; higher priority = lower cost = pawns
+// prefer. ExitOnly is a near-block (huge cost) so pawns only use the
+// door when no other route exists — useful for sealing a base behind
+// a "fire exit" without making the door actually forbidden.
+public enum DoorPriority : byte
+{
+    ExitOnly = 0,
+    Low = 1,
+    Medium = 2,
+    High = 3,
+}
+
+public static class DoorPathing
+{
+    // Edge-cost multiplier the A* layer reads via MapView.CostAt. Higher
+    // = pawns route around the door; lower = pawns funnel through.
+    //   ExitOnly: 50.0 — only used when no other walkable route exists
+    //   Low:       2.5
+    //   Medium:    1.3 — matches the pre-priority default
+    //   High:      0.6 — cheaper than wood floor, so a designated main
+    //                    entrance pulls traffic toward itself
+    public static float CostFor(DoorPriority p) => p switch
+    {
+        DoorPriority.ExitOnly => 50.00f,
+        DoorPriority.Low      => 2.50f,
+        DoorPriority.Medium   => 1.30f,
+        DoorPriority.High     => 0.60f,
+        _                     => 1.30f,
+    };
+}
+
 // A built door at a tile. Doesn't block pathing (the mover gates on
 // State instead). When a pawn wants to cross, the mover flips
 // WantsOpen so DoorSystem will start the opening animation; the pawn
@@ -130,6 +162,9 @@ public struct Door : IComponent
     // hasn't shipped yet. Defaults: Locked=true, Forbidden=false.
     public bool Forbidden;
     public bool Locked;
+    // Player-set traversal weight; cycles via the door info panel.
+    // Defaults to Medium (cost matches the legacy 1.3 door multiplier).
+    public DoorPriority Priority;
 }
 
 // Pending door blueprint on a tile. Built by an adjacent colonist like

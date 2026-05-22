@@ -40,9 +40,9 @@ public sealed class MapView
     public IReadOnlyList<TilePos> ForbiddenDoors { get; }
 
     // All built (non-blueprint) door tiles. Pathing uses this set to
-    // bias A* away from doors — open doors are walkable but cost more
-    // than open floor so pawns prefer an alternate route when one
-    // exists, the same way they prefer wood flooring.
+    // bias A* — each door's per-priority cost lives in _doorCostByTile
+    // and is what CostAt actually reads. The list is kept too because
+    // some consumers want to enumerate door tiles directly.
     public IReadOnlyList<TilePos> DoorTiles { get; }
 
     // Exposed for TileMap.Snapshot to share unchanged chunk byte[]s into
@@ -54,7 +54,7 @@ public sealed class MapView
 
     private readonly HashSet<TilePos> _treeSet;
     private readonly HashSet<TilePos> _forbiddenDoorSet;
-    private readonly HashSet<TilePos> _doorTileSet;
+    private readonly Dictionary<TilePos, float> _doorCostByTile;
 
     public MapView(
         long version,
@@ -69,7 +69,8 @@ public sealed class MapView
         IReadOnlyList<TilePos> playerWalls,
         IReadOnlyList<TilePos>? trees = null,
         IReadOnlyList<TilePos>? forbiddenDoors = null,
-        IReadOnlyList<TilePos>? doorTiles = null)
+        IReadOnlyList<TilePos>? doorTiles = null,
+        IReadOnlyList<float>? doorCosts = null)
     {
         Version = version;
         Width = width;
@@ -86,7 +87,21 @@ public sealed class MapView
         ForbiddenDoors = forbiddenDoors ?? Array.Empty<TilePos>();
         _forbiddenDoorSet = new HashSet<TilePos>(ForbiddenDoors);
         DoorTiles = doorTiles ?? Array.Empty<TilePos>();
-        _doorTileSet = new HashSet<TilePos>(DoorTiles);
+        _doorCostByTile = new Dictionary<TilePos, float>(DoorTiles.Count);
+        if (doorCosts is not null && doorCosts.Count == DoorTiles.Count)
+        {
+            for (int i = 0; i < DoorTiles.Count; i++)
+            {
+                _doorCostByTile[DoorTiles[i]] = doorCosts[i];
+            }
+        }
+        else
+        {
+            // Caller didn't supply per-door costs (legacy callers / tests) —
+            // fall back to the original Medium cost so paths behave the
+            // same as before per-door priority shipped.
+            foreach (var t in DoorTiles) _doorCostByTile[t] = 1.30f;
+        }
 
         var wallList = new List<TilePos>();
         for (int y = 0; y < height; y++)
@@ -116,16 +131,15 @@ public sealed class MapView
 
     // Per-tile pathing cost multiplier. A* multiplies the base edge
     // cost (1.0 ortho / 1.41 diag) by the destination tile's cost.
-    // Door tiles cost more than open ground so pawns prefer to walk
-    // around them when there's a parallel route; wood floor costs
-    // less so they prefer hallways once a base is built.
-    //   Door:     1.30  (avoid when there's an alternative)
+    // Door cost is the per-door value the player set via priority;
+    // wood floor is a small bonus so pawns prefer indoor hallways.
+    //   Door:     (per-priority — see DoorPathing.CostFor)
     //   Wood:     0.80  (prefer indoor hallways)
     //   default:  1.00
     public float CostAt(int x, int y)
     {
         var p = new TilePos(x, y);
-        if (_doorTileSet.Contains(p)) return 1.30f;
+        if (_doorCostByTile.TryGetValue(p, out var dc)) return dc;
         if ((FlooringType)RawFlooringByte(x, y) == FlooringType.Wood) return 0.80f;
         return 1.00f;
     }

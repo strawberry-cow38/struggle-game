@@ -261,7 +261,7 @@ public sealed class SimRuntime
         doorQuery.ForEachEntity((ref Door d, Entity _) =>
         {
             float open = Math.Clamp(d.ProgressSec / DoorSystem.OpenTimeSec, 0f, 1f);
-            doorRender.Add(new DoorRenderState(d.Tile, d.Orientation, open, d.Forbidden, d.Locked));
+            doorRender.Add(new DoorRenderState(d.Tile, d.Orientation, open, d.Forbidden, d.Locked, d.Priority));
         });
 
         var stockpiles = new StockpileState[_stockpiles.Count];
@@ -406,6 +406,7 @@ public sealed class SimRuntime
                 IdleSec = 0f,
                 Forbidden = false,
                 Locked = true,
+                Priority = DoorPriority.Medium,
             });
             _doorMap[tile] = entity;
             // Doors don't affect walkability, so no map rebuild — but
@@ -577,6 +578,17 @@ public sealed class SimRuntime
         if (!_doorMap.TryGetValue(tile, out var doorEnt)) return;
         ref var door = ref doorEnt.GetComponent<Door>();
         door.Locked = locked;
+    }
+
+    // Set a built door's traversal priority. Rebuilds the map view so
+    // A* picks up the new per-door cost on the next path request.
+    public void SetDoorPriority(TilePos tile, DoorPriority priority)
+    {
+        if (!_doorMap.TryGetValue(tile, out var doorEnt)) return;
+        ref var door = ref doorEnt.GetComponent<Door>();
+        if (door.Priority == priority) return;
+        door.Priority = priority;
+        RebuildMapView();
     }
 
     // Post a floor-deconstruct job. Floors hidden under a wall are
@@ -1120,13 +1132,20 @@ public sealed class SimRuntime
                 foreach (var t in _forbiddenDoorTiles) forbidden[fi++] = t;
             }
             TilePos[]? doorTiles = null;
+            float[]? doorCosts = null;
             if (_doorMap.Count > 0)
             {
                 doorTiles = new TilePos[_doorMap.Count];
+                doorCosts = new float[_doorMap.Count];
                 int di = 0;
-                foreach (var t in _doorMap.Keys) doorTiles[di++] = t;
+                foreach (var (tile, ent) in _doorMap)
+                {
+                    doorTiles[di] = tile;
+                    doorCosts[di] = DoorPathing.CostFor(ent.GetComponent<Door>().Priority);
+                    di++;
+                }
             }
-            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden, doorTiles);
+            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden, doorTiles, doorCosts);
         }
         Volatile.Write(ref _mapView, newView);
     }

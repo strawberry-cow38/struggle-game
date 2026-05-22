@@ -360,6 +360,17 @@ public sealed class SetDoorLockedCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetDoorLocked(Tile, Locked);
 }
 
+// Set the door's per-priority traversal weight. Cycled via the door
+// info panel; A* + the mover see the change on the next tick.
+public sealed class SetDoorPriorityCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public DoorPriority Priority { get; }
+    public SetDoorPriorityCommand(TilePos tile, DoorPriority priority)
+    { Tile = tile; Priority = priority; }
+    public void Apply(SimRuntime sim) => sim.SetDoorPriority(Tile, Priority);
+}
+
 // Debug bar action: spawn a fresh wanderer at a random walkable tile.
 public sealed class SpawnDummyCommand : ISimCommand
 {

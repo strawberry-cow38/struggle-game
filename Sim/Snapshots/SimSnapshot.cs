@@ -97,7 +97,8 @@ public readonly record struct DoorRenderState(
     DoorOrientation Orientation,
     float OpenAmount,
     bool Forbidden,
-    bool Locked);
+    bool Locked,
+    StruggleGame.Sim.World.DoorPriority Priority);
 
 // Render-friendly stockpile zone. Tiles is a frozen snapshot of the
 // zone's tile set as of build time; AllowedItemPaths captures the
