@@ -11,23 +11,79 @@ namespace StruggleGame.Tests;
 public class DoorTests
 {
     [Fact]
-    public void PlaceDoor_RequiresFlankingWalls()
+    public void PlaceDoor_FreestandingIsAccepted_DefaultsHorizontal()
     {
         var sim = new SimRuntime();
         var tile = NearestBuildableTile(sim);
 
-        // No walls yet → rejected.
+        // No flanking walls: door is freestanding, default Horizontal.
         sim.QueueCommand(new PlaceDoorBlueprintCommand(tile));
         sim.Step(SimConstants.TickSeconds);
-        Assert.Equal(0, CountDoorJobs(sim));
+        Assert.Equal(1, CountDoorJobs(sim));
 
-        // Build flanking walls (east + west).
+        var bp = FindDoorBlueprintAt(sim, tile);
+        Assert.Equal(DoorOrientation.Horizontal, bp.Orientation);
+    }
+
+    [Fact]
+    public void PlaceDoor_AutoOrientsBetweenWalls()
+    {
+        var sim = new SimRuntime();
+        var tile = NearestBuildableTile(sim);
         PlaceAndBuildWall(sim, new TilePos(tile.X - 1, tile.Y));
         PlaceAndBuildWall(sim, new TilePos(tile.X + 1, tile.Y));
 
         sim.QueueCommand(new PlaceDoorBlueprintCommand(tile));
         sim.Step(SimConstants.TickSeconds);
         Assert.Equal(1, CountDoorJobs(sim));
+        Assert.Equal(DoorOrientation.Horizontal, FindDoorBlueprintAt(sim, tile).Orientation);
+    }
+
+    [Fact]
+    public void PlaceDoor_OverWallBlueprint_CancelsWallBlueprint()
+    {
+        var sim = new SimRuntime();
+        var tile = NearestBuildableTile(sim);
+
+        // Wall blueprint first (no walkers needed — TryPlaceWallBlueprint
+        // posts the job directly).
+        Assert.True(sim.TryPlaceWallBlueprint(tile));
+        Assert.Equal(1, CountJobsOfKind(sim, JobKind.WallBuild));
+
+        // Door on the same tile cancels the wall blueprint and posts
+        // a door build in its place.
+        sim.QueueCommand(new PlaceDoorBlueprintCommand(tile));
+        sim.Step(SimConstants.TickSeconds);
+        Assert.Equal(0, CountJobsOfKind(sim, JobKind.WallBuild));
+        Assert.Equal(1, CountDoorJobs(sim));
+    }
+
+    [Fact]
+    public void PlaceDoor_OverPlayerWall_PostsDecon_ThenChainsDoorBuild()
+    {
+        var sim = new SimRuntime();
+        var tile = NearestBuildableTile(sim);
+        PlaceAndBuildWall(sim, tile);
+        Assert.Equal(WallType.Stone, sim.Map.GetWall(tile));
+
+        sim.QueueCommand(new PlaceDoorBlueprintCommand(tile));
+        sim.Step(SimConstants.TickSeconds);
+        // Decon posted, door build NOT posted yet (parked).
+        Assert.Equal(1, CountJobsOfKind(sim, JobKind.Deconstruct));
+        Assert.Equal(0, CountDoorJobs(sim));
+
+        // Run until the decon completes — wall gone, door build queued.
+        for (int i = 0; i < 2000; i++)
+        {
+            sim.Step(SimConstants.TickSeconds);
+            if (sim.Map.GetWall(tile) == WallType.None) break;
+        }
+        Assert.Equal(WallType.None, sim.Map.GetWall(tile));
+        Assert.Equal(1, CountDoorJobs(sim));
+
+        // And run it all the way through to a real door.
+        for (int i = 0; i < 2000; i++) sim.Step(SimConstants.TickSeconds);
+        Assert.True(sim.TryGetDoor(tile, out _));
     }
 
     [Fact]
@@ -160,10 +216,23 @@ public class DoorTests
         throw new Xunit.Sdk.XunitException("no buildable tile with flanking room near center");
     }
 
-    private static int CountDoorJobs(SimRuntime sim)
+    private static int CountDoorJobs(SimRuntime sim) => CountJobsOfKind(sim, JobKind.DoorBuild);
+
+    private static int CountJobsOfKind(SimRuntime sim, JobKind kind)
     {
         int n = 0;
-        foreach (var j in sim.Jobs.All) if (j.Kind == JobKind.DoorBuild) n++;
+        foreach (var j in sim.Jobs.All) if (j.Kind == kind) n++;
         return n;
+    }
+
+    private static DoorBlueprint FindDoorBlueprintAt(SimRuntime sim, TilePos tile)
+    {
+        DoorBlueprint? found = null;
+        sim.Store.Query<DoorBlueprint>().ForEachEntity((ref DoorBlueprint bp, Entity _) =>
+        {
+            if (bp.Tile == tile) found = bp;
+        });
+        Assert.NotNull(found);
+        return found!.Value;
     }
 }

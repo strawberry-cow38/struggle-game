@@ -10,7 +10,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "build spacebar-pause (float adjacency + chunked map)";
+    private const string BuildTag = "build doors-freestanding-over-walls";
 
     private Label _label = null!;
     private Label _versionLabel = null!;

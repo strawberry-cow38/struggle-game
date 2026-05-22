@@ -48,6 +48,10 @@ public sealed class SimRuntime
     private readonly List<TilePos> _playerWalls = new();
     private readonly Dictionary<TilePos, Entity> _trees = new();
     private readonly Dictionary<TilePos, Entity> _doorMap = new();
+    // Door blueprints placed on top of a built wall: the wall must
+    // deconstruct first. Map tile → the parked DoorBlueprint entity so
+    // CompleteJob(Deconstruct) knows to chain a DoorBuild job.
+    private readonly Dictionary<TilePos, Entity> _pendingDoorAfterDecon = new();
     private readonly Random _spawnRng;
     private const int InitialTreeCount = 50;
 
@@ -202,13 +206,15 @@ public sealed class SimRuntime
             decons.Add(new DeconState(job.Tile, d.ProgressSec / DeconSystem.DeconTimeSec));
         }
 
+        // Include both active door-build blueprints and ones parked
+        // waiting on a deconstruct (they have no DoorBuild job yet).
+        // Iterating the component covers both — pending entries have
+        // ProgressSec == 0.
         var doorBps = new List<BlueprintState>();
-        foreach (var job in Jobs.All)
+        Store.Query<DoorBlueprint>().ForEachEntity((ref DoorBlueprint bp, Entity _) =>
         {
-            if (job.Kind != JobKind.DoorBuild) continue;
-            var bp = job.Entity.GetComponent<DoorBlueprint>();
-            doorBps.Add(new BlueprintState(job.Tile, bp.ProgressSec / DoorBuildSystem.DoorTimeSec));
-        }
+            doorBps.Add(new BlueprintState(bp.Tile, bp.ProgressSec / DoorBuildSystem.DoorTimeSec));
+        });
 
         var doorRender = new List<DoorRenderState>();
         var doorQuery = Store.Query<Door>();
@@ -299,6 +305,17 @@ public sealed class SimRuntime
                 wood.AddComponent(new Wood { Tile = tile });
             }
             RebuildMapView();
+            // Chain: a door blueprint was parked waiting on this decon.
+            // Post its DoorBuild job now that the wall is gone.
+            if (_pendingDoorAfterDecon.TryGetValue(tile, out var pendingBp))
+            {
+                _pendingDoorAfterDecon.Remove(tile);
+                var doorId = Jobs.Post(JobKind.DoorBuild, tile, pendingBp);
+                if (doorId.IsNone)
+                {
+                    pendingBp.DeleteEntity();
+                }
+            }
         }
         else if (kind == JobKind.FloorBuild)
         {
@@ -335,6 +352,7 @@ public sealed class SimRuntime
     {
         var job = Jobs.Get(id);
         if (job is null) return;
+        var tile = job.Tile;
         var entity = job.Entity;
         var kind = job.Kind;
         Jobs.Cancel(id);
@@ -357,8 +375,16 @@ public sealed class SimRuntime
         else if (kind == JobKind.Deconstruct)
         {
             // Wall stays; throw the marker away with the job. A future
-            // re-designate spawns a fresh marker at 0 progress.
+            // re-designate spawns a fresh marker at 0 progress. If a
+            // door blueprint was parked waiting on this decon, drop it
+            // too — the player un-queued the whole "decon then door"
+            // intent.
             entity.DeleteEntity();
+            if (_pendingDoorAfterDecon.TryGetValue(tile, out var pendingBp))
+            {
+                _pendingDoorAfterDecon.Remove(tile);
+                pendingBp.DeleteEntity();
+            }
         }
         else if (kind == JobKind.FloorBuild)
         {
@@ -425,17 +451,23 @@ public sealed class SimRuntime
         return true;
     }
 
-    // Post a door blueprint. Orientation derives from flanking walls:
-    // walls east+west = horizontal door; walls north+south = vertical.
-    // Rejects if neither pair exists, if a wall/tree/door already sits
-    // on the tile, or if another job covers it.
+    // Post a door blueprint. Orientation derives from flanking walls
+    // (east+west = horizontal; north+south = vertical; otherwise
+    // Horizontal as a freestanding default). Placement rules:
+    //   - Empty tile: post DoorBuild immediately.
+    //   - Tile with an existing WallBuild job: cancel that job, then
+    //     post DoorBuild fresh on top.
+    //   - Tile with a built player wall: post a Deconstruct job and
+    //     park the DoorBlueprint entity in _pendingDoorAfterDecon —
+    //     CompleteJob(Deconstruct) chains the DoorBuild post.
+    //   - Anything else (tree, existing door, procgen wall, conflicting
+    //     non-WallBuild job, already-pending door): reject.
     public bool TryPlaceDoorBlueprint(TilePos tile)
     {
         if (!Map.InBounds(tile)) return false;
-        if (Map.GetWall(tile) != WallType.None) return false;
         if (_trees.ContainsKey(tile)) return false;
         if (_doorMap.ContainsKey(tile)) return false;
-        if (Jobs.HasTile(tile)) return false;
+        if (_pendingDoorAfterDecon.ContainsKey(tile)) return false;
 
         bool wallW = HasWallAt(tile.X - 1, tile.Y);
         bool wallE = HasWallAt(tile.X + 1, tile.Y);
@@ -444,7 +476,38 @@ public sealed class SimRuntime
         DoorOrientation orientation;
         if (wallE && wallW) orientation = DoorOrientation.Horizontal;
         else if (wallN && wallS) orientation = DoorOrientation.Vertical;
-        else return false;
+        else orientation = DoorOrientation.Horizontal;
+
+        // Replace a wall blueprint at the same tile (cancel it first).
+        var existing = Jobs.GetByTile(tile);
+        if (existing is not null)
+        {
+            if (existing.Kind != JobKind.WallBuild) return false;
+            CancelJob(existing.Id);
+        }
+
+        if (Map.GetWall(tile) != WallType.None)
+        {
+            // Built wall under the door: must be a player wall (procgen
+            // and border walls aren't deconstructable). Park the door
+            // blueprint and post the decon job; chain on completion.
+            if (!_playerWalls.Contains(tile)) return false;
+
+            var bp = Store.CreateEntity();
+            bp.AddComponent(new DoorBlueprint { Tile = tile, Orientation = orientation, ProgressSec = 0f });
+
+            var decon = Store.CreateEntity();
+            decon.AddComponent(new Decon { Tile = tile, ProgressSec = 0f });
+            var deconId = Jobs.Post(JobKind.Deconstruct, tile, decon);
+            if (deconId.IsNone)
+            {
+                decon.DeleteEntity();
+                bp.DeleteEntity();
+                return false;
+            }
+            _pendingDoorAfterDecon[tile] = bp;
+            return true;
+        }
 
         var e = Store.CreateEntity();
         e.AddComponent(new DoorBlueprint { Tile = tile, Orientation = orientation, ProgressSec = 0f });
