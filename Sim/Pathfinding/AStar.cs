@@ -81,7 +81,10 @@ public sealed class AStar
                 int nIdx = Index(nx, ny);
                 if (_generation[nIdx] == _runId && _closed[nIdx]) continue;
 
-                float tentativeG = _gScore[currentIdx] + cost;
+                // Weight the edge by the destination tile's cost — wood
+                // floor is cheap, doors are pricey, default is 1.0 so
+                // legacy behavior is unchanged outside built tiles.
+                float tentativeG = _gScore[currentIdx] + cost * view.CostAt(nx, ny);
                 if (_generation[nIdx] != _runId || tentativeG < _gScore[nIdx])
                 {
                     _generation[nIdx] = _runId;
@@ -110,12 +113,17 @@ public sealed class AStar
 
     private int Index(int x, int y) => y * _width + x;
 
+    // Octile distance scaled by the minimum tile cost (currently 0.8
+    // for wood floor). A* requires the heuristic to never overestimate
+    // the remaining cost; with weighted tiles, scaling by the floor
+    // keeps it admissible.
+    private const float MinTileCost = 0.8f;
     private static float Heuristic(TilePos a, TilePos b)
     {
         int dx = Math.Abs(a.X - b.X);
         int dy = Math.Abs(a.Y - b.Y);
         int min = Math.Min(dx, dy);
         int max = Math.Max(dx, dy);
-        return (max - min) + 1.4142136f * min;
+        return ((max - min) + 1.4142136f * min) * MinTileCost;
     }
 }

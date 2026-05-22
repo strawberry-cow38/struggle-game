@@ -39,6 +39,12 @@ public sealed class MapView
     // happens at the mover via DoorState).
     public IReadOnlyList<TilePos> ForbiddenDoors { get; }
 
+    // All built (non-blueprint) door tiles. Pathing uses this set to
+    // bias A* away from doors — open doors are walkable but cost more
+    // than open floor so pawns prefer an alternate route when one
+    // exists, the same way they prefer wood flooring.
+    public IReadOnlyList<TilePos> DoorTiles { get; }
+
     // Exposed for TileMap.Snapshot to share unchanged chunk byte[]s into
     // the next MapView. Outside callers should go through GetWall/etc.
     internal byte[][] TerrainChunks { get; }
@@ -48,6 +54,7 @@ public sealed class MapView
 
     private readonly HashSet<TilePos> _treeSet;
     private readonly HashSet<TilePos> _forbiddenDoorSet;
+    private readonly HashSet<TilePos> _doorTileSet;
 
     public MapView(
         long version,
@@ -61,7 +68,8 @@ public sealed class MapView
         byte[][] roofChunks,
         IReadOnlyList<TilePos> playerWalls,
         IReadOnlyList<TilePos>? trees = null,
-        IReadOnlyList<TilePos>? forbiddenDoors = null)
+        IReadOnlyList<TilePos>? forbiddenDoors = null,
+        IReadOnlyList<TilePos>? doorTiles = null)
     {
         Version = version;
         Width = width;
@@ -77,6 +85,8 @@ public sealed class MapView
         _treeSet = new HashSet<TilePos>(Trees);
         ForbiddenDoors = forbiddenDoors ?? Array.Empty<TilePos>();
         _forbiddenDoorSet = new HashSet<TilePos>(ForbiddenDoors);
+        DoorTiles = doorTiles ?? Array.Empty<TilePos>();
+        _doorTileSet = new HashSet<TilePos>(DoorTiles);
 
         var wallList = new List<TilePos>();
         for (int y = 0; y < height; y++)
@@ -103,6 +113,23 @@ public sealed class MapView
 
     public bool HasTree(int x, int y) => _treeSet.Contains(new TilePos(x, y));
     public bool HasTree(TilePos p) => _treeSet.Contains(p);
+
+    // Per-tile pathing cost multiplier. A* multiplies the base edge
+    // cost (1.0 ortho / 1.41 diag) by the destination tile's cost.
+    // Door tiles cost more than open ground so pawns prefer to walk
+    // around them when there's a parallel route; wood floor costs
+    // less so they prefer hallways once a base is built.
+    //   Door:     1.30  (avoid when there's an alternative)
+    //   Wood:     0.80  (prefer indoor hallways)
+    //   default:  1.00
+    public float CostAt(int x, int y)
+    {
+        var p = new TilePos(x, y);
+        if (_doorTileSet.Contains(p)) return 1.30f;
+        if ((FlooringType)RawFlooringByte(x, y) == FlooringType.Wood) return 0.80f;
+        return 1.00f;
+    }
+    public float CostAt(TilePos p) => CostAt(p.X, p.Y);
 
     public bool Walkable(int x, int y)
     {

@@ -1119,7 +1119,14 @@ public sealed class SimRuntime
                 int fi = 0;
                 foreach (var t in _forbiddenDoorTiles) forbidden[fi++] = t;
             }
-            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden);
+            TilePos[]? doorTiles = null;
+            if (_doorMap.Count > 0)
+            {
+                doorTiles = new TilePos[_doorMap.Count];
+                int di = 0;
+                foreach (var t in _doorMap.Keys) doorTiles[di++] = t;
+            }
+            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden, doorTiles);
         }
         Volatile.Write(ref _mapView, newView);
     }

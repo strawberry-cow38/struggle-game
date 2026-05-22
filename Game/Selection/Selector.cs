@@ -54,16 +54,24 @@ public partial class Selector : Node2D
 
         if (doubleClick)
         {
-            // Double-click on a wood stack → all wood in view; else trees in view.
+            // Double-click only expands to "all of this in view" when the
+            // cursor is actually on a wood stack or tree — otherwise fall
+            // through to normal single-click selection. Without the guard
+            // a double-click on empty ground (or a wall) was silently
+            // selecting every tree in view.
             if (TryPickWood(snap, world, out _))
             {
                 SelectAllWoodInView(snap);
+                return;
             }
-            else
+            if (TryPickTree(snap, world, out _))
             {
                 SelectAllTreesInView(snap);
+                return;
             }
-            return;
+            // No tree / wood under cursor — let the single-click path
+            // below run so wall + door + pawn picks still work on a
+            // fast double-click.
         }
 
         // Pawn beats wood/tree if both are within radius.
