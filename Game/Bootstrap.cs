@@ -73,6 +73,9 @@ public partial class Bootstrap : Node2D
         var toolbar = new Toolbar { Tools = _tools, Name = "Toolbar" };
         AddChild(toolbar);
 
+        var stockpilePanel = new StockpilePanel { Host = _host, Tools = _tools, Name = "StockpilePanel" };
+        AddChild(stockpilePanel);
+
         var debugBar = new DebugBar { Tools = _tools, Name = "DebugBar" };
         AddChild(debugBar);
 

@@ -72,6 +72,19 @@ public partial class Selector : Node2D
             else set.Add(treeId);
             WriteTreeSelection(set);
             Host.SelectedDummyId = null;
+            Host.SelectedStockpileId = null;
+            return;
+        }
+
+        // Stockpile zone tile under cursor (any zone tile counts).
+        var clickTile = new TilePos(
+            Mathf.FloorToInt(world.X / PixelsPerTile),
+            Mathf.FloorToInt(world.Y / PixelsPerTile));
+        if (TryPickStockpile(snap, clickTile, out int stockId))
+        {
+            Host.SelectedStockpileId = stockId;
+            Host.SelectedDummyId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
             return;
         }
 
@@ -80,7 +93,21 @@ public partial class Selector : Node2D
         {
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedStockpileId = null;
         }
+    }
+
+    private bool TryPickStockpile(SimSnapshot snap, TilePos tile, out int id)
+    {
+        id = -1;
+        foreach (var sp in snap.Stockpiles)
+        {
+            foreach (var t in sp.Tiles)
+            {
+                if (t == tile) { id = sp.Id; return true; }
+            }
+        }
+        return false;
     }
 
     private bool TryPickPawn(SimSnapshot snap, Vector2 world, out int id)

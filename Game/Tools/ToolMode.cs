@@ -12,4 +12,6 @@ public enum ToolMode
     Floor = 7,
     Door = 8,
     Stockpile = 9,
+    StockpileExpand = 10,
+    StockpileShrink = 11,
 }

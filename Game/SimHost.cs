@@ -85,6 +85,16 @@ public sealed class SimHost : IDisposable
         set => Volatile.Write(ref _selectedTreeIds, value ?? Array.Empty<int>());
     }
 
+    // -1 = no selection. Game thread reads + writes (panel UI); sim thread
+    // doesn't read it (no per-tick effect), so a plain int + Volatile pair
+    // is enough.
+    private int _selectedStockpileId = -1;
+    public int? SelectedStockpileId
+    {
+        get { int v = Volatile.Read(ref _selectedStockpileId); return v >= 0 ? v : null; }
+        set { Volatile.Write(ref _selectedStockpileId, value ?? -1); }
+    }
+
     // Game→Sim command submission. Drained at the start of every tick.
     public void QueueCommand(ISimCommand cmd) => _sim.QueueCommand(cmd);
 

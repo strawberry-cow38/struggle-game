@@ -72,6 +72,7 @@ public partial class WorldRenderer : Node2D
     private static readonly Color DoorPanelEdge = new(0.30f, 0.18f, 0.08f);
     private static readonly Color StockpileFill = new(0.95f, 0.85f, 0.25f, 0.12f);
     private static readonly Color StockpileBorder = new(1.00f, 0.90f, 0.35f, 0.85f);
+    private static readonly Color StockpileSelectedBorder = new(1.00f, 1.00f, 0.20f, 1.00f);
 
     public SimHost? Host { get; set; }
 
@@ -148,9 +149,10 @@ public partial class WorldRenderer : Node2D
 
         if (snap is null) return;
 
+        int? selectedStockpileId = Host?.SelectedStockpileId;
         foreach (var sp in snap.Stockpiles)
         {
-            DrawStockpile(sp);
+            DrawStockpile(sp, isSelected: selectedStockpileId == sp.Id);
         }
 
         foreach (var bp in snap.Blueprints)
@@ -508,9 +510,11 @@ public partial class WorldRenderer : Node2D
     // on the perimeter edges (edges that face a tile outside the zone).
     // Iterating per-tile + per-edge keeps compound shapes correct without
     // an extra polygon pass.
-    private void DrawStockpile(StruggleGame.Sim.Snapshots.StockpileState sp)
+    private void DrawStockpile(StruggleGame.Sim.Snapshots.StockpileState sp, bool isSelected)
     {
         var set = new HashSet<TilePos>(sp.Tiles);
+        var border = isSelected ? StockpileSelectedBorder : StockpileBorder;
+        float borderW = isSelected ? 3f : 2f;
         foreach (var t in sp.Tiles)
         {
             var rect = new Rect2(t.X * PixelsPerTile, t.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
@@ -523,13 +527,13 @@ public partial class WorldRenderer : Node2D
             float x1 = x0 + PixelsPerTile;
             float y1 = y0 + PixelsPerTile;
             if (!set.Contains(new TilePos(t.X, t.Y - 1)))
-                DrawLine(new Vector2(x0, y0), new Vector2(x1, y0), StockpileBorder, width: 2f);
+                DrawLine(new Vector2(x0, y0), new Vector2(x1, y0), border, width: borderW);
             if (!set.Contains(new TilePos(t.X, t.Y + 1)))
-                DrawLine(new Vector2(x0, y1), new Vector2(x1, y1), StockpileBorder, width: 2f);
+                DrawLine(new Vector2(x0, y1), new Vector2(x1, y1), border, width: borderW);
             if (!set.Contains(new TilePos(t.X - 1, t.Y)))
-                DrawLine(new Vector2(x0, y0), new Vector2(x0, y1), StockpileBorder, width: 2f);
+                DrawLine(new Vector2(x0, y0), new Vector2(x0, y1), border, width: borderW);
             if (!set.Contains(new TilePos(t.X + 1, t.Y)))
-                DrawLine(new Vector2(x1, y0), new Vector2(x1, y1), StockpileBorder, width: 2f);
+                DrawLine(new Vector2(x1, y0), new Vector2(x1, y1), border, width: borderW);
         }
     }
 
