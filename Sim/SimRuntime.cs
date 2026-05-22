@@ -941,18 +941,19 @@ public sealed class SimRuntime
     public bool TryFindBestHaulDest(TilePos source, ItemDef def, out TilePos dest, out int stockpileId)
         => TryFindBestHaulDest(source, def, 1, out dest, out stockpileId);
 
-    // Walks the player's zones (highest priority first; create-order tiebreak)
-    // and picks the best cell that accepts the item. A cell is valid if it's
-    // empty OR holds the same item with room for countToMove. Merge bias:
-    // within a zone, a partial-stack tile with the most existing items wins
-    // over an empty tile; final tiebreak is distance.
+    // Walks the player's zones and picks the best cell that accepts the item.
+    // A cell is valid if it's empty OR holds the same item with room for
+    // countToMove. Two-pass merge bias: pass 1 considers only partial-stack
+    // tiles across ALL piles (so a colonist hauling from outside tops off
+    // an existing pile instead of starting a fresh one — even if the
+    // partial sits in a lower-priority zone). Pass 2 falls back to empty
+    // tiles only if no merge target exists anywhere. Within each pass:
+    // priority > existing count > distance.
     public bool TryFindBestHaulDest(TilePos source, ItemDef def, int countToMove, out TilePos dest, out int stockpileId)
     {
         dest = default;
         stockpileId = 0;
 
-        // Map each tile to the wood entity sitting on it (if any) and its
-        // count, so the picker can score partial-stack merges.
         var woodAt = new Dictionary<TilePos, int>();
         Store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
         {
@@ -960,47 +961,53 @@ public sealed class SimRuntime
             woodAt[w.Tile] = w.Count;
         });
 
-        StockpilePriority bestPriority = StockpilePriority.Low - 1;
-        int bestStack = -1;
-        int bestDist = int.MaxValue;
-
-        foreach (var pile in _stockpiles)
+        for (int pass = 0; pass < 2; pass++)
         {
-            if (!pile.Allows(def)) continue;
-            if (pile.Tiles.Count == 0) continue;
-            if (pile.Priority < bestPriority) continue;
+            bool mergePass = pass == 0;
+            StockpilePriority bestPriority = StockpilePriority.Low - 1;
+            int bestStack = -1;
+            int bestDist = int.MaxValue;
 
-            TilePos pileBest = default;
-            int pileBestStack = -1;
-            int pileBestDist = int.MaxValue;
-            foreach (var t in pile.Tiles)
+            foreach (var pile in _stockpiles)
             {
-                if (_reservedHaulDests.Contains(t)) continue;
-                int existing = woodAt.TryGetValue(t, out var c) ? c : 0;
-                if (existing > 0 && existing + countToMove > WoodMaxStack) continue;
-                int d = Math.Abs(t.X - source.X) + Math.Abs(t.Y - source.Y);
-                // Bigger existing stack wins (merge bias); break ties by distance.
-                if (existing > pileBestStack || (existing == pileBestStack && d < pileBestDist))
+                if (!pile.Allows(def)) continue;
+                if (pile.Tiles.Count == 0) continue;
+                if (pile.Priority < bestPriority) continue;
+
+                TilePos pileBest = default;
+                int pileBestStack = -1;
+                int pileBestDist = int.MaxValue;
+                foreach (var t in pile.Tiles)
                 {
-                    pileBestStack = existing;
-                    pileBestDist = d;
-                    pileBest = t;
+                    if (_reservedHaulDests.Contains(t)) continue;
+                    int existing = woodAt.TryGetValue(t, out var c) ? c : 0;
+                    if (mergePass && existing <= 0) continue;
+                    if (!mergePass && existing > 0) continue;
+                    if (existing > 0 && existing + countToMove > WoodMaxStack) continue;
+                    int d = Math.Abs(t.X - source.X) + Math.Abs(t.Y - source.Y);
+                    if (existing > pileBestStack || (existing == pileBestStack && d < pileBestDist))
+                    {
+                        pileBestStack = existing;
+                        pileBestDist = d;
+                        pileBest = t;
+                    }
+                }
+                if (pileBestStack < 0) continue;
+
+                if (pile.Priority > bestPriority
+                    || (pile.Priority == bestPriority && pileBestStack > bestStack)
+                    || (pile.Priority == bestPriority && pileBestStack == bestStack && pileBestDist < bestDist))
+                {
+                    bestPriority = pile.Priority;
+                    bestStack = pileBestStack;
+                    bestDist = pileBestDist;
+                    dest = pileBest;
+                    stockpileId = pile.Id;
                 }
             }
-            if (pileBestStack < 0) continue;
-
-            if (pile.Priority > bestPriority
-                || (pile.Priority == bestPriority && pileBestStack > bestStack)
-                || (pile.Priority == bestPriority && pileBestStack == bestStack && pileBestDist < bestDist))
-            {
-                bestPriority = pile.Priority;
-                bestStack = pileBestStack;
-                bestDist = pileBestDist;
-                dest = pileBest;
-                stockpileId = pile.Id;
-            }
+            if (stockpileId != 0) return true;
         }
-        return stockpileId != 0;
+        return false;
     }
 
     // Pawn (re-)anchors every carried slot at dropTile, completes the
