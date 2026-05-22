@@ -225,24 +225,11 @@ public sealed class SimRuntime
             selectedDummyId, selectedPath, selectedOrders, selTreeArr);
     }
 
-    // Snapshot of each layer taken under a lock so a parallel write
-    // can't tear it. Game uses these to rebuild the overlay textures
-    // when MapVersion changes.
-    public byte[] CopyLayerForRender(MapLayer layer)
-    {
-        lock (_mapLock)
-        {
-            ReadOnlySpan<byte> src = layer switch
-            {
-                MapLayer.Terrain => Map.RawTerrain,
-                MapLayer.Flooring => Map.RawFlooring,
-                MapLayer.Wall => Map.RawWalls,
-                MapLayer.Roof => Map.RawRoofs,
-                _ => throw new ArgumentOutOfRangeException(nameof(layer)),
-            };
-            return src.ToArray();
-        }
-    }
+    // Render layer snapshot: assembled from the published MapView's
+    // chunks (immutable, lock-free) rather than from TileMap directly,
+    // so the renderer sees consistent data for the MapVersion it asks
+    // about even if a sim tick is mid-mutation.
+    public byte[] CopyLayerForRender(MapLayer layer) => MapView.AssembleFlat(layer);
 
     public bool TryPlaceWallBlueprint(TilePos tile)
     {
@@ -514,7 +501,9 @@ public sealed class SimRuntime
             var treeTiles = new TilePos[_trees.Count];
             int idx = 0;
             foreach (var t in _trees.Keys) treeTiles[idx++] = t;
-            newView = Map.Snapshot(MapVersion, _playerWalls.ToArray(), treeTiles);
+            // Pass the previously published view so the new snapshot
+            // can reuse chunk refs that weren't touched this tick.
+            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles);
         }
         Volatile.Write(ref _mapView, newView);
     }
@@ -527,11 +516,10 @@ public sealed class SimRuntime
         int w = Map.Width, h = Map.Height;
         int n = w * h;
         if (_roomTiles.Length != n) _roomTiles = new int[n];
-        int count;
-        lock (_mapLock)
-        {
-            count = RoomMap.Compute(w, h, Map.RawWalls, _doorMap.Keys, _roomTiles);
-        }
+        // Walls come from the published MapView so the room flood-fill
+        // is consistent with whatever Walkable() returns this tick.
+        var walls = _mapView.AssembleFlat(MapLayer.Wall);
+        int count = RoomMap.Compute(w, h, walls, _doorMap.Keys, _roomTiles);
         RoomCount = count;
         RoomVersion++;
     }

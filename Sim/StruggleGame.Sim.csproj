@@ -5,6 +5,9 @@
     <AssemblyName>StruggleGame.Sim</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="StruggleGame.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Friflo.Engine.ECS" Version="3.4.0" />
     <PackageReference Include="Serilog" Version="4.2.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />

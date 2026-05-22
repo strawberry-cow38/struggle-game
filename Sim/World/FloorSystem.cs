@@ -36,10 +36,7 @@ public sealed class FloorSystem
             if (job is null || job.Kind != JobKind.FloorBuild) return;
             if (job.State != JobState.Open && job.State != JobState.Claimed) return;
 
-            int dx = Math.Abs((int)pos.X - job.Tile.X);
-            int dy = Math.Abs((int)pos.Y - job.Tile.Y);
-            // Chebyshev-1: must stand on one of the 8 neighbors.
-            if (dx > 1 || dy > 1 || (dx == 0 && dy == 0)) return;
+            if (!BuildAdjacency.InRange(pos.X, pos.Y, job.Tile.X, job.Tile.Y)) return;
 
             ref var bp = ref job.Entity.GetComponent<FloorBlueprint>();
             bp.ProgressSec += dt;

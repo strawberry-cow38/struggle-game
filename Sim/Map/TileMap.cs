@@ -2,8 +2,9 @@ namespace StruggleGame.Sim.Map;
 
 // Four parallel byte arrays, one per layer. Walls block walkability;
 // terrain/flooring/roof are presentation today (terrain may add water
-// later). Keeping arrays parallel + byte-sized makes Snapshot a flat
-// memcpy quartet and lets the renderer pull each layer cheaply.
+// later). Per-chunk dirty bits drive incremental Snapshot: only chunks
+// that mutated since the previous snapshot need to be cloned into the
+// new MapView; the rest are reused from the previous snapshot by ref.
 public sealed class TileMap
 {
     private readonly byte[] _terrain;
@@ -11,8 +12,16 @@ public sealed class TileMap
     private readonly byte[] _walls;
     private readonly byte[] _roofs;
 
+    private readonly bool[] _terrainChunkDirty;
+    private readonly bool[] _flooringChunkDirty;
+    private readonly bool[] _wallChunkDirty;
+    private readonly bool[] _roofChunkDirty;
+
     public int Width { get; }
     public int Height { get; }
+    public int ChunksAcross { get; }
+    public int ChunksDown { get; }
+    public int ChunkCount => ChunksAcross * ChunksDown;
 
     public TileMap(int width, int height)
     {
@@ -23,26 +32,58 @@ public sealed class TileMap
         _flooring = new byte[n];
         _walls = new byte[n];
         _roofs = new byte[n];
+
+        ChunksAcross = MapChunks.ChunksAcross(width);
+        ChunksDown = MapChunks.ChunksDown(height);
+        int c = ChunksAcross * ChunksDown;
+        _terrainChunkDirty = new bool[c];
+        _flooringChunkDirty = new bool[c];
+        _wallChunkDirty = new bool[c];
+        _roofChunkDirty = new bool[c];
+        // First snapshot must populate every chunk.
+        for (int i = 0; i < c; i++)
+        {
+            _terrainChunkDirty[i] = true;
+            _flooringChunkDirty[i] = true;
+            _wallChunkDirty[i] = true;
+            _roofChunkDirty[i] = true;
+        }
     }
 
     public TerrainType GetTerrain(int x, int y) => (TerrainType)_terrain[Index(x, y)];
     public TerrainType GetTerrain(TilePos p) => GetTerrain(p.X, p.Y);
-    public void SetTerrain(int x, int y, TerrainType t) => _terrain[Index(x, y)] = (byte)t;
+    public void SetTerrain(int x, int y, TerrainType t)
+    {
+        _terrain[Index(x, y)] = (byte)t;
+        _terrainChunkDirty[MapChunks.ChunkIndex(x, y, ChunksAcross)] = true;
+    }
     public void SetTerrain(TilePos p, TerrainType t) => SetTerrain(p.X, p.Y, t);
 
     public FlooringType GetFlooring(int x, int y) => (FlooringType)_flooring[Index(x, y)];
     public FlooringType GetFlooring(TilePos p) => GetFlooring(p.X, p.Y);
-    public void SetFlooring(int x, int y, FlooringType t) => _flooring[Index(x, y)] = (byte)t;
+    public void SetFlooring(int x, int y, FlooringType t)
+    {
+        _flooring[Index(x, y)] = (byte)t;
+        _flooringChunkDirty[MapChunks.ChunkIndex(x, y, ChunksAcross)] = true;
+    }
     public void SetFlooring(TilePos p, FlooringType t) => SetFlooring(p.X, p.Y, t);
 
     public WallType GetWall(int x, int y) => (WallType)_walls[Index(x, y)];
     public WallType GetWall(TilePos p) => GetWall(p.X, p.Y);
-    public void SetWall(int x, int y, WallType t) => _walls[Index(x, y)] = (byte)t;
+    public void SetWall(int x, int y, WallType t)
+    {
+        _walls[Index(x, y)] = (byte)t;
+        _wallChunkDirty[MapChunks.ChunkIndex(x, y, ChunksAcross)] = true;
+    }
     public void SetWall(TilePos p, WallType t) => SetWall(p.X, p.Y, t);
 
     public RoofType GetRoof(int x, int y) => (RoofType)_roofs[Index(x, y)];
     public RoofType GetRoof(TilePos p) => GetRoof(p.X, p.Y);
-    public void SetRoof(int x, int y, RoofType t) => _roofs[Index(x, y)] = (byte)t;
+    public void SetRoof(int x, int y, RoofType t)
+    {
+        _roofs[Index(x, y)] = (byte)t;
+        _roofChunkDirty[MapChunks.ChunkIndex(x, y, ChunksAcross)] = true;
+    }
     public void SetRoof(TilePos p, RoofType t) => SetRoof(p.X, p.Y, t);
 
     public bool InBounds(int x, int y) => (uint)x < (uint)Width && (uint)y < (uint)Height;
@@ -56,22 +97,73 @@ public sealed class TileMap
     public ReadOnlySpan<byte> RawWalls => _walls;
     public ReadOnlySpan<byte> RawRoofs => _roofs;
 
-    // Build an immutable read-only snapshot at the given version. Caller is
-    // responsible for serialising writes vs this read (SimRuntime holds the
-    // map lock for both).
+    // Incremental snapshot. For each chunk: if dirty since the previous
+    // snapshot, allocate a fresh chunk byte[] and copy the chunk's tile
+    // bytes out of the flat backing array; otherwise reuse the previous
+    // snapshot's chunk ref by reference. Clears dirty bits after.
+    //
+    // Reused chunk refs are safe because TileMap never writes back into
+    // a MapView's chunk byte[] — mutations land in the flat _walls etc.
+    // array and the NEXT snapshot allocates a new chunk byte[] for any
+    // chunk that was touched.
     public MapView Snapshot(
         long version,
+        MapView? previous = null,
         IReadOnlyList<TilePos>? playerWalls = null,
         IReadOnlyList<TilePos>? trees = null)
     {
+        var terrainChunks = BuildChunks(_terrain, _terrainChunkDirty, previous?.TerrainChunks);
+        var flooringChunks = BuildChunks(_flooring, _flooringChunkDirty, previous?.FlooringChunks);
+        var wallChunks = BuildChunks(_walls, _wallChunkDirty, previous?.WallChunks);
+        var roofChunks = BuildChunks(_roofs, _roofChunkDirty, previous?.RoofChunks);
+
+        Array.Clear(_terrainChunkDirty);
+        Array.Clear(_flooringChunkDirty);
+        Array.Clear(_wallChunkDirty);
+        Array.Clear(_roofChunkDirty);
+
         return new MapView(
-            version, Width, Height,
-            (byte[])_terrain.Clone(),
-            (byte[])_flooring.Clone(),
-            (byte[])_walls.Clone(),
-            (byte[])_roofs.Clone(),
+            version, Width, Height, ChunksAcross, ChunksDown,
+            terrainChunks, flooringChunks, wallChunks, roofChunks,
             playerWalls ?? Array.Empty<TilePos>(),
             trees);
+    }
+
+    private byte[][] BuildChunks(byte[] flat, bool[] dirty, byte[][]? prev)
+    {
+        var chunks = new byte[ChunkCount][];
+        for (int cy = 0; cy < ChunksDown; cy++)
+        {
+            for (int cx = 0; cx < ChunksAcross; cx++)
+            {
+                int ci = cy * ChunksAcross + cx;
+                if (dirty[ci] || prev is null || prev[ci] is null)
+                {
+                    chunks[ci] = CopyChunkFromFlat(flat, cx, cy);
+                }
+                else
+                {
+                    chunks[ci] = prev[ci];
+                }
+            }
+        }
+        return chunks;
+    }
+
+    private byte[] CopyChunkFromFlat(byte[] flat, int cx, int cy)
+    {
+        var chunk = new byte[MapChunks.ChunkArea];
+        int baseX = cx * MapChunks.ChunkSize;
+        int baseY = cy * MapChunks.ChunkSize;
+        int rowSpan = Math.Min(MapChunks.ChunkSize, Width - baseX);
+        int colSpan = Math.Min(MapChunks.ChunkSize, Height - baseY);
+        for (int ly = 0; ly < colSpan; ly++)
+        {
+            int srcRow = (baseY + ly) * Width + baseX;
+            int dstRow = ly * MapChunks.ChunkSize;
+            Buffer.BlockCopy(flat, srcRow, chunk, dstRow, rowSpan);
+        }
+        return chunk;
     }
 
     private int Index(int x, int y) => y * Width + x;

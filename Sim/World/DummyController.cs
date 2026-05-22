@@ -158,9 +158,15 @@ public sealed class DummyController
                 path.Waypoints = null;
                 path.Index = 0;
             }
-            else if (IsAdjacent8(here, job.Tile))
+            else if (BuildAdjacency.InRange(pos.X, pos.Y, job.Tile.X, job.Tile.Y))
             {
-                // Standing next to it — BuildSystem advances progress.
+                // Standing in the build ring at exact tile center —
+                // BuildSystem.Step will see the same InRange truth and
+                // advance progress. Parking mid-tile is not safe: the
+                // float adjacency rule is tighter than integer
+                // Chebyshev-1, so a pawn at sub-tile pos like (5.0, 4.5)
+                // would land outside InRange even though its integer
+                // tile (5, 4) is "adjacent".
                 path.Waypoints = null;
                 path.Index = 0;
                 return;
@@ -287,13 +293,6 @@ public sealed class DummyController
             path.PendingPathId = _paths.Request(from, goal);
             return;
         }
-    }
-
-    private static bool IsAdjacent8(TilePos a, TilePos b)
-    {
-        int dx = Math.Abs(a.X - b.X);
-        int dy = Math.Abs(a.Y - b.Y);
-        return dx <= 1 && dy <= 1 && (dx + dy) > 0;
     }
 
     private void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt, MapView view)
