@@ -80,11 +80,13 @@ public partial class Bootstrap : Node2D
     {
         string? scenario = null;
         string? outDir = null;
+        bool movieMode = false;
         foreach (var arg in OS.GetCmdlineArgs())
         {
             if (arg == "--harness") scenario ??= "default";
             else if (arg.StartsWith("--harness=")) scenario = arg.Substring("--harness=".Length);
             else if (arg.StartsWith("--harness-out=")) outDir = arg.Substring("--harness-out=".Length);
+            else if (arg.StartsWith("--write-movie")) movieMode = true;
         }
         if (scenario is null || _host is null) return;
 
@@ -93,6 +95,7 @@ public partial class Bootstrap : Node2D
             Host = _host,
             Scenario = scenario,
             OutputDir = outDir ?? string.Empty,
+            MovieMode = movieMode,
             Name = "Harness",
         };
         AddChild(harness);

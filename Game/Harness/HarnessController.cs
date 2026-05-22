@@ -23,6 +23,7 @@ public partial class HarnessController : Node2D
     public SimHost Host { get; set; } = null!;
     public string Scenario { get; set; } = "default";
     public string OutputDir { get; set; } = string.Empty;
+    public bool MovieMode { get; set; }
 
     private double _elapsed;
     private double _nextSampleAt;
@@ -109,12 +110,20 @@ public partial class HarnessController : Node2D
                 _schedule.Add((40.0, h => h.Finish("doors complete"), "finish"));
                 break;
             case "doors-video":
-                // 60fps capture at half resolution. Lower quality keeps the
-                // PNG encode cheap so the main-thread block per screenshot
-                // is small enough that the sim accumulator doesn't pile up
-                // ticks between frames (which used to look like teleports).
-                _screenshotEverySec = 1.0 / 60.0;
-                _screenshotScale = 0.5f;
+                // Movie Maker mode (--write-movie) lets Godot capture every
+                // rendered frame at a fixed delta; pair with manual-sim so
+                // the sim ticks once per render frame and stays locked to
+                // the recording. Falls back to PNG-sequence capture when
+                // not in movie mode.
+                if (MovieMode)
+                {
+                    _screenshotEverySec = double.PositiveInfinity; // disable own screenshots
+                }
+                else
+                {
+                    _screenshotEverySec = 1.0 / 60.0;
+                    _screenshotScale = 0.5f;
+                }
                 _warmupSec = 2.0;
                 _manualSim = true;
                 _schedule.Add((0.5, h => h.PlaceWall(c - 1, c), "wall W"));
