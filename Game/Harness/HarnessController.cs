@@ -27,6 +27,7 @@ public partial class HarnessController : Node2D
     private double _elapsed;
     private double _nextSampleAt;
     private double _nextScreenshotAt;
+    private double _screenshotEverySec = 5.0;
     private int _shotIndex;
     private int _stepIndex;
     private bool _finished;
@@ -95,6 +96,19 @@ public partial class HarnessController : Node2D
                 _schedule.Add((30.0, h => h.MoveLowest(c, c - 4, false), "march north back"));
                 _schedule.Add((40.0, h => h.Finish("doors complete"), "finish"));
                 break;
+            case "doors-video":
+                // High-frame-rate capture for video assembly. Tightens
+                // the timeline so the pass-through happens near the end
+                // and we don't generate thousands of empty frames.
+                _screenshotEverySec = 0.05; // 20 fps
+                _schedule.Add((0.5, h => h.PlaceWall(c - 1, c), "wall W"));
+                _schedule.Add((0.7, h => h.PlaceWall(c + 1, c), "wall E"));
+                _schedule.Add((5.0, h => h.PlaceDoor(c, c), "place door"));
+                _schedule.Add((9.0, h => h.DraftLowest(), "draft lowest"));
+                _schedule.Add((9.5, h => h.MoveLowest(c, c + 4, false), "march south through door"));
+                _schedule.Add((14.0, h => h.MoveLowest(c, c - 4, false), "march back through"));
+                _schedule.Add((19.0, h => h.Finish("doors-video complete"), "finish"));
+                break;
             case "stress":
                 for (int r = 2; r <= 6; r++)
                 {
@@ -138,7 +152,7 @@ public partial class HarnessController : Node2D
         }
         if (_elapsed >= _nextScreenshotAt)
         {
-            _nextScreenshotAt = _elapsed + 5.0;
+            _nextScreenshotAt = _elapsed + _screenshotEverySec;
             CallDeferred(nameof(Screenshot));
         }
     }
