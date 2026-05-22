@@ -17,6 +17,11 @@ public partial class WorldRenderer : Node2D
     private const int GrassTexSize = 256;
 
     private ImageTexture? _grassTex;
+    // Rare per-tile variant: ~0.4% of grass tiles re-tint purple/pink so the
+    // map has occasional flair without the player noticing a pattern.
+    // Tex is one tile wide; tile list precomputed once via deterministic hash.
+    private ImageTexture? _purpleGrassTex;
+    private TilePos[]? _purpleTiles;
     private ImageTexture? _wallOverlayTex;
     private ImageTexture? _roomOverlayTex;
     // Cached flooring layer (one byte per tile). Drawn per-frame as small
@@ -84,10 +89,12 @@ public partial class WorldRenderer : Node2D
 
         if (Host is null) return;
         _grassTex = BuildGrassTexture(seed: 1337);
+        _purpleGrassTex = BuildPurpleGrassTexture(seed: 4242);
         _mapWidth = Host.Map.Width;
         _mapHeight = Host.Map.Height;
         _mapPixelWidth = _mapWidth * PixelsPerTile;
         _mapPixelHeight = _mapHeight * PixelsPerTile;
+        _purpleTiles = PickPurpleTiles(_mapWidth, _mapHeight, seed: 9999, rate: 0.004f);
     }
 
     public override void _Process(double delta)
@@ -138,6 +145,14 @@ public partial class WorldRenderer : Node2D
 
         var mapRect = new Rect2(0, 0, _mapPixelWidth, _mapPixelHeight);
         DrawTextureRect(_grassTex, mapRect, tile: true);
+        if (_purpleGrassTex is not null && _purpleTiles is not null)
+        {
+            foreach (var pt in _purpleTiles)
+            {
+                var tileRect = new Rect2(pt.X * PixelsPerTile, pt.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+                DrawTextureRect(_purpleGrassTex, tileRect, tile: false);
+            }
+        }
         DrawFlooringTiles();
         if (_roomOverlayTex is not null)
         {
@@ -511,6 +526,78 @@ public partial class WorldRenderer : Node2D
         }
 
         return ImageTexture.CreateFromImage(img);
+    }
+
+    // Single-tile-sized rare variant: same blade shape, dusty pink soil +
+    // magenta/violet blades. Drawn on top of the tiled green grass for
+    // selected tiles so the player gets occasional patches of "weird" grass.
+    private static ImageTexture BuildPurpleGrassTexture(int seed)
+    {
+        var rng = new Random(seed);
+        var img = Image.CreateEmpty(PixelsPerTile, PixelsPerTile, false, Image.Format.Rgba8);
+
+        for (int py = 0; py < PixelsPerTile; py++)
+        {
+            for (int px = 0; px < PixelsPerTile; px++)
+            {
+                float n = (float)rng.NextDouble();
+                float r = 0.42f + n * 0.10f;
+                float g = 0.24f + n * 0.06f;
+                float b = 0.36f + n * 0.10f;
+                img.SetPixel(px, py, new Color(r, g, b));
+            }
+        }
+
+        var bladePalette = new Color[]
+        {
+            new(0.78f, 0.45f, 0.78f),
+            new(0.62f, 0.30f, 0.62f),
+            new(0.85f, 0.55f, 0.72f),
+            new(0.55f, 0.30f, 0.68f),
+            new(0.70f, 0.40f, 0.55f),
+        };
+        const int bladeCount = 140;
+        for (int i = 0; i < bladeCount; i++)
+        {
+            int bx = rng.Next(PixelsPerTile);
+            int by = rng.Next(PixelsPerTile);
+            int height = rng.Next(3, 7);
+            int width = rng.NextDouble() < 0.15 ? 2 : 1;
+            var tip = bladePalette[rng.Next(bladePalette.Length)];
+            for (int yy = 0; yy < height; yy++)
+            {
+                float t = yy / (float)(height - 1);
+                float shade = Mathf.Lerp(0.55f, 1.0f, t);
+                var c = new Color(tip.R * shade, tip.G * shade, tip.B * shade);
+                for (int xx = 0; xx < width; xx++)
+                {
+                    int wx = (bx + xx) & (PixelsPerTile - 1);
+                    int wy = (by + yy) & (PixelsPerTile - 1);
+                    img.SetPixel(wx, wy, c);
+                }
+            }
+        }
+
+        return ImageTexture.CreateFromImage(img);
+    }
+
+    // Deterministic per-tile hash: each tile is picked iff a 0..1 sample
+    // from (x, y, seed) falls under `rate`. Precomputed once at _Ready so
+    // draw doesn't iterate the full 256x256 map every frame.
+    private static TilePos[] PickPurpleTiles(int width, int height, int seed, float rate)
+    {
+        var list = new List<TilePos>(Math.Max(8, (int)(width * height * rate * 1.4f)));
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                uint h = (uint)(x * 0x9E3779B1) ^ (uint)(y * 0x85EBCA77) ^ (uint)seed;
+                h ^= h >> 16; h *= 0x7FEB352D; h ^= h >> 15; h *= 0x846CA68B; h ^= h >> 16;
+                float r = (h & 0xFFFFFF) / (float)0x1000000;
+                if (r < rate) list.Add(new TilePos(x, y));
+            }
+        }
+        return list.ToArray();
     }
 
     private void DrawDoorBlueprint(TilePos tile, float progress)

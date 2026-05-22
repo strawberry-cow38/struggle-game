@@ -79,6 +79,9 @@ public partial class Bootstrap : Node2D
         var itemInfoPanel = new ItemInfoPanel { Host = _host, Name = "ItemInfoPanel" };
         AddChild(itemInfoPanel);
 
+        var treeInfoPanel = new TreeInfoPanel { Host = _host, Name = "TreeInfoPanel" };
+        AddChild(treeInfoPanel);
+
         var debugBar = new DebugBar { Tools = _tools, Name = "DebugBar" };
         AddChild(debugBar);
 
