@@ -252,29 +252,54 @@ public sealed class DummyController
         }
     }
 
-    private static bool TryPickNeighbor(MapView view, TilePos from, TilePos target, out TilePos neighbor)
+    // Pick a walkable 8-neighbor of `target` closest to `from`. Tiles that
+    // are themselves pending wall/door blueprints are heavily deprioritized
+    // (only chosen as a last resort) so two pawns building neighboring
+    // blueprints don't park on each other's job tile and mutually block.
+    private bool TryPickNeighbor(MapView view, TilePos from, TilePos target, out TilePos neighbor)
     {
-        TilePos best = default;
-        int bestDist = int.MaxValue;
+        TilePos bestFree = default;
+        int bestFreeDist = int.MaxValue;
+        TilePos bestAny = default;
+        int bestAnyDist = int.MaxValue;
         foreach (var (dx, dy) in EightNeighbors)
         {
             int nx = target.X + dx;
             int ny = target.Y + dy;
             if (!view.Walkable(nx, ny)) continue;
             int d = Math.Abs(nx - from.X) + Math.Abs(ny - from.Y);
-            if (d < bestDist)
+            if (d < bestAnyDist)
             {
-                bestDist = d;
-                best = new TilePos(nx, ny);
+                bestAnyDist = d;
+                bestAny = new TilePos(nx, ny);
+            }
+            if (IsPendingBlueprintTile(nx, ny)) continue;
+            if (d < bestFreeDist)
+            {
+                bestFreeDist = d;
+                bestFree = new TilePos(nx, ny);
             }
         }
-        if (bestDist == int.MaxValue)
+        if (bestFreeDist != int.MaxValue)
         {
-            neighbor = default;
-            return false;
+            neighbor = bestFree;
+            return true;
         }
-        neighbor = best;
-        return true;
+        if (bestAnyDist != int.MaxValue)
+        {
+            neighbor = bestAny;
+            return true;
+        }
+        neighbor = default;
+        return false;
+    }
+
+    private bool IsPendingBlueprintTile(int x, int y)
+    {
+        var job = _jobs.GetByTile(new TilePos(x, y));
+        if (job is null) return false;
+        if (job.State == JobState.Completed || job.State == JobState.Cancelled) return false;
+        return job.Kind == JobKind.WallBuild || job.Kind == JobKind.DoorBuild;
     }
 
     private bool TryClaimJob(MapView view, TilePos from, Entity entity, CommandBuffer cb, ref PathFollower path)
