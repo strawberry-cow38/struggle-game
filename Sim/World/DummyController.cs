@@ -198,6 +198,30 @@ public sealed class DummyController
                 HandleHaul(ref pos, ref path, entity, cb, view, job, here, store);
                 return;
             }
+            else if (job.Kind == JobKind.FloorBuild)
+            {
+                // Floors don't block movement and the worker can stand on
+                // the tile itself — approach = job.Tile, adjacency permissive.
+                if (BuildAdjacency.InRangeOrOnTile(pos.X, pos.Y, job.Tile.X, job.Tile.Y))
+                {
+                    path.Waypoints = null;
+                    path.Index = 0;
+                    return;
+                }
+                if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
+                {
+                    if (!view.Walkable(job.Tile))
+                    {
+                        _cancelJob(bt.JobId);
+                        cb.RemoveComponent<BuildTarget>(entity.Id);
+                    }
+                    else
+                    {
+                        path.PendingPathId = _paths.Request(here, job.Tile);
+                    }
+                }
+                return;
+            }
             else if (BuildAdjacency.InRange(pos.X, pos.Y, job.Tile.X, job.Tile.Y))
             {
                 // Standing in the build ring at exact tile center —
@@ -321,9 +345,12 @@ public sealed class DummyController
             if (d >= bestDist) continue;
             TilePos approach;
             bool isHaul = job.Kind == JobKind.Haul;
-            if (isHaul)
+            bool isFloor = job.Kind == JobKind.FloorBuild;
+            if (isHaul || isFloor)
             {
-                // Haul pickup walks onto the wood tile itself, not a neighbor.
+                // Haul pickup walks onto the source tile itself, not a
+                // neighbor. Floors also walk onto the tile — they don't
+                // block pathing and the worker can stand on them.
                 if (!view.Walkable(job.Tile)) continue;
                 approach = job.Tile;
             }

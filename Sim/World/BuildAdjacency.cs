@@ -25,4 +25,14 @@ public static class BuildAdjacency
         if (ax <= 0.5f && ay <= 0.5f) return false;
         return true;
     }
+
+    // Permissive variant for jobs whose target tile is walkable while the
+    // work is happening (floors). Standing on the tile or adjacent both
+    // count.
+    public static bool InRangeOrOnTile(float posX, float posY, int tileX, int tileY)
+    {
+        float ax = MathF.Abs(posX - (tileX + 0.5f));
+        float ay = MathF.Abs(posY - (tileY + 0.5f));
+        return ax <= 1.0f && ay <= 1.0f;
+    }
 }
