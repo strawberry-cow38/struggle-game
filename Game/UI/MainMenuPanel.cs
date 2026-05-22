@@ -187,6 +187,7 @@ public partial class MainMenuPanel : CanvasLayer
     {
         if (!IsOpen) return;
         // ESC inside the menu = close (or pop options back to root).
+        // Marked handled in _Input so it fires before GUI / designators.
         if (@event is InputEventKey ek && ek.Pressed && !ek.Echo && ek.Keycode == Key.Escape)
         {
             if (_options.Visible) { _options.Visible = false; _root.Visible = true; }
@@ -194,10 +195,12 @@ public partial class MainMenuPanel : CanvasLayer
             GetViewport().SetInputAsHandled();
             return;
         }
-        // While the menu is open, eat every other key + mouse event so
-        // player hotkeys (R/F/B/C/X/space/etc.) and designator drags
-        // can't fire behind the overlay.
-        if (@event is InputEventKey or InputEventMouseButton or InputEventMouseMotion)
+        // Eat keys only — player hotkeys (R/F/B/C/X/space/etc.) must
+        // not fire while the menu is up. Mouse events are intentionally
+        // left for the GUI phase so the menu's buttons still get clicks;
+        // the full-screen ColorRect with MouseFilter=Stop swallows any
+        // click that misses a button so designators can't trigger.
+        if (@event is InputEventKey)
         {
             GetViewport().SetInputAsHandled();
         }
