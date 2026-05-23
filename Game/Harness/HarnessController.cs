@@ -182,6 +182,41 @@ public partial class HarnessController : Node2D
                 _schedule.Add((28.0, h => h.MoveLowest(c, c + 6, false), "march back out"));
                 _schedule.Add((34.0, h => h.Finish("rooms-video complete"), "finish"));
                 break;
+            case "lighting":
+                // Builds a 7x7 room with a south door, lets auto-roof + the
+                // build queue finish, then sits long enough for a couple of
+                // post-build screenshots. Cranks the sim 8× so a real wall
+                // ring + roof completes in seconds of wall-clock.
+                _schedule.Add((0.5, h => h.Host.SetTickHz(SimConstants.TickHz * 8), "speed 8x"));
+                _screenshotEverySec = 2.0;
+                {
+                    int x0 = c - 3, x1 = c + 3;
+                    int y0 = c - 3, y1 = c + 3;
+                    double at = 1.0;
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        int xc = x;
+                        _schedule.Add((at, h => h.PlaceWall(xc, y0), $"wall top x={xc}"));
+                        at += 0.05;
+                    }
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        if (x == c) continue;
+                        int xc = x;
+                        _schedule.Add((at, h => h.PlaceWall(xc, y1), $"wall bot x={xc}"));
+                        at += 0.05;
+                    }
+                    for (int y = y0 + 1; y <= y1 - 1; y++)
+                    {
+                        int yc = y;
+                        _schedule.Add((at, h => h.PlaceWall(x0, yc), $"wall L y={yc}"));
+                        _schedule.Add((at + 0.025, h => h.PlaceWall(x1, yc), $"wall R y={yc}"));
+                        at += 0.05;
+                    }
+                    _schedule.Add((at + 1.0, h => h.PlaceDoor(c, c + 3), "place door south"));
+                }
+                _schedule.Add((60.0, h => h.Finish("lighting complete"), "finish"));
+                break;
             case "stress":
                 for (int r = 2; r <= 6; r++)
                 {

@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "tiles darken from per-tile light, not roof overlay";
+    private const string BuildTag = "darkness over entities too (doors / trees / wood dim in shadow)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;

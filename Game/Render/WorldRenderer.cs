@@ -187,19 +187,6 @@ public partial class WorldRenderer : Node2D
             {
                 DrawTextureRect(_wallOverlayTex, mapRect, tile: false);
             }
-            // Darkness sits above walls so a roofed wall reads darker
-            // than an unroofed one. Per-tile alpha derived from light
-            // value — full sun = no tint, no light = strong darken. The
-            // no-roof hatch goes on top of darkness so the forbidden
-            // cells stay visible even in shadow.
-            if (_darknessOverlayTex is not null)
-            {
-                DrawTextureRect(_darknessOverlayTex, mapRect, tile: false);
-            }
-            if (_noRoofOverlayTex is not null)
-            {
-                DrawTextureRect(_noRoofOverlayTex, mapRect, tile: false);
-            }
         }
 
         if (snap is null) { FrameProfiler.Instance.EndFrame(); return; }
@@ -373,6 +360,24 @@ public partial class WorldRenderer : Node2D
                 {
                     DrawStackLabel(stackFont, p.Tile, p.ItemPath, p.Count);
                 }
+            }
+        }
+
+        // Darkness sits above every world entity (doors, walls, trees,
+        // crops, wood, item piles, blueprints, selection rings) so they
+        // all dim under a roof. Pawns + path debug stay above darkness so
+        // they remain readable in shadow. No-roof hatch goes on top of
+        // darkness so the designator mark survives.
+        var mapRectForDark = new Rect2(0, 0, _mapPixelWidth, _mapPixelHeight);
+        using (FrameProfiler.Instance.BeginScope("Darkness"))
+        {
+            if (_darknessOverlayTex is not null)
+            {
+                DrawTextureRect(_darknessOverlayTex, mapRectForDark, tile: false);
+            }
+            if (_noRoofOverlayTex is not null)
+            {
+                DrawTextureRect(_noRoofOverlayTex, mapRectForDark, tile: false);
             }
         }
 
