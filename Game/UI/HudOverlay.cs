@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "per-tile light: roofed=0% unroofed=100% (sun stub)";
+    private const string BuildTag = "roofs reach walls + corners (8-nbr auto-roof, neighbour stand)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;

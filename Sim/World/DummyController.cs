@@ -197,12 +197,11 @@ public sealed class DummyController
                 HandleHaul(ref pos, ref path, entity, cb, view, job, here, store);
                 return;
             }
-            else if (job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct
-                  || job.Kind == JobKind.RoofBuild  || job.Kind == JobKind.RoofRemove)
+            else if (job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct)
             {
-                // Floors + roofs don't block movement and the worker can
-                // stand on the tile itself — approach = job.Tile,
-                // adjacency permissive.
+                // Floors don't block movement and the worker stands on
+                // the tile itself — approach = job.Tile, adjacency
+                // permissive.
                 if (BuildAdjacency.InRangeOrOnTile(pos.X, pos.Y, job.Tile.X, job.Tile.Y))
                 {
                     path.Waypoints = null;
@@ -219,6 +218,43 @@ public sealed class DummyController
                     else
                     {
                         path.PendingPathId = _paths.Request(here, job.Tile);
+                    }
+                }
+                return;
+            }
+            else if (job.Kind == JobKind.RoofBuild || job.Kind == JobKind.RoofRemove)
+            {
+                // Roofs built from underneath: stand on the tile when
+                // walkable, else stand on any adjacent walkable tile (so
+                // roofs over walls / doors are reachable).
+                if (BuildAdjacency.InRangeOrOnTile(pos.X, pos.Y, job.Tile.X, job.Tile.Y))
+                {
+                    path.Waypoints = null;
+                    path.Index = 0;
+                    return;
+                }
+                if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
+                {
+                    if (view.Walkable(job.Tile))
+                    {
+                        path.PendingPathId = _paths.Request(here, job.Tile);
+                    }
+                    else if (TryPickNeighbor(view, here, job.Tile, out var neighbor))
+                    {
+                        if (neighbor == here)
+                        {
+                            path.Waypoints = null;
+                            path.Index = 0;
+                        }
+                        else
+                        {
+                            path.PendingPathId = _paths.Request(here, neighbor);
+                        }
+                    }
+                    else
+                    {
+                        _cancelJob(bt.JobId);
+                        cb.RemoveComponent<BuildTarget>(entity.Id);
                     }
                 }
                 return;
@@ -372,13 +408,28 @@ public sealed class DummyController
             bool isHaul = job.Kind == JobKind.Haul;
             bool isFloor = job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct;
             bool isRoof = job.Kind == JobKind.RoofBuild || job.Kind == JobKind.RoofRemove;
-            if (isHaul || isFloor || isRoof)
+            if (isHaul || isFloor)
             {
                 // Haul pickup walks onto the source tile itself, not a
                 // neighbor. Floors also walk onto the tile — they don't
                 // block pathing and the worker can stand on them.
                 if (!view.Walkable(job.Tile)) continue;
                 approach = job.Tile;
+            }
+            else if (isRoof)
+            {
+                // Roofs are built from underneath: stand on the tile when
+                // it's walkable (open interior, floor), else stand on an
+                // adjacent walkable tile (roof over a wall or door).
+                if (view.Walkable(job.Tile))
+                {
+                    approach = job.Tile;
+                }
+                else
+                {
+                    if (!TryPickNeighbor(view, from, job.Tile, out var neighbor)) continue;
+                    approach = neighbor;
+                }
             }
             else
             {

@@ -1949,7 +1949,9 @@ public sealed class SimRuntime
             }
         }
         // Pass 2: barrier tiles (walls/doors) with at least one interior
-        // 4-neighbour — that's the "external volume including walls".
+        // 8-neighbour — that covers the walls along each side AND the
+        // corner walls (whose 4-neighbours are also walls; only diagonal
+        // neighbours land inside the room).
         for (int y = 0; y < h; y++)
         {
             int row = y * w;
@@ -1960,10 +1962,19 @@ public sealed class SimRuntime
                 if (_noRoofTiles[idx] != 0) continue;
                 if (_roofTiles[idx] != 0) continue;
                 bool nearInterior = false;
-                if (x > 0     && _roomTiles[idx - 1] != 0) nearInterior = true;
-                else if (x + 1 < w && _roomTiles[idx + 1] != 0) nearInterior = true;
-                else if (y > 0     && _roomTiles[idx - w] != 0) nearInterior = true;
-                else if (y + 1 < h && _roomTiles[idx + w] != 0) nearInterior = true;
+                for (int dy = -1; dy <= 1 && !nearInterior; dy++)
+                {
+                    int ny = y + dy;
+                    if (ny < 0 || ny >= h) continue;
+                    int nrow = ny * w;
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        if (dx == 0 && dy == 0) continue;
+                        int nx = x + dx;
+                        if (nx < 0 || nx >= w) continue;
+                        if (_roomTiles[nrow + nx] != 0) { nearInterior = true; break; }
+                    }
+                }
                 if (!nearInterior) continue;
                 TryPostRoofBuildJob(new TilePos(x, y));
             }
