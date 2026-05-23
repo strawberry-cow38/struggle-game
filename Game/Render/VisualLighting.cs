@@ -56,7 +56,7 @@ public partial class VisualLighting : Node2D
         // "needs a lamp" feel. Cool tint so warm lamps pop.
         _modulate = new CanvasModulate
         {
-            Color = new Color(0.72f, 0.72f, 0.78f),
+            Color = new Color(0.60f, 0.60f, 0.66f),
         };
         AddChild(_modulate);
 
