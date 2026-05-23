@@ -56,7 +56,7 @@ public partial class VisualLighting : Node2D
         // "needs a lamp" feel. Cool tint so warm lamps pop.
         _modulate = new CanvasModulate
         {
-            Color = new Color(0.55f, 0.55f, 0.62f),
+            Color = new Color(0.72f, 0.72f, 0.78f),
         };
         AddChild(_modulate);
 
@@ -65,7 +65,7 @@ public partial class VisualLighting : Node2D
         _sun = new PointLight2D
         {
             Color = new Color(1f, 0.98f, 0.92f),
-            Energy = 1.0f,
+            Energy = 0.45f,
             BlendMode = Light2D.BlendModeEnum.Add,
             ShadowEnabled = false,
             TextureScale = 1f,
