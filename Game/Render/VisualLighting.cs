@@ -2,6 +2,7 @@ using Godot;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
+using StruggleGame.Sim.World;
 
 namespace StruggleGame.Game.Render;
 
@@ -176,24 +177,27 @@ public partial class VisualLighting : Node2D
 
     private void UpdateDoors(SimSnapshot snap)
     {
-        if (_doorsRoot is null || _wallPolyPrototype is null) return;
+        if (_doorsRoot is null) return;
         var seen = new HashSet<TilePos>();
         foreach (var d in snap.Doors)
         {
-            // Closed = block light. Even partially open = let light pass
-            // through (matches the gameplay light grid's open behavior).
-            if (d.OpenAmount > 0.05f) continue;
             seen.Add(d.Tile);
             if (!_doorNodes.TryGetValue(d.Tile, out var occ))
             {
                 occ = new LightOccluder2D
                 {
-                    Occluder = _wallPolyPrototype,
                     Position = new Vector2(d.Tile.X * PixelsPerTile, d.Tile.Y * PixelsPerTile),
                 };
                 _doorsRoot.AddChild(occ);
                 _doorNodes[d.Tile] = occ;
             }
+            // Per-door occluder polygon that mirrors the visual door
+            // panel: panelLen × panelThick rect pivoted at one tile edge,
+            // rotated by OpenAmount × 90°. Even when closed the polygon
+            // is panel-thick (not full tile), so the door tile receives
+            // some light. As the door swings open the panel rotates away
+            // and the blocked region shrinks naturally.
+            occ.Occluder = BuildDoorPanelOccluder(d.Orientation, d.OpenAmount);
         }
         if (_doorNodes.Count != seen.Count)
         {
@@ -206,6 +210,45 @@ public partial class VisualLighting : Node2D
                 _doorNodes.Remove(t);
             }
         }
+    }
+
+    private static OccluderPolygon2D BuildDoorPanelOccluder(DoorOrientation orient, float openAmount)
+    {
+        // Local-space (tile-local; LightOccluder2D Position = tile origin)
+        // panel polygon. Pivot is at the left/top edge midpoint depending
+        // on orientation, matching DrawDoor's swing. PanelThick is kept
+        // narrow so even a fully closed door doesn't fully cover the
+        // tile, letting some sun/lamp light reach the door surface.
+        float panelLen = PixelsPerTile;
+        float panelThick = PixelsPerTile * 0.22f;
+        float angle = openAmount * (Mathf.Pi * 0.5f);
+        Vector2 pivot;
+        Vector2 closedDir;
+        if (orient == DoorOrientation.Horizontal)
+        {
+            pivot = new Vector2(0f, PixelsPerTile * 0.5f);
+            closedDir = new Vector2(1f, 0f);
+        }
+        else
+        {
+            pivot = new Vector2(PixelsPerTile * 0.5f, 0f);
+            closedDir = new Vector2(0f, 1f);
+        }
+        var perp = new Vector2(-closedDir.Y, closedDir.X);
+        var dir = new Vector2(
+            closedDir.X * Mathf.Cos(angle) - perp.X * Mathf.Sin(angle),
+            closedDir.Y * Mathf.Cos(angle) - perp.Y * Mathf.Sin(angle));
+        var perpDir = new Vector2(-dir.Y, dir.X);
+        var p0 = pivot - perpDir * (panelThick * 0.5f);
+        var p1 = pivot + perpDir * (panelThick * 0.5f);
+        var p2 = pivot + dir * panelLen + perpDir * (panelThick * 0.5f);
+        var p3 = pivot + dir * panelLen - perpDir * (panelThick * 0.5f);
+        return new OccluderPolygon2D
+        {
+            Polygon = new Vector2[] { p0, p1, p2, p3 },
+            Closed = true,
+            CullMode = OccluderPolygon2D.CullModeEnum.Disabled,
+        };
     }
 
     private void UpdateLamps(SimSnapshot snap)
@@ -222,7 +265,7 @@ public partial class VisualLighting : Node2D
                     Texture = _lampTex,
                     BlendMode = Light2D.BlendModeEnum.Add,
                     ShadowEnabled = true,
-                    ShadowColor = new Color(0f, 0f, 0f, 0.85f),
+                    ShadowColor = new Color(0f, 0f, 0f, 0.42f),
                     ShadowFilter = Light2D.ShadowFilterEnum.Pcf5,
                     ShadowFilterSmooth = 1.0f,
                 };
@@ -234,7 +277,7 @@ public partial class VisualLighting : Node2D
             // LampRangeTiles (= sim's LampOuterSq radius) on each side.
             node.TextureScale = (LampRangeTiles * 2f * PixelsPerTile) / 128f;
             node.Color = new Color(lamp.Color.R / 255f, lamp.Color.G / 255f, lamp.Color.B / 255f);
-            node.Energy = lamp.PoweredOn ? 1.4f : 0f;
+            node.Energy = lamp.PoweredOn ? 0.7f : 0f;
             node.Enabled = lamp.PoweredOn;
         }
         // Drop nodes for lamps that no longer exist (deconstructed).
