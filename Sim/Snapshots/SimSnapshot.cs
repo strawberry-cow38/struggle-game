@@ -184,8 +184,9 @@ public readonly record struct StockpileState(
 public readonly record struct RoofBlueprintState(TilePos Tile, float Progress, bool Build, bool Forbidden);
 
 // Built lamp. PoweredOn drives the renderer's lit/unlit icon and the
-// light-recompute decision to stamp falloff at this tile.
-public readonly record struct LampState(TilePos Tile, bool PoweredOn);
+// light-recompute decision to stamp falloff at this tile. Color carries
+// per-lamp tint to the renderer (bulb halo) + the info panel (picker).
+public readonly record struct LampState(TilePos Tile, bool PoweredOn, LightColor Color);
 
 // Render-friendly grow zone. Mirror of StockpileState. AllowCutting +
 // AllowSowing drive the manager's auto-job posting; CropKind decides

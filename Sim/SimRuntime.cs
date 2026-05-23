@@ -35,10 +35,15 @@ public sealed class SimRuntime
     private byte[] _roofTiles = Array.Empty<byte>();
     private byte[] _noRoofTiles = Array.Empty<byte>();
     public long RoofVersion { get; private set; }
-    // Per-tile light, 0..255 mapped to 0..100% in LightAt. Today fully
-    // derived from roof state: unroofed = SunLightStub (255), roofed = 0.
-    // Indoor light sources / time-of-day sun will write here later.
+    // Per-tile light, 0..255 mapped to 0..100% in LightAt. Today derived
+    // from roof state (unroofed = SunLightStub, roofed = 0) plus colored
+    // lamp emission max-blended in. _lightTiles holds the brightness
+    // (max of RGB) for legacy callers; _lightR/G/B hold per-channel tint
+    // for the renderer's colored darkness overlay.
     private byte[] _lightTiles = Array.Empty<byte>();
+    private byte[] _lightR = Array.Empty<byte>();
+    private byte[] _lightG = Array.Empty<byte>();
+    private byte[] _lightB = Array.Empty<byte>();
     public long LightVersion { get; private set; }
     // Stub sun until time-of-day ships: any unroofed tile gets 100%.
     private const byte SunLightStub = 255;
@@ -488,7 +493,7 @@ public sealed class SimRuntime
         foreach (var (lTile, lEnt) in _lampMap)
         {
             var lc = lEnt.GetComponent<Lamp>();
-            lamps[li++] = new LampState(lTile, lc.PoweredOn);
+            lamps[li++] = new LampState(lTile, lc.PoweredOn, lc.Color);
         }
 
         var lampBps = new List<BlueprintState>();
@@ -663,9 +668,11 @@ public sealed class SimRuntime
         {
             // Transmute the blueprint entity into the live lamp: drop
             // LampBlueprint, add Lamp at PoweredOn=true (stub until a
-            // power network ships).
+            // power network ships). Color carries over from blueprint so
+            // pre-tinted designations build into pre-tinted lamps.
+            var bpColor = entity.GetComponent<LampBlueprint>().Color;
             entity.RemoveComponent<LampBlueprint>();
-            entity.AddComponent(new Lamp { Tile = tile, PoweredOn = true });
+            entity.AddComponent(new Lamp { Tile = tile, PoweredOn = true, Color = bpColor });
             _lampMap[tile] = entity;
             RecomputeLightAll();
         }
@@ -917,7 +924,9 @@ public sealed class SimRuntime
     // walking so we don't touch the map view; an in-progress build is
     // an entity carrying LampBlueprint + a LampBuild job that swaps to
     // Lamp on completion.
-    public bool TryPlaceLampBlueprint(TilePos tile)
+    public bool TryPlaceLampBlueprint(TilePos tile) => TryPlaceLampBlueprint(tile, LightColor.White);
+
+    public bool TryPlaceLampBlueprint(TilePos tile, LightColor color)
     {
         if (!Map.InBounds(tile)) return false;
         if (Map.GetWall(tile) != WallType.None) return false;
@@ -927,7 +936,7 @@ public sealed class SimRuntime
         if (Jobs.HasTile(tile)) return false;
 
         var e = Store.CreateEntity();
-        e.AddComponent(new LampBlueprint { Tile = tile, ProgressSec = 0f });
+        e.AddComponent(new LampBlueprint { Tile = tile, ProgressSec = 0f, Color = color });
         var id = Jobs.Post(JobKind.LampBuild, tile, e);
         if (id.IsNone)
         {
@@ -965,6 +974,17 @@ public sealed class SimRuntime
         if (lamp.PoweredOn == on) return;
         lamp.PoweredOn = on;
         RecomputeLightAll();
+    }
+
+    // Recolor a built lamp + re-stamp the light layer so the new tint
+    // shows up immediately. No-op when the new color matches.
+    public void SetLampColor(TilePos tile, LightColor color)
+    {
+        if (!_lampMap.TryGetValue(tile, out var lampEnt)) return;
+        ref var lamp = ref lampEnt.GetComponent<Lamp>();
+        if (lamp.Color.Equals(color)) return;
+        lamp.Color = color;
+        if (lamp.PoweredOn) RecomputeLightAll();
     }
 
     // Flip a built door's Forbidden flag. Forbidden = treated as a
@@ -2222,8 +2242,17 @@ public sealed class SimRuntime
         if (_lightTiles.Length != n)
         {
             _lightTiles = new byte[n];
-            // Fresh map = unroofed = sun stub everywhere.
-            for (int i = 0; i < n; i++) _lightTiles[i] = SunLightStub;
+            _lightR = new byte[n];
+            _lightG = new byte[n];
+            _lightB = new byte[n];
+            // Fresh map = unroofed = sun stub (white) everywhere.
+            for (int i = 0; i < n; i++)
+            {
+                _lightTiles[i] = SunLightStub;
+                _lightR[i] = SunLightStub;
+                _lightG[i] = SunLightStub;
+                _lightB[i] = SunLightStub;
+            }
             LightVersion++;
         }
     }
@@ -2239,6 +2268,9 @@ public sealed class SimRuntime
         if (_lightTiles[idx] != want)
         {
             _lightTiles[idx] = want;
+            _lightR[idx] = want;
+            _lightG[idx] = want;
+            _lightB[idx] = want;
             LightVersion++;
         }
     }
@@ -2263,22 +2295,28 @@ public sealed class SimRuntime
     {
         bool changed = false;
         int w = Map.Width, h = Map.Height;
+        // Roof-derived base. Every channel gets the same sun brightness
+        // so unroofed tiles read as white and lamp tint composes against
+        // a neutral background.
         for (int i = 0; i < _lightTiles.Length; i++)
         {
             byte want = _roofTiles[i] != 0 ? (byte)0 : SunLightStub;
-            if (_lightTiles[i] != want)
-            {
-                _lightTiles[i] = want;
-                changed = true;
-            }
+            if (_lightTiles[i] != want) { _lightTiles[i] = want; changed = true; }
+            if (_lightR[i] != want)     { _lightR[i] = want;     changed = true; }
+            if (_lightG[i] != want)     { _lightG[i] = want;     changed = true; }
+            if (_lightB[i] != want)     { _lightB[i] = want;     changed = true; }
         }
         // Lamp emission. Iterate the lamp map and stamp circular falloff
-        // into a tile box around each one. Max-blend so overlaps don't
-        // double-bright and so sun-lit tiles ignore the (dimmer) lamp.
+        // into a tile box around each one. Each channel is scaled by the
+        // lamp's color (R/G/B 0..255) and max-blended in independently —
+        // red + green lamps overlap to yellow, etc. _lightTiles tracks
+        // max(R,G,B) for legacy LightAt callers.
         foreach (var (tile, lampEnt) in _lampMap)
         {
             if (!lampEnt.HasComponent<Lamp>()) continue;
-            if (!lampEnt.GetComponent<Lamp>().PoweredOn) continue;
+            var lamp = lampEnt.GetComponent<Lamp>();
+            if (!lamp.PoweredOn) continue;
+            var col = lamp.Color;
             int cx = tile.X, cy = tile.Y;
             int x0 = Math.Max(0, cx - 9);
             int x1 = Math.Min(w - 1, cx + 9);
@@ -2312,10 +2350,17 @@ public sealed class SimRuntime
                         float t = (r - 8.5f) / 1.0f;
                         contrib = (byte)Math.Round(61 - 61 * t);
                     }
+                    byte cr = (byte)(contrib * col.R / 255);
+                    byte cg = (byte)(contrib * col.G / 255);
+                    byte cb = (byte)(contrib * col.B / 255);
                     int idx = row + x;
-                    if (_lightTiles[idx] < contrib)
+                    if (_lightR[idx] < cr) { _lightR[idx] = cr; changed = true; }
+                    if (_lightG[idx] < cg) { _lightG[idx] = cg; changed = true; }
+                    if (_lightB[idx] < cb) { _lightB[idx] = cb; changed = true; }
+                    byte maxCh = cr; if (cg > maxCh) maxCh = cg; if (cb > maxCh) maxCh = cb;
+                    if (_lightTiles[idx] < maxCh)
                     {
-                        _lightTiles[idx] = contrib;
+                        _lightTiles[idx] = maxCh;
                         changed = true;
                     }
                 }
@@ -2346,6 +2391,25 @@ public sealed class SimRuntime
     public byte[] CopyLightTilesForRender()
     {
         lock (_mapLock) { return (byte[])_lightTiles.Clone(); }
+    }
+
+    // Packed RGB per-tile light. Output length = 3 * width * height,
+    // interleaved as R,G,B,R,G,B,... Renderer reinterprets as an RGB8
+    // ImageTexture for the colored multiply overlay.
+    public byte[] CopyLightRgbForRender()
+    {
+        lock (_mapLock)
+        {
+            int n = _lightR.Length;
+            var rgb = new byte[n * 3];
+            for (int i = 0, j = 0; i < n; i++)
+            {
+                rgb[j++] = _lightR[i];
+                rgb[j++] = _lightG[i];
+                rgb[j++] = _lightB[i];
+            }
+            return rgb;
+        }
     }
 
     public int[] CopyRoomTilesForRender()

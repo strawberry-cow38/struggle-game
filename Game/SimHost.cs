@@ -235,6 +235,7 @@ public sealed class SimHost : IDisposable
     public byte[] CopyRoofTilesForRender() => _sim.CopyRoofTilesForRender();
     public byte[] CopyNoRoofTilesForRender() => _sim.CopyNoRoofTilesForRender();
     public byte[] CopyLightTilesForRender() => _sim.CopyLightTilesForRender();
+    public byte[] CopyLightRgbForRender() => _sim.CopyLightRgbForRender();
 
     // 0..1 light fraction at a tile. Stub today: 1.0 unroofed, 0 roofed.
     public float LightAt(StruggleGame.Sim.Map.TilePos tile) => _sim.LightAt(tile);

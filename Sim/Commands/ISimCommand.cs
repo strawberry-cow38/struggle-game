@@ -30,12 +30,16 @@ public sealed class PlaceDoorBlueprintCommand : ISimCommand
 }
 
 // Single-tile lamp designation. Lamp doesn't block walking; placement
-// rejects walls / doors / trees / existing lamps / other jobs.
+// rejects walls / doors / trees / existing lamps / other jobs. Color
+// defaults to white; the info panel's picker can recolor a built lamp
+// or the designator can pre-set it.
 public sealed class PlaceLampBlueprintCommand : ISimCommand
 {
     public TilePos Tile { get; }
-    public PlaceLampBlueprintCommand(TilePos tile) { Tile = tile; }
-    public void Apply(SimRuntime sim) => sim.TryPlaceLampBlueprint(Tile);
+    public LightColor Color { get; }
+    public PlaceLampBlueprintCommand(TilePos tile) : this(tile, LightColor.White) { }
+    public PlaceLampBlueprintCommand(TilePos tile, LightColor color) { Tile = tile; Color = color; }
+    public void Apply(SimRuntime sim) => sim.TryPlaceLampBlueprint(Tile, Color);
 }
 
 // Lamp info panel → "Power" cheat toggle. Stubs the absent power
@@ -46,6 +50,16 @@ public sealed class SetLampPoweredCommand : ISimCommand
     public bool On { get; }
     public SetLampPoweredCommand(TilePos tile, bool on) { Tile = tile; On = on; }
     public void Apply(SimRuntime sim) => sim.SetLampPowered(Tile, On);
+}
+
+// Lamp info panel → color picker. Recolors a built lamp; recompute
+// re-runs so emission tint updates immediately.
+public sealed class SetLampColorCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public LightColor Color { get; }
+    public SetLampColorCommand(TilePos tile, LightColor color) { Tile = tile; Color = color; }
+    public void Apply(SimRuntime sim) => sim.SetLampColor(Tile, Color);
 }
 
 // Lamp info panel → "Deconstruct" button. Single-tile sibling of the

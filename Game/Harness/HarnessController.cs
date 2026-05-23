@@ -6,6 +6,7 @@ using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
+using StruggleGame.Sim.World;
 
 namespace StruggleGame.Game.Harness;
 
@@ -217,6 +218,141 @@ public partial class HarnessController : Node2D
                 }
                 _schedule.Add((60.0, h => h.Finish("lighting complete"), "finish"));
                 break;
+            case "lamp":
+                // 11x11 room. Spawn lots of builders so walls + roof finish
+                // before the lamp drops, then center lamp shows inner ring
+                // filling the interior with mid/outer bands spilling onto
+                // grass outside the walls.
+                _schedule.Add((0.1, h => h.Host.SetTickHz(SimConstants.TickHz * 8), "speed 8x"));
+                _screenshotEverySec = 5.0;
+                {
+                    int x0 = c - 5, x1 = c + 5;
+                    int y0 = c - 5, y1 = c + 5;
+                    // Door first so the wall ring always has a walkable gap
+                    // — pawns can never seal themselves inside.
+                    _schedule.Add((0.5, h => h.PlaceDoor(c, c + 5), "place south door"));
+                    double at = 2.0;
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        int xc = x;
+                        _schedule.Add((at, h => h.PlaceWall(xc, y0), $"wall top x={xc}"));
+                        at += 0.02;
+                    }
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        if (x == c) continue;
+                        int xc = x;
+                        _schedule.Add((at, h => h.PlaceWall(xc, y1), $"wall bot x={xc}"));
+                        at += 0.02;
+                    }
+                    for (int y = y0 + 1; y <= y1 - 1; y++)
+                    {
+                        int yc = y;
+                        _schedule.Add((at, h => h.PlaceWall(x0, yc), $"wall L y={yc}"));
+                        _schedule.Add((at + 0.01, h => h.PlaceWall(x1, yc), $"wall R y={yc}"));
+                        at += 0.02;
+                    }
+                    _schedule.Add((at + 15.0, h => h.PlaceLamp(c, c), "drop lamp center"));
+                }
+                _schedule.Add((45.0, h => h.Finish("lamp complete"), "finish"));
+                break;
+            case "lamp-bands":
+                // 25x25 outer room = 23x23 interior. Lamp at center reaches
+                // 19x19 (outer ring), leaving a ~2-tile fully-dark margin
+                // around walls so all three falloff bands are visible:
+                // bright core (15x15), mid ring (17x17), dim ring (19x19),
+                // black margin out to walls. Door LAST (matches working
+                // small-lamp pattern) — walls close ring immediately, auto-
+                // roof posts blueprints on a real interior, roof builds
+                // before lamp drops.
+                _schedule.Add((0.1, h => h.Host.SetTickHz(SimConstants.TickHz * 16), "speed 16x"));
+                for (int i = 0; i < 30; i++)
+                    _schedule.Add((0.15 + i * 0.02, h => h.SpawnPawn(), "spawn pawn"));
+                _screenshotEverySec = 5.0;
+                {
+                    int x0 = c - 12, x1 = c + 12;
+                    int y0 = c - 12, y1 = c + 12;
+                    double at = 2.0;
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        int xc = x;
+                        _schedule.Add((at, h => h.PlaceWall(xc, y0), $"wall top x={xc}"));
+                        at += 0.01;
+                    }
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        if (x == c) continue;
+                        int xc = x;
+                        _schedule.Add((at, h => h.PlaceWall(xc, y1), $"wall bot x={xc}"));
+                        at += 0.01;
+                    }
+                    for (int y = y0 + 1; y <= y1 - 1; y++)
+                    {
+                        int yc = y;
+                        _schedule.Add((at, h => h.PlaceWall(x0, yc), $"wall L y={yc}"));
+                        _schedule.Add((at + 0.005, h => h.PlaceWall(x1, yc), $"wall R y={yc}"));
+                        at += 0.01;
+                    }
+                    _schedule.Add((at + 15.0, h => h.PlaceDoor(c, c + 12), "place south door"));
+                    _schedule.Add((at + 40.0, h => h.PlaceLamp(c, c), "drop lamp center"));
+                }
+                _schedule.Add((90.0, h => h.Finish("lamp-bands complete"), "finish"));
+                break;
+            case "rgb-wheel":
+                // Three lamps (R/G/B) arranged in an equilateral triangle
+                // so each lamp's outer ring overlaps the others' inner
+                // discs. Per-channel max-blend produces secondaries at
+                // the pairwise overlaps (R+G=yellow, G+B=cyan, R+B=
+                // magenta) and a tertiary white core at the centroid.
+                // Big 41x41 room so the bands have headroom; door last,
+                // pawns spawn slowly so they don't crowd the demo.
+                _schedule.Add((0.1, h => h.Host.SetTickHz(SimConstants.TickHz * 16), "speed 16x"));
+                // 41x41 room = 2624 px; default zoom 1.0 only shows ~16
+                // tiles. Drop to 0.32 so the whole demo + a margin fits
+                // (≈50 tiles wide on a 1024 viewport).
+                _schedule.Add((0.2, h => h.SetCameraZoom(0.32f), "zoom out"));
+                for (int i = 0; i < 12; i++)
+                    _schedule.Add((0.15 + i * 0.05, h => h.SpawnPawn(), "spawn pawn"));
+                _screenshotEverySec = 5.0;
+                {
+                    int x0 = c - 20, x1 = c + 20;
+                    int y0 = c - 20, y1 = c + 20;
+                    double at = 2.0;
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        int xc = x;
+                        _schedule.Add((at, h => h.PlaceWall(xc, y0), $"wall top x={xc}"));
+                        at += 0.01;
+                    }
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        if (x == c) continue;
+                        int xc = x;
+                        _schedule.Add((at, h => h.PlaceWall(xc, y1), $"wall bot x={xc}"));
+                        at += 0.01;
+                    }
+                    for (int y = y0 + 1; y <= y1 - 1; y++)
+                    {
+                        int yc = y;
+                        _schedule.Add((at, h => h.PlaceWall(x0, yc), $"wall L y={yc}"));
+                        _schedule.Add((at + 0.005, h => h.PlaceWall(x1, yc), $"wall R y={yc}"));
+                        at += 0.01;
+                    }
+                    _schedule.Add((at + 15.0, h => h.PlaceDoor(c, c + 20), "south door"));
+                    // Equilateral triangle around centroid (c, c). Side
+                    // length 11 tiles puts each lamp's center ~6 tiles
+                    // from the next, so the 7.5-tile inner discs overlap.
+                    int rx = 5;  // half side
+                    int ry = 3;  // ~side * sin(60) / 2 rounded
+                    var red   = new LightColor(255,   0,   0);
+                    var green = new LightColor(  0, 255,   0);
+                    var blue  = new LightColor(  0,   0, 255);
+                    _schedule.Add((at + 40.0, h => h.PlaceLamp(c,      c - ry, red),   "red lamp"));
+                    _schedule.Add((at + 40.1, h => h.PlaceLamp(c - rx, c + ry, green), "green lamp"));
+                    _schedule.Add((at + 40.2, h => h.PlaceLamp(c + rx, c + ry, blue),  "blue lamp"));
+                }
+                _schedule.Add((120.0, h => h.Finish("rgb-wheel complete"), "finish"));
+                break;
             case "stress":
                 for (int r = 2; r <= 6; r++)
                 {
@@ -341,6 +477,38 @@ public partial class HarnessController : Node2D
     private void PlaceDoor(int x, int y)
     {
         Host.QueueCommand(new PlaceDoorBlueprintCommand(new TilePos(x, y)));
+    }
+
+    private void PlaceLamp(int x, int y)
+    {
+        Host.QueueCommand(new PlaceLampBlueprintCommand(new TilePos(x, y)));
+    }
+
+    private void PlaceLamp(int x, int y, LightColor color)
+    {
+        Host.QueueCommand(new PlaceLampBlueprintCommand(new TilePos(x, y), color));
+    }
+
+    // Drop the camera zoom to fit a bigger demo on screen. Walks the
+    // scene tree to find the GameCamera; no-op if it's not present
+    // (e.g. headless boot variants).
+    private void SetCameraZoom(float zoom)
+    {
+        var root = GetTree().Root;
+        var cam = FindCamera(root);
+        if (cam is null) return;
+        cam.Zoom = new Vector2(zoom, zoom);
+    }
+
+    private static Camera2D? FindCamera(Node n)
+    {
+        if (n is Camera2D c) return c;
+        foreach (var child in n.GetChildren())
+        {
+            var hit = FindCamera(child);
+            if (hit is not null) return hit;
+        }
+        return null;
     }
 
     private void PlaceRing(int cx, int cy, int r)

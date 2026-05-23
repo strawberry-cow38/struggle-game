@@ -3,6 +3,7 @@ using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
+using StruggleGame.Sim.World;
 
 namespace StruggleGame.Game.UI;
 
@@ -23,6 +24,7 @@ public partial class LampInfoPanel : CanvasLayer
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
     private CheckBox _poweredChk = null!;
+    private ColorPickerButton _colorBtn = null!;
     private Button _deconBtn = null!;
 
     private TilePos[] _shownTiles = Array.Empty<TilePos>();
@@ -72,6 +74,18 @@ public partial class LampInfoPanel : CanvasLayer
         _poweredChk = new CheckBox { Text = "Powered (cheat — no power network yet)" };
         _poweredChk.Toggled += OnPoweredToggled;
         vbox.AddChild(_poweredChk);
+
+        var colorRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        colorRow.AddChild(new Label { Text = "Color:" });
+        _colorBtn = new ColorPickerButton
+        {
+            CustomMinimumSize = new Vector2(120, 28),
+            EditAlpha = false,
+            Color = Colors.White,
+        };
+        _colorBtn.ColorChanged += OnColorChanged;
+        colorRow.AddChild(_colorBtn);
+        vbox.AddChild(colorRow);
 
         _deconBtn = new Button { Text = "Deconstruct", CustomMinimumSize = new Vector2(0, 28) };
         _deconBtn.Pressed += OnDeconPressed;
@@ -158,6 +172,10 @@ public partial class LampInfoPanel : CanvasLayer
 
         _suppressToggle = true;
         _poweredChk.ButtonPressed = onCount == live.Count;
+        // Color reflects the first selected lamp. Multi-select bulk-sets
+        // every selected lamp to whatever the picker emits on change.
+        var c0 = live[0].Color;
+        _colorBtn.Color = new Color(c0.R / 255f, c0.G / 255f, c0.B / 255f);
         _suppressToggle = false;
     }
 
@@ -166,6 +184,16 @@ public partial class LampInfoPanel : CanvasLayer
         if (_suppressToggle || Host is null) return;
         foreach (var t in Host.SelectedLampTiles)
             Host.QueueCommand(new SetLampPoweredCommand(t, pressed));
+    }
+
+    private void OnColorChanged(Color c)
+    {
+        if (_suppressToggle || Host is null) return;
+        var lc = new LightColor((byte)Math.Clamp(Math.Round(c.R * 255f), 0, 255),
+                                (byte)Math.Clamp(Math.Round(c.G * 255f), 0, 255),
+                                (byte)Math.Clamp(Math.Round(c.B * 255f), 0, 255));
+        foreach (var t in Host.SelectedLampTiles)
+            Host.QueueCommand(new SetLampColorCommand(t, lc));
     }
 
     private void OnDeconPressed()

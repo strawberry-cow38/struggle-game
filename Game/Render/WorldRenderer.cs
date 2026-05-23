@@ -38,8 +38,14 @@ public partial class WorldRenderer : Node2D
     private long _lastRoomVersion = -1;
     private long _lastRoofVersion = -1;
     private long _lastLightVersion = -1;
-    private ImageTexture? _darknessOverlayTex;
+    private ImageTexture? _lightOverlayTex;
     private ImageTexture? _noRoofOverlayTex;
+    // Child sprite that multiplies the per-tile RGB light against the
+    // already-drawn map + entities. Lives above the renderer's _Draw
+    // content so everything below it tints to the lamp color and dims
+    // toward black under a roof. Lamps + pawns drawn into _Draw also
+    // dim along with the rest — acceptable per design.
+    private Sprite2D? _lightOverlaySprite;
 
     // Snapshot pair used for render-side interpolation. _prevSnap is the
     // last snapshot we drew from, _currSnap is the next one. We render at
@@ -110,6 +116,25 @@ public partial class WorldRenderer : Node2D
         _mapPixelWidth = _mapWidth * PixelsPerTile;
         _mapPixelHeight = _mapHeight * PixelsPerTile;
         _groundTex = BuildGroundTexture(_mapWidth, _mapHeight, seed: 1337);
+
+        // RGB multiply overlay. CanvasItemMaterial.BlendMode.Mul makes
+        // each rendered pixel = src * dst — for an unlit tile (src ≈
+        // 0.22,0.22,0.22) the underlying world dims to ~22% brightness
+        // (matches the old MaxDarknessAlpha=0.78 darken); for a fully
+        // sun-lit white tile (src = 1,1,1) nothing changes; a red lamp
+        // pushes the tile toward red while the green/blue channels still
+        // dim, producing a clean tinted color rather than additive wash.
+        _lightOverlaySprite = new Sprite2D
+        {
+            Centered = false,
+            TextureFilter = TextureFilterEnum.Nearest,
+            ZIndex = 100,
+            Material = new CanvasItemMaterial { BlendMode = CanvasItemMaterial.BlendModeEnum.Mul },
+        };
+        AddChild(_lightOverlaySprite);
+        // One screen pixel per tile; the sprite's Scale stretches it
+        // across the whole map so a per-tile RGB image fits exactly.
+        _lightOverlaySprite.Scale = new Vector2(PixelsPerTile, PixelsPerTile);
     }
 
     public override void _Process(double delta)
@@ -169,8 +194,9 @@ public partial class WorldRenderer : Node2D
         }
         if (snap is not null && snap.LightVersion != _lastLightVersion)
         {
-            var lightBytes = Host!.CopyLightTilesForRender();
-            _darknessOverlayTex = BuildDarknessOverlay(lightBytes, _mapWidth, _mapHeight);
+            var lightRgb = Host!.CopyLightRgbForRender();
+            _lightOverlayTex = BuildLightOverlay(lightRgb, _mapWidth, _mapHeight);
+            if (_lightOverlaySprite is not null) _lightOverlaySprite.Texture = _lightOverlayTex;
             _lastLightVersion = snap.LightVersion;
         }
 
@@ -377,13 +403,12 @@ public partial class WorldRenderer : Node2D
         // all dim under a roof. Pawns + path debug stay above darkness so
         // they remain readable in shadow. No-roof hatch goes on top of
         // darkness so the designator mark survives.
+        // Per-tile RGB light is composited by the child _lightOverlaySprite
+        // (mul blend, ZIndex=100) above this _Draw — see _Ready. We only
+        // draw the no-roof designator hatch here so it survives the tint.
         var mapRectForDark = new Rect2(0, 0, _mapPixelWidth, _mapPixelHeight);
-        using (FrameProfiler.Instance.BeginScope("Darkness"))
+        using (FrameProfiler.Instance.BeginScope("NoRoofHatch"))
         {
-            if (_darknessOverlayTex is not null)
-            {
-                DrawTextureRect(_darknessOverlayTex, mapRectForDark, tile: false);
-            }
             if (_noRoofOverlayTex is not null)
             {
                 DrawTextureRect(_noRoofOverlayTex, mapRectForDark, tile: false);
@@ -399,7 +424,7 @@ public partial class WorldRenderer : Node2D
             {
                 if (lamp.Tile.X < viewMinTileX || lamp.Tile.X > viewMaxTileX
                     || lamp.Tile.Y < viewMinTileY || lamp.Tile.Y > viewMaxTileY) continue;
-                DrawLamp(lamp.Tile, lamp.PoweredOn);
+                DrawLamp(lamp.Tile, lamp.PoweredOn, lamp.Color);
             }
         }
 
@@ -953,7 +978,7 @@ public partial class WorldRenderer : Node2D
     private static readonly Color LampLitHalo = new(1.00f, 0.90f, 0.45f, 0.45f);
     private static readonly Color LampOffColor = new(0.45f, 0.42f, 0.32f, 1f);
 
-    private void DrawLamp(TilePos tile, bool poweredOn)
+    private void DrawLamp(TilePos tile, bool poweredOn, LightColor color)
     {
         float cx = (tile.X + 0.5f) * PixelsPerTile;
         float cy = (tile.Y + 0.5f) * PixelsPerTile;
@@ -964,11 +989,18 @@ public partial class WorldRenderer : Node2D
         DrawCircle(new Vector2(cx, cy + PixelsPerTile * 0.06f), baseR, LampBaseColor);
         if (poweredOn)
         {
-            // Soft halo to sell the emission; the per-tile light layer
-            // already brightens surroundings, so this is mostly the
-            // bulb's own bloom.
-            DrawCircle(new Vector2(cx, cy), bulbR * 2.0f, LampLitHalo);
-            DrawCircle(new Vector2(cx, cy), bulbR, LampLitColor);
+            // Halo + bulb tint to the lamp's color so the fixture itself
+            // reads as red/green/blue/etc at a glance — the per-tile light
+            // layer already paints the surrounding tiles in the same hue.
+            float r = color.R / 255f, g = color.G / 255f, b = color.B / 255f;
+            var halo = new Color(r, g, b, LampLitHalo.A);
+            var bulb = new Color(
+                Mathf.Lerp(LampLitColor.R, r, 0.65f),
+                Mathf.Lerp(LampLitColor.G, g, 0.65f),
+                Mathf.Lerp(LampLitColor.B, b, 0.65f),
+                1f);
+            DrawCircle(new Vector2(cx, cy), bulbR * 2.0f, halo);
+            DrawCircle(new Vector2(cx, cy), bulbR, bulb);
         }
         else
         {
@@ -1078,22 +1110,28 @@ public partial class WorldRenderer : Node2D
         return ImageTexture.CreateFromImage(img);
     }
 
-    // Darkness overlay: per-tile black-with-alpha keyed off the light
-    // byte (0..255). Full sun → no tint; full dark → MaxDarknessAlpha.
-    // Linear ramp keeps half-lit interiors visibly dim without going
-    // pitch-black; tweak MaxDarknessAlpha to taste.
-    private const float MaxDarknessAlpha = 0.78f;
-    private static ImageTexture BuildDarknessOverlay(byte[] light, int width, int height)
+    // Per-tile RGB multiply overlay. The render math is:
+    //   final = base * (ambient + (1 - ambient) * lightRgb/255)
+    // Ambient = 0.22 keeps unlit interiors at ~22% brightness (matches
+    // the old MaxDarknessAlpha = 0.78 darken). A red lamp pushes the
+    // red channel toward 1 while green/blue stay at ambient — the
+    // tile reads red. Two overlapping colored lamps blend per channel
+    // because RecomputeLightAll already max-blended the RGB layer.
+    private const float LightAmbient = 0.22f;
+    private static ImageTexture BuildLightOverlay(byte[] rgb, int width, int height)
     {
-        var img = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
+        var img = Image.CreateEmpty(width, height, false, Image.Format.Rgb8);
+        float span = 1f - LightAmbient;
         for (int y = 0; y < height; y++)
         {
             int row = y * width;
             for (int x = 0; x < width; x++)
             {
-                float lit = light[row + x] / 255f;
-                float alpha = (1f - lit) * MaxDarknessAlpha;
-                img.SetPixel(x, y, new Color(0f, 0f, 0.02f, alpha));
+                int j = (row + x) * 3;
+                float r = LightAmbient + span * (rgb[j]     / 255f);
+                float g = LightAmbient + span * (rgb[j + 1] / 255f);
+                float b = LightAmbient + span * (rgb[j + 2] / 255f);
+                img.SetPixel(x, y, new Color(r, g, b));
             }
         }
         return ImageTexture.CreateFromImage(img);

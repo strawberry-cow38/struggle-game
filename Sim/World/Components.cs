@@ -242,24 +242,36 @@ public struct DoorBlueprint : IComponent
     public float ProgressSec;
 }
 
+// 0-255 RGB triple shared by lamp emission + snapshot. Pure data; the
+// renderer reinterprets bytes as a Godot Color. Default White = (255,255,255).
+public readonly record struct LightColor(byte R, byte G, byte B)
+{
+    public static LightColor White => new(255, 255, 255);
+}
+
 // A built lamp. Doesn't block walkability (pawns walk over it; placement
 // gates against trees/walls/doors/existing lamps but allows building on
 // open floor). PoweredOn cheat-toggles emission until a power network
 // ships — when on, the lamp writes a circular falloff into the per-tile
-// light layer (50% inner, 25-49% mid ring, 0-24% outer ring).
+// light layer (50% inner, 25-49% mid ring, 0-24% outer ring). Color tints
+// the emission per channel; recompute max-blends per channel so red+green
+// lamps overlap to yellow.
 public struct Lamp : IComponent
 {
     public TilePos Tile;
     public bool PoweredOn;
+    public LightColor Color;
 }
 
 // Pending lamp construction job. ProgressSec advances while a builder
 // stands on or adjacent to the tile. On completion the entity gains a
-// Lamp component (PoweredOn=true) and the blueprint marker is replaced.
+// Lamp component (PoweredOn=true, Color copied over) and the blueprint
+// marker is replaced.
 public struct LampBlueprint : IComponent
 {
     public TilePos Tile;
     public float ProgressSec;
+    public LightColor Color;
 }
 
 // One item in a pawn's carry inventory. Each slot references an
