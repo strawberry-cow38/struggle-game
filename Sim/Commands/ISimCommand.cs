@@ -350,6 +350,76 @@ public sealed class SetStockpileCategoryAllowedCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetStockpileCategoryAllowed(StockpileId, CategoryPath, Allowed);
 }
 
+// === Grow zone commands ===
+public sealed class CreateGrowZoneRectCommand : ISimCommand
+{
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public CropKind CropKind { get; }
+    public CreateGrowZoneRectCommand(TilePos a, TilePos b, CropKind kind)
+    { A = a; B = b; CropKind = kind; }
+    public void Apply(SimRuntime sim) => sim.CreateGrowZoneRect(A, B, CropKind);
+}
+
+public sealed class ExpandGrowZoneRectCommand : ISimCommand
+{
+    public int ZoneId { get; }
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public ExpandGrowZoneRectCommand(int id, TilePos a, TilePos b)
+    { ZoneId = id; A = a; B = b; }
+    public void Apply(SimRuntime sim) => sim.ExpandGrowZoneRect(ZoneId, A, B);
+}
+
+public sealed class ShrinkGrowZoneRectCommand : ISimCommand
+{
+    public int ZoneId { get; }
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public ShrinkGrowZoneRectCommand(int id, TilePos a, TilePos b)
+    { ZoneId = id; A = a; B = b; }
+    public void Apply(SimRuntime sim) => sim.ShrinkGrowZoneRect(ZoneId, A, B);
+}
+
+public sealed class DeleteGrowZoneCommand : ISimCommand
+{
+    public int ZoneId { get; }
+    public DeleteGrowZoneCommand(int id) { ZoneId = id; }
+    public void Apply(SimRuntime sim) => sim.DeleteGrowZone(ZoneId);
+}
+
+public sealed class RenameGrowZoneCommand : ISimCommand
+{
+    public int ZoneId { get; }
+    public string Name { get; }
+    public RenameGrowZoneCommand(int id, string name) { ZoneId = id; Name = name; }
+    public void Apply(SimRuntime sim) => sim.RenameGrowZone(ZoneId, Name);
+}
+
+public sealed class SetGrowZoneCropKindCommand : ISimCommand
+{
+    public int ZoneId { get; }
+    public CropKind CropKind { get; }
+    public SetGrowZoneCropKindCommand(int id, CropKind kind) { ZoneId = id; CropKind = kind; }
+    public void Apply(SimRuntime sim) => sim.SetGrowZoneCropKind(ZoneId, CropKind);
+}
+
+public sealed class SetGrowZoneAllowCuttingCommand : ISimCommand
+{
+    public int ZoneId { get; }
+    public bool Allowed { get; }
+    public SetGrowZoneAllowCuttingCommand(int id, bool allowed) { ZoneId = id; Allowed = allowed; }
+    public void Apply(SimRuntime sim) => sim.SetGrowZoneAllowCutting(ZoneId, Allowed);
+}
+
+public sealed class SetGrowZoneAllowSowingCommand : ISimCommand
+{
+    public int ZoneId { get; }
+    public bool Allowed { get; }
+    public SetGrowZoneAllowSowingCommand(int id, bool allowed) { ZoneId = id; Allowed = allowed; }
+    public void Apply(SimRuntime sim) => sim.SetGrowZoneAllowSowing(ZoneId, Allowed);
+}
+
 // Toggle the Forbidden marker on a world item stack. Cancels any
 // in-flight haul referencing it so the carrier drops its cargo and
 // the poster won't re-claim it until the player un-forbids.

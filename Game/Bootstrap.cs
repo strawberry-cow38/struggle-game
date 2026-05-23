@@ -61,6 +61,9 @@ public partial class Bootstrap : Node2D
         var stockpileDesignator = new StockpileDesignator { Host = _host, Tools = _tools, Name = "StockpileDesignator" };
         AddChild(stockpileDesignator);
 
+        var growZoneDesignator = new GrowZoneDesignator { Host = _host, Tools = _tools, Name = "GrowZoneDesignator" };
+        AddChild(growZoneDesignator);
+
         var spawnDesignator = new SpawnPawnDesignator { Host = _host, Tools = _tools, Name = "SpawnPawnDesignator" };
         AddChild(spawnDesignator);
 
@@ -87,6 +90,9 @@ public partial class Bootstrap : Node2D
 
         var stockpilePanel = new StockpilePanel { Host = _host, Tools = _tools, Name = "StockpilePanel" };
         AddChild(stockpilePanel);
+
+        var growZonePanel = new GrowZonePanel { Host = _host, Tools = _tools, Name = "GrowZonePanel" };
+        AddChild(growZonePanel);
 
         var itemInfoPanel = new ItemInfoPanel { Host = _host, Name = "ItemInfoPanel" };
         AddChild(itemInfoPanel);

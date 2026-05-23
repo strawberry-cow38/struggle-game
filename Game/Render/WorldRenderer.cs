@@ -79,6 +79,9 @@ public partial class WorldRenderer : Node2D
     private static readonly Color StockpileFill = new(0.95f, 0.85f, 0.25f, 0.12f);
     private static readonly Color StockpileBorder = new(1.00f, 0.90f, 0.35f, 0.85f);
     private static readonly Color StockpileSelectedBorder = new(1.00f, 1.00f, 0.20f, 1.00f);
+    private static readonly Color GrowZoneFill = new(0.35f, 0.85f, 0.30f, 0.14f);
+    private static readonly Color GrowZoneBorder = new(0.45f, 0.95f, 0.40f, 0.85f);
+    private static readonly Color GrowZoneSelectedBorder = new(0.65f, 1.00f, 0.55f, 1.00f);
 
     public SimHost? Host { get; set; }
 
@@ -163,6 +166,12 @@ public partial class WorldRenderer : Node2D
         foreach (var sp in snap.Stockpiles)
         {
             DrawStockpile(sp, isSelected: selectedStockpileId == sp.Id);
+        }
+
+        int? selectedGrowZoneId = Host?.SelectedGrowZoneId;
+        foreach (var gz in snap.GrowZones)
+        {
+            DrawGrowZone(gz, isSelected: selectedGrowZoneId == gz.Id);
         }
 
         foreach (var bp in snap.Blueprints)
@@ -639,6 +648,33 @@ public partial class WorldRenderer : Node2D
             DrawRect(rect, StockpileFill, filled: true);
         }
         foreach (var t in sp.Tiles)
+        {
+            float x0 = t.X * PixelsPerTile;
+            float y0 = t.Y * PixelsPerTile;
+            float x1 = x0 + PixelsPerTile;
+            float y1 = y0 + PixelsPerTile;
+            if (!set.Contains(new TilePos(t.X, t.Y - 1)))
+                DrawLine(new Vector2(x0, y0), new Vector2(x1, y0), border, width: borderW);
+            if (!set.Contains(new TilePos(t.X, t.Y + 1)))
+                DrawLine(new Vector2(x0, y1), new Vector2(x1, y1), border, width: borderW);
+            if (!set.Contains(new TilePos(t.X - 1, t.Y)))
+                DrawLine(new Vector2(x0, y0), new Vector2(x0, y1), border, width: borderW);
+            if (!set.Contains(new TilePos(t.X + 1, t.Y)))
+                DrawLine(new Vector2(x1, y0), new Vector2(x1, y1), border, width: borderW);
+        }
+    }
+
+    private void DrawGrowZone(StruggleGame.Sim.Snapshots.GrowZoneState gz, bool isSelected)
+    {
+        var set = new HashSet<TilePos>(gz.Tiles);
+        var border = isSelected ? GrowZoneSelectedBorder : GrowZoneBorder;
+        float borderW = isSelected ? 3f : 2f;
+        foreach (var t in gz.Tiles)
+        {
+            var rect = new Rect2(t.X * PixelsPerTile, t.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+            DrawRect(rect, GrowZoneFill, filled: true);
+        }
+        foreach (var t in gz.Tiles)
         {
             float x0 = t.X * PixelsPerTile;
             float y0 = t.Y * PixelsPerTile;

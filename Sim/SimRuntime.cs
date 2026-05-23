@@ -8,6 +8,7 @@ using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Pathfinding;
 using StruggleGame.Sim.Snapshots;
 using StruggleGame.Sim.Stockpiles;
+using StruggleGame.Sim.GrowZones;
 using StruggleGame.Sim.World;
 
 namespace StruggleGame.Sim;
@@ -44,6 +45,8 @@ public sealed class SimRuntime
     private readonly TreeRegrowSystem _regrow;
     private readonly CutPlantSystem _cuts;
     private readonly HarvestSystem _harvests;
+    private readonly SowSystem _sows;
+    private readonly GrowZoneManager _zoneManager;
     private readonly DeconSystem _decons;
     private readonly FloorSystem _floors;
     private readonly DoorBuildSystem _doorBuilds;
@@ -74,6 +77,12 @@ public sealed class SimRuntime
     private readonly Dictionary<TilePos, Stockpile> _stockpileByTile = new();
     private int _nextStockpileId = 1;
     public IReadOnlyList<Stockpile> Stockpiles => _stockpiles;
+
+    // Player-painted grow zones (mirror of stockpiles for farming).
+    private readonly List<GrowZone> _growZones = new();
+    private readonly Dictionary<TilePos, GrowZone> _growZoneByTile = new();
+    private int _nextGrowZoneId = 1;
+    public IReadOnlyList<GrowZone> GrowZones => _growZones;
     private readonly Random _spawnRng;
     private const int InitialTreeCount = 50;
     // World engine restocks toward this count over time, biased away from
@@ -123,6 +132,8 @@ public sealed class SimRuntime
         _regrow = new TreeRegrowSystem(this);
         _cuts = new CutPlantSystem(this, Jobs);
         _harvests = new HarvestSystem(this, Jobs);
+        _sows = new SowSystem(this, Jobs);
+        _zoneManager = new GrowZoneManager(this);
         _decons = new DeconSystem(this, Jobs);
         _floors = new FloorSystem(this, Jobs);
         _doorBuilds = new DoorBuildSystem(this, Jobs);
@@ -152,6 +163,8 @@ public sealed class SimRuntime
         _regrow.Step(dt);
         _cuts.Step(Store, dt);
         _harvests.Step(Store, dt);
+        _sows.Step(Store, dt);
+        _zoneManager.Step(dt);
         _decons.Step(Store, dt);
         _floors.Step(Store, dt);
         _doorBuilds.Step(Store, dt);
@@ -408,11 +421,22 @@ public sealed class SimRuntime
             stockpiles[si] = new StockpileState(p.Id, p.Name, p.Priority, tiles, allowed);
         }
 
+        var growZones = new GrowZoneState[_growZones.Count];
+        for (int zi = 0; zi < _growZones.Count; zi++)
+        {
+            var z = _growZones[zi];
+            var tiles = new TilePos[z.Tiles.Count];
+            int ti = 0;
+            foreach (var t in z.Tiles) tiles[ti++] = t;
+            growZones[zi] = new GrowZoneState(
+                z.Id, z.Name, z.CropKind, z.AllowCutting, z.AllowSowing, tiles);
+        }
+
         return new SimSnapshot(
             Tick, MapVersion, RoomVersion, RoomCount,
             dummies, bps, floorBps.ToArray(), trees, crops, woods, piles, decons.ToArray(),
             doorBps.ToArray(), doorRender.ToArray(),
-            stockpiles,
+            stockpiles, growZones,
             selectedDummyId, selectedPath, selectedOrders, selTreeArr, selWoodArr);
     }
 
@@ -530,6 +554,19 @@ public sealed class SimRuntime
             var drop = Store.CreateEntity();
             drop.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
             drop.AddComponent(new ItemPile { Tile = tile, Count = yield, ItemPath = itemPath });
+        }
+        else if (kind == JobKind.Sow)
+        {
+            // The job entity is just the SowSite marker; throw it away
+            // and plant a fresh stage-0 crop of the configured kind on
+            // the tile. If something else already grew there (race with
+            // another command), bail without spawning.
+            CropKind sowKind = CropKind.Carrot;
+            if (entity.HasComponent<SowSite>()) sowKind = entity.GetComponent<SowSite>().Kind;
+            entity.DeleteEntity();
+            if (_trees.ContainsKey(tile) || _crops.ContainsKey(tile)) return;
+            if (!Map.Walkable(tile)) return;
+            SpawnCropAt(tile, sowKind, 0f);
         }
         else if (kind == JobKind.Deconstruct)
         {
@@ -1057,6 +1094,164 @@ public sealed class SimRuntime
         if (_stockpileByTile.TryGetValue(tile, out var p)) { pile = p; return true; }
         pile = null!;
         return false;
+    }
+
+    // === Grow zones ===
+    // Mirror of the stockpile API. Zones own a tile set; per-tile claim
+    // is exclusive so the GrowZoneManager scan never double-posts.
+
+    public int CreateGrowZoneRect(TilePos a, TilePos b, CropKind kind)
+    {
+        int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
+        int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
+        var tiles = new List<TilePos>();
+        for (int y = ymin; y <= ymax; y++)
+        {
+            for (int x = xmin; x <= xmax; x++)
+            {
+                var t = new TilePos(x, y);
+                if (!Map.InBounds(t)) continue;
+                if (_growZoneByTile.ContainsKey(t)) continue;
+                tiles.Add(t);
+            }
+        }
+        if (tiles.Count == 0) return 0;
+        int id = _nextGrowZoneId++;
+        var zone = new GrowZone(id, $"Grow Zone {id}", kind, tiles);
+        _growZones.Add(zone);
+        foreach (var t in tiles) _growZoneByTile[t] = zone;
+        return id;
+    }
+
+    public int ExpandGrowZoneRect(int zoneId, TilePos a, TilePos b)
+    {
+        var zone = FindGrowZone(zoneId);
+        if (zone is null) return 0;
+        int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
+        int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
+        int added = 0;
+        for (int y = ymin; y <= ymax; y++)
+        {
+            for (int x = xmin; x <= xmax; x++)
+            {
+                var t = new TilePos(x, y);
+                if (!Map.InBounds(t)) continue;
+                if (_growZoneByTile.ContainsKey(t)) continue;
+                zone.Tiles.Add(t);
+                _growZoneByTile[t] = zone;
+                added++;
+            }
+        }
+        return added;
+    }
+
+    public int ShrinkGrowZoneRect(int zoneId, TilePos a, TilePos b)
+    {
+        var zone = FindGrowZone(zoneId);
+        if (zone is null) return 0;
+        int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
+        int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
+        int removed = 0;
+        for (int y = ymin; y <= ymax; y++)
+        {
+            for (int x = xmin; x <= xmax; x++)
+            {
+                var t = new TilePos(x, y);
+                if (!zone.Tiles.Remove(t)) continue;
+                _growZoneByTile.Remove(t);
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    public bool DeleteGrowZone(int zoneId)
+    {
+        var zone = FindGrowZone(zoneId);
+        if (zone is null) return false;
+        foreach (var t in zone.Tiles) _growZoneByTile.Remove(t);
+        _growZones.Remove(zone);
+        return true;
+    }
+
+    public bool RenameGrowZone(int zoneId, string name)
+    {
+        var zone = FindGrowZone(zoneId);
+        if (zone is null) return false;
+        zone.Name = name;
+        return true;
+    }
+
+    public bool SetGrowZoneCropKind(int zoneId, CropKind kind)
+    {
+        var zone = FindGrowZone(zoneId);
+        if (zone is null) return false;
+        zone.CropKind = kind;
+        return true;
+    }
+
+    public bool SetGrowZoneAllowCutting(int zoneId, bool allowed)
+    {
+        var zone = FindGrowZone(zoneId);
+        if (zone is null) return false;
+        zone.AllowCutting = allowed;
+        return true;
+    }
+
+    public bool SetGrowZoneAllowSowing(int zoneId, bool allowed)
+    {
+        var zone = FindGrowZone(zoneId);
+        if (zone is null) return false;
+        zone.AllowSowing = allowed;
+        return true;
+    }
+
+    private GrowZone? FindGrowZone(int id)
+    {
+        foreach (var z in _growZones) if (z.Id == id) return z;
+        return null;
+    }
+
+    public bool TryGetGrowZoneAt(TilePos tile, out GrowZone zone)
+    {
+        if (_growZoneByTile.TryGetValue(tile, out var z)) { zone = z; return true; }
+        zone = null!;
+        return false;
+    }
+
+    // A tile is "sowable" if it's walkable, has no tree/crop/blueprint
+    // sitting on it. The grow-zone manager calls this before posting a
+    // Sow job so seeds don't land on top of in-progress walls / floors.
+    public bool IsSowable(TilePos tile)
+    {
+        if (!Map.Walkable(tile)) return false;
+        if (_trees.ContainsKey(tile)) return false;
+        if (_crops.ContainsKey(tile)) return false;
+        if (_doorMap.ContainsKey(tile)) return false;
+        if (Map.GetFlooring(tile) != FlooringType.None) return false;
+        // A blueprint / decon on the tile means in-progress build work —
+        // don't fight it with sowing. Cheap O(N) scan over jobs is fine
+        // at the 2s manager cadence.
+        if (Jobs.HasTile(tile)) return false;
+        return true;
+    }
+
+    // Post a Sow job at the tile. Job entity carries the SowSite marker
+    // (kind + per-job progress). Returns false if a job already sits
+    // there or the tile isn't sowable.
+    public bool TryPostSowJob(TilePos tile, CropKind kind)
+    {
+        if (Jobs.HasTile(tile)) return false;
+        if (!IsSowable(tile)) return false;
+        var e = Store.CreateEntity();
+        e.AddComponent(new SowSite { Tile = tile, Kind = kind, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.Sow, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        return true;
     }
 
     public void ReserveHaulDest(TilePos tile) => _reservedHaulDests.Add(tile);

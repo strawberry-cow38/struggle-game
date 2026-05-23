@@ -144,6 +144,13 @@ public sealed class SimHost : IDisposable
         set { Volatile.Write(ref _selectedStockpileId, value ?? -1); }
     }
 
+    private int _selectedGrowZoneId = -1;
+    public int? SelectedGrowZoneId
+    {
+        get { int v = Volatile.Read(ref _selectedGrowZoneId); return v >= 0 ? v : null; }
+        set { Volatile.Write(ref _selectedGrowZoneId, value ?? -1); }
+    }
+
     private int[] _selectedWoodIds = Array.Empty<int>();
     public int[] SelectedWoodIds
     {

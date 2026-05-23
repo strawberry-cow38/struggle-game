@@ -14,4 +14,5 @@ public enum JobKind : byte
     DoorDeconstruct = 8,
     CutPlants = 9,
     Harvest = 10,
+    Sow = 11,
 }

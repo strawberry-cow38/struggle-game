@@ -23,6 +23,7 @@ public sealed class SimSnapshot
     public BlueprintState[] DoorBlueprints { get; }
     public DoorRenderState[] Doors { get; }
     public StockpileState[] Stockpiles { get; }
+    public GrowZoneState[] GrowZones { get; }
 
     // Set when the game has a selected colonist; null otherwise.
     public int? SelectedDummyId { get; }
@@ -51,6 +52,7 @@ public sealed class SimSnapshot
         BlueprintState[] doorBlueprints,
         DoorRenderState[] doors,
         StockpileState[] stockpiles,
+        GrowZoneState[] growZones,
         int? selectedDummyId = null,
         TilePos[]? selectedPath = null,
         TilePos[]? selectedOrders = null,
@@ -72,6 +74,7 @@ public sealed class SimSnapshot
         DoorBlueprints = doorBlueprints;
         Doors = doors;
         Stockpiles = stockpiles;
+        GrowZones = growZones;
         SelectedDummyId = selectedDummyId;
         SelectedPath = selectedPath;
         SelectedOrders = selectedOrders;
@@ -148,3 +151,14 @@ public readonly record struct StockpileState(
     StockpilePriority Priority,
     TilePos[] Tiles,
     string[] AllowedItemPaths);
+
+// Render-friendly grow zone. Mirror of StockpileState. AllowCutting +
+// AllowSowing drive the manager's auto-job posting; CropKind decides
+// what counts as "matching" (kept vs. cut) and what gets sown.
+public readonly record struct GrowZoneState(
+    int Id,
+    string Name,
+    World.CropKind CropKind,
+    bool AllowCutting,
+    bool AllowSowing,
+    TilePos[] Tiles);

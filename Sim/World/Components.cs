@@ -94,6 +94,17 @@ public struct Crop : IComponent
     public float WorkProgressSec;
 }
 
+// A pending Sow job's progress + payload. Job entity carries this;
+// ProgressSec advances while a sower is adjacent. On completion the
+// tile gets a fresh Crop with Growth.Stage = 0 of the configured kind
+// and the entity is deleted.
+public struct SowSite : IComponent
+{
+    public TilePos Tile;
+    public CropKind Kind;
+    public float ProgressSec;
+}
+
 // Dropped log pile on the ground. Doesn't block walking. No interaction
 // yet — placeholder for future hauling.
 public struct Wood : IComponent

@@ -81,6 +81,7 @@ public partial class Selector : Node2D
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
             Host.SelectedWallTiles = Array.Empty<TilePos>();
             Host.SelectedDoorTiles = Array.Empty<TilePos>();
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
@@ -96,6 +97,7 @@ public partial class Selector : Node2D
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
             Host.SelectedWallTile = null;
             Host.SelectedDoorTile = null;
             Host.SelectedBlueprintTile = null;
@@ -110,6 +112,7 @@ public partial class Selector : Node2D
             WriteTreeSelection(set);
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
             Host.SelectedWoodIds = Array.Empty<int>();
             Host.SelectedWallTile = null;
             Host.SelectedDoorTile = null;
@@ -124,6 +127,20 @@ public partial class Selector : Node2D
         if (TryPickStockpile(snap, clickTile, out int stockId))
         {
             Host.SelectedStockpileId = stockId;
+            Host.SelectedGrowZoneId = null;
+            Host.SelectedDummyId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedWallTile = null;
+            Host.SelectedDoorTile = null;
+            Host.SelectedBlueprintTile = null;
+            return;
+        }
+
+        if (TryPickGrowZone(snap, clickTile, out int growId))
+        {
+            Host.SelectedGrowZoneId = growId;
+            Host.SelectedStockpileId = null;
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
@@ -141,6 +158,7 @@ public partial class Selector : Node2D
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
             return;
@@ -157,6 +175,7 @@ public partial class Selector : Node2D
             Host.SelectedWallTiles = Array.Empty<TilePos>();
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
             return;
@@ -171,6 +190,7 @@ public partial class Selector : Node2D
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
             return;
@@ -182,6 +202,7 @@ public partial class Selector : Node2D
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
             Host.SelectedWoodIds = Array.Empty<int>();
             Host.SelectedWallTiles = Array.Empty<TilePos>();
             Host.SelectedDoorTiles = Array.Empty<TilePos>();
@@ -231,6 +252,19 @@ public partial class Selector : Node2D
         foreach (var b in snap.FloorBlueprints) { if (b.Tile == tile) return true; }
         foreach (var b in snap.DoorBlueprints)  { if (b.Tile == tile) return true; }
         foreach (var d in snap.Decons)          { if (d.Tile == tile) return true; }
+        return false;
+    }
+
+    private bool TryPickGrowZone(SimSnapshot snap, TilePos tile, out int id)
+    {
+        id = -1;
+        foreach (var z in snap.GrowZones)
+        {
+            foreach (var t in z.Tiles)
+            {
+                if (t == tile) { id = z.Id; return true; }
+            }
+        }
         return false;
     }
 
@@ -373,6 +407,7 @@ public partial class Selector : Node2D
             Host!.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
         }
     }
 

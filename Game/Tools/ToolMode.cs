@@ -17,4 +17,7 @@ public enum ToolMode
     FloorDecon = 12,
     CutPlants = 13,
     Harvest = 14,
+    GrowZone = 15,
+    GrowZoneExpand = 16,
+    GrowZoneShrink = 17,
 }
