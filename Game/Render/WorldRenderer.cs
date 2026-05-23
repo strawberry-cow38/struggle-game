@@ -37,23 +37,12 @@ public partial class WorldRenderer : Node2D
     private long _lastMapVersion = -1;
     private long _lastRoomVersion = -1;
     private long _lastRoofVersion = -1;
-    private long _lastLightVersion = -1;
-    private ImageTexture? _lightOverlayTex;
     private ImageTexture? _noRoofOverlayTex;
-    // Child sprite that multiplies the per-tile RGB light against the
-    // already-drawn map + entities. Lives above the renderer's _Draw
-    // content so everything below it tints to the lamp color and dims
-    // toward black under a roof.
-    private Sprite2D? _lightOverlaySprite;
-    // Sibling Node2D with ZIndex > the light overlay; runs its own
-    // _Draw to render UI elements (labels, selection rings, path debug)
-    // above the lamp tint so colored zones never dim readable UI.
-    private AboveLightLayer? _aboveLight;
-
-    // UI draw closures queued during main _Draw; replayed by
-    // AboveLightLayer._Draw against itself so they render above the
-    // multiply overlay. Cleared at the top of each main _Draw.
-    private readonly List<System.Action<Node2D>> _uiOps = new();
+    // Visual-only lighting layer (CanvasModulate + per-lamp Light2D +
+    // per-wall LightOccluder2D). Sim's per-tile RGB grid stays for
+    // gameplay; this node mirrors lamp/wall state from the snapshot to
+    // drive Godot's stock 2D lighting for the pretty visual.
+    private VisualLighting? _visualLighting;
 
     // Snapshot pair used for render-side interpolation. _prevSnap is the
     // last snapshot we drew from, _currSnap is the next one. We render at
@@ -75,10 +64,7 @@ public partial class WorldRenderer : Node2D
     private int[]? _cachedSelectedWoodIdRef;
     private HashSet<int>? _cachedSelectedWoodSet;
 
-    // Walls render pitch black so the colored-light multiply overlay
-    // can't tint them — wall * any-color stays at 0. Reads as a hard
-    // silhouette regardless of lamp/sun state.
-    private static readonly Color WallColor = new(0f, 0f, 0f);
+    private static readonly Color WallColor = new(0.18f, 0.16f, 0.14f);
     private static readonly Color DummyColor = new(0.95f, 0.55f, 0.20f);
     private static readonly Color BlueprintFill = new(0.20f, 0.55f, 0.95f, 0.30f);
     private static readonly Color BlueprintBorder = new(0.45f, 0.75f, 1.00f, 0.85f);
@@ -128,40 +114,19 @@ public partial class WorldRenderer : Node2D
         _mapPixelHeight = _mapHeight * PixelsPerTile;
         _groundTex = BuildGroundTexture(_mapWidth, _mapHeight, seed: 1337);
 
-        // RGB multiply overlay. CanvasItemMaterial.BlendMode.Mul makes
-        // each rendered pixel = src * dst — for an unlit tile (src ≈
-        // 0.22,0.22,0.22) the underlying world dims to ~22% brightness
-        // (matches the old MaxDarknessAlpha=0.78 darken); for a fully
-        // sun-lit white tile (src = 1,1,1) nothing changes; a red lamp
-        // pushes the tile toward red while the green/blue channels still
-        // dim, producing a clean tinted color rather than additive wash.
-        _lightOverlaySprite = new Sprite2D
-        {
-            Centered = false,
-            TextureFilter = TextureFilterEnum.Nearest,
-            ZIndex = 100,
-            Material = new CanvasItemMaterial { BlendMode = CanvasItemMaterial.BlendModeEnum.Mul },
-        };
-        AddChild(_lightOverlaySprite);
-        // One screen pixel per tile; the sprite's Scale stretches it
-        // across the whole map so a per-tile RGB image fits exactly.
-        _lightOverlaySprite.Scale = new Vector2(PixelsPerTile, PixelsPerTile);
-
-        _aboveLight = new AboveLightLayer { Parent = this, ZIndex = 110 };
-        AddChild(_aboveLight);
+        _visualLighting = new VisualLighting { Host = Host, MapWidth = _mapWidth, MapHeight = _mapHeight };
+        AddChild(_visualLighting);
     }
 
     public override void _Process(double delta)
     {
         QueueRedraw();
-        _aboveLight?.QueueRedraw();
+        _visualLighting?.Tick();
     }
 
     public override void _Draw()
     {
         if (_groundTex is null || Host is null) return;
-
-        _uiOps.Clear();
 
         var latest = Host.LatestSnapshot;
         // Reference compare, not Tick: paused republishes (selection
@@ -208,13 +173,6 @@ public partial class WorldRenderer : Node2D
             var noRoofBytes = Host!.CopyNoRoofTilesForRender();
             _noRoofOverlayTex = BuildNoRoofOverlay(noRoofBytes, _mapWidth, _mapHeight);
             _lastRoofVersion = snap.RoofVersion;
-        }
-        if (snap is not null && snap.LightVersion != _lastLightVersion)
-        {
-            var lightRgb = Host!.CopyLightRgbForRender();
-            _lightOverlayTex = BuildLightOverlay(lightRgb, _mapWidth, _mapHeight);
-            if (_lightOverlaySprite is not null) _lightOverlaySprite.Texture = _lightOverlayTex;
-            _lastLightVersion = snap.LightVersion;
         }
 
         var mapRect = new Rect2(0, 0, _mapPixelWidth, _mapPixelHeight);
@@ -474,8 +432,7 @@ public partial class WorldRenderer : Node2D
                 DrawCircle(center, radius, DummyColor);
                 if (d.Drafted)
                 {
-                    var draftedCenter = center;
-                    _uiOps.Add(layer => layer.DrawArc(draftedCenter, radius + 2f, 0f, Mathf.Tau, 32, DraftedRing, 2f, antialiased: true));
+                    DrawArc(center, radius + 2f, 0f, Mathf.Tau, 32, DraftedRing, 2f, antialiased: true);
                 }
                 if (d.Carrying)
                 {
@@ -487,16 +444,14 @@ public partial class WorldRenderer : Node2D
                 }
                 if (snap.SelectedDummyId is int sel && d.EntityId == sel)
                 {
-                    var selCenter = center;
-                    _uiOps.Add(layer => layer.DrawArc(selCenter, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true));
+                    DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
                 }
                 if (labelFont is not null && !string.IsNullOrEmpty(d.Job))
                 {
                     var textSize = labelFont.GetStringSize(d.Job, HorizontalAlignment.Center, -1f, labelFontSize);
                     var anchor = center + labelOffset - new Vector2(textSize.X * 0.5f, 0f);
-                    var jobText = d.Job;
-                    _uiOps.Add(layer => layer.DrawString(labelFont, anchor, jobText, HorizontalAlignment.Left, -1f, labelFontSize,
-                        new Color(1f, 1f, 1f, 0.95f)));
+                    DrawString(labelFont, anchor, d.Job, HorizontalAlignment.Left, -1f, labelFontSize,
+                        new Color(1f, 1f, 1f, 0.95f));
                 }
             }
         }
@@ -526,17 +481,10 @@ public partial class WorldRenderer : Node2D
         float cx = (tile.X + 0.5f) * PixelsPerTile;
         float baseY = (tile.Y + 0.5f) * PixelsPerTile + PixelsPerTile * 0.22f + font.GetAscent(StackLabelFontSize);
         var pos = new Vector2(cx - size.X * 0.5f, baseY);
-        // Defer to AboveLightLayer so the label sits above the colored-
-        // light multiply overlay. Cheap drop shadow keeps it legible on
-        // bright tiles.
-        var shadowPos = pos + new Vector2(1f, 1f);
-        _uiOps.Add(layer =>
-        {
-            layer.DrawString(font, shadowPos, text,
-                HorizontalAlignment.Left, -1f, StackLabelFontSize, new Color(0f, 0f, 0f, 0.85f));
-            layer.DrawString(font, pos, text,
-                HorizontalAlignment.Left, -1f, StackLabelFontSize, Colors.White);
-        });
+        DrawString(font, pos + new Vector2(1f, 1f), text,
+            HorizontalAlignment.Left, -1f, StackLabelFontSize, new Color(0f, 0f, 0f, 0.85f));
+        DrawString(font, pos, text,
+            HorizontalAlignment.Left, -1f, StackLabelFontSize, Colors.White);
     }
 
     private void DrawSelectedPath(Sim.Snapshots.SimSnapshot snap)
@@ -563,29 +511,21 @@ public partial class WorldRenderer : Node2D
                 (path[k].X + 0.5f) * PixelsPerTile,
                 (path[k].Y + 0.5f) * PixelsPerTile);
         }
-        if (points.Length >= 2)
-        {
-            var polyPoints = points;
-            _uiOps.Add(layer => layer.DrawPolyline(polyPoints, PathLineColor, width: 2f, antialiased: true));
-        }
+        if (points.Length >= 2) DrawPolyline(points, PathLineColor, width: 2f, antialiased: true);
 
         var target = path[^1];
         float t = PixelsPerTile * 0.35f;
         var tc = new Vector2((target.X + 0.5f) * PixelsPerTile, (target.Y + 0.5f) * PixelsPerTile);
-        _uiOps.Add(layer =>
-        {
-            layer.DrawLine(tc + new Vector2(-t, -t), tc + new Vector2(t, t), PathTargetColor, width: 3f);
-            layer.DrawLine(tc + new Vector2(-t, t), tc + new Vector2(t, -t), PathTargetColor, width: 3f);
-        });
+        DrawLine(tc + new Vector2(-t, -t), tc + new Vector2(t, t), PathTargetColor, width: 3f);
+        DrawLine(tc + new Vector2(-t, t), tc + new Vector2(t, -t), PathTargetColor, width: 3f);
 
-        // Queued draft orders past the live path.
         if (snap.SelectedOrders is { Length: > 0 } orders)
         {
             float r = PixelsPerTile * 0.18f;
             foreach (var o in orders)
             {
                 var oc = new Vector2((o.X + 0.5f) * PixelsPerTile, (o.Y + 0.5f) * PixelsPerTile);
-                _uiOps.Add(layer => layer.DrawCircle(oc, r, OrderMarker));
+                DrawCircle(oc, r, OrderMarker);
             }
         }
     }
@@ -612,7 +552,7 @@ public partial class WorldRenderer : Node2D
             if (selectedTrees is not null && selectedTrees.Contains(t.EntityId))
             {
                 var ring = new Rect2(center.X - r - 1f, center.Y - r - 1f, (r + 1f) * 2f, (r + 1f) * 2f);
-                _uiOps.Add(layer => layer.DrawRect(ring, TreeSelectColor, filled: false, width: 1.5f));
+                DrawRect(ring, TreeSelectColor, filled: false, width: 1.5f);
             }
             return;
         }
@@ -648,9 +588,7 @@ public partial class WorldRenderer : Node2D
 
         if (selectedTrees is not null && selectedTrees.Contains(t.EntityId))
         {
-            var arcCenter = center;
-            var arcR = canopyR + 3f;
-            _uiOps.Add(layer => layer.DrawArc(arcCenter, arcR, 0f, Mathf.Tau, 36, TreeSelectColor, width: 2f, antialiased: true));
+            DrawArc(center, canopyR + 3f, 0f, Mathf.Tau, 36, TreeSelectColor, width: 2f, antialiased: true);
         }
     }
 
@@ -744,8 +682,7 @@ public partial class WorldRenderer : Node2D
         float cx = (tile.X + 0.5f) * PixelsPerTile;
         float cy = (tile.Y + 0.5f) * PixelsPerTile;
         float r = PixelsPerTile * 0.45f;
-        var center = new Vector2(cx, cy);
-        _uiOps.Add(layer => layer.DrawArc(center, r, 0f, Mathf.Tau, 32, SelectionRing, width: 2f, antialiased: true));
+        DrawArc(new Vector2(cx, cy), r, 0f, Mathf.Tau, 32, SelectionRing, width: 2f, antialiased: true);
     }
 
     private void DrawDeconMark(TilePos tile, float progress)
@@ -957,7 +894,7 @@ public partial class WorldRenderer : Node2D
             tile.Y * PixelsPerTile + inset,
             PixelsPerTile - inset * 2f,
             PixelsPerTile - inset * 2f);
-        _uiOps.Add(layer => layer.DrawRect(rect, SelectionOutline, filled: false, width: 3f));
+        DrawRect(rect, SelectionOutline, filled: false, width: 3f);
     }
 
     // Red X over a tile — same look as the door forbid mark, reused for
@@ -1146,33 +1083,6 @@ public partial class WorldRenderer : Node2D
         return ImageTexture.CreateFromImage(img);
     }
 
-    // Per-tile RGB multiply overlay. The render math is:
-    //   final = base * (ambient + (1 - ambient) * lightRgb/255)
-    // Ambient = 0.22 keeps unlit interiors at ~22% brightness (matches
-    // the old MaxDarknessAlpha = 0.78 darken). A red lamp pushes the
-    // red channel toward 1 while green/blue stay at ambient — the
-    // tile reads red. Two overlapping colored lamps blend per channel
-    // because RecomputeLightAll already max-blended the RGB layer.
-    private const float LightAmbient = 0.22f;
-    private static ImageTexture BuildLightOverlay(byte[] rgb, int width, int height)
-    {
-        var img = Image.CreateEmpty(width, height, false, Image.Format.Rgb8);
-        float span = 1f - LightAmbient;
-        for (int y = 0; y < height; y++)
-        {
-            int row = y * width;
-            for (int x = 0; x < width; x++)
-            {
-                int j = (row + x) * 3;
-                float r = LightAmbient + span * (rgb[j]     / 255f);
-                float g = LightAmbient + span * (rgb[j + 1] / 255f);
-                float b = LightAmbient + span * (rgb[j + 2] / 255f);
-                img.SetPixel(x, y, new Color(r, g, b));
-            }
-        }
-        return ImageTexture.CreateFromImage(img);
-    }
-
     // No-roof overlay: yellow tint with checker dithering so the
     // forbidden cells are obviously "tagged" rather than just colored.
     // Checker = on for (x+y) odd.
@@ -1194,16 +1104,4 @@ public partial class WorldRenderer : Node2D
         return ImageTexture.CreateFromImage(img);
     }
 
-    // Replays the parent's queued UI draw ops against itself so labels,
-    // selection rings, and path debug land above the multiply overlay.
-    private partial class AboveLightLayer : Node2D
-    {
-        public WorldRenderer Parent = null!;
-
-        public override void _Draw()
-        {
-            if (Parent is null) return;
-            foreach (var op in Parent._uiOps) op(this);
-        }
-    }
 }
