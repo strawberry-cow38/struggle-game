@@ -271,7 +271,9 @@ public partial class VisualLighting : Node2D
                     // overlapping lamps cap at the lamp color instead
                     // of doubling into a nuclear hotspot.
                     BlendMode = Light2D.BlendModeEnum.Mix,
-                    ShadowEnabled = true,
+                    // Shadow casting is later toggled to "one lamp per
+                    // proximity cluster" — see AssignClusterShadows.
+                    ShadowEnabled = false,
                     // Transparent shadow color: walls still occlude
                     // the lamp (lit region stops at the wall), but each
                     // lamp's shadow doesn't tint pixels darker. Two
@@ -310,6 +312,65 @@ public partial class VisualLighting : Node2D
                 _lampNodes[t].QueueFree();
                 _lampNodes.Remove(t);
             }
+        }
+        AssignClusterShadows(snap);
+    }
+
+    // Group powered lamps into proximity clusters (centers within
+    // 2×LampRangeTiles share a cluster, since that's the threshold for
+    // their lit areas to overlap) via union-find. Per cluster, pick one
+    // lamp as the shadow caster; everything else in the cluster has
+    // ShadowEnabled=false. This collapses the "fan of shadows" effect
+    // where N overlapping lamps each cast their own shadow ray from a
+    // shared wall vertex — now the cluster has one shadow source, so
+    // walls cast one consistent shadow regardless of lamp count.
+    private void AssignClusterShadows(SimSnapshot snap)
+    {
+        var lit = new List<LampState>();
+        foreach (var l in snap.Lamps) if (l.PoweredOn) lit.Add(l);
+        int n = lit.Count;
+        if (n == 0) return;
+        var parent = new int[n];
+        for (int i = 0; i < n; i++) parent[i] = i;
+        int Find(int x) { while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+        void Union(int a, int b) { int ra = Find(a), rb = Find(b); if (ra != rb) parent[ra] = rb; }
+
+        // Two lamps share a cluster if their lit-radius circles overlap.
+        // Distance threshold in tile units = 2 × LampRangeTiles.
+        float threshTiles = 2f * LampRangeTiles;
+        float threshSq = threshTiles * threshTiles;
+        for (int i = 0; i < n; i++)
+        {
+            for (int j = i + 1; j < n; j++)
+            {
+                float dx = lit[i].Tile.X - lit[j].Tile.X;
+                float dy = lit[i].Tile.Y - lit[j].Tile.Y;
+                if (dx * dx + dy * dy <= threshSq) Union(i, j);
+            }
+        }
+
+        // Per cluster: pick the lamp with the smallest tile coord (X
+        // then Y) as the shadow caster. Stable across ticks so we don't
+        // flicker which lamp owns the shadow.
+        var clusterCaster = new Dictionary<int, int>();
+        for (int i = 0; i < n; i++)
+        {
+            int root = Find(i);
+            if (!clusterCaster.TryGetValue(root, out var existing))
+            {
+                clusterCaster[root] = i;
+                continue;
+            }
+            var a = lit[i].Tile;
+            var b = lit[existing].Tile;
+            if (a.X < b.X || (a.X == b.X && a.Y < b.Y)) clusterCaster[root] = i;
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            if (!_lampNodes.TryGetValue(lit[i].Tile, out var node)) continue;
+            int root = Find(i);
+            node.ShadowEnabled = clusterCaster[root] == i;
         }
     }
 
