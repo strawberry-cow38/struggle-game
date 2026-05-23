@@ -266,7 +266,11 @@ public partial class VisualLighting : Node2D
                 node = new PointLight2D
                 {
                     Texture = _lampTex,
-                    BlendMode = Light2D.BlendModeEnum.Add,
+                    // Mix (not Add): each lamp alpha-blends toward its
+                    // own color rather than summing intensities. Two
+                    // overlapping lamps cap at the lamp color instead
+                    // of doubling into a nuclear hotspot.
+                    BlendMode = Light2D.BlendModeEnum.Mix,
                     ShadowEnabled = true,
                     ShadowColor = new Color(0f, 0f, 0f, 0.21f),
                     ShadowFilter = Light2D.ShadowFilterEnum.Pcf5,
