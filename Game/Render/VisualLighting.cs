@@ -272,7 +272,14 @@ public partial class VisualLighting : Node2D
                     // of doubling into a nuclear hotspot.
                     BlendMode = Light2D.BlendModeEnum.Mix,
                     ShadowEnabled = true,
-                    ShadowColor = new Color(0f, 0f, 0f, 0.21f),
+                    // Transparent shadow color: walls still occlude
+                    // the lamp (lit region stops at the wall), but each
+                    // lamp's shadow doesn't tint pixels darker. Two
+                    // overlapping lamps would otherwise stack their
+                    // shadow alphas behind a shared wall = darker shadow
+                    // per extra lamp. With alpha 0 the unlit area just
+                    // reads as ambient, no stacking.
+                    ShadowColor = new Color(0f, 0f, 0f, 0f),
                     ShadowFilter = Light2D.ShadowFilterEnum.Pcf5,
                     ShadowFilterSmooth = 1.0f,
                 };
