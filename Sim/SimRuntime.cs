@@ -675,6 +675,16 @@ public sealed class SimRuntime
             entity.AddComponent(new Lamp { Tile = tile, PoweredOn = true, Color = bpColor });
             _lampMap[tile] = entity;
             RecomputeLightAll();
+            // Auto-roof pass on the lamp's own tile: while the lamp
+            // build job was active Jobs.HasTile blocked the original
+            // auto-roof from posting here, leaving an uncovered hole.
+            // Now that the job is gone we can post the roof if the
+            // tile is interior + not no-roof + still unroofed.
+            int lidx = tile.Y * Map.Width + tile.X;
+            if (_roomTiles[lidx] != 0 && _noRoofTiles[lidx] == 0 && _roofTiles[lidx] == 0)
+            {
+                TryPostRoofBuildJob(tile);
+            }
         }
         else if (kind == JobKind.LampDeconstruct)
         {

@@ -87,6 +87,30 @@ public partial class LampInfoPanel : CanvasLayer
         colorRow.AddChild(_colorBtn);
         vbox.AddChild(colorRow);
 
+        // Color wheel presets — 12-step hue ring at full saturation plus
+        // a white reset. Quick-pick row above the freeform picker so
+        // common colors are one click away.
+        var presetRow1 = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        var presetRow2 = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        presetRow1.AddThemeConstantOverride("separation", 2);
+        presetRow2.AddThemeConstantOverride("separation", 2);
+        AddPreset(presetRow1, "R",  new LightColor(255,   0,   0));
+        AddPreset(presetRow1, "RO", new LightColor(255, 128,   0));
+        AddPreset(presetRow1, "O",  new LightColor(255, 191,   0));
+        AddPreset(presetRow1, "Y",  new LightColor(255, 255,   0));
+        AddPreset(presetRow1, "YG", new LightColor(128, 255,   0));
+        AddPreset(presetRow1, "G",  new LightColor(  0, 255,   0));
+        AddPreset(presetRow1, "GC", new LightColor(  0, 255, 128));
+        AddPreset(presetRow2, "C",  new LightColor(  0, 255, 255));
+        AddPreset(presetRow2, "CB", new LightColor(  0, 128, 255));
+        AddPreset(presetRow2, "B",  new LightColor(  0,   0, 255));
+        AddPreset(presetRow2, "BM", new LightColor(128,   0, 255));
+        AddPreset(presetRow2, "M",  new LightColor(255,   0, 255));
+        AddPreset(presetRow2, "MR", new LightColor(255,   0, 128));
+        AddPreset(presetRow2, "W",  new LightColor(255, 255, 255));
+        vbox.AddChild(presetRow1);
+        vbox.AddChild(presetRow2);
+
         _deconBtn = new Button { Text = "Deconstruct", CustomMinimumSize = new Vector2(0, 28) };
         _deconBtn.Pressed += OnDeconPressed;
         vbox.AddChild(_deconBtn);
@@ -194,6 +218,39 @@ public partial class LampInfoPanel : CanvasLayer
                                 (byte)Math.Clamp(Math.Round(c.B * 255f), 0, 255));
         foreach (var t in Host.SelectedLampTiles)
             Host.QueueCommand(new SetLampColorCommand(t, lc));
+    }
+
+    // Preset swatch — small square tinted to the color. Click bulk-sets
+    // every selected lamp via the same SetLampColorCommand path the
+    // freeform picker uses, and syncs the picker swatch too so the
+    // panel reflects the active color.
+    private void AddPreset(HBoxContainer row, string tooltip, LightColor color)
+    {
+        var btn = new Button
+        {
+            CustomMinimumSize = new Vector2(22, 22),
+            TooltipText = tooltip,
+            Flat = false,
+        };
+        var sb = new StyleBoxFlat
+        {
+            BgColor = new Color(color.R / 255f, color.G / 255f, color.B / 255f),
+            BorderColor = new Color(0, 0, 0, 0.6f),
+            BorderWidthLeft = 1, BorderWidthRight = 1, BorderWidthTop = 1, BorderWidthBottom = 1,
+        };
+        btn.AddThemeStyleboxOverride("normal", sb);
+        btn.AddThemeStyleboxOverride("hover", sb);
+        btn.AddThemeStyleboxOverride("pressed", sb);
+        btn.Pressed += () =>
+        {
+            if (Host is null) return;
+            _suppressToggle = true;
+            _colorBtn.Color = new Color(color.R / 255f, color.G / 255f, color.B / 255f);
+            _suppressToggle = false;
+            foreach (var t in Host.SelectedLampTiles)
+                Host.QueueCommand(new SetLampColorCommand(t, color));
+        };
+        row.AddChild(btn);
     }
 
     private void OnDeconPressed()
