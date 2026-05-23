@@ -12,8 +12,11 @@ namespace StruggleGame.Sim.World;
 // RoofVersion, and deletes the marker entity.
 public sealed class RoofSystem
 {
-    public const float RoofBuildTimeSec = 1.5f;
-    public const float RoofRemoveTimeSec = 0.8f;
+    // Instant work: completion on the first tick the pawn is in range.
+    // Pawn still has to walk to the chunk, but once there the whole
+    // chunk flips in a single sim tick.
+    public const float RoofBuildTimeSec = 0f;
+    public const float RoofRemoveTimeSec = 0f;
 
     private readonly JobBoard _jobs;
     private readonly SimRuntime _sim;
