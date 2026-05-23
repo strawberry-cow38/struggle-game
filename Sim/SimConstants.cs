@@ -22,4 +22,10 @@ public static class SimConstants
     // Manhattan radius the haul-batching scan looks within for additional
     // items to top off the colonist's inventory mid-trip.
     public const int HaulTopoffRadius = 12;
+
+    // Fixed-figure temperatures (°C). Outdoor = the "faux room" id 0;
+    // every enclosed indoor room clamps to IndoorTempC until proper
+    // per-room heat loss / gain / insulation ships.
+    public const float OutdoorTempC = 21f;
+    public const float IndoorTempC = 18f;
 }

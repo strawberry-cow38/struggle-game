@@ -213,6 +213,14 @@ public sealed class SimHost : IDisposable
     // only on wall/door changes; pull when SimSnapshot.RoomVersion bumps.
     public int[] CopyRoomTilesForRender() => _sim.CopyRoomTilesForRender();
 
+    // Per-tile room lookups for the HUD hover readout. Reads run from
+    // the render thread against arrays mutated only on the sim thread
+    // during DoRecomputeRooms; the worst-case race is a one-tick stale
+    // read of room id / temperature, which is fine for a UI display.
+    public int RoomIdAt(StruggleGame.Sim.Map.TilePos tile) => _sim.RoomIdAt(tile);
+    public float RoomTempC(int roomId) => _sim.RoomTempC(roomId);
+    public float TileTempC(StruggleGame.Sim.Map.TilePos tile) => _sim.TileTempC(tile);
+
     private static bool SelectionArrayEquals(int[] a, int[] b)
     {
         if (a.Length != b.Length) return false;

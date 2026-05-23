@@ -23,6 +23,11 @@ public sealed class SimRuntime
     public long RoomVersion { get; private set; }
     public int RoomCount { get; private set; }
     private int[] _roomTiles = Array.Empty<int>();
+    // Index = room id (0 = outdoor faux room, 1..RoomCount = enclosed
+    // interiors). Resized + repopulated by DoRecomputeRooms whenever
+    // walls/doors change. Fixed-figure for now: outdoor = OutdoorTempC,
+    // interior = IndoorTempC. Per-room insulation / heat loss ships later.
+    private float[] _roomTemps = Array.Empty<float>();
 
     private MapView _mapView = null!;
     public MapView MapView => Volatile.Read(ref _mapView);
@@ -1753,9 +1758,41 @@ public sealed class SimRuntime
         return _roomTiles[idx] == 0;
     }
 
-    // Stub: whole map is 21°C, comfortable for everything. Per-map
-    // temperature + biomes hook in here later.
-    public bool IsTileGrowTemperature(TilePos tile) => true;
+    // Per-tile room id lookup. 0 = outdoor faux room (including barrier
+    // tiles); 1..RoomCount = enclosed interior. Returns -1 for out-of-
+    // bounds. Reads _roomTiles directly — caller is the sim thread or
+    // the render thread under _mapLock semantics (snapshot publishing
+    // guarantees stability between recompute and snapshot read).
+    public int RoomIdAt(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return -1;
+        int idx = tile.Y * Map.Width + tile.X;
+        if (idx < 0 || idx >= _roomTiles.Length) return -1;
+        return _roomTiles[idx];
+    }
+
+    // Fixed-figure room temperature. Outdoor = OutdoorTempC; every
+    // enclosed room clamps to IndoorTempC. Returns OutdoorTempC for
+    // unknown ids so out-of-range reads degrade gracefully.
+    public float RoomTempC(int roomId)
+    {
+        if (roomId < 0 || roomId >= _roomTemps.Length) return SimConstants.OutdoorTempC;
+        return _roomTemps[roomId];
+    }
+
+    // Tile temperature = the temperature of the room the tile is in.
+    public float TileTempC(TilePos tile) => RoomTempC(RoomIdAt(tile));
+
+    // Grow check now reads against the tile's actual room temperature
+    // instead of a blanket stub. 18..25°C is "comfortable" — both
+    // fixed-figure temps land inside it so behavior is unchanged today,
+    // but plants in a frozen / overheated room will refuse to grow once
+    // per-room heat loss/gain ships.
+    public bool IsTileGrowTemperature(TilePos tile)
+    {
+        float t = TileTempC(tile);
+        return t >= 18f && t <= 25f;
+    }
 
     // Mark the map view as needing a rebuild this tick. Cheap; the actual
     // clone-and-publish runs once at end of Step().
@@ -1816,6 +1853,11 @@ public sealed class SimRuntime
         // rooms. Outdoor (border-touching) components also collapse to 0.
         int count = RoomMap.Compute(w, h, _playerWalls, _doorMap.Keys, _roomTiles);
         RoomCount = count;
+        // Resize + repopulate the per-room temperature table. Index 0 is
+        // always the outdoor faux room; ids 1..count are interiors.
+        if (_roomTemps.Length != count + 1) _roomTemps = new float[count + 1];
+        _roomTemps[0] = SimConstants.OutdoorTempC;
+        for (int i = 1; i <= count; i++) _roomTemps[i] = SimConstants.IndoorTempC;
         RoomVersion++;
     }
 

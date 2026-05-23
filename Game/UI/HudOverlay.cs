@@ -1,5 +1,6 @@
 using Godot;
 using StruggleGame.Sim;
+using StruggleGame.Sim.Map;
 
 namespace StruggleGame.Game.UI;
 
@@ -10,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "room overlay: drop biggest=outdoor hack";
+    private const string BuildTag = "per-room temp: outdoor 21C, indoor 18C";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
@@ -77,7 +78,31 @@ public partial class HudOverlay : CanvasLayer
         float speed = Host.TickHz / (float)SimConstants.TickHz;
         int rooms = Host.LatestSnapshot?.RoomCount ?? 0;
         string paused = Host.IsPaused ? "  [PAUSED]" : string.Empty;
-        _label.Text = $"FPS  {fps:0}\nTPS  {tps:0} / {Host.TickHz}{paused}\nSPEED {speed:0.##}x\nROOMS {rooms}";
+
+        // Screen→world for the hover tile: convert viewport mouse
+        // through the root canvas transform inverse (HudOverlay sits on
+        // a CanvasLayer so it has no Node2D transform of its own).
+        var viewport = GetViewport();
+        var screenMouse = viewport.GetMousePosition();
+        var canvasInv = GetTree().Root.GetCanvasTransform().AffineInverse();
+        var worldMouse = canvasInv * screenMouse;
+        int tx = (int)Math.Floor(worldMouse.X / SimConstants.PixelsPerTile);
+        int ty = (int)Math.Floor(worldMouse.Y / SimConstants.PixelsPerTile);
+        string hoverLine;
+        if (tx >= 0 && tx < SimConstants.MapSize && ty >= 0 && ty < SimConstants.MapSize)
+        {
+            var tile = new TilePos(tx, ty);
+            int rid = Host.RoomIdAt(tile);
+            float temp = Host.TileTempC(tile);
+            string roomLabel = rid == 0 ? "outdoor" : ($"room {rid}");
+            hoverLine = $"\nHOVER {tx},{ty}  {roomLabel}  {temp:0.#}°C";
+        }
+        else
+        {
+            hoverLine = "\nHOVER -";
+        }
+
+        _label.Text = $"FPS  {fps:0}\nTPS  {tps:0} / {Host.TickHz}{paused}\nSPEED {speed:0.##}x\nROOMS {rooms}{hoverLine}";
 
         var w = Host.Watcher;
         var recent = w.Recent;
