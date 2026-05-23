@@ -890,40 +890,20 @@ public partial class WorldRenderer : Node2D
     }
 
     // Per-tile translucent tint, one hue per room id. Skips id 0
-    // (barriers — walls + doors) and skips the largest room (treated as
-     // "outdoor") so the player only sees indoor areas tinted. Deterministic
-    // golden-angle hue picker keeps adjacent rooms visually distinct.
+    // (barrier + outdoor — RoomMap.Compute already remaps every
+    // border-touching component to 0). Deterministic golden-angle hue
+    // picker keeps adjacent rooms visually distinct.
     private static ImageTexture BuildRoomOverlay(int[] roomTiles, int width, int height)
     {
         var img = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
         var transparent = new Color(0f, 0f, 0f, 0f);
-
-        // Tally tiles per room; the biggest is "outdoor" and not painted.
-        int maxId = 0;
-        for (int i = 0; i < roomTiles.Length; i++)
-            if (roomTiles[i] > maxId) maxId = roomTiles[i];
-        int outdoorId = 0;
-        if (maxId > 0)
-        {
-            var counts = new int[maxId + 1];
-            for (int i = 0; i < roomTiles.Length; i++)
-            {
-                int id = roomTiles[i];
-                if (id > 0) counts[id]++;
-            }
-            int bestCount = -1;
-            for (int id = 1; id <= maxId; id++)
-            {
-                if (counts[id] > bestCount) { bestCount = counts[id]; outdoorId = id; }
-            }
-        }
 
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
             {
                 int id = roomTiles[y * width + x];
-                if (id == 0 || id == outdoorId)
+                if (id == 0)
                 {
                     img.SetPixel(x, y, transparent);
                     continue;

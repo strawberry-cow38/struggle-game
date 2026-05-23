@@ -10,7 +10,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "wander idle rest (1.5–5s)";
+    private const string BuildTag = "room overlay: drop biggest=outdoor hack";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
