@@ -1068,16 +1068,76 @@ public partial class WorldRenderer : Node2D
         return ImageTexture.CreateFromImage(img);
     }
 
+    // Wall face bevel constants. Each face has a strip width (fraction of
+    // tile) and a peak brightness lift (additive toward white at the face,
+    // fading linearly to 0 at the inner strip edge). Skipped when the
+    // neighbor in that direction is also a wall (faces only show where the
+    // wall block meets open space, not inside continuous wall runs).
+    private const int WallSubpx = 16;
+    private const float WallFaceWidthSouth = 0.30f;
+    private const float WallFaceWidthNorth = 0.05f;
+    private const float WallFaceWidthSide  = 0.15f;
+    private const float WallFaceLiftSouth  = 0.30f;
+    private const float WallFaceLiftNorth  = 0.05f;
+    private const float WallFaceLiftSide   = 0.15f;
+
     private static ImageTexture BuildWallOverlay(byte[] tiles, int width, int height)
     {
-        var img = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
+        int w = width * WallSubpx;
+        int h = height * WallSubpx;
+        var img = Image.CreateEmpty(w, h, false, Image.Format.Rgba8);
         var transparent = new Color(0f, 0f, 0f, 0f);
-        for (int y = 0; y < height; y++)
+        bool IsWall(int x, int y) => x >= 0 && y >= 0 && x < width && y < height && tiles[y * width + x] != 0;
+        for (int ty = 0; ty < height; ty++)
         {
-            for (int x = 0; x < width; x++)
+            for (int tx = 0; tx < width; tx++)
             {
-                bool wall = tiles[y * width + x] != 0;
-                img.SetPixel(x, y, wall ? WallColor : transparent);
+                int baseX = tx * WallSubpx;
+                int baseY = ty * WallSubpx;
+                if (!IsWall(tx, ty))
+                {
+                    for (int sy = 0; sy < WallSubpx; sy++)
+                        for (int sx = 0; sx < WallSubpx; sx++)
+                            img.SetPixel(baseX + sx, baseY + sy, transparent);
+                    continue;
+                }
+                bool faceN = !IsWall(tx, ty - 1);
+                bool faceS = !IsWall(tx, ty + 1);
+                bool faceW = !IsWall(tx - 1, ty);
+                bool faceE = !IsWall(tx + 1, ty);
+                for (int sy = 0; sy < WallSubpx; sy++)
+                {
+                    float fy = (sy + 0.5f) / WallSubpx;
+                    for (int sx = 0; sx < WallSubpx; sx++)
+                    {
+                        float fx = (sx + 0.5f) / WallSubpx;
+                        float lift = 0f;
+                        if (faceS)
+                        {
+                            float t = (1f - fy) / WallFaceWidthSouth;
+                            if (t < 1f) lift = MathF.Max(lift, WallFaceLiftSouth * (1f - t));
+                        }
+                        if (faceN)
+                        {
+                            float t = fy / WallFaceWidthNorth;
+                            if (t < 1f) lift = MathF.Max(lift, WallFaceLiftNorth * (1f - t));
+                        }
+                        if (faceW)
+                        {
+                            float t = fx / WallFaceWidthSide;
+                            if (t < 1f) lift = MathF.Max(lift, WallFaceLiftSide * (1f - t));
+                        }
+                        if (faceE)
+                        {
+                            float t = (1f - fx) / WallFaceWidthSide;
+                            if (t < 1f) lift = MathF.Max(lift, WallFaceLiftSide * (1f - t));
+                        }
+                        float r = WallColor.R + (1f - WallColor.R) * lift;
+                        float g = WallColor.G + (1f - WallColor.G) * lift;
+                        float b = WallColor.B + (1f - WallColor.B) * lift;
+                        img.SetPixel(baseX + sx, baseY + sy, new Color(r, g, b, 1f));
+                    }
+                }
             }
         }
         return ImageTexture.CreateFromImage(img);
