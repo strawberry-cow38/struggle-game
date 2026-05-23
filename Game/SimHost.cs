@@ -221,6 +221,12 @@ public sealed class SimHost : IDisposable
     public float RoomTempC(int roomId) => _sim.RoomTempC(roomId);
     public float TileTempC(StruggleGame.Sim.Map.TilePos tile) => _sim.TileTempC(tile);
 
+    // Roof + no-roof bytemaps for the render overlays. Pull when
+    // SimSnapshot.RoofVersion bumps; updates fire on auto-roof, on
+    // any of the roof designator commands, and on the no-roof toggle.
+    public byte[] CopyRoofTilesForRender() => _sim.CopyRoofTilesForRender();
+    public byte[] CopyNoRoofTilesForRender() => _sim.CopyNoRoofTilesForRender();
+
     private static bool SelectionArrayEquals(int[] a, int[] b)
     {
         if (a.Length != b.Length) return false;

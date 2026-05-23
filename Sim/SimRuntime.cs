@@ -23,6 +23,18 @@ public sealed class SimRuntime
     public long RoomVersion { get; private set; }
     public int RoomCount { get; private set; }
     private int[] _roomTiles = Array.Empty<int>();
+    // Roof layer. Both arrays are y*Width + x indexed.
+    //   _roofTiles    : 1 = roofed (auto from room recompute OR painted by
+    //                   the player's roof designator). Persists across
+    //                   recomputes — auto-roof never removes a tile, the
+    //                   player does that explicitly via the remove-roof
+    //                   designator.
+    //   _noRoofTiles  : 1 = player marked "do not auto-roof". Auto-roof
+    //                   skips these; setting the flag also clears any
+    //                   existing roof on the tile.
+    private byte[] _roofTiles = Array.Empty<byte>();
+    private byte[] _noRoofTiles = Array.Empty<byte>();
+    public long RoofVersion { get; private set; }
     // Index = room id (0 = outdoor faux room, 1..RoomCount = enclosed
     // interiors). Resized + repopulated by DoRecomputeRooms whenever
     // walls/doors change. Fixed-figure for now: outdoor = OutdoorTempC,
@@ -438,7 +450,7 @@ public sealed class SimRuntime
         }
 
         return new SimSnapshot(
-            Tick, MapVersion, RoomVersion, RoomCount,
+            Tick, MapVersion, RoomVersion, RoomCount, RoofVersion,
             dummies, bps, floorBps.ToArray(), trees, crops, woods, piles, decons.ToArray(),
             doorBps.ToArray(), doorRender.ToArray(),
             stockpiles, growZones,
@@ -1859,6 +1871,170 @@ public sealed class SimRuntime
         _roomTemps[0] = SimConstants.OutdoorTempC;
         for (int i = 1; i <= count; i++) _roomTemps[i] = SimConstants.IndoorTempC;
         RoomVersion++;
+
+        AutoRoofAfterRecompute();
+    }
+
+    // After a room recompute, ensure every interior tile + its bordering
+    // wall/door tiles are roofed (unless the player marked them no-roof).
+    // Auto-roof only ADDS — it never strips an existing roof. Removing
+    // is the player's call via the remove-roof designator. This matches
+    // typical "rooms get roofed automatically, stuff already roofed stays
+    // roofed until you delete it" behavior.
+    private void AutoRoofAfterRecompute()
+    {
+        int w = Map.Width, h = Map.Height;
+        int n = w * h;
+        if (_roofTiles.Length != n) _roofTiles = new byte[n];
+        if (_noRoofTiles.Length != n) _noRoofTiles = new byte[n];
+
+        bool changed = false;
+        // Pass 1: interior tiles get roofed directly.
+        for (int y = 0; y < h; y++)
+        {
+            int row = y * w;
+            for (int x = 0; x < w; x++)
+            {
+                int idx = row + x;
+                if (_roomTiles[idx] == 0) continue;          // not interior
+                if (_noRoofTiles[idx] != 0) continue;        // player forbade
+                if (_roofTiles[idx] != 0) continue;
+                _roofTiles[idx] = 1;
+                changed = true;
+            }
+        }
+        // Pass 2: barrier tiles (walls/doors) that touch an interior tile
+        // get roofed too — that's "the external volume including walls".
+        for (int y = 0; y < h; y++)
+        {
+            int row = y * w;
+            for (int x = 0; x < w; x++)
+            {
+                int idx = row + x;
+                if (_roomTiles[idx] != 0) continue;          // skip interiors (handled above)
+                if (_noRoofTiles[idx] != 0) continue;
+                if (_roofTiles[idx] != 0) continue;
+                // Only barrier tiles inside a wall ring count — i.e. tiles
+                // that have a 4-neighbour pointing at an interior room.
+                bool nearInterior = false;
+                if (x > 0     && _roomTiles[idx - 1] != 0) nearInterior = true;
+                else if (x + 1 < w && _roomTiles[idx + 1] != 0) nearInterior = true;
+                else if (y > 0     && _roomTiles[idx - w] != 0) nearInterior = true;
+                else if (y + 1 < h && _roomTiles[idx + w] != 0) nearInterior = true;
+                if (!nearInterior) continue;
+                _roofTiles[idx] = 1;
+                changed = true;
+            }
+        }
+        if (changed) RoofVersion++;
+    }
+
+    // === Roof designator entry points ===
+    // Drag-rect "build roof" — set the tile to roofed unless the player
+    // has marked it no-roof. Skips out-of-bounds. Bumps RoofVersion if
+    // anything actually changed so the renderer rebuilds its overlay.
+    public void PaintRoofRect(TilePos a, TilePos b)
+    {
+        int w = Map.Width, h = Map.Height;
+        EnsureRoofArrays(w, h);
+        int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
+        int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
+        bool changed = false;
+        for (int y = Math.Max(0, ymin); y <= Math.Min(h - 1, ymax); y++)
+        {
+            int row = y * w;
+            for (int x = Math.Max(0, xmin); x <= Math.Min(w - 1, xmax); x++)
+            {
+                int idx = row + x;
+                if (_noRoofTiles[idx] != 0) continue;
+                if (_roofTiles[idx] != 0) continue;
+                _roofTiles[idx] = 1;
+                changed = true;
+            }
+        }
+        if (changed) RoofVersion++;
+    }
+
+    // Drag-rect "remove roof". Clears the roof flag on every tile in the
+    // rect. Does NOT touch the no-roof mark — separate verb.
+    public void RemoveRoofRect(TilePos a, TilePos b)
+    {
+        int w = Map.Width, h = Map.Height;
+        EnsureRoofArrays(w, h);
+        int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
+        int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
+        bool changed = false;
+        for (int y = Math.Max(0, ymin); y <= Math.Min(h - 1, ymax); y++)
+        {
+            int row = y * w;
+            for (int x = Math.Max(0, xmin); x <= Math.Min(w - 1, xmax); x++)
+            {
+                int idx = row + x;
+                if (_roofTiles[idx] == 0) continue;
+                _roofTiles[idx] = 0;
+                changed = true;
+            }
+        }
+        if (changed) RoofVersion++;
+    }
+
+    // Drag-rect "no-roof zone". When mark = true the rect becomes a
+    // permanent no-roof area (auto-roof will skip it on every future
+    // recompute) AND any existing roof in the rect is stripped at the
+    // same time. When mark = false the rect is freed for auto-roofing
+    // again; existing roof tiles are left alone (the next room recompute
+    // restores them if they're interior).
+    public void SetNoRoofRect(TilePos a, TilePos b, bool mark)
+    {
+        int w = Map.Width, h = Map.Height;
+        EnsureRoofArrays(w, h);
+        int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
+        int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
+        bool changed = false;
+        byte want = mark ? (byte)1 : (byte)0;
+        for (int y = Math.Max(0, ymin); y <= Math.Min(h - 1, ymax); y++)
+        {
+            int row = y * w;
+            for (int x = Math.Max(0, xmin); x <= Math.Min(w - 1, xmax); x++)
+            {
+                int idx = row + x;
+                if (_noRoofTiles[idx] != want)
+                {
+                    _noRoofTiles[idx] = want;
+                    changed = true;
+                }
+                if (mark && _roofTiles[idx] != 0)
+                {
+                    _roofTiles[idx] = 0;
+                    changed = true;
+                }
+            }
+        }
+        if (changed)
+        {
+            RoofVersion++;
+            // Clearing a no-roof mark on a tile inside an interior room
+            // should re-trigger auto-roof. Mark rooms dirty so end-of-tick
+            // recompute fills the freshly-eligible tiles in.
+            if (!mark) _roomsDirty = true;
+        }
+    }
+
+    private void EnsureRoofArrays(int w, int h)
+    {
+        int n = w * h;
+        if (_roofTiles.Length != n) _roofTiles = new byte[n];
+        if (_noRoofTiles.Length != n) _noRoofTiles = new byte[n];
+    }
+
+    public byte[] CopyRoofTilesForRender()
+    {
+        lock (_mapLock) { return (byte[])_roofTiles.Clone(); }
+    }
+
+    public byte[] CopyNoRoofTilesForRender()
+    {
+        lock (_mapLock) { return (byte[])_noRoofTiles.Clone(); }
     }
 
     public int[] CopyRoomTilesForRender()

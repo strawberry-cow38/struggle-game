@@ -537,6 +537,40 @@ public sealed class SetInventorySlotForbiddenCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetInventorySlotForbidden(CarrierEntityId, SlotEntityId, Forbidden);
 }
 
+// === Roof commands ===
+// Drag-rect "build roof" — sets every tile in [A..B] to roofed (unless
+// the tile is marked no-roof). Instant for now; build jobs ship later.
+public sealed class PaintRoofRectCommand : ISimCommand
+{
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public PaintRoofRectCommand(TilePos a, TilePos b) { A = a; B = b; }
+    public void Apply(SimRuntime sim) => sim.PaintRoofRect(A, B);
+}
+
+// Drag-rect "remove roof". Strips the roof flag across the rect; the
+// no-roof mark is untouched.
+public sealed class RemoveRoofRectCommand : ISimCommand
+{
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public RemoveRoofRectCommand(TilePos a, TilePos b) { A = a; B = b; }
+    public void Apply(SimRuntime sim) => sim.RemoveRoofRect(A, B);
+}
+
+// Drag-rect "no-roof" toggle. Mark=true sets the no-roof flag AND
+// strips any roof in the rect. Mark=false clears the flag and lets
+// auto-roof reclaim the area on the next room recompute.
+public sealed class SetNoRoofRectCommand : ISimCommand
+{
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public bool Mark { get; }
+    public SetNoRoofRectCommand(TilePos a, TilePos b, bool mark)
+    { A = a; B = b; Mark = mark; }
+    public void Apply(SimRuntime sim) => sim.SetNoRoofRect(A, B, Mark);
+}
+
 // Debug bar action: spawn a fresh wanderer at a random walkable tile.
 public sealed class SpawnDummyCommand : ISimCommand
 {

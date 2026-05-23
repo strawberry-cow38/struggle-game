@@ -64,6 +64,9 @@ public partial class Bootstrap : Node2D
         var growZoneDesignator = new GrowZoneDesignator { Host = _host, Tools = _tools, Name = "GrowZoneDesignator" };
         AddChild(growZoneDesignator);
 
+        var roofDesignator = new RoofDesignator { Host = _host, Tools = _tools, Name = "RoofDesignator" };
+        AddChild(roofDesignator);
+
         var spawnDesignator = new SpawnPawnDesignator { Host = _host, Tools = _tools, Name = "SpawnPawnDesignator" };
         AddChild(spawnDesignator);
 

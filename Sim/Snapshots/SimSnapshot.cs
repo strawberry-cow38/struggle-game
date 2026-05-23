@@ -12,6 +12,10 @@ public sealed class SimSnapshot
     public long MapVersion { get; }
     public long RoomVersion { get; }
     public int RoomCount { get; }
+    // Bumped whenever the roof or no-roof layer changes (auto-roof,
+    // paint, remove, no-roof toggle). Renderer keys overlay rebuilds
+    // off this exactly like RoomVersion drives the room overlay.
+    public long RoofVersion { get; }
     public DummyState[] Dummies { get; }
     public BlueprintState[] Blueprints { get; }
     public BlueprintState[] FloorBlueprints { get; }
@@ -41,6 +45,7 @@ public sealed class SimSnapshot
         long mapVersion,
         long roomVersion,
         int roomCount,
+        long roofVersion,
         DummyState[] dummies,
         BlueprintState[] blueprints,
         BlueprintState[] floorBlueprints,
@@ -63,6 +68,7 @@ public sealed class SimSnapshot
         MapVersion = mapVersion;
         RoomVersion = roomVersion;
         RoomCount = roomCount;
+        RoofVersion = roofVersion;
         Dummies = dummies;
         Blueprints = blueprints;
         FloorBlueprints = floorBlueprints;

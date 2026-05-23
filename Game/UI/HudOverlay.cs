@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "per-room temp: outdoor 21C, indoor 18C";
+    private const string BuildTag = "roofs: auto-on-room + Roof/UnRoof/NoRoof tools";
 
     private Label _label = null!;
     private Label _versionLabel = null!;

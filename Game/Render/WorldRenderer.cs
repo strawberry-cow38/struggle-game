@@ -36,6 +36,9 @@ public partial class WorldRenderer : Node2D
     private int _mapHeight;
     private long _lastMapVersion = -1;
     private long _lastRoomVersion = -1;
+    private long _lastRoofVersion = -1;
+    private ImageTexture? _roofOverlayTex;
+    private ImageTexture? _noRoofOverlayTex;
 
     // Snapshot pair used for render-side interpolation. _prevSnap is the
     // last snapshot we drew from, _currSnap is the next one. We render at
@@ -157,6 +160,14 @@ public partial class WorldRenderer : Node2D
             _roomOverlayTex = BuildRoomOverlay(roomTiles, _mapWidth, _mapHeight);
             _lastRoomVersion = snap.RoomVersion;
         }
+        if (snap is not null && snap.RoofVersion != _lastRoofVersion)
+        {
+            var roofBytes = Host!.CopyRoofTilesForRender();
+            var noRoofBytes = Host!.CopyNoRoofTilesForRender();
+            _roofOverlayTex = BuildRoofOverlay(roofBytes, _mapWidth, _mapHeight);
+            _noRoofOverlayTex = BuildNoRoofOverlay(noRoofBytes, _mapWidth, _mapHeight);
+            _lastRoofVersion = snap.RoofVersion;
+        }
 
         var mapRect = new Rect2(0, 0, _mapPixelWidth, _mapPixelHeight);
         using (FrameProfiler.Instance.BeginScope("Map"))
@@ -170,6 +181,17 @@ public partial class WorldRenderer : Node2D
             if (_wallOverlayTex is not null)
             {
                 DrawTextureRect(_wallOverlayTex, mapRect, tile: false);
+            }
+            // Roof sits above walls so it visually covers them too. The
+            // no-roof hatch goes on top of everything map-layer so the
+            // player can see the forbidden cells through the room tint.
+            if (_roofOverlayTex is not null)
+            {
+                DrawTextureRect(_roofOverlayTex, mapRect, tile: false);
+            }
+            if (_noRoofOverlayTex is not null)
+            {
+                DrawTextureRect(_noRoofOverlayTex, mapRect, tile: false);
             }
         }
 
@@ -928,6 +950,46 @@ public partial class WorldRenderer : Node2D
             {
                 bool wall = tiles[y * width + x] != 0;
                 img.SetPixel(x, y, wall ? WallColor : transparent);
+            }
+        }
+        return ImageTexture.CreateFromImage(img);
+    }
+
+    // Roof overlay: dark translucent tile per roofed cell. Sits on top
+    // of walls so a roofed wall looks fractionally darker than an
+    // unroofed one — readable but not noisy.
+    private static readonly Color RoofTint = new(0.05f, 0.05f, 0.08f, 0.35f);
+    private static ImageTexture BuildRoofOverlay(byte[] tiles, int width, int height)
+    {
+        var img = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
+        var transparent = new Color(0f, 0f, 0f, 0f);
+        for (int y = 0; y < height; y++)
+        {
+            int row = y * width;
+            for (int x = 0; x < width; x++)
+            {
+                img.SetPixel(x, y, tiles[row + x] != 0 ? RoofTint : transparent);
+            }
+        }
+        return ImageTexture.CreateFromImage(img);
+    }
+
+    // No-roof overlay: yellow tint with checker dithering so the
+    // forbidden cells are obviously "tagged" rather than just colored.
+    // Checker = on for (x+y) odd.
+    private static readonly Color NoRoofTintA = new(1.00f, 0.85f, 0.20f, 0.40f);
+    private static readonly Color NoRoofTintB = new(1.00f, 0.85f, 0.20f, 0.15f);
+    private static ImageTexture BuildNoRoofOverlay(byte[] tiles, int width, int height)
+    {
+        var img = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
+        var transparent = new Color(0f, 0f, 0f, 0f);
+        for (int y = 0; y < height; y++)
+        {
+            int row = y * width;
+            for (int x = 0; x < width; x++)
+            {
+                if (tiles[row + x] == 0) { img.SetPixel(x, y, transparent); continue; }
+                img.SetPixel(x, y, ((x + y) & 1) == 0 ? NoRoofTintA : NoRoofTintB);
             }
         }
         return ImageTexture.CreateFromImage(img);

@@ -20,4 +20,8 @@ public enum ToolMode
     GrowZone = 15,
     GrowZoneExpand = 16,
     GrowZoneShrink = 17,
+    Roof = 18,
+    RemoveRoof = 19,
+    NoRoof = 20,
+    ClearNoRoof = 21,
 }
