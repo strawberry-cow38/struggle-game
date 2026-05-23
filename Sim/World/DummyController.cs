@@ -197,7 +197,10 @@ public sealed class DummyController
                 HandleHaul(ref pos, ref path, entity, cb, view, job, here, store);
                 return;
             }
-            else if (job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct)
+            else if (job.Kind == JobKind.FloorBuild
+                || job.Kind == JobKind.FloorDeconstruct
+                || job.Kind == JobKind.LampBuild
+                || job.Kind == JobKind.LampDeconstruct)
             {
                 // Floors don't block movement and the worker stands on
                 // the tile itself — approach = job.Tile, adjacency
@@ -394,7 +397,9 @@ public sealed class DummyController
                 && job.Kind != JobKind.Harvest
                 && job.Kind != JobKind.Sow
                 && job.Kind != JobKind.RoofBuild
-                && job.Kind != JobKind.RoofRemove) continue;
+                && job.Kind != JobKind.RoofRemove
+                && job.Kind != JobKind.LampBuild
+                && job.Kind != JobKind.LampDeconstruct) continue;
             if (job.State != JobState.Open) continue;
             if (job.Forbidden) continue;
             // A pawn still hauling (forbidden cargo retained from a prior
@@ -408,11 +413,14 @@ public sealed class DummyController
             bool isHaul = job.Kind == JobKind.Haul;
             bool isFloor = job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct;
             bool isRoof = job.Kind == JobKind.RoofBuild || job.Kind == JobKind.RoofRemove;
-            if (isHaul || isFloor)
+            bool isLamp = job.Kind == JobKind.LampBuild || job.Kind == JobKind.LampDeconstruct;
+            if (isHaul || isFloor || isLamp)
             {
                 // Haul pickup walks onto the source tile itself, not a
-                // neighbor. Floors also walk onto the tile — they don't
-                // block pathing and the worker can stand on them.
+                // neighbor. Floors + lamps also walk onto the tile —
+                // they don't block pathing and the worker can stand on
+                // them. Lamp placement rules already gate out walls /
+                // doors, so the tile is reliably walkable.
                 if (!view.Walkable(job.Tile)) continue;
                 approach = job.Tile;
             }

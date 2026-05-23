@@ -261,6 +261,14 @@ public partial class WorldRenderer : Node2D
                 DrawRoofBlueprint(rbp.Tile, rbp.Progress, rbp.Build);
                 if (rbp.Forbidden) DrawForbidX(rbp.Tile);
             }
+
+            foreach (var lbp in snap.LampBlueprints)
+            {
+                if (lbp.Tile.X < viewMinTileX || lbp.Tile.X > viewMaxTileX
+                    || lbp.Tile.Y < viewMinTileY || lbp.Tile.Y > viewMaxTileY) continue;
+                DrawLampBlueprint(lbp.Tile, lbp.Progress);
+                if (lbp.Forbidden) DrawForbidX(lbp.Tile);
+            }
         }
 
         using (FrameProfiler.Instance.BeginScope("Doors"))
@@ -302,6 +310,7 @@ public partial class WorldRenderer : Node2D
                 foreach (var t in Host.SelectedWallTiles) DrawSelectionOutline(t);
                 foreach (var t in Host.SelectedDoorTiles) DrawSelectionOutline(t);
                 foreach (var t in Host.SelectedBlueprintTiles) DrawSelectionOutline(t);
+                foreach (var t in Host.SelectedLampTiles) DrawSelectionOutline(t);
             }
         }
 
@@ -378,6 +387,19 @@ public partial class WorldRenderer : Node2D
             if (_noRoofOverlayTex is not null)
             {
                 DrawTextureRect(_noRoofOverlayTex, mapRectForDark, tile: false);
+            }
+        }
+
+        using (FrameProfiler.Instance.BeginScope("Lamps"))
+        {
+            // Drawn above darkness so a powered lamp visibly glows even
+            // in an otherwise dim tile. Unpowered lamps still read as a
+            // dim fixture for the same reason — readable in the dark.
+            foreach (var lamp in snap.Lamps)
+            {
+                if (lamp.Tile.X < viewMinTileX || lamp.Tile.X > viewMaxTileX
+                    || lamp.Tile.Y < viewMinTileY || lamp.Tile.Y > viewMaxTileY) continue;
+                DrawLamp(lamp.Tile, lamp.PoweredOn);
             }
         }
 
@@ -912,6 +934,53 @@ public partial class WorldRenderer : Node2D
             DrawLine(a, b, RoofRemoveBorder, width: 2f);
             DrawLine(c, d, RoofRemoveBorder, width: 2f);
         }
+        if (progress > 0f)
+        {
+            float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
+            var bar = new Rect2(
+                rect.Position.X,
+                rect.Position.Y + (PixelsPerTile - h),
+                PixelsPerTile,
+                h);
+            DrawRect(bar, BlueprintProgress, filled: true);
+        }
+    }
+
+    private static readonly Color LampBpFill = new(1.00f, 0.85f, 0.30f, 0.22f);
+    private static readonly Color LampBpBorder = new(1.00f, 0.95f, 0.55f, 0.85f);
+    private static readonly Color LampBaseColor = new(0.35f, 0.30f, 0.22f, 1f);
+    private static readonly Color LampLitColor = new(1.00f, 0.95f, 0.55f, 1f);
+    private static readonly Color LampLitHalo = new(1.00f, 0.90f, 0.45f, 0.45f);
+    private static readonly Color LampOffColor = new(0.45f, 0.42f, 0.32f, 1f);
+
+    private void DrawLamp(TilePos tile, bool poweredOn)
+    {
+        float cx = (tile.X + 0.5f) * PixelsPerTile;
+        float cy = (tile.Y + 0.5f) * PixelsPerTile;
+        float baseR = PixelsPerTile * 0.30f;
+        float bulbR = PixelsPerTile * 0.18f;
+        // Dark base plate so the lamp reads as a fixture, not just a
+        // glow.
+        DrawCircle(new Vector2(cx, cy + PixelsPerTile * 0.06f), baseR, LampBaseColor);
+        if (poweredOn)
+        {
+            // Soft halo to sell the emission; the per-tile light layer
+            // already brightens surroundings, so this is mostly the
+            // bulb's own bloom.
+            DrawCircle(new Vector2(cx, cy), bulbR * 2.0f, LampLitHalo);
+            DrawCircle(new Vector2(cx, cy), bulbR, LampLitColor);
+        }
+        else
+        {
+            DrawCircle(new Vector2(cx, cy), bulbR, LampOffColor);
+        }
+    }
+
+    private void DrawLampBlueprint(TilePos tile, float progress)
+    {
+        var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+        DrawRect(rect, LampBpFill, filled: true);
+        DrawRect(rect, LampBpBorder, filled: false, width: 2f);
         if (progress > 0f)
         {
             float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);

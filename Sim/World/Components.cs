@@ -242,6 +242,26 @@ public struct DoorBlueprint : IComponent
     public float ProgressSec;
 }
 
+// A built lamp. Doesn't block walkability (pawns walk over it; placement
+// gates against trees/walls/doors/existing lamps but allows building on
+// open floor). PoweredOn cheat-toggles emission until a power network
+// ships — when on, the lamp writes a circular falloff into the per-tile
+// light layer (50% inner, 25-49% mid ring, 0-24% outer ring).
+public struct Lamp : IComponent
+{
+    public TilePos Tile;
+    public bool PoweredOn;
+}
+
+// Pending lamp construction job. ProgressSec advances while a builder
+// stands on or adjacent to the tile. On completion the entity gains a
+// Lamp component (PoweredOn=true) and the blueprint marker is replaced.
+public struct LampBlueprint : IComponent
+{
+    public TilePos Tile;
+    public float ProgressSec;
+}
+
 // One item in a pawn's carry inventory. Each slot references an
 // existing item entity (Wood today, more later) kept alive across
 // the haul so completion is a re-anchor rather than delete/recreate.

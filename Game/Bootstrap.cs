@@ -67,6 +67,9 @@ public partial class Bootstrap : Node2D
         var roofDesignator = new RoofDesignator { Host = _host, Tools = _tools, Name = "RoofDesignator" };
         AddChild(roofDesignator);
 
+        var lampDesignator = new LampDesignator { Host = _host, Tools = _tools, Name = "LampDesignator" };
+        AddChild(lampDesignator);
+
         var spawnDesignator = new SpawnPawnDesignator { Host = _host, Tools = _tools, Name = "SpawnPawnDesignator" };
         AddChild(spawnDesignator);
 
@@ -108,6 +111,9 @@ public partial class Bootstrap : Node2D
 
         var doorInfoPanel = new DoorInfoPanel { Host = _host, Name = "DoorInfoPanel" };
         AddChild(doorInfoPanel);
+
+        var lampInfoPanel = new LampInfoPanel { Host = _host, Name = "LampInfoPanel" };
+        AddChild(lampInfoPanel);
 
         var blueprintInfoPanel = new BlueprintInfoPanel { Host = _host, Name = "BlueprintInfoPanel" };
         AddChild(blueprintInfoPanel);
@@ -260,6 +266,11 @@ public partial class Bootstrap : Node2D
                 foreach (var t in _host.SelectedDoorTiles)
                 {
                     _host.QueueCommand(new Sim.Commands.PostDoorDeconCommand(t));
+                    any = true;
+                }
+                foreach (var t in _host.SelectedLampTiles)
+                {
+                    _host.QueueCommand(new Sim.Commands.PostLampDeconCommand(t));
                     any = true;
                 }
                 if (any) GetViewport().SetInputAsHandled();

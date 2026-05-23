@@ -29,6 +29,34 @@ public sealed class PlaceDoorBlueprintCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.TryPlaceDoorBlueprint(Tile);
 }
 
+// Single-tile lamp designation. Lamp doesn't block walking; placement
+// rejects walls / doors / trees / existing lamps / other jobs.
+public sealed class PlaceLampBlueprintCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public PlaceLampBlueprintCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.TryPlaceLampBlueprint(Tile);
+}
+
+// Lamp info panel → "Power" cheat toggle. Stubs the absent power
+// network: lamps emit light iff PoweredOn is true.
+public sealed class SetLampPoweredCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public bool On { get; }
+    public SetLampPoweredCommand(TilePos tile, bool on) { Tile = tile; On = on; }
+    public void Apply(SimRuntime sim) => sim.SetLampPowered(Tile, On);
+}
+
+// Lamp info panel → "Deconstruct" button. Single-tile sibling of the
+// drag-rect decon.
+public sealed class PostLampDeconCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public PostLampDeconCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.TryPostLampDeconstructJob(Tile);
+}
+
 // Drag-rect wood-floor designation. Posts one FloorBuild blueprint per
 // tile in the rect that's eligible (no wall, no existing wood floor,
 // no other job).
@@ -197,8 +225,16 @@ public sealed class DeconstructWallsInRectCommand : ISimCommand
             if (tile.Y < ymin || tile.Y > ymax) continue;
             doorHits.Add(tile);
         }
+        var lampHits = new List<TilePos>();
+        foreach (var tile in sim.LampTiles)
+        {
+            if (tile.X < xmin || tile.X > xmax) continue;
+            if (tile.Y < ymin || tile.Y > ymax) continue;
+            lampHits.Add(tile);
+        }
         foreach (var tile in wallHits) sim.TryPostDeconstructJob(tile);
         foreach (var tile in doorHits) sim.TryPostDoorDeconstructJob(tile);
+        foreach (var tile in lampHits) sim.TryPostLampDeconstructJob(tile);
     }
 }
 

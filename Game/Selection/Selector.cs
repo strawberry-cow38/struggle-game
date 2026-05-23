@@ -85,6 +85,7 @@ public partial class Selector : Node2D
             Host.SelectedWallTiles = Array.Empty<TilePos>();
             Host.SelectedDoorTiles = Array.Empty<TilePos>();
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
+            Host.SelectedLampTiles = Array.Empty<TilePos>();
             return;
         }
 
@@ -156,6 +157,23 @@ public partial class Selector : Node2D
             Host.SelectedDoorTiles = ToggleTile(Host.SelectedDoorTiles, clickTile, shift);
             Host.SelectedWallTiles = Array.Empty<TilePos>();
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
+            Host.SelectedLampTiles = Array.Empty<TilePos>();
+            Host.SelectedDummyId = null;
+            Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodIds = Array.Empty<int>();
+            return;
+        }
+
+        // Lamp under cursor — picks before blueprints/walls so the
+        // fixture is reachable even if a passthrough tile coincides.
+        if (TryPickLamp(snap, clickTile))
+        {
+            Host.SelectedLampTiles = ToggleTile(Host.SelectedLampTiles, clickTile, shift);
+            Host.SelectedDoorTiles = Array.Empty<TilePos>();
+            Host.SelectedWallTiles = Array.Empty<TilePos>();
+            Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
             Host.SelectedGrowZoneId = null;
@@ -188,6 +206,7 @@ public partial class Selector : Node2D
             Host.SelectedWallTiles = ToggleTile(Host.SelectedWallTiles, clickTile, shift);
             Host.SelectedDoorTiles = Array.Empty<TilePos>();
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
+            Host.SelectedLampTiles = Array.Empty<TilePos>();
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
             Host.SelectedGrowZoneId = null;
@@ -207,6 +226,7 @@ public partial class Selector : Node2D
             Host.SelectedWallTiles = Array.Empty<TilePos>();
             Host.SelectedDoorTiles = Array.Empty<TilePos>();
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
+            Host.SelectedLampTiles = Array.Empty<TilePos>();
         }
     }
 
@@ -242,6 +262,15 @@ public partial class Selector : Node2D
         foreach (var d in snap.Doors)
         {
             if (d.Tile == tile) return true;
+        }
+        return false;
+    }
+
+    private bool TryPickLamp(SimSnapshot snap, TilePos tile)
+    {
+        foreach (var l in snap.Lamps)
+        {
+            if (l.Tile == tile) return true;
         }
         return false;
     }

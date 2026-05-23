@@ -36,6 +36,10 @@ public sealed class SimSnapshot
     // blueprint outline; Build=false draws as a remove-X over the
     // already-roofed tile.
     public RoofBlueprintState[] RoofBlueprints { get; }
+    // Built lamps + pending LampBuild blueprints. LampState carries the
+    // PoweredOn cheat toggle; LampBlueprintState carries build progress.
+    public LampState[] Lamps { get; }
+    public BlueprintState[] LampBlueprints { get; }
 
     // Set when the game has a selected colonist; null otherwise.
     public int? SelectedDummyId { get; }
@@ -68,6 +72,8 @@ public sealed class SimSnapshot
         StockpileState[] stockpiles,
         GrowZoneState[] growZones,
         RoofBlueprintState[] roofBlueprints,
+        LampState[] lamps,
+        BlueprintState[] lampBlueprints,
         int? selectedDummyId = null,
         TilePos[]? selectedPath = null,
         TilePos[]? selectedOrders = null,
@@ -93,6 +99,8 @@ public sealed class SimSnapshot
         Stockpiles = stockpiles;
         GrowZones = growZones;
         RoofBlueprints = roofBlueprints;
+        Lamps = lamps;
+        LampBlueprints = lampBlueprints;
         SelectedDummyId = selectedDummyId;
         SelectedPath = selectedPath;
         SelectedOrders = selectedOrders;
@@ -174,6 +182,10 @@ public readonly record struct StockpileState(
 // remove time. Build=true paints as a roof blueprint outline; false
 // paints as an X over the already-roofed tile.
 public readonly record struct RoofBlueprintState(TilePos Tile, float Progress, bool Build, bool Forbidden);
+
+// Built lamp. PoweredOn drives the renderer's lit/unlit icon and the
+// light-recompute decision to stamp falloff at this tile.
+public readonly record struct LampState(TilePos Tile, bool PoweredOn);
 
 // Render-friendly grow zone. Mirror of StockpileState. AllowCutting +
 // AllowSowing drive the manager's auto-job posting; CropKind decides

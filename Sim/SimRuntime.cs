@@ -74,6 +74,7 @@ public sealed class SimRuntime
     private readonly DeconSystem _decons;
     private readonly FloorSystem _floors;
     private readonly RoofSystem _roofs;
+    private readonly LampSystem _lamps;
     private readonly DoorBuildSystem _doorBuilds;
     private readonly DoorSystem _doors;
     private readonly HaulSystem _hauls;
@@ -87,6 +88,10 @@ public sealed class SimRuntime
     private readonly Dictionary<TilePos, Entity> _trees = new();
     private readonly Dictionary<TilePos, Entity> _crops = new();
     private readonly Dictionary<TilePos, Entity> _doorMap = new();
+    // Built lamps. Tile → Lamp entity. Lamps don't block walkability;
+    // the map keeps them addressable for selection / power toggle /
+    // decon and lets the light recompute iterate every powered lamp.
+    private readonly Dictionary<TilePos, Entity> _lampMap = new();
     // Subset of doors flagged Forbidden — passed to MapView so A* + the
     // mover treat them like walls. Kept in sync with the Door component.
     private readonly HashSet<TilePos> _forbiddenDoorTiles = new();
@@ -162,6 +167,7 @@ public sealed class SimRuntime
         _decons = new DeconSystem(this, Jobs);
         _floors = new FloorSystem(this, Jobs);
         _roofs = new RoofSystem(this, Jobs);
+        _lamps = new LampSystem(this, Jobs);
         _doorBuilds = new DoorBuildSystem(this, Jobs);
         _doors = new DoorSystem();
         _hauls = new HaulSystem(this, Jobs);
@@ -194,6 +200,7 @@ public sealed class SimRuntime
         _decons.Step(Store, dt);
         _floors.Step(Store, dt);
         _roofs.Step(Store, dt);
+        _lamps.Step(Store, dt);
         _doorBuilds.Step(Store, dt);
         _doors.Step(Store, dt);
         _hauls.Step(Store, dt);
@@ -212,6 +219,9 @@ public sealed class SimRuntime
 
     public IReadOnlyCollection<TilePos> DoorTiles => _doorMap.Keys;
     public bool TryGetDoor(TilePos tile, out Entity entity) => _doorMap.TryGetValue(tile, out entity!);
+
+    public IReadOnlyCollection<TilePos> LampTiles => _lampMap.Keys;
+    public bool TryGetLamp(TilePos tile, out Entity entity) => _lampMap.TryGetValue(tile, out entity!);
 
     public void QueueCommand(ISimCommand cmd) => _commands.Enqueue(cmd);
 
@@ -417,9 +427,14 @@ public sealed class SimRuntime
         var decons = new List<DeconState>();
         foreach (var job in Jobs.All)
         {
-            if (job.Kind != JobKind.Deconstruct && job.Kind != JobKind.DoorDeconstruct) continue;
+            if (job.Kind != JobKind.Deconstruct
+                && job.Kind != JobKind.DoorDeconstruct
+                && job.Kind != JobKind.LampDeconstruct) continue;
             var d = job.Entity.GetComponent<Decon>();
-            decons.Add(new DeconState(job.Tile, d.ProgressSec / DeconSystem.DeconTimeSec, job.Forbidden));
+            float denom = job.Kind == JobKind.LampDeconstruct
+                ? LampSystem.LampDeconTimeSec
+                : DeconSystem.DeconTimeSec;
+            decons.Add(new DeconState(job.Tile, d.ProgressSec / denom, job.Forbidden));
         }
 
         // Include both active door-build blueprints and ones parked
@@ -468,11 +483,27 @@ public sealed class SimRuntime
                 z.Id, z.Name, z.CropKind, z.AllowCutting, z.AllowSowing, tiles);
         }
 
+        var lamps = new LampState[_lampMap.Count];
+        int li = 0;
+        foreach (var (lTile, lEnt) in _lampMap)
+        {
+            var lc = lEnt.GetComponent<Lamp>();
+            lamps[li++] = new LampState(lTile, lc.PoweredOn);
+        }
+
+        var lampBps = new List<BlueprintState>();
+        Store.Query<LampBlueprint>().ForEachEntity((ref LampBlueprint bp, Entity _) =>
+        {
+            bool forbidden = Jobs.GetByTile(bp.Tile)?.Forbidden ?? false;
+            lampBps.Add(new BlueprintState(bp.Tile, bp.ProgressSec / LampSystem.LampBuildTimeSec, forbidden));
+        });
+
         return new SimSnapshot(
             Tick, MapVersion, RoomVersion, RoomCount, RoofVersion, LightVersion,
             dummies, bps, floorBps.ToArray(), trees, crops, woods, piles, decons.ToArray(),
             doorBps.ToArray(), doorRender.ToArray(),
             stockpiles, growZones, roofBps.ToArray(),
+            lamps, lampBps.ToArray(),
             selectedDummyId, selectedPath, selectedOrders, selTreeArr, selWoodArr);
     }
 
@@ -613,7 +644,7 @@ public sealed class SimRuntime
             {
                 _roofTiles[idx] = 1;
                 RoofVersion++;
-                RecomputeLightAt(idx);
+                RecomputeLightAll();
             }
         }
         else if (kind == JobKind.RoofRemove)
@@ -625,7 +656,27 @@ public sealed class SimRuntime
             {
                 _roofTiles[idx] = 0;
                 RoofVersion++;
-                RecomputeLightAt(idx);
+                RecomputeLightAll();
+            }
+        }
+        else if (kind == JobKind.LampBuild)
+        {
+            // Transmute the blueprint entity into the live lamp: drop
+            // LampBlueprint, add Lamp at PoweredOn=true (stub until a
+            // power network ships).
+            entity.RemoveComponent<LampBlueprint>();
+            entity.AddComponent(new Lamp { Tile = tile, PoweredOn = true });
+            _lampMap[tile] = entity;
+            RecomputeLightAll();
+        }
+        else if (kind == JobKind.LampDeconstruct)
+        {
+            entity.DeleteEntity();
+            if (_lampMap.TryGetValue(tile, out var lampEnt))
+            {
+                _lampMap.Remove(tile);
+                lampEnt.DeleteEntity();
+                RecomputeLightAll();
             }
         }
         else if (kind == JobKind.Deconstruct)
@@ -780,6 +831,12 @@ public sealed class SimRuntime
             // Roof state unchanged; throw the marker away.
             entity.DeleteEntity();
         }
+        else if (kind == JobKind.LampBuild || kind == JobKind.LampDeconstruct)
+        {
+            // Lamp state unchanged; throw the marker away. For decon the
+            // Lamp entity stayed in _lampMap so it's still functional.
+            entity.DeleteEntity();
+        }
         else if (kind == JobKind.DoorDeconstruct)
         {
             // Door stays; throw the marker away.
@@ -853,6 +910,61 @@ public sealed class SimRuntime
             return false;
         }
         return true;
+    }
+
+    // Single-click lamp placement. Rejects if a wall, door, tree, lamp,
+    // or any other job already sits on the tile. Lamps don't block
+    // walking so we don't touch the map view; an in-progress build is
+    // an entity carrying LampBlueprint + a LampBuild job that swaps to
+    // Lamp on completion.
+    public bool TryPlaceLampBlueprint(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return false;
+        if (Map.GetWall(tile) != WallType.None) return false;
+        if (_trees.ContainsKey(tile)) return false;
+        if (_doorMap.ContainsKey(tile)) return false;
+        if (_lampMap.ContainsKey(tile)) return false;
+        if (Jobs.HasTile(tile)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new LampBlueprint { Tile = tile, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.LampBuild, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        return true;
+    }
+
+    // Post a single LampDeconstruct job. The Lamp entity stays in
+    // _lampMap until completion; the job carries a fresh Decon marker
+    // that LampSystem ticks against.
+    public bool TryPostLampDeconstructJob(TilePos tile)
+    {
+        if (!_lampMap.ContainsKey(tile)) return false;
+        if (Jobs.HasTile(tile)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new Decon { Tile = tile, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.LampDeconstruct, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        return true;
+    }
+
+    // Cheat toggle: flip the lamp's PoweredOn flag and recompute light
+    // so the falloff disappears / reappears immediately.
+    public void SetLampPowered(TilePos tile, bool on)
+    {
+        if (!_lampMap.TryGetValue(tile, out var lampEnt)) return;
+        ref var lamp = ref lampEnt.GetComponent<Lamp>();
+        if (lamp.PoweredOn == on) return;
+        lamp.PoweredOn = on;
+        RecomputeLightAll();
     }
 
     // Flip a built door's Forbidden flag. Forbidden = treated as a
@@ -2131,11 +2243,26 @@ public sealed class SimRuntime
         }
     }
 
+    // Per-lamp falloff. Master spec: 50% inside a 15x15 diameter disc,
+    // 49→25% ramp in the 17x17 ring, 24→0% ramp in the 19x19 ring.
+    // Squared-distance thresholds (tile units, lamp at center .5, .5):
+    //   d² ≤ 56.25  (r ≤ 7.5)  → 128
+    //   d² ≤ 72.25  (r ≤ 8.5)  → lerp 125 → 64 (49% → 25%)
+    //   d² ≤ 90.25  (r ≤ 9.5)  → lerp 61  → 0  (24% → 0%)
+    // Contributions max-blend against base sun/roof light, so a lamp
+    // never darkens a tile.
+    private const float LampInnerSq = 56.25f;
+    private const float LampMidSq   = 72.25f;
+    private const float LampOuterSq = 90.25f;
+    private const byte LampInner = 128;
+
     // Full-array recompute. Used after room/roof bulk changes where it's
-    // simpler to scan than to track per-tile dirty flags.
+    // simpler to scan than to track per-tile dirty flags. Also folds in
+    // every powered lamp's circular emission via max-blend.
     private void RecomputeLightAll()
     {
         bool changed = false;
+        int w = Map.Width, h = Map.Height;
         for (int i = 0; i < _lightTiles.Length; i++)
         {
             byte want = _roofTiles[i] != 0 ? (byte)0 : SunLightStub;
@@ -2143,6 +2270,55 @@ public sealed class SimRuntime
             {
                 _lightTiles[i] = want;
                 changed = true;
+            }
+        }
+        // Lamp emission. Iterate the lamp map and stamp circular falloff
+        // into a tile box around each one. Max-blend so overlaps don't
+        // double-bright and so sun-lit tiles ignore the (dimmer) lamp.
+        foreach (var (tile, lampEnt) in _lampMap)
+        {
+            if (!lampEnt.HasComponent<Lamp>()) continue;
+            if (!lampEnt.GetComponent<Lamp>().PoweredOn) continue;
+            int cx = tile.X, cy = tile.Y;
+            int x0 = Math.Max(0, cx - 9);
+            int x1 = Math.Min(w - 1, cx + 9);
+            int y0 = Math.Max(0, cy - 9);
+            int y1 = Math.Min(h - 1, cy + 9);
+            for (int y = y0; y <= y1; y++)
+            {
+                int dy = y - cy;
+                int row = y * w;
+                for (int x = x0; x <= x1; x++)
+                {
+                    int dx = x - cx;
+                    float d2 = dx * dx + dy * dy;
+                    if (d2 > LampOuterSq) continue;
+                    byte contrib;
+                    if (d2 <= LampInnerSq)
+                    {
+                        contrib = LampInner;
+                    }
+                    else if (d2 <= LampMidSq)
+                    {
+                        // 49% → 25% across (sqrt(56.25)=7.5 .. sqrt(72.25)=8.5)
+                        float r = MathF.Sqrt(d2);
+                        float t = (r - 7.5f) / 1.0f;
+                        contrib = (byte)Math.Round(125 - (125 - 64) * t);
+                    }
+                    else
+                    {
+                        // 24% → 0% across (8.5 .. 9.5)
+                        float r = MathF.Sqrt(d2);
+                        float t = (r - 8.5f) / 1.0f;
+                        contrib = (byte)Math.Round(61 - 61 * t);
+                    }
+                    int idx = row + x;
+                    if (_lightTiles[idx] < contrib)
+                    {
+                        _lightTiles[idx] = contrib;
+                        changed = true;
+                    }
+                }
             }
         }
         if (changed) LightVersion++;

@@ -24,4 +24,5 @@ public enum ToolMode
     RemoveRoof = 19,
     NoRoof = 20,
     ClearNoRoof = 21,
+    Lamp = 22,
 }

@@ -41,6 +41,7 @@ public partial class Toolbar : CanvasLayer
         AddButton(_hbox, ToolMode.FloorDecon, "FloorDecon");
         AddButton(_hbox, ToolMode.Stockpile, "Stockpile");
         AddButton(_hbox, ToolMode.GrowZone, "Grow");
+        AddButton(_hbox, ToolMode.Lamp, "Lamp");
         AddButton(_hbox, ToolMode.Roof, "Roof");
         AddButton(_hbox, ToolMode.RemoveRoof, "UnRoof");
         AddButton(_hbox, ToolMode.NoRoof, "NoRoof");
