@@ -284,7 +284,12 @@ public partial class VisualLighting : Node2D
             // LampRangeTiles (= sim's LampOuterSq radius) on each side.
             node.TextureScale = (LampRangeTiles * 2f * PixelsPerTile) / 128f;
             node.Color = new Color(lamp.Color.R / 255f, lamp.Color.G / 255f, lamp.Color.B / 255f);
-            node.Energy = lamp.PoweredOn ? 0.7f : 0f;
+            // Mix mode lerps toward (color * energy) using the texture
+            // alpha. Energy must be ≥ 1.0 so the lamp target meets or
+            // exceeds bright backgrounds (sun-lit tiles, other lamps);
+            // otherwise Mix darkens lit pixels instead of brightening
+            // dark ones, which reads as "subtracting light".
+            node.Energy = lamp.PoweredOn ? 1.0f : 0f;
             node.Enabled = lamp.PoweredOn;
         }
         // Drop nodes for lamps that no longer exist (deconstructed).
@@ -317,10 +322,11 @@ public partial class VisualLighting : Node2D
                 float dy = y - center;
                 float d = Mathf.Sqrt(dx * dx + dy * dy);
                 float t = Mathf.Clamp(1f - d / maxR, 0f, 1f);
-                // Linear falloff capped at ~0.55 alpha so the source
-                // tile stays bright but never reads as a nuclear spike;
-                // gentle taper extends the visible glow far out.
-                float a = Mathf.Pow(t, 1.2f) * 0.55f;
+                // Mix-mode alpha controls the lerp weight between
+                // background and lamp color. Full 1.0 at center so the
+                // lamp tile saturates at the lamp color (no "nuclear"
+                // risk under Mix — final caps at the color itself).
+                float a = Mathf.Pow(t, 1.2f);
                 img.SetPixel(x, y, new Color(1f, 1f, 1f, a));
             }
         }
