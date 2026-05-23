@@ -177,8 +177,16 @@ public partial class WorldRenderer : Node2D
 
         // Visible-world tile rect for cheap AABB culling of entity loops.
         // 1-tile pad so things straddling the edge don't pop in/out.
-        var canvasInv = GetCanvasTransform().AffineInverse();
+        var canvasXform = GetCanvasTransform();
+        var canvasInv = canvasXform.AffineInverse();
         var vpSize = GetViewportRect().Size;
+        // pxPerTile = how many screen pixels a single sim tile occupies
+        // after the camera transform. Below ~14 px/tile, trees + crops
+        // are tiny — drop to a flat-rect LOD that skips the per-tree
+        // DrawCircles (~32-segment polygons) so the per-tree cost stops
+        // dominating the frame when zoomed far out.
+        float pxPerTile = canvasXform.X.Length() * PixelsPerTile;
+        bool simpleLod = pxPerTile < 14f;
         var tl = canvasInv * Vector2.Zero;
         var br = canvasInv * vpSize;
         int viewMinTileX = (int)Math.Floor(Math.Min(tl.X, br.X) / PixelsPerTile) - 1;
@@ -303,7 +311,7 @@ public partial class WorldRenderer : Node2D
             {
                 if (t.Tile.X < viewMinTileX || t.Tile.X > viewMaxTileX
                     || t.Tile.Y < viewMinTileY || t.Tile.Y > viewMaxTileY) continue;
-                DrawTree(t, selectedTreeSet);
+                DrawTree(t, selectedTreeSet, simpleLod);
             }
         }
 
@@ -313,7 +321,7 @@ public partial class WorldRenderer : Node2D
             {
                 if (c.Tile.X < viewMinTileX || c.Tile.X > viewMaxTileX
                     || c.Tile.Y < viewMinTileY || c.Tile.Y > viewMaxTileY) continue;
-                DrawCrop(c);
+                DrawCrop(c, simpleLod);
             }
         }
 
@@ -460,12 +468,35 @@ public partial class WorldRenderer : Node2D
         }
     }
 
-    private void DrawTree(Sim.Snapshots.TreeState t, HashSet<int>? selectedTrees)
+    private void DrawTree(Sim.Snapshots.TreeState t, HashSet<int>? selectedTrees, bool simpleLod)
     {
         var center = new Vector2((t.Tile.X + 0.5f) * PixelsPerTile, (t.Tile.Y + 0.5f) * PixelsPerTile);
+        float scale = 0.35f + 0.65f * Mathf.Clamp(t.GrowthStage, 0f, 1f);
+
+        if (simpleLod)
+        {
+            // Zoomed out: 2 rects per tree (canopy block + trunk pip),
+            // no DrawCircle (defaults to 32-segment polygon = ~64 tris
+            // per canopy). Cuts ~95% of the per-tree vertex cost at low
+            // zoom where the detail isn't visible anyway.
+            float r = PixelsPerTile * 0.42f * scale;
+            DrawRect(new Rect2(center.X - r, center.Y - r, r * 2f, r * 2f), CanopyColor, filled: true);
+            if (t.HasJob)
+            {
+                float s = PixelsPerTile * 0.30f;
+                DrawLine(center + new Vector2(-s, -s), center + new Vector2(s, s), TreeMarkColor, width: 2f);
+                DrawLine(center + new Vector2(-s, s), center + new Vector2(s, -s), TreeMarkColor, width: 2f);
+            }
+            if (selectedTrees is not null && selectedTrees.Contains(t.EntityId))
+            {
+                var ring = new Rect2(center.X - r - 1f, center.Y - r - 1f, (r + 1f) * 2f, (r + 1f) * 2f);
+                DrawRect(ring, TreeSelectColor, filled: false, width: 1.5f);
+            }
+            return;
+        }
+
         // Visually grow with stage. Saplings start at ~35% scale so they
         // still read as a tree (not invisible) and mature at 1.0.
-        float scale = 0.35f + 0.65f * Mathf.Clamp(t.GrowthStage, 0f, 1f);
         float trunkW = PixelsPerTile * 0.18f * scale;
         float trunkH = PixelsPerTile * 0.40f * scale;
         var trunkRect = new Rect2(center.X - trunkW * 0.5f, center.Y, trunkW, trunkH);
@@ -505,10 +536,17 @@ public partial class WorldRenderer : Node2D
     private static readonly Color CutMarkColor = new(0.95f, 0.85f, 0.20f, 0.95f);
     private static readonly Color HarvestMarkColor = new(1.0f, 0.55f, 0.20f, 0.95f);
 
-    private void DrawCrop(Sim.Snapshots.CropState c)
+    private void DrawCrop(Sim.Snapshots.CropState c, bool simpleLod)
     {
         var center = new Vector2((c.Tile.X + 0.5f) * PixelsPerTile, (c.Tile.Y + 0.5f) * PixelsPerTile);
         float scale = 0.30f + 0.70f * Mathf.Clamp(c.GrowthStage, 0f, 1f);
+
+        if (simpleLod)
+        {
+            float r = PixelsPerTile * 0.20f * scale;
+            DrawRect(new Rect2(center.X - r, center.Y - r, r * 2f, r * 2f), CarrotBody, filled: true);
+            return;
+        }
 
         // Orange wedge for the carrot body, point-down.
         float bodyH = PixelsPerTile * 0.32f * scale;
