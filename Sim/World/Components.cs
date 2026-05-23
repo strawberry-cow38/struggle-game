@@ -24,8 +24,12 @@ public struct PathFollower : IComponent
 }
 
 // Marker for the wandering dummy entity. DummyController scans for this.
+// IdleSec counts down while the pawn is parked between wander strolls
+// — RequestWanderPath is gated on it hitting zero so colonists actually
+// pause at their target instead of marching tile-to-tile non-stop.
 public struct Wanderer : IComponent
 {
+    public float IdleSec;
 }
 
 // Pending construction job on a tile. ProgressSec advances while a

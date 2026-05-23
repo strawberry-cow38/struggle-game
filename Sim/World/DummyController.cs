@@ -76,15 +76,15 @@ public sealed class DummyController
         var cb = store.GetCommandBuffer();
         _topoffReservedThisTick.Clear();
         var query = store.Query<WorldPos, PathFollower, Wanderer>();
-        query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity entity) =>
+        query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer w, Entity entity) =>
         {
-            Plan(ref pos, ref path, entity, cb, view, store);
+            Plan(ref pos, ref path, ref w, dt, entity, cb, view, store);
             AdvanceAlongPath(ref pos, ref path, dt, view);
         });
         cb.Playback();
     }
 
-    private void Plan(ref WorldPos pos, ref PathFollower path, Entity entity, CommandBuffer cb, MapView view, EntityStore store)
+    private void Plan(ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, Entity entity, CommandBuffer cb, MapView view, EntityStore store)
     {
         var here = new TilePos((int)pos.X, (int)pos.Y);
         bool drafted = entity.HasComponent<Drafted>();
@@ -271,9 +271,20 @@ public sealed class DummyController
         // 4. Wander.
         if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
         {
+            // Rest timer only ticks while parked (no waypoints). On
+            // first spawn IdleSec is 0 so the pawn requests its first
+            // stroll immediately; on every subsequent arrival the
+            // timer was armed back when the path was requested, so it
+            // counts down from full here and the pawn actually pauses.
+            w.IdleSec -= dt;
+            if (w.IdleSec > 0f) return;
             RequestWanderPath(view, here, ref path);
+            w.IdleSec = WanderRestMinSec + (float)_rng.NextDouble() * (WanderRestMaxSec - WanderRestMinSec);
         }
     }
+
+    private const float WanderRestMinSec = 1.5f;
+    private const float WanderRestMaxSec = 5.0f;
 
     // Pick a walkable 8-neighbor of `target` closest to `from`. Tiles that
     // are themselves pending wall/door blueprints are heavily deprioritized
