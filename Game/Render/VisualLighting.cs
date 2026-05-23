@@ -51,10 +51,12 @@ public partial class VisualLighting : Node2D
 
     public override void _Ready()
     {
-        // Ambient darkness. Slightly cool gray so lit areas pop warm.
+        // Ambient: how dim an unlit roofed tile reads. Higher = roofed
+        // interiors stay visible without a lamp; lower = stronger
+        // "needs a lamp" feel. Cool tint so warm lamps pop.
         _modulate = new CanvasModulate
         {
-            Color = new Color(0.22f, 0.22f, 0.28f),
+            Color = new Color(0.55f, 0.55f, 0.62f),
         };
         AddChild(_modulate);
 
