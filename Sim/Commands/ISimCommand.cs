@@ -169,8 +169,9 @@ public sealed class IssueMoveOrderCommand : ISimCommand
     }
 }
 
-// Post a deconstruct job on every player-built wall whose tile lies in
-// the inclusive rect. Walls from procgen / map border are excluded.
+// Post a deconstruct job on every player-built wall AND door whose tile
+// lies in the inclusive rect. Walls from procgen / map border are
+// excluded; doors are always player-placed so all of them are eligible.
 public sealed class DeconstructWallsInRectCommand : ISimCommand
 {
     public TilePos A { get; }
@@ -182,14 +183,22 @@ public sealed class DeconstructWallsInRectCommand : ISimCommand
         int ymin = Math.Min(A.Y, B.Y), ymax = Math.Max(A.Y, B.Y);
         // Snapshot the wall list so removals during iteration are safe.
         var walls = sim.PlayerWalls;
-        var hits = new List<TilePos>();
+        var wallHits = new List<TilePos>();
         foreach (var tile in walls)
         {
             if (tile.X < xmin || tile.X > xmax) continue;
             if (tile.Y < ymin || tile.Y > ymax) continue;
-            hits.Add(tile);
+            wallHits.Add(tile);
         }
-        foreach (var tile in hits) sim.TryPostDeconstructJob(tile);
+        var doorHits = new List<TilePos>();
+        foreach (var tile in sim.DoorTiles)
+        {
+            if (tile.X < xmin || tile.X > xmax) continue;
+            if (tile.Y < ymin || tile.Y > ymax) continue;
+            doorHits.Add(tile);
+        }
+        foreach (var tile in wallHits) sim.TryPostDeconstructJob(tile);
+        foreach (var tile in doorHits) sim.TryPostDoorDeconstructJob(tile);
     }
 }
 

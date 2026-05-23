@@ -8,7 +8,7 @@ namespace StruggleGame.Game.Designation;
 
 // Active only when ToolMode == Decon. LMB-drag draws a rect; on release
 // posts DeconstructWallsInRectCommand which queues one Deconstruct job
-// per player-built wall in the rect.
+// per player-built wall and one DoorDeconstruct job per door in the rect.
 public partial class DeconDesignator : Node2D
 {
     private const int PixelsPerTile = SimConstants.PixelsPerTile;
