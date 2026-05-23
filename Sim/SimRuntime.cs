@@ -2298,29 +2298,55 @@ public sealed class SimRuntime
     private const float LampOuterSq = 90.25f;
     private const byte LampInner = 128;
 
+    // Scratch buffers for outdoor lamp tinting. _outdoorTintR/G/B hold
+    // the max-blended tint across all outdoor lamps that touched each
+    // tile; _outdoorTouched[idx] != 0 means at least one outdoor lamp
+    // reached the tile so we know to overwrite the sun base with the
+    // tint (untouched outdoor tiles keep pure 255 sun).
+    private byte[] _outdoorTintR = Array.Empty<byte>();
+    private byte[] _outdoorTintG = Array.Empty<byte>();
+    private byte[] _outdoorTintB = Array.Empty<byte>();
+    private byte[] _outdoorTouched = Array.Empty<byte>();
+
     // Full-array recompute. Used after room/roof bulk changes where it's
     // simpler to scan than to track per-tile dirty flags. Also folds in
-    // every powered lamp's circular emission via max-blend.
+    // every powered lamp's circular emission.
+    //
+    // Indoor lamps (tile is roofed): additive max-blend per channel —
+    // lamps light up a dark room and overlapping colors mix to white.
+    // Outdoor lamps (tile is unroofed): tint the sun. Per-lamp tint =
+    // lerp(255, lampColor, strength); combined across lamps via per-
+    // channel max so red + green lamps overlapping outdoors still read
+    // yellow. Sun brightness never increases — lamps outside just shift
+    // hue, they don't push past full sun.
     private void RecomputeLightAll()
     {
-        bool changed = false;
         int w = Map.Width, h = Map.Height;
-        // Roof-derived base. Every channel gets the same sun brightness
-        // so unroofed tiles read as white and lamp tint composes against
-        // a neutral background.
-        for (int i = 0; i < _lightTiles.Length; i++)
+        int n = _lightTiles.Length;
+        if (_outdoorTintR.Length != n)
         {
-            byte want = _roofTiles[i] != 0 ? (byte)0 : SunLightStub;
-            if (_lightTiles[i] != want) { _lightTiles[i] = want; changed = true; }
-            if (_lightR[i] != want)     { _lightR[i] = want;     changed = true; }
-            if (_lightG[i] != want)     { _lightG[i] = want;     changed = true; }
-            if (_lightB[i] != want)     { _lightB[i] = want;     changed = true; }
+            _outdoorTintR = new byte[n];
+            _outdoorTintG = new byte[n];
+            _outdoorTintB = new byte[n];
+            _outdoorTouched = new byte[n];
         }
-        // Lamp emission. Iterate the lamp map and stamp circular falloff
-        // into a tile box around each one. Each channel is scaled by the
-        // lamp's color (R/G/B 0..255) and max-blended in independently —
-        // red + green lamps overlap to yellow, etc. _lightTiles tracks
-        // max(R,G,B) for legacy LightAt callers.
+        else
+        {
+            Array.Clear(_outdoorTintR);
+            Array.Clear(_outdoorTintG);
+            Array.Clear(_outdoorTintB);
+            Array.Clear(_outdoorTouched);
+        }
+        // Pre-init: outdoor = full sun on every channel, indoor = 0.
+        for (int i = 0; i < n; i++)
+        {
+            byte sun = _roofTiles[i] != 0 ? (byte)0 : SunLightStub;
+            _lightR[i] = sun;
+            _lightG[i] = sun;
+            _lightB[i] = sun;
+            _lightTiles[i] = sun;
+        }
+        // Lamp pass.
         foreach (var (tile, lampEnt) in _lampMap)
         {
             if (!lampEnt.HasComponent<Lamp>()) continue;
@@ -2360,23 +2386,53 @@ public sealed class SimRuntime
                         float t = (r - 8.5f) / 1.0f;
                         contrib = (byte)Math.Round(61 - 61 * t);
                     }
-                    byte cr = (byte)(contrib * col.R / 255);
-                    byte cg = (byte)(contrib * col.G / 255);
-                    byte cb = (byte)(contrib * col.B / 255);
                     int idx = row + x;
-                    if (_lightR[idx] < cr) { _lightR[idx] = cr; changed = true; }
-                    if (_lightG[idx] < cg) { _lightG[idx] = cg; changed = true; }
-                    if (_lightB[idx] < cb) { _lightB[idx] = cb; changed = true; }
-                    byte maxCh = cr; if (cg > maxCh) maxCh = cg; if (cb > maxCh) maxCh = cb;
-                    if (_lightTiles[idx] < maxCh)
+                    if (_roofTiles[idx] != 0)
                     {
-                        _lightTiles[idx] = maxCh;
-                        changed = true;
+                        // Indoor: additive emission tinted by lamp color.
+                        byte cr = (byte)(contrib * col.R / 255);
+                        byte cg = (byte)(contrib * col.G / 255);
+                        byte cb = (byte)(contrib * col.B / 255);
+                        if (_lightR[idx] < cr) _lightR[idx] = cr;
+                        if (_lightG[idx] < cg) _lightG[idx] = cg;
+                        if (_lightB[idx] < cb) _lightB[idx] = cb;
+                    }
+                    else
+                    {
+                        // Outdoor: per-lamp tint = lerp(255, lampColor, s).
+                        // s = contrib/255 so the max tint at the inner disc
+                        // (contrib=128) is a 50/50 blend with sun — bright
+                        // sky still partly visible through the colored zone.
+                        float s = contrib / 255f;
+                        byte tR = (byte)Math.Round(255f - s * (255 - col.R));
+                        byte tG = (byte)Math.Round(255f - s * (255 - col.G));
+                        byte tB = (byte)Math.Round(255f - s * (255 - col.B));
+                        if (_outdoorTintR[idx] < tR) _outdoorTintR[idx] = tR;
+                        if (_outdoorTintG[idx] < tG) _outdoorTintG[idx] = tG;
+                        if (_outdoorTintB[idx] < tB) _outdoorTintB[idx] = tB;
+                        _outdoorTouched[idx] = 1;
                     }
                 }
             }
         }
-        if (changed) LightVersion++;
+        // Outdoor write-back: replace sun with the tint on tiles any
+        // outdoor lamp touched. Untouched outdoor tiles keep pure 255
+        // sun from the pre-init. _lightTiles tracks max(R,G,B) for the
+        // legacy LightAt brightness callers.
+        for (int i = 0; i < n; i++)
+        {
+            if (_roofTiles[i] == 0 && _outdoorTouched[i] != 0)
+            {
+                _lightR[i] = _outdoorTintR[i];
+                _lightG[i] = _outdoorTintG[i];
+                _lightB[i] = _outdoorTintB[i];
+            }
+            byte m = _lightR[i];
+            if (_lightG[i] > m) m = _lightG[i];
+            if (_lightB[i] > m) m = _lightB[i];
+            _lightTiles[i] = m;
+        }
+        LightVersion++;
     }
 
     // 0..1 light value at a tile. Out-of-bounds reads as dark (0).
