@@ -44,9 +44,10 @@ public partial class VisualLighting : Node2D
     private readonly Dictionary<TilePos, PointLight2D> _lampNodes = new();
     private readonly Dictionary<TilePos, LightOccluder2D> _doorNodes = new();
 
-    // Lamp throw radius. Matches sim falloff (LampOuterSq = 90.25 → 9.5
-    // tile radius) so the visible glow matches the gameplay light grid.
-    private const float LampRangeTiles = 9.5f;
+    // Visual lamp throw radius (purely cosmetic - sim's gameplay light
+    // grid still uses LampOuterSq = 9.5 tiles). Larger spread reads as
+    // a real ambient glow rather than a tight disc.
+    private const float LampRangeTiles = 16f;
 
     public override void _Ready()
     {
@@ -265,7 +266,7 @@ public partial class VisualLighting : Node2D
                     Texture = _lampTex,
                     BlendMode = Light2D.BlendModeEnum.Add,
                     ShadowEnabled = true,
-                    ShadowColor = new Color(0f, 0f, 0f, 0.42f),
+                    ShadowColor = new Color(0f, 0f, 0f, 0.21f),
                     ShadowFilter = Light2D.ShadowFilterEnum.Pcf5,
                     ShadowFilterSmooth = 1.0f,
                 };
@@ -310,8 +311,10 @@ public partial class VisualLighting : Node2D
                 float dy = y - center;
                 float d = Mathf.Sqrt(dx * dx + dy * dy);
                 float t = Mathf.Clamp(1f - d / maxR, 0f, 1f);
-                // Squared falloff reads more "lamp-like" than linear.
-                float a = t * t;
+                // Linear falloff capped at ~0.55 alpha so the source
+                // tile stays bright but never reads as a nuclear spike;
+                // gentle taper extends the visible glow far out.
+                float a = Mathf.Pow(t, 1.2f) * 0.55f;
                 img.SetPixel(x, y, new Color(1f, 1f, 1f, a));
             }
         }
