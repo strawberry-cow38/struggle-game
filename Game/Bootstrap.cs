@@ -115,6 +115,9 @@ public partial class Bootstrap : Node2D
         var debugBar = new DebugBar { Tools = _tools, Host = _host, Name = "DebugBar" };
         AddChild(debugBar);
 
+        var profiler = new FrameProfilerOverlay { Host = _host, Name = "FrameProfiler" };
+        AddChild(profiler);
+
         _menu = new MainMenuPanel { Host = _host, Name = "MainMenu" };
         AddChild(_menu);
 

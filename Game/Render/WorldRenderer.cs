@@ -1,4 +1,5 @@
 using Godot;
+using StruggleGame.Game.Debug;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Items;
 using StruggleGame.Sim.Map;
@@ -149,117 +150,148 @@ public partial class WorldRenderer : Node2D
         }
 
         var mapRect = new Rect2(0, 0, _mapPixelWidth, _mapPixelHeight);
-        DrawTextureRect(_groundTex, mapRect, tile: false);
-        DrawFlooringTiles();
-        if (_roomOverlayTex is not null)
+        using (FrameProfiler.Instance.BeginScope("Map"))
         {
-            DrawTextureRect(_roomOverlayTex, mapRect, tile: false);
-        }
-        if (_wallOverlayTex is not null)
-        {
-            DrawTextureRect(_wallOverlayTex, mapRect, tile: false);
-        }
-
-        if (snap is null) return;
-
-        int? selectedStockpileId = Host?.SelectedStockpileId;
-        foreach (var sp in snap.Stockpiles)
-        {
-            DrawStockpile(sp, isSelected: selectedStockpileId == sp.Id);
-        }
-
-        int? selectedGrowZoneId = Host?.SelectedGrowZoneId;
-        foreach (var gz in snap.GrowZones)
-        {
-            DrawGrowZone(gz, isSelected: selectedGrowZoneId == gz.Id);
-        }
-
-        foreach (var bp in snap.Blueprints)
-        {
-            DrawBlueprint(bp.Tile, bp.Progress);
-            if (bp.Forbidden) DrawForbidX(bp.Tile);
-        }
-
-        foreach (var fbp in snap.FloorBlueprints)
-        {
-            DrawFloorBlueprint(fbp.Tile, fbp.Progress);
-            if (fbp.Forbidden) DrawForbidX(fbp.Tile);
-        }
-
-        foreach (var dbp in snap.DoorBlueprints)
-        {
-            DrawDoorBlueprint(dbp.Tile, dbp.Progress);
-            if (dbp.Forbidden) DrawForbidX(dbp.Tile);
-        }
-
-        _prevDoorByTileScratch ??= new Dictionary<TilePos, DoorRenderState>();
-        _prevDoorByTileScratch.Clear();
-        if (_prevSnap is not null && interpAlpha < 1f)
-        {
-            foreach (var pd in _prevSnap.Doors) _prevDoorByTileScratch[pd.Tile] = pd;
-        }
-        foreach (var door in snap.Doors)
-        {
-            float openAmount = door.OpenAmount;
-            if (_prevDoorByTileScratch.TryGetValue(door.Tile, out var pd))
+            DrawTextureRect(_groundTex, mapRect, tile: false);
+            DrawFlooringTiles();
+            if (_roomOverlayTex is not null)
             {
-                openAmount = Mathf.Lerp(pd.OpenAmount, door.OpenAmount, interpAlpha);
+                DrawTextureRect(_roomOverlayTex, mapRect, tile: false);
             }
-            DrawDoor(new DoorRenderState(door.Tile, door.Orientation, openAmount, door.Forbidden, door.Locked, door.Priority));
+            if (_wallOverlayTex is not null)
+            {
+                DrawTextureRect(_wallOverlayTex, mapRect, tile: false);
+            }
         }
 
-        foreach (var d in snap.Decons)
+        if (snap is null) { FrameProfiler.Instance.EndFrame(); return; }
+
+        using (FrameProfiler.Instance.BeginScope("Stockpiles"))
         {
-            DrawDeconMark(d.Tile, d.Progress);
-            if (d.Forbidden) DrawForbidX(d.Tile);
+            int? selectedStockpileId = Host?.SelectedStockpileId;
+            foreach (var sp in snap.Stockpiles)
+            {
+                DrawStockpile(sp, isSelected: selectedStockpileId == sp.Id);
+            }
         }
 
-        // Selection outlines for buildings + blueprints / jobs. Sit on
-        // top of the tile fills so the cyan ring is always visible.
-        if (Host is not null)
+        using (FrameProfiler.Instance.BeginScope("GrowZones"))
         {
-            foreach (var t in Host.SelectedWallTiles) DrawSelectionOutline(t);
-            foreach (var t in Host.SelectedDoorTiles) DrawSelectionOutline(t);
-            foreach (var t in Host.SelectedBlueprintTiles) DrawSelectionOutline(t);
+            int? selectedGrowZoneId = Host?.SelectedGrowZoneId;
+            foreach (var gz in snap.GrowZones)
+            {
+                DrawGrowZone(gz, isSelected: selectedGrowZoneId == gz.Id);
+            }
+        }
+
+        using (FrameProfiler.Instance.BeginScope("Blueprints"))
+        {
+            foreach (var bp in snap.Blueprints)
+            {
+                DrawBlueprint(bp.Tile, bp.Progress);
+                if (bp.Forbidden) DrawForbidX(bp.Tile);
+            }
+
+            foreach (var fbp in snap.FloorBlueprints)
+            {
+                DrawFloorBlueprint(fbp.Tile, fbp.Progress);
+                if (fbp.Forbidden) DrawForbidX(fbp.Tile);
+            }
+
+            foreach (var dbp in snap.DoorBlueprints)
+            {
+                DrawDoorBlueprint(dbp.Tile, dbp.Progress);
+                if (dbp.Forbidden) DrawForbidX(dbp.Tile);
+            }
+        }
+
+        using (FrameProfiler.Instance.BeginScope("Doors"))
+        {
+            _prevDoorByTileScratch ??= new Dictionary<TilePos, DoorRenderState>();
+            _prevDoorByTileScratch.Clear();
+            if (_prevSnap is not null && interpAlpha < 1f)
+            {
+                foreach (var pd in _prevSnap.Doors) _prevDoorByTileScratch[pd.Tile] = pd;
+            }
+            foreach (var door in snap.Doors)
+            {
+                float openAmount = door.OpenAmount;
+                if (_prevDoorByTileScratch.TryGetValue(door.Tile, out var pd))
+                {
+                    openAmount = Mathf.Lerp(pd.OpenAmount, door.OpenAmount, interpAlpha);
+                }
+                DrawDoor(new DoorRenderState(door.Tile, door.Orientation, openAmount, door.Forbidden, door.Locked, door.Priority));
+            }
+        }
+
+        using (FrameProfiler.Instance.BeginScope("Decons"))
+        {
+            foreach (var d in snap.Decons)
+            {
+                DrawDeconMark(d.Tile, d.Progress);
+                if (d.Forbidden) DrawForbidX(d.Tile);
+            }
+        }
+
+        using (FrameProfiler.Instance.BeginScope("Selection"))
+        {
+            if (Host is not null)
+            {
+                foreach (var t in Host.SelectedWallTiles) DrawSelectionOutline(t);
+                foreach (var t in Host.SelectedDoorTiles) DrawSelectionOutline(t);
+                foreach (var t in Host.SelectedBlueprintTiles) DrawSelectionOutline(t);
+            }
         }
 
         var stackFont = ThemeDB.FallbackFont;
         var mouseLocal = GetLocalMousePosition();
         int cursorTileX = Mathf.FloorToInt(mouseLocal.X / PixelsPerTile);
         int cursorTileY = Mathf.FloorToInt(mouseLocal.Y / PixelsPerTile);
-        var selectedWoodSet = snap.SelectedWoodIds.Length > 0
-            ? new HashSet<int>(snap.SelectedWoodIds)
-            : null;
-        foreach (var w in snap.Wood)
+        using (FrameProfiler.Instance.BeginScope("Wood"))
         {
-            DrawWood(w.Tile);
-            if (w.Forbidden) DrawForbiddenMark(w.Tile);
-            if (selectedWoodSet is not null && selectedWoodSet.Contains(w.EntityId)) DrawWoodSelectionRing(w.Tile);
-            if (w.Tile.X == cursorTileX && w.Tile.Y == cursorTileY)
+            var selectedWoodSet = snap.SelectedWoodIds.Length > 0
+                ? new HashSet<int>(snap.SelectedWoodIds)
+                : null;
+            foreach (var w in snap.Wood)
             {
-                DrawStackLabel(stackFont, w.Tile, w.ItemPath, w.Count);
+                DrawWood(w.Tile);
+                if (w.Forbidden) DrawForbiddenMark(w.Tile);
+                if (selectedWoodSet is not null && selectedWoodSet.Contains(w.EntityId)) DrawWoodSelectionRing(w.Tile);
+                if (w.Tile.X == cursorTileX && w.Tile.Y == cursorTileY)
+                {
+                    DrawStackLabel(stackFont, w.Tile, w.ItemPath, w.Count);
+                }
             }
         }
 
-        var selectedTreeSet = snap.SelectedTreeIds.Length > 0
-            ? new HashSet<int>(snap.SelectedTreeIds)
-            : null;
-        foreach (var t in snap.Trees)
+        using (FrameProfiler.Instance.BeginScope("Trees"))
         {
-            DrawTree(t, selectedTreeSet);
-        }
-
-        foreach (var c in snap.Crops)
-        {
-            DrawCrop(c);
-        }
-
-        foreach (var p in snap.ItemPiles)
-        {
-            DrawItemPile(p);
-            if (p.Tile.X == cursorTileX && p.Tile.Y == cursorTileY)
+            var selectedTreeSet = snap.SelectedTreeIds.Length > 0
+                ? new HashSet<int>(snap.SelectedTreeIds)
+                : null;
+            foreach (var t in snap.Trees)
             {
-                DrawStackLabel(stackFont, p.Tile, p.ItemPath, p.Count);
+                DrawTree(t, selectedTreeSet);
+            }
+        }
+
+        using (FrameProfiler.Instance.BeginScope("Crops"))
+        {
+            foreach (var c in snap.Crops)
+            {
+                DrawCrop(c);
+            }
+        }
+
+        using (FrameProfiler.Instance.BeginScope("ItemPiles"))
+        {
+            foreach (var p in snap.ItemPiles)
+            {
+                DrawItemPile(p);
+                if (p.Tile.X == cursorTileX && p.Tile.Y == cursorTileY)
+                {
+                    DrawStackLabel(stackFont, p.Tile, p.ItemPath, p.Count);
+                }
             }
         }
 
@@ -273,43 +305,51 @@ public partial class WorldRenderer : Node2D
         {
             foreach (var pd in _prevSnap.Dummies) _prevDummyByIdScratch[pd.EntityId] = pd;
         }
-        foreach (var d in snap.Dummies)
+        using (FrameProfiler.Instance.BeginScope("Dummies"))
         {
-            float drawX = d.X;
-            float drawY = d.Y;
-            if (_prevDummyByIdScratch.TryGetValue(d.EntityId, out var prev))
+            foreach (var d in snap.Dummies)
             {
-                drawX = Mathf.Lerp(prev.X, d.X, interpAlpha);
-                drawY = Mathf.Lerp(prev.Y, d.Y, interpAlpha);
-            }
-            var center = new Vector2(drawX * PixelsPerTile, drawY * PixelsPerTile);
-            DrawCircle(center, radius, DummyColor);
-            if (d.Drafted)
-            {
-                DrawArc(center, radius + 2f, 0f, Mathf.Tau, 32, DraftedRing, 2f, antialiased: true);
-            }
-            if (d.Carrying)
-            {
-                float logW = PixelsPerTile * 0.45f;
-                float logH = PixelsPerTile * 0.18f;
-                var carry = new Rect2(center.X - logW * 0.5f, center.Y - radius - logH - 1f, logW, logH);
-                DrawRect(carry, WoodColor, filled: true);
-                DrawRect(new Rect2(carry.Position + new Vector2(0, 1f), new Vector2(carry.Size.X, 2f)), WoodHighlight, filled: true);
-            }
-            if (snap.SelectedDummyId is int sel && d.EntityId == sel)
-            {
-                DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
-            }
-            if (labelFont is not null && !string.IsNullOrEmpty(d.Job))
-            {
-                var textSize = labelFont.GetStringSize(d.Job, HorizontalAlignment.Center, -1f, labelFontSize);
-                var anchor = center + labelOffset - new Vector2(textSize.X * 0.5f, 0f);
-                DrawString(labelFont, anchor, d.Job, HorizontalAlignment.Left, -1f, labelFontSize,
-                    new Color(1f, 1f, 1f, 0.95f));
+                float drawX = d.X;
+                float drawY = d.Y;
+                if (_prevDummyByIdScratch.TryGetValue(d.EntityId, out var prev))
+                {
+                    drawX = Mathf.Lerp(prev.X, d.X, interpAlpha);
+                    drawY = Mathf.Lerp(prev.Y, d.Y, interpAlpha);
+                }
+                var center = new Vector2(drawX * PixelsPerTile, drawY * PixelsPerTile);
+                DrawCircle(center, radius, DummyColor);
+                if (d.Drafted)
+                {
+                    DrawArc(center, radius + 2f, 0f, Mathf.Tau, 32, DraftedRing, 2f, antialiased: true);
+                }
+                if (d.Carrying)
+                {
+                    float logW = PixelsPerTile * 0.45f;
+                    float logH = PixelsPerTile * 0.18f;
+                    var carry = new Rect2(center.X - logW * 0.5f, center.Y - radius - logH - 1f, logW, logH);
+                    DrawRect(carry, WoodColor, filled: true);
+                    DrawRect(new Rect2(carry.Position + new Vector2(0, 1f), new Vector2(carry.Size.X, 2f)), WoodHighlight, filled: true);
+                }
+                if (snap.SelectedDummyId is int sel && d.EntityId == sel)
+                {
+                    DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
+                }
+                if (labelFont is not null && !string.IsNullOrEmpty(d.Job))
+                {
+                    var textSize = labelFont.GetStringSize(d.Job, HorizontalAlignment.Center, -1f, labelFontSize);
+                    var anchor = center + labelOffset - new Vector2(textSize.X * 0.5f, 0f);
+                    DrawString(labelFont, anchor, d.Job, HorizontalAlignment.Left, -1f, labelFontSize,
+                        new Color(1f, 1f, 1f, 0.95f));
+                }
             }
         }
 
-        DrawSelectedPath(snap);
+        using (FrameProfiler.Instance.BeginScope("Path"))
+        {
+            DrawSelectedPath(snap);
+        }
+
+        FrameProfiler.Instance.EndFrame();
     }
 
     // Stack label rendered just below a dropped item: white "Name xCount"
