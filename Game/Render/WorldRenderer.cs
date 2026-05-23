@@ -37,7 +37,8 @@ public partial class WorldRenderer : Node2D
     private long _lastMapVersion = -1;
     private long _lastRoomVersion = -1;
     private long _lastRoofVersion = -1;
-    private ImageTexture? _roofOverlayTex;
+    private long _lastLightVersion = -1;
+    private ImageTexture? _darknessOverlayTex;
     private ImageTexture? _noRoofOverlayTex;
 
     // Snapshot pair used for render-side interpolation. _prevSnap is the
@@ -162,11 +163,15 @@ public partial class WorldRenderer : Node2D
         }
         if (snap is not null && snap.RoofVersion != _lastRoofVersion)
         {
-            var roofBytes = Host!.CopyRoofTilesForRender();
             var noRoofBytes = Host!.CopyNoRoofTilesForRender();
-            _roofOverlayTex = BuildRoofOverlay(roofBytes, _mapWidth, _mapHeight);
             _noRoofOverlayTex = BuildNoRoofOverlay(noRoofBytes, _mapWidth, _mapHeight);
             _lastRoofVersion = snap.RoofVersion;
+        }
+        if (snap is not null && snap.LightVersion != _lastLightVersion)
+        {
+            var lightBytes = Host!.CopyLightTilesForRender();
+            _darknessOverlayTex = BuildDarknessOverlay(lightBytes, _mapWidth, _mapHeight);
+            _lastLightVersion = snap.LightVersion;
         }
 
         var mapRect = new Rect2(0, 0, _mapPixelWidth, _mapPixelHeight);
@@ -182,12 +187,14 @@ public partial class WorldRenderer : Node2D
             {
                 DrawTextureRect(_wallOverlayTex, mapRect, tile: false);
             }
-            // Roof sits above walls so it visually covers them too. The
-            // no-roof hatch goes on top of everything map-layer so the
-            // player can see the forbidden cells through the room tint.
-            if (_roofOverlayTex is not null)
+            // Darkness sits above walls so a roofed wall reads darker
+            // than an unroofed one. Per-tile alpha derived from light
+            // value — full sun = no tint, no light = strong darken. The
+            // no-roof hatch goes on top of darkness so the forbidden
+            // cells stay visible even in shadow.
+            if (_darknessOverlayTex is not null)
             {
-                DrawTextureRect(_roofOverlayTex, mapRect, tile: false);
+                DrawTextureRect(_darknessOverlayTex, mapRect, tile: false);
             }
             if (_noRoofOverlayTex is not null)
             {
@@ -997,20 +1004,22 @@ public partial class WorldRenderer : Node2D
         return ImageTexture.CreateFromImage(img);
     }
 
-    // Roof overlay: dark translucent tile per roofed cell. Sits on top
-    // of walls so a roofed wall looks fractionally darker than an
-    // unroofed one — readable but not noisy.
-    private static readonly Color RoofTint = new(0.05f, 0.05f, 0.08f, 0.35f);
-    private static ImageTexture BuildRoofOverlay(byte[] tiles, int width, int height)
+    // Darkness overlay: per-tile black-with-alpha keyed off the light
+    // byte (0..255). Full sun → no tint; full dark → MaxDarknessAlpha.
+    // Linear ramp keeps half-lit interiors visibly dim without going
+    // pitch-black; tweak MaxDarknessAlpha to taste.
+    private const float MaxDarknessAlpha = 0.78f;
+    private static ImageTexture BuildDarknessOverlay(byte[] light, int width, int height)
     {
         var img = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
-        var transparent = new Color(0f, 0f, 0f, 0f);
         for (int y = 0; y < height; y++)
         {
             int row = y * width;
             for (int x = 0; x < width; x++)
             {
-                img.SetPixel(x, y, tiles[row + x] != 0 ? RoofTint : transparent);
+                float lit = light[row + x] / 255f;
+                float alpha = (1f - lit) * MaxDarknessAlpha;
+                img.SetPixel(x, y, new Color(0f, 0f, 0.02f, alpha));
             }
         }
         return ImageTexture.CreateFromImage(img);

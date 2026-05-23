@@ -16,6 +16,10 @@ public sealed class SimSnapshot
     // paint, remove, no-roof toggle). Renderer keys overlay rebuilds
     // off this exactly like RoomVersion drives the room overlay.
     public long RoofVersion { get; }
+    // Bumped on every per-tile light change (today: 1:1 with roof state,
+    // tomorrow: indoor light sources + time-of-day sun). Renderer keys
+    // the darkness overlay off this.
+    public long LightVersion { get; }
     public DummyState[] Dummies { get; }
     public BlueprintState[] Blueprints { get; }
     public BlueprintState[] FloorBlueprints { get; }
@@ -50,6 +54,7 @@ public sealed class SimSnapshot
         long roomVersion,
         int roomCount,
         long roofVersion,
+        long lightVersion,
         DummyState[] dummies,
         BlueprintState[] blueprints,
         BlueprintState[] floorBlueprints,
@@ -74,6 +79,7 @@ public sealed class SimSnapshot
         RoomVersion = roomVersion;
         RoomCount = roomCount;
         RoofVersion = roofVersion;
+        LightVersion = lightVersion;
         Dummies = dummies;
         Blueprints = blueprints;
         FloorBlueprints = floorBlueprints;

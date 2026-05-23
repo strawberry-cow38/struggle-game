@@ -469,7 +469,7 @@ public sealed class SimRuntime
         }
 
         return new SimSnapshot(
-            Tick, MapVersion, RoomVersion, RoomCount, RoofVersion,
+            Tick, MapVersion, RoomVersion, RoomCount, RoofVersion, LightVersion,
             dummies, bps, floorBps.ToArray(), trees, crops, woods, piles, decons.ToArray(),
             doorBps.ToArray(), doorRender.ToArray(),
             stockpiles, growZones, roofBps.ToArray(),
