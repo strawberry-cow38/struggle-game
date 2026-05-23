@@ -179,15 +179,31 @@ public partial class VisualLighting : Node2D
         _sun.Position = new Vector2(MapWidth * PixelsPerTile * 0.5f, MapHeight * PixelsPerTile * 0.5f);
     }
 
-    // Doors no longer occlude light. Whatever lamp/sun reaches the door
-    // tile lights the full tile. Wall occluders on the flanking tiles
-    // still shape the surrounding room — only the door tile itself is
-    // free. Snapshot diff still drives node cleanup for removed doors.
+    // Closed doors occlude light (full tile). Open doors don't, so light
+    // spills through the threshold while a pawn is crossing. Reuses the
+    // shared wall polygon prototype; Visible toggles on door state.
     private void UpdateDoors(SimSnapshot snap)
     {
-        if (_doorsRoot is null) return;
+        if (_doorsRoot is null || _wallPolyPrototype is null) return;
         var seen = new HashSet<TilePos>();
-        foreach (var d in snap.Doors) seen.Add(d.Tile);
+        foreach (var d in snap.Doors)
+        {
+            seen.Add(d.Tile);
+            if (!_doorNodes.TryGetValue(d.Tile, out var occ))
+            {
+                occ = new LightOccluder2D
+                {
+                    Occluder = _wallPolyPrototype,
+                    Position = new Vector2(d.Tile.X * PixelsPerTile, d.Tile.Y * PixelsPerTile),
+                };
+                _doorsRoot.AddChild(occ);
+                _doorNodes[d.Tile] = occ;
+            }
+            // OpenAmount: 0 = closed, 1 = open. Stop occluding once the
+            // door is mostly open so a pawn walking through doesn't see
+            // light cut off; keep occluding closed/opening/closing.
+            occ.Visible = d.OpenAmount < 0.8f;
+        }
         if (_doorNodes.Count != seen.Count)
         {
             var toRemove = new List<TilePos>();
@@ -298,10 +314,15 @@ public partial class VisualLighting : Node2D
 
         // Per cluster: pick the lamp with the smallest tile coord (X
         // then Y) as the shadow caster. Stable across ticks so we don't
-        // flicker which lamp owns the shadow.
+        // flicker which lamp owns the shadow. Outdoor (unroofed) lamps
+        // are skipped — bright ambient + sun already pushes those tiles
+        // past ~50% light, where cast shadows just read as noise. If a
+        // cluster has no indoor lamp, no caster is assigned and the
+        // cluster casts zero shadows.
         var clusterCaster = new Dictionary<int, int>();
         for (int i = 0; i < n; i++)
         {
+            if (!IsRoofed(lit[i].Tile.X, lit[i].Tile.Y)) continue;
             int root = Find(i);
             if (!clusterCaster.TryGetValue(root, out var existing))
             {
@@ -317,8 +338,15 @@ public partial class VisualLighting : Node2D
         {
             if (!_lampNodes.TryGetValue(lit[i].Tile, out var node)) continue;
             int root = Find(i);
-            node.ShadowEnabled = clusterCaster[root] == i;
+            node.ShadowEnabled = clusterCaster.TryGetValue(root, out var caster) && caster == i;
         }
+    }
+
+    private bool IsRoofed(int x, int y)
+    {
+        if (_lastRoofs is null) return false;
+        if (x < 0 || y < 0 || x >= MapWidth || y >= MapHeight) return false;
+        return _lastRoofs[y * MapWidth + x] != 0;
     }
 
     // Soft radial gradient: white at center, fading to transparent at
