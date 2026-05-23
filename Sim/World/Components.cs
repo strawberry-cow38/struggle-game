@@ -73,9 +73,9 @@ public struct Tree : IComponent
 
 // Growth state for plants (trees, crops, anything that progresses over
 // time toward maturity). Stage = 0..1. GrowthSystem advances Stage when
-// the host tile is outdoors (light ≥ 51% stub) and within comfortable
-// temperature. Spawn-time stage seeds variety so a fresh map shows
-// mature + sapling trees mixed.
+// the host tile's light is >= GrowLightThreshold (today: unroofed) and
+// the room temperature is comfortable. Spawn-time stage seeds variety so
+// a fresh map shows mature + sapling trees mixed.
 public struct Growth : IComponent
 {
     public float Stage;

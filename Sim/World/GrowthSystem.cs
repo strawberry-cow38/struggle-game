@@ -5,8 +5,8 @@ namespace StruggleGame.Sim.World;
 
 // Per-tick plant growth advancer. Any entity with Growth + a tile-bearing
 // component (Tree today, Crop later) ticks Stage toward 1.0 at a rate of
-// 1.0 / SecondsToFullGrow per sim-second. Gated by light (outdoor tile)
-// and temperature (stub: always comfortable since the whole map is 21°C).
+// 1.0 / SecondsToFullGrow per sim-second. Gated by light (>= GrowLightThreshold,
+// today equivalent to "unroofed") and temperature (18..25°C).
 //
 // Sim-seconds scale with the speed multiplier automatically — dt is
 // always 1/TickHz but ticks per real-second scales with TickHz, so a 4x
@@ -15,6 +15,10 @@ public sealed class GrowthSystem
 {
     // 1 in-game day = 24 real minutes @ 1x speed = 1440 sim-seconds.
     public const float SecondsToFullGrow = 24f * 60f;
+    // Minimum light fraction (0..1) for plants to grow. Half-lit or
+    // brighter passes; anything under a roof (light = 0 with the current
+    // stub) fails.
+    public const float GrowLightThreshold = 0.51f;
 
     private readonly SimRuntime _sim;
 
@@ -29,14 +33,14 @@ public sealed class GrowthSystem
         store.Query<Growth, Tree>().ForEachEntity((ref Growth g, ref Tree t, Entity _) =>
         {
             if (g.Stage >= 1f) return;
-            if (!_sim.IsTileOutdoor(t.Tile)) return;
+            if (_sim.LightAt(t.Tile) < GrowLightThreshold) return;
             if (!_sim.IsTileGrowTemperature(t.Tile)) return;
             g.Stage = Math.Min(1f, g.Stage + dt * perSec);
         });
         store.Query<Growth, Crop>().ForEachEntity((ref Growth g, ref Crop c, Entity _) =>
         {
             if (g.Stage >= 1f) return;
-            if (!_sim.IsTileOutdoor(c.Tile)) return;
+            if (_sim.LightAt(c.Tile) < GrowLightThreshold) return;
             if (!_sim.IsTileGrowTemperature(c.Tile)) return;
             g.Stage = Math.Min(1f, g.Stage + dt * perSec);
         });

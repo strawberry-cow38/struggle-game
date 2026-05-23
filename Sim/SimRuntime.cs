@@ -35,6 +35,13 @@ public sealed class SimRuntime
     private byte[] _roofTiles = Array.Empty<byte>();
     private byte[] _noRoofTiles = Array.Empty<byte>();
     public long RoofVersion { get; private set; }
+    // Per-tile light, 0..255 mapped to 0..100% in LightAt. Today fully
+    // derived from roof state: unroofed = SunLightStub (255), roofed = 0.
+    // Indoor light sources / time-of-day sun will write here later.
+    private byte[] _lightTiles = Array.Empty<byte>();
+    public long LightVersion { get; private set; }
+    // Stub sun until time-of-day ships: any unroofed tile gets 100%.
+    private const byte SunLightStub = 255;
     // Index = room id (0 = outdoor faux room, 1..RoomCount = enclosed
     // interiors). Resized + repopulated by DoRecomputeRooms whenever
     // walls/doors change. Fixed-figure for now: outdoor = OutdoorTempC,
@@ -606,6 +613,7 @@ public sealed class SimRuntime
             {
                 _roofTiles[idx] = 1;
                 RoofVersion++;
+                RecomputeLightAt(idx);
             }
         }
         else if (kind == JobKind.RoofRemove)
@@ -617,6 +625,7 @@ public sealed class SimRuntime
             {
                 _roofTiles[idx] = 0;
                 RoofVersion++;
+                RecomputeLightAt(idx);
             }
         }
         else if (kind == JobKind.Deconstruct)
@@ -2087,6 +2096,54 @@ public sealed class SimRuntime
         int n = w * h;
         if (_roofTiles.Length != n) _roofTiles = new byte[n];
         if (_noRoofTiles.Length != n) _noRoofTiles = new byte[n];
+        if (_lightTiles.Length != n)
+        {
+            _lightTiles = new byte[n];
+            // Fresh map = unroofed = sun stub everywhere.
+            for (int i = 0; i < n; i++) _lightTiles[i] = SunLightStub;
+            LightVersion++;
+        }
+    }
+
+    // Recompute one tile's light from its roof bit. Cheap; callers bump
+    // LightVersion themselves only if they care about coalescing. We bump
+    // it on every change since indoor sources aren't a thing yet so per-
+    // tile churn equals per-roof-job churn.
+    private void RecomputeLightAt(int idx)
+    {
+        if (idx < 0 || idx >= _lightTiles.Length) return;
+        byte want = _roofTiles[idx] != 0 ? (byte)0 : SunLightStub;
+        if (_lightTiles[idx] != want)
+        {
+            _lightTiles[idx] = want;
+            LightVersion++;
+        }
+    }
+
+    // Full-array recompute. Used after room/roof bulk changes where it's
+    // simpler to scan than to track per-tile dirty flags.
+    private void RecomputeLightAll()
+    {
+        bool changed = false;
+        for (int i = 0; i < _lightTiles.Length; i++)
+        {
+            byte want = _roofTiles[i] != 0 ? (byte)0 : SunLightStub;
+            if (_lightTiles[i] != want)
+            {
+                _lightTiles[i] = want;
+                changed = true;
+            }
+        }
+        if (changed) LightVersion++;
+    }
+
+    // 0..1 light value at a tile. Out-of-bounds reads as dark (0).
+    public float LightAt(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return 0f;
+        int idx = tile.Y * Map.Width + tile.X;
+        if (idx < 0 || idx >= _lightTiles.Length) return 0f;
+        return _lightTiles[idx] / 255f;
     }
 
     public byte[] CopyRoofTilesForRender()
@@ -2097,6 +2154,11 @@ public sealed class SimRuntime
     public byte[] CopyNoRoofTilesForRender()
     {
         lock (_mapLock) { return (byte[])_noRoofTiles.Clone(); }
+    }
+
+    public byte[] CopyLightTilesForRender()
+    {
+        lock (_mapLock) { return (byte[])_lightTiles.Clone(); }
     }
 
     public int[] CopyRoomTilesForRender()

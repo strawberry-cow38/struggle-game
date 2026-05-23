@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "roofs need construction: RoofBuild/RoofRemove jobs";
+    private const string BuildTag = "per-tile light: roofed=0% unroofed=100% (sun stub)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
@@ -94,8 +94,9 @@ public partial class HudOverlay : CanvasLayer
             var tile = new TilePos(tx, ty);
             int rid = Host.RoomIdAt(tile);
             float temp = Host.TileTempC(tile);
+            float light = Host.LightAt(tile);
             string roomLabel = rid == 0 ? "outdoor" : ($"room {rid}");
-            hoverLine = $"\nHOVER {tx},{ty}  {roomLabel}  {temp:0.#}°C";
+            hoverLine = $"\nHOVER {tx},{ty}  {roomLabel}  {temp:0.#}°C  light {light * 100f:0}%";
         }
         else
         {
