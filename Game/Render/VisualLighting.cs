@@ -37,6 +37,7 @@ public partial class VisualLighting : Node2D
     private long _lastRoofVersion = -1;
     private long _lastLampSnapshotTick = -2;
     private SimSnapshot? _lastLampSnap;
+    private byte[]? _lastRoofs;
 
     private Texture2D? _lampTex;
     private OccluderPolygon2D? _wallPolyPrototype;
@@ -113,9 +114,13 @@ public partial class VisualLighting : Node2D
 
         if (snap.RoofVersion != _lastRoofVersion)
         {
-            var roofs = Host.CopyRoofTilesForRender();
-            RebuildSunMask(roofs);
+            _lastRoofs = Host.CopyRoofTilesForRender();
+            RebuildSunMask(_lastRoofs);
             _lastRoofVersion = snap.RoofVersion;
+            // Door occluder direction depends on which neighbor is
+            // roofed (= "inside"), so a roof change can flip a door's
+            // lit half. Force a door refresh.
+            UpdateDoors(snap);
         }
 
         // Lamp + door state refresh when snapshot changes. Lamps may move
@@ -194,13 +199,11 @@ public partial class VisualLighting : Node2D
                 _doorsRoot.AddChild(occ);
                 _doorNodes[d.Tile] = occ;
             }
-            // Per-door occluder polygon that mirrors the visual door
-            // panel: panelLen × panelThick rect pivoted at one tile edge,
-            // rotated by OpenAmount × 90°. Even when closed the polygon
-            // is panel-thick (not full tile), so the door tile receives
-            // some light. As the door swings open the panel rotates away
-            // and the blocked region shrinks naturally.
-            occ.Occluder = BuildDoorPanelOccluder(d.Orientation, d.OpenAmount);
+            // No more swing-based occluder. The door always blocks the
+            // outside half of its tile; the inside half stays lit by
+            // whatever lamp/sun reaches it. Open/closed state is irrelevant
+            // to the lighting now.
+            occ.Occluder = BuildStaticDoorHalfOccluder(d.Tile, d.Orientation);
         }
         if (_doorNodes.Count != seen.Count)
         {
@@ -215,43 +218,75 @@ public partial class VisualLighting : Node2D
         }
     }
 
-    private static OccluderPolygon2D BuildDoorPanelOccluder(DoorOrientation orient, float openAmount)
+    // Static half-tile occluder. The door blocks the "outside" half of
+    // its tile, leaving the "inside" half open to receive light. Inside
+    // = whichever axis-perpendicular neighbour is roofed (rooms get an
+    // auto-roof, so roofed = interior). Falls back to a fixed half if
+    // neither neighbour is roofed (e.g. door between two outdoor spaces).
+    private OccluderPolygon2D BuildStaticDoorHalfOccluder(TilePos tile, DoorOrientation orient)
     {
-        // Local-space (tile-local; LightOccluder2D Position = tile origin)
-        // panel polygon. Pivot is at the left/top edge midpoint depending
-        // on orientation, matching DrawDoor's swing. PanelThick is kept
-        // narrow so even a fully closed door doesn't fully cover the
-        // tile, letting some sun/lamp light reach the door surface.
-        float panelLen = PixelsPerTile;
-        float panelThick = PixelsPerTile * 0.22f;
-        float angle = openAmount * (Mathf.Pi * 0.5f);
-        Vector2 pivot;
-        Vector2 closedDir;
+        int p = PixelsPerTile;
+        Vector2 a, b, c, d;
         if (orient == DoorOrientation.Horizontal)
         {
-            pivot = new Vector2(0f, PixelsPerTile * 0.5f);
-            closedDir = new Vector2(1f, 0f);
+            // Horizontal door (walls east+west, threshold runs N-S).
+            // Inside = whichever of N (y-1) / S (y+1) is roofed.
+            bool insideNorth = IsRoofed(tile.X, tile.Y - 1);
+            bool insideSouth = IsRoofed(tile.X, tile.Y + 1);
+            bool blockSouth = insideNorth && !insideSouth ? true
+                            : !insideNorth && insideSouth ? false
+                            : true; // default: block south half
+            if (blockSouth)
+            {
+                a = new Vector2(0, p * 0.5f);
+                b = new Vector2(p, p * 0.5f);
+                c = new Vector2(p, p);
+                d = new Vector2(0, p);
+            }
+            else
+            {
+                a = new Vector2(0, 0);
+                b = new Vector2(p, 0);
+                c = new Vector2(p, p * 0.5f);
+                d = new Vector2(0, p * 0.5f);
+            }
         }
         else
         {
-            pivot = new Vector2(PixelsPerTile * 0.5f, 0f);
-            closedDir = new Vector2(0f, 1f);
+            // Vertical door (walls north+south, threshold runs E-W).
+            bool insideWest = IsRoofed(tile.X - 1, tile.Y);
+            bool insideEast = IsRoofed(tile.X + 1, tile.Y);
+            bool blockEast = insideWest && !insideEast ? true
+                           : !insideWest && insideEast ? false
+                           : true; // default: block east half
+            if (blockEast)
+            {
+                a = new Vector2(p * 0.5f, 0);
+                b = new Vector2(p, 0);
+                c = new Vector2(p, p);
+                d = new Vector2(p * 0.5f, p);
+            }
+            else
+            {
+                a = new Vector2(0, 0);
+                b = new Vector2(p * 0.5f, 0);
+                c = new Vector2(p * 0.5f, p);
+                d = new Vector2(0, p);
+            }
         }
-        var perp = new Vector2(-closedDir.Y, closedDir.X);
-        var dir = new Vector2(
-            closedDir.X * Mathf.Cos(angle) - perp.X * Mathf.Sin(angle),
-            closedDir.Y * Mathf.Cos(angle) - perp.Y * Mathf.Sin(angle));
-        var perpDir = new Vector2(-dir.Y, dir.X);
-        var p0 = pivot - perpDir * (panelThick * 0.5f);
-        var p1 = pivot + perpDir * (panelThick * 0.5f);
-        var p2 = pivot + dir * panelLen + perpDir * (panelThick * 0.5f);
-        var p3 = pivot + dir * panelLen - perpDir * (panelThick * 0.5f);
         return new OccluderPolygon2D
         {
-            Polygon = new Vector2[] { p0, p1, p2, p3 },
+            Polygon = new Vector2[] { a, b, c, d },
             Closed = true,
             CullMode = OccluderPolygon2D.CullModeEnum.Disabled,
         };
+    }
+
+    private bool IsRoofed(int x, int y)
+    {
+        if (_lastRoofs is null) return false;
+        if (x < 0 || y < 0 || x >= MapWidth || y >= MapHeight) return false;
+        return _lastRoofs[y * MapWidth + x] != 0;
     }
 
     private void UpdateLamps(SimSnapshot snap)
