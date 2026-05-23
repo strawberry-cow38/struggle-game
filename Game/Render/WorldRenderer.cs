@@ -48,6 +48,15 @@ public partial class WorldRenderer : Node2D
     private Dictionary<int, DummyState>? _prevDummyByIdScratch;
     private Dictionary<TilePos, DoorRenderState>? _prevDoorByTileScratch;
 
+    // Selection sets are cached by reference identity of the snapshot's
+    // SelectedXxxIds array — when the underlying array doesn't change
+    // between snapshots we skip rebuilding the HashSet (avoids per-frame
+    // GC churn when nothing's been clicked).
+    private int[]? _cachedSelectedTreeIdRef;
+    private HashSet<int>? _cachedSelectedTreeSet;
+    private int[]? _cachedSelectedWoodIdRef;
+    private HashSet<int>? _cachedSelectedWoodSet;
+
     private static readonly Color WallColor = new(0.18f, 0.16f, 0.14f);
     private static readonly Color DummyColor = new(0.95f, 0.55f, 0.20f);
     private static readonly Color BlueprintFill = new(0.20f, 0.55f, 0.95f, 0.30f);
@@ -166,6 +175,17 @@ public partial class WorldRenderer : Node2D
 
         if (snap is null) { FrameProfiler.Instance.EndFrame(); return; }
 
+        // Visible-world tile rect for cheap AABB culling of entity loops.
+        // 1-tile pad so things straddling the edge don't pop in/out.
+        var canvasInv = GetCanvasTransform().AffineInverse();
+        var vpSize = GetViewportRect().Size;
+        var tl = canvasInv * Vector2.Zero;
+        var br = canvasInv * vpSize;
+        int viewMinTileX = (int)Math.Floor(Math.Min(tl.X, br.X) / PixelsPerTile) - 1;
+        int viewMaxTileX = (int)Math.Floor(Math.Max(tl.X, br.X) / PixelsPerTile) + 1;
+        int viewMinTileY = (int)Math.Floor(Math.Min(tl.Y, br.Y) / PixelsPerTile) - 1;
+        int viewMaxTileY = (int)Math.Floor(Math.Max(tl.Y, br.Y) / PixelsPerTile) + 1;
+
         using (FrameProfiler.Instance.BeginScope("Stockpiles"))
         {
             int? selectedStockpileId = Host?.SelectedStockpileId;
@@ -188,18 +208,24 @@ public partial class WorldRenderer : Node2D
         {
             foreach (var bp in snap.Blueprints)
             {
+                if (bp.Tile.X < viewMinTileX || bp.Tile.X > viewMaxTileX
+                    || bp.Tile.Y < viewMinTileY || bp.Tile.Y > viewMaxTileY) continue;
                 DrawBlueprint(bp.Tile, bp.Progress);
                 if (bp.Forbidden) DrawForbidX(bp.Tile);
             }
 
             foreach (var fbp in snap.FloorBlueprints)
             {
+                if (fbp.Tile.X < viewMinTileX || fbp.Tile.X > viewMaxTileX
+                    || fbp.Tile.Y < viewMinTileY || fbp.Tile.Y > viewMaxTileY) continue;
                 DrawFloorBlueprint(fbp.Tile, fbp.Progress);
                 if (fbp.Forbidden) DrawForbidX(fbp.Tile);
             }
 
             foreach (var dbp in snap.DoorBlueprints)
             {
+                if (dbp.Tile.X < viewMinTileX || dbp.Tile.X > viewMaxTileX
+                    || dbp.Tile.Y < viewMinTileY || dbp.Tile.Y > viewMaxTileY) continue;
                 DrawDoorBlueprint(dbp.Tile, dbp.Progress);
                 if (dbp.Forbidden) DrawForbidX(dbp.Tile);
             }
@@ -215,6 +241,8 @@ public partial class WorldRenderer : Node2D
             }
             foreach (var door in snap.Doors)
             {
+                if (door.Tile.X < viewMinTileX || door.Tile.X > viewMaxTileX
+                    || door.Tile.Y < viewMinTileY || door.Tile.Y > viewMaxTileY) continue;
                 float openAmount = door.OpenAmount;
                 if (_prevDoorByTileScratch.TryGetValue(door.Tile, out var pd))
                 {
@@ -228,6 +256,8 @@ public partial class WorldRenderer : Node2D
         {
             foreach (var d in snap.Decons)
             {
+                if (d.Tile.X < viewMinTileX || d.Tile.X > viewMaxTileX
+                    || d.Tile.Y < viewMinTileY || d.Tile.Y > viewMaxTileY) continue;
                 DrawDeconMark(d.Tile, d.Progress);
                 if (d.Forbidden) DrawForbidX(d.Tile);
             }
@@ -249,11 +279,12 @@ public partial class WorldRenderer : Node2D
         int cursorTileY = Mathf.FloorToInt(mouseLocal.Y / PixelsPerTile);
         using (FrameProfiler.Instance.BeginScope("Wood"))
         {
-            var selectedWoodSet = snap.SelectedWoodIds.Length > 0
-                ? new HashSet<int>(snap.SelectedWoodIds)
-                : null;
+            var selectedWoodSet = GetCachedSelectedSet(
+                snap.SelectedWoodIds, ref _cachedSelectedWoodIdRef, ref _cachedSelectedWoodSet);
             foreach (var w in snap.Wood)
             {
+                if (w.Tile.X < viewMinTileX || w.Tile.X > viewMaxTileX
+                    || w.Tile.Y < viewMinTileY || w.Tile.Y > viewMaxTileY) continue;
                 DrawWood(w.Tile);
                 if (w.Forbidden) DrawForbiddenMark(w.Tile);
                 if (selectedWoodSet is not null && selectedWoodSet.Contains(w.EntityId)) DrawWoodSelectionRing(w.Tile);
@@ -266,11 +297,12 @@ public partial class WorldRenderer : Node2D
 
         using (FrameProfiler.Instance.BeginScope("Trees"))
         {
-            var selectedTreeSet = snap.SelectedTreeIds.Length > 0
-                ? new HashSet<int>(snap.SelectedTreeIds)
-                : null;
+            var selectedTreeSet = GetCachedSelectedSet(
+                snap.SelectedTreeIds, ref _cachedSelectedTreeIdRef, ref _cachedSelectedTreeSet);
             foreach (var t in snap.Trees)
             {
+                if (t.Tile.X < viewMinTileX || t.Tile.X > viewMaxTileX
+                    || t.Tile.Y < viewMinTileY || t.Tile.Y > viewMaxTileY) continue;
                 DrawTree(t, selectedTreeSet);
             }
         }
@@ -279,6 +311,8 @@ public partial class WorldRenderer : Node2D
         {
             foreach (var c in snap.Crops)
             {
+                if (c.Tile.X < viewMinTileX || c.Tile.X > viewMaxTileX
+                    || c.Tile.Y < viewMinTileY || c.Tile.Y > viewMaxTileY) continue;
                 DrawCrop(c);
             }
         }
@@ -287,6 +321,8 @@ public partial class WorldRenderer : Node2D
         {
             foreach (var p in snap.ItemPiles)
             {
+                if (p.Tile.X < viewMinTileX || p.Tile.X > viewMaxTileX
+                    || p.Tile.Y < viewMinTileY || p.Tile.Y > viewMaxTileY) continue;
                 DrawItemPile(p);
                 if (p.Tile.X == cursorTileX && p.Tile.Y == cursorTileY)
                 {
@@ -309,6 +345,10 @@ public partial class WorldRenderer : Node2D
         {
             foreach (var d in snap.Dummies)
             {
+                int tx = (int)d.X;
+                int ty = (int)d.Y;
+                if (tx < viewMinTileX || tx > viewMaxTileX
+                    || ty < viewMinTileY || ty > viewMaxTileY) continue;
                 float drawX = d.X;
                 float drawY = d.Y;
                 if (_prevDummyByIdScratch.TryGetValue(d.EntityId, out var prev))
@@ -702,6 +742,19 @@ public partial class WorldRenderer : Node2D
             if (!set.Contains(new TilePos(t.X + 1, t.Y)))
                 DrawLine(new Vector2(x1, y0), new Vector2(x1, y1), border, width: borderW);
         }
+    }
+
+    // Reuses the cached HashSet when the snapshot ships the same Selected
+    // array reference as last frame. Snapshot publishing reuses the
+    // Array.Empty<int>() singleton for the "nothing selected" case, so the
+    // common path hits the cache + allocates nothing.
+    private static HashSet<int>? GetCachedSelectedSet(int[] ids, ref int[]? cachedRef, ref HashSet<int>? cachedSet)
+    {
+        if (ids.Length == 0) { cachedRef = ids; cachedSet = null; return null; }
+        if (ReferenceEquals(cachedRef, ids)) return cachedSet;
+        cachedRef = ids;
+        cachedSet = new HashSet<int>(ids);
+        return cachedSet;
     }
 
     private void DrawGrowZone(StruggleGame.Sim.Snapshots.GrowZoneState gz, bool isSelected)
