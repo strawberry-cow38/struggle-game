@@ -35,12 +35,19 @@ public sealed class RoofSystem
             if (job.Kind != JobKind.RoofBuild && job.Kind != JobKind.RoofRemove) return;
             if (job.State != JobState.Open && job.State != JobState.Claimed) return;
 
+            ref var bp = ref job.Entity.GetComponent<RoofBlueprint>();
+            // Pawn approaches job.Tile (chunk anchor). For chunks where
+            // the anchor is walkable + central, standing there covers
+            // every chunk tile via Chebyshev≤1. For chunks anchored on
+            // a non-walkable tile (wall/door), the pawn parks adjacent
+            // and the per-tile InRangeOrOnTile to the anchor still
+            // gates progress as before.
             if (!BuildAdjacency.InRangeOrOnTile(pos.X, pos.Y, job.Tile.X, job.Tile.Y)) return;
 
-            ref var bp = ref job.Entity.GetComponent<RoofBlueprint>();
             bp.ProgressSec += dt;
-            float target_t = job.Kind == JobKind.RoofBuild ? RoofBuildTimeSec : RoofRemoveTimeSec;
-            if (bp.ProgressSec >= target_t)
+            int n = bp.Tiles?.Length ?? 1;
+            float perTile = job.Kind == JobKind.RoofBuild ? RoofBuildTimeSec : RoofRemoveTimeSec;
+            if (bp.ProgressSec >= perTile * n)
             {
                 completed.Add(job.Id);
             }

@@ -26,8 +26,12 @@ public sealed class Job
     // released. Used by the blueprint info panel's Forbid toggle so the
     // player can park a blueprint without cancelling it.
     public bool Forbidden { get; internal set; }
+    // Optional extra tiles covered by this single job (e.g. a 3x3 roof
+    // chunk where Tile is the anchor the pawn approaches and ExtraTiles
+    // are the other tiles flipped on completion). Null = single-tile job.
+    public TilePos[]? ExtraTiles { get; }
 
-    internal Job(JobId id, JobKind kind, TilePos tile, Entity entity)
+    internal Job(JobId id, JobKind kind, TilePos tile, Entity entity, TilePos[]? extraTiles = null)
     {
         Id = id;
         Kind = kind;
@@ -37,5 +41,6 @@ public sealed class Job
         Claimant = default;
         Score = 0f;
         Forbidden = false;
+        ExtraTiles = extraTiles;
     }
 }

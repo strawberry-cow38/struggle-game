@@ -27,15 +27,35 @@ public sealed class JobBoard
     public Job? Get(JobId id) => _byId.TryGetValue(id, out var j) ? j : null;
 
     public JobId Post(JobKind kind, TilePos tile, Entity entity)
+        => Post(kind, tile, entity, null);
+
+    // Multi-tile post: anchor `tile` is the tile pawns approach; extras
+    // are additional tiles covered by the same job (e.g. a 3x3 roof
+    // chunk). All tiles are indexed in _byTile so HasTile / GetByTile
+    // see every covered tile, but the job ticks/completes as one unit.
+    public JobId Post(JobKind kind, TilePos tile, Entity entity, TilePos[]? extraTiles)
     {
-        if (_byTile.ContainsKey(tile))
+        if (_byTile.ContainsKey(tile)) return JobId.None;
+        if (extraTiles is not null)
         {
-            return JobId.None;
+            foreach (var t in extraTiles)
+            {
+                if (t == tile) continue;
+                if (_byTile.ContainsKey(t)) return JobId.None;
+            }
         }
         var id = new JobId(++_nextId);
-        var job = new Job(id, kind, tile, entity);
+        var job = new Job(id, kind, tile, entity, extraTiles);
         _byId[id] = job;
         _byTile[tile] = id;
+        if (extraTiles is not null)
+        {
+            foreach (var t in extraTiles)
+            {
+                if (t == tile) continue;
+                _byTile[t] = id;
+            }
+        }
         Version++;
         return id;
     }
@@ -87,6 +107,8 @@ public sealed class JobBoard
         if (!_byId.TryGetValue(id, out var job)) return;
         job.State = JobState.Completed;
         _byTile.Remove(job.Tile);
+        if (job.ExtraTiles is not null)
+            foreach (var t in job.ExtraTiles) if (t != job.Tile) _byTile.Remove(t);
         _byId.Remove(id);
         Version++;
     }
@@ -96,6 +118,8 @@ public sealed class JobBoard
         if (!_byId.TryGetValue(id, out var job)) return;
         job.State = JobState.Cancelled;
         _byTile.Remove(job.Tile);
+        if (job.ExtraTiles is not null)
+            foreach (var t in job.ExtraTiles) if (t != job.Tile) _byTile.Remove(t);
         _byId.Remove(id);
         Version++;
     }

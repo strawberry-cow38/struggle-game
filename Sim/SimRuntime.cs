@@ -363,8 +363,21 @@ public sealed class SimRuntime
         {
             if (job.Kind != JobKind.RoofBuild && job.Kind != JobKind.RoofRemove) continue;
             var bp = job.Entity.GetComponent<RoofBlueprint>();
-            float denom = bp.Build ? RoofSystem.RoofBuildTimeSec : RoofSystem.RoofRemoveTimeSec;
-            roofBps.Add(new RoofBlueprintState(job.Tile, bp.ProgressSec / denom, bp.Build, job.Forbidden));
+            // Chunk progress is shared across every tile in the job:
+            // each tile in the chunk shows the same fraction. Denominator
+            // is per-tile time × tile count so progress reads 0..1.
+            int n = bp.Tiles?.Length ?? 1;
+            float perTile = bp.Build ? RoofSystem.RoofBuildTimeSec : RoofSystem.RoofRemoveTimeSec;
+            float progress = bp.ProgressSec / (perTile * n);
+            if (bp.Tiles is null || bp.Tiles.Length == 0)
+            {
+                roofBps.Add(new RoofBlueprintState(job.Tile, progress, bp.Build, job.Forbidden));
+            }
+            else
+            {
+                foreach (var t in bp.Tiles)
+                    roofBps.Add(new RoofBlueprintState(t, progress, bp.Build, job.Forbidden));
+            }
         }
 
         var trees = new TreeState[_trees.Count];
@@ -642,27 +655,49 @@ public sealed class SimRuntime
         }
         else if (kind == JobKind.RoofBuild)
         {
+            var bp = entity.GetComponent<RoofBlueprint>();
+            var tiles = bp.Tiles;
             entity.DeleteEntity();
             EnsureRoofArrays(Map.Width, Map.Height);
-            int idx = tile.Y * Map.Width + tile.X;
-            if (_roofTiles[idx] == 0)
+            bool any = false;
+            if (tiles is null || tiles.Length == 0)
             {
-                _roofTiles[idx] = 1;
-                RoofVersion++;
-                RecomputeLightAll();
+                int idx = tile.Y * Map.Width + tile.X;
+                if (_roofTiles[idx] == 0) { _roofTiles[idx] = 1; any = true; }
             }
+            else
+            {
+                foreach (var t in tiles)
+                {
+                    if (!Map.InBounds(t)) continue;
+                    int idx = t.Y * Map.Width + t.X;
+                    if (_roofTiles[idx] == 0) { _roofTiles[idx] = 1; any = true; }
+                }
+            }
+            if (any) { RoofVersion++; RecomputeLightAll(); }
         }
         else if (kind == JobKind.RoofRemove)
         {
+            var bp = entity.GetComponent<RoofBlueprint>();
+            var tiles = bp.Tiles;
             entity.DeleteEntity();
             EnsureRoofArrays(Map.Width, Map.Height);
-            int idx = tile.Y * Map.Width + tile.X;
-            if (_roofTiles[idx] != 0)
+            bool any = false;
+            if (tiles is null || tiles.Length == 0)
             {
-                _roofTiles[idx] = 0;
-                RoofVersion++;
-                RecomputeLightAll();
+                int idx = tile.Y * Map.Width + tile.X;
+                if (_roofTiles[idx] != 0) { _roofTiles[idx] = 0; any = true; }
             }
+            else
+            {
+                foreach (var t in tiles)
+                {
+                    if (!Map.InBounds(t)) continue;
+                    int idx = t.Y * Map.Width + t.X;
+                    if (_roofTiles[idx] != 0) { _roofTiles[idx] = 0; any = true; }
+                }
+            }
+            if (any) { RoofVersion++; RecomputeLightAll(); }
         }
         else if (kind == JobKind.LampBuild)
         {
@@ -2072,10 +2107,31 @@ public sealed class SimRuntime
     // that already have any job (so a wall blueprint isn't shadowed by a
     // competing roof job; the next recompute after the wall finishes
     // catches it).
+    //
+    // Eligible tiles are bucketed by 3x3 grid cell (snapped to absolute
+    // world coords via floor-divide). Each cell's eligible set becomes
+    // one chunked RoofBuild job — pawn approaches one anchor, ticks
+    // progress, flips every tile in the chunk on completion.
     private void AutoRoofAfterRecompute()
     {
         int w = Map.Width, h = Map.Height;
         EnsureRoofArrays(w, h);
+
+        var chunks = new Dictionary<(int cx, int cy), List<TilePos>>();
+        void Add(int x, int y)
+        {
+            int idx = y * w + x;
+            if (_noRoofTiles[idx] != 0) return;
+            if (_roofTiles[idx] != 0) return;
+            if (Jobs.HasTile(new TilePos(x, y))) return;
+            var key = (FloorDiv(x, 3), FloorDiv(y, 3));
+            if (!chunks.TryGetValue(key, out var list))
+            {
+                list = new List<TilePos>(9);
+                chunks[key] = list;
+            }
+            list.Add(new TilePos(x, y));
+        }
 
         // Pass 1: interior tiles.
         for (int y = 0; y < h; y++)
@@ -2083,11 +2139,8 @@ public sealed class SimRuntime
             int row = y * w;
             for (int x = 0; x < w; x++)
             {
-                int idx = row + x;
-                if (_roomTiles[idx] == 0) continue;
-                if (_noRoofTiles[idx] != 0) continue;
-                if (_roofTiles[idx] != 0) continue;
-                TryPostRoofBuildJob(new TilePos(x, y));
+                if (_roomTiles[row + x] == 0) continue;
+                Add(x, y);
             }
         }
         // Pass 2: barrier tiles (walls/doors) with at least one interior
@@ -2099,10 +2152,7 @@ public sealed class SimRuntime
             int row = y * w;
             for (int x = 0; x < w; x++)
             {
-                int idx = row + x;
-                if (_roomTiles[idx] != 0) continue;
-                if (_noRoofTiles[idx] != 0) continue;
-                if (_roofTiles[idx] != 0) continue;
+                if (_roomTiles[row + x] != 0) continue;
                 bool nearInterior = false;
                 for (int dy = -1; dy <= 1 && !nearInterior; dy++)
                 {
@@ -2118,9 +2168,58 @@ public sealed class SimRuntime
                     }
                 }
                 if (!nearInterior) continue;
-                TryPostRoofBuildJob(new TilePos(x, y));
+                Add(x, y);
             }
         }
+
+        foreach (var (_, list) in chunks) PostRoofBuildChunk(list);
+    }
+
+    // C#'s '/' truncates toward zero, which buckets negatives wrong (e.g.
+    // -1/3 == 0, putting -1 in the same chunk as 0..2). Maps are 0-based
+    // today, but use floor-divide so the chunking math stays correct if
+    // negative tile coords ever land.
+    private static int FloorDiv(int a, int b)
+    {
+        int q = a / b;
+        if ((a % b != 0) && ((a < 0) != (b < 0))) q--;
+        return q;
+    }
+
+    // Post one chunked RoofBuild job for an already-filtered list of
+    // eligible tiles (caller guarantees: unroofed, not no-roof, no job).
+    // Anchor preference: 3x3-cell center if walkable + in list; else
+    // first walkable in list; else first tile. Walkable anchor lets the
+    // pawn park there and reach every chunk tile via Chebyshev≤1.
+    private bool PostRoofBuildChunk(List<TilePos> tiles)
+    {
+        if (tiles.Count == 0) return false;
+        var anchor = PickRoofChunkAnchor(tiles);
+        var e = Store.CreateEntity();
+        e.AddComponent(new RoofBlueprint { Tiles = tiles.ToArray(), Build = true });
+        var extras = tiles.Count > 1 ? tiles.ToArray() : null;
+        var id = Jobs.Post(JobKind.RoofBuild, anchor, e, extras);
+        if (id.IsNone) { e.DeleteEntity(); return false; }
+        return true;
+    }
+
+    private TilePos PickRoofChunkAnchor(List<TilePos> tiles)
+    {
+        int cx = FloorDiv(tiles[0].X, 3) * 3 + 1;
+        int cy = FloorDiv(tiles[0].Y, 3) * 3 + 1;
+        var center = new TilePos(cx, cy);
+        TilePos firstWalkable = default;
+        bool foundWalkable = false;
+        foreach (var t in tiles)
+        {
+            if (t == center && Map.Walkable(t)) return center;
+            if (!foundWalkable && Map.Walkable(t))
+            {
+                firstWalkable = t;
+                foundWalkable = true;
+            }
+        }
+        return foundWalkable ? firstWalkable : tiles[0];
     }
 
     // Post a RoofBuild job at the tile if none of the gates trip:
@@ -2138,7 +2237,7 @@ public sealed class SimRuntime
         if (_noRoofTiles[idx] != 0) return false;
         if (Jobs.HasTile(tile)) return false;
         var e = Store.CreateEntity();
-        e.AddComponent(new RoofBlueprint { Tile = tile, Build = true });
+        e.AddComponent(new RoofBlueprint { Tiles = new[] { tile }, Build = true });
         var id = Jobs.Post(JobKind.RoofBuild, tile, e);
         if (id.IsNone) { e.DeleteEntity(); return false; }
         return true;
@@ -2154,32 +2253,52 @@ public sealed class SimRuntime
         if (_roofTiles[idx] == 0) return false;
         if (Jobs.HasTile(tile)) return false;
         var e = Store.CreateEntity();
-        e.AddComponent(new RoofBlueprint { Tile = tile, Build = false });
+        e.AddComponent(new RoofBlueprint { Tiles = new[] { tile }, Build = false });
         var id = Jobs.Post(JobKind.RoofRemove, tile, e);
         if (id.IsNone) { e.DeleteEntity(); return false; }
         return true;
     }
 
     // === Roof designator entry points ===
-    // Drag-rect "build roof" — posts one RoofBuild job per eligible tile.
-    // No instant placement; colonists must walk to each tile and work
-    // RoofSystem.RoofBuildTimeSec before the bit flips.
+    // Drag-rect "build roof". Eligible tiles are bucketed by 3x3 grid
+    // cell; each bucket becomes one chunked RoofBuild job that flips
+    // every covered tile on completion. Tiles already roofed / flagged
+    // no-roof / occupied by another job are skipped.
     public void PaintRoofRect(TilePos a, TilePos b)
     {
         int w = Map.Width, h = Map.Height;
         EnsureRoofArrays(w, h);
         int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
         int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
+        var chunks = new Dictionary<(int cx, int cy), List<TilePos>>();
         for (int y = Math.Max(0, ymin); y <= Math.Min(h - 1, ymax); y++)
+        {
+            int row = y * w;
             for (int x = Math.Max(0, xmin); x <= Math.Min(w - 1, xmax); x++)
-                TryPostRoofBuildJob(new TilePos(x, y));
+            {
+                int idx = row + x;
+                if (_roofTiles[idx] != 0) continue;
+                if (_noRoofTiles[idx] != 0) continue;
+                var tile = new TilePos(x, y);
+                if (Jobs.HasTile(tile)) continue;
+                var key = (FloorDiv(x, 3), FloorDiv(y, 3));
+                if (!chunks.TryGetValue(key, out var list))
+                {
+                    list = new List<TilePos>(9);
+                    chunks[key] = list;
+                }
+                list.Add(tile);
+            }
+        }
+        foreach (var (_, list) in chunks) PostRoofBuildChunk(list);
     }
 
     // Drag-rect "remove roof". For each tile in the rect:
-    //   - if there's a pending RoofBuild job, cancel it (tile wasn't
-    //     built yet, so nothing to remove)
-    //   - if the tile is currently roofed (and no RoofRemove queued
-    //     already), post a RoofRemove job
+    //   - if there's a pending RoofBuild chunk covering it, cancel the
+    //     whole chunk (any chunk tiles outside the remove rect re-queue
+    //     on the next auto-roof pass triggered below)
+    //   - else if the tile is currently roofed, gather into 3x3 chunks
+    //     and post a RoofRemove job per chunk
     // Does NOT touch the no-roof mark — that's a separate verb.
     public void RemoveRoofRect(TilePos a, TilePos b)
     {
@@ -2187,20 +2306,51 @@ public sealed class SimRuntime
         EnsureRoofArrays(w, h);
         int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
         int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
+        var cancelled = new HashSet<JobId>();
         for (int y = Math.Max(0, ymin); y <= Math.Min(h - 1, ymax); y++)
         {
             for (int x = Math.Max(0, xmin); x <= Math.Min(w - 1, xmax); x++)
             {
                 var tile = new TilePos(x, y);
                 var existing = Jobs.GetByTile(tile);
-                if (existing is not null && existing.Kind == JobKind.RoofBuild)
-                {
-                    CancelJob(existing.Id);
-                    continue;
-                }
-                TryPostRoofRemoveJob(tile);
+                if (existing is null) continue;
+                if (existing.Kind != JobKind.RoofBuild) continue;
+                if (cancelled.Add(existing.Id)) CancelJob(existing.Id);
             }
         }
+        var chunks = new Dictionary<(int cx, int cy), List<TilePos>>();
+        for (int y = Math.Max(0, ymin); y <= Math.Min(h - 1, ymax); y++)
+        {
+            int row = y * w;
+            for (int x = Math.Max(0, xmin); x <= Math.Min(w - 1, xmax); x++)
+            {
+                int idx = row + x;
+                if (_roofTiles[idx] == 0) continue;
+                var tile = new TilePos(x, y);
+                if (Jobs.HasTile(tile)) continue;
+                var key = (FloorDiv(x, 3), FloorDiv(y, 3));
+                if (!chunks.TryGetValue(key, out var list))
+                {
+                    list = new List<TilePos>(9);
+                    chunks[key] = list;
+                }
+                list.Add(tile);
+            }
+        }
+        foreach (var (_, list) in chunks) PostRoofRemoveChunk(list);
+        if (cancelled.Count > 0) AutoRoofAfterRecompute();
+    }
+
+    private bool PostRoofRemoveChunk(List<TilePos> tiles)
+    {
+        if (tiles.Count == 0) return false;
+        var anchor = PickRoofChunkAnchor(tiles);
+        var e = Store.CreateEntity();
+        e.AddComponent(new RoofBlueprint { Tiles = tiles.ToArray(), Build = false });
+        var extras = tiles.Count > 1 ? tiles.ToArray() : null;
+        var id = Jobs.Post(JobKind.RoofRemove, anchor, e, extras);
+        if (id.IsNone) { e.DeleteEntity(); return false; }
+        return true;
     }
 
     // Drag-rect "no-roof zone". mark=true sets the no-roof flag AND
@@ -2216,6 +2366,7 @@ public sealed class SimRuntime
         int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
         bool flagChanged = false;
         byte want = mark ? (byte)1 : (byte)0;
+        var cancelled = new HashSet<JobId>();
         for (int y = Math.Max(0, ymin); y <= Math.Min(h - 1, ymax); y++)
         {
             int row = y * w;
@@ -2232,7 +2383,7 @@ public sealed class SimRuntime
                 var existing = Jobs.GetByTile(tile);
                 if (existing is not null && existing.Kind == JobKind.RoofBuild)
                 {
-                    CancelJob(existing.Id);
+                    if (cancelled.Add(existing.Id)) CancelJob(existing.Id);
                 }
                 if (_roofTiles[idx] != 0) TryPostRoofRemoveJob(tile);
             }
@@ -2242,6 +2393,10 @@ public sealed class SimRuntime
             RoofVersion++;
             if (!mark) _roomsDirty = true;
         }
+        // Cancelling a chunk drops every tile in it, including tiles
+        // outside the no-roof rect that should still be queued. Re-run
+        // auto-roof to repost chunks for the leftovers.
+        if (mark && cancelled.Count > 0) AutoRoofAfterRecompute();
     }
 
     private void EnsureRoofArrays(int w, int h)

@@ -137,14 +137,15 @@ public struct Decon : IComponent
     public float ProgressSec;
 }
 
-// Pending roof job on a tile. Build=true is "raise a roof here";
-// Build=false is "tear the existing roof down". ProgressSec ticks
-// while a worker is on the tile (roofs build from underneath, like
-// flooring). On completion SimRuntime flips _roofTiles[idx] and
-// bumps RoofVersion; the entity is deleted.
+// Pending roof job covering one or more tiles (drag-rect + auto-roof
+// chunk eligible tiles into 3x3 grid cells; each chunk is one job).
+// Build=true raises roofs on every Tiles entry; Build=false tears them
+// down. ProgressSec scales linearly with Tiles.Length, so chunk time
+// = RoofBuildTimeSec * Tiles.Length. On completion SimRuntime flips
+// every tile's roof bit, bumps RoofVersion once, and deletes the entity.
 public struct RoofBlueprint : IComponent
 {
-    public TilePos Tile;
+    public TilePos[] Tiles;
     public float ProgressSec;
     public bool Build;
 }
