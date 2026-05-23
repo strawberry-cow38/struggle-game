@@ -15,4 +15,6 @@ public enum JobKind : byte
     CutPlants = 9,
     Harvest = 10,
     Sow = 11,
+    RoofBuild = 12,
+    RoofRemove = 13,
 }

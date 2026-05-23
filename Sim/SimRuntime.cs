@@ -66,6 +66,7 @@ public sealed class SimRuntime
     private readonly GrowZoneManager _zoneManager;
     private readonly DeconSystem _decons;
     private readonly FloorSystem _floors;
+    private readonly RoofSystem _roofs;
     private readonly DoorBuildSystem _doorBuilds;
     private readonly DoorSystem _doors;
     private readonly HaulSystem _hauls;
@@ -153,6 +154,7 @@ public sealed class SimRuntime
         _zoneManager = new GrowZoneManager(this);
         _decons = new DeconSystem(this, Jobs);
         _floors = new FloorSystem(this, Jobs);
+        _roofs = new RoofSystem(this, Jobs);
         _doorBuilds = new DoorBuildSystem(this, Jobs);
         _doors = new DoorSystem();
         _hauls = new HaulSystem(this, Jobs);
@@ -184,6 +186,7 @@ public sealed class SimRuntime
         _zoneManager.Step(dt);
         _decons.Step(Store, dt);
         _floors.Step(Store, dt);
+        _roofs.Step(Store, dt);
         _doorBuilds.Step(Store, dt);
         _doors.Step(Store, dt);
         _hauls.Step(Store, dt);
@@ -333,6 +336,15 @@ public sealed class SimRuntime
             floorBps.Add(new BlueprintState(job.Tile, bp.ProgressSec / FloorSystem.FloorTimeSec, job.Forbidden));
         }
 
+        var roofBps = new List<RoofBlueprintState>();
+        foreach (var job in Jobs.All)
+        {
+            if (job.Kind != JobKind.RoofBuild && job.Kind != JobKind.RoofRemove) continue;
+            var bp = job.Entity.GetComponent<RoofBlueprint>();
+            float denom = bp.Build ? RoofSystem.RoofBuildTimeSec : RoofSystem.RoofRemoveTimeSec;
+            roofBps.Add(new RoofBlueprintState(job.Tile, bp.ProgressSec / denom, bp.Build, job.Forbidden));
+        }
+
         var trees = new TreeState[_trees.Count];
         int k = 0;
         foreach (var (tile, ent) in _trees)
@@ -453,7 +465,7 @@ public sealed class SimRuntime
             Tick, MapVersion, RoomVersion, RoomCount, RoofVersion,
             dummies, bps, floorBps.ToArray(), trees, crops, woods, piles, decons.ToArray(),
             doorBps.ToArray(), doorRender.ToArray(),
-            stockpiles, growZones,
+            stockpiles, growZones, roofBps.ToArray(),
             selectedDummyId, selectedPath, selectedOrders, selTreeArr, selWoodArr);
     }
 
@@ -584,6 +596,28 @@ public sealed class SimRuntime
             if (_trees.ContainsKey(tile) || _crops.ContainsKey(tile)) return;
             if (!Map.Walkable(tile)) return;
             SpawnCropAt(tile, sowKind, 0f);
+        }
+        else if (kind == JobKind.RoofBuild)
+        {
+            entity.DeleteEntity();
+            EnsureRoofArrays(Map.Width, Map.Height);
+            int idx = tile.Y * Map.Width + tile.X;
+            if (_roofTiles[idx] == 0)
+            {
+                _roofTiles[idx] = 1;
+                RoofVersion++;
+            }
+        }
+        else if (kind == JobKind.RoofRemove)
+        {
+            entity.DeleteEntity();
+            EnsureRoofArrays(Map.Width, Map.Height);
+            int idx = tile.Y * Map.Width + tile.X;
+            if (_roofTiles[idx] != 0)
+            {
+                _roofTiles[idx] = 0;
+                RoofVersion++;
+            }
         }
         else if (kind == JobKind.Deconstruct)
         {
@@ -730,6 +764,11 @@ public sealed class SimRuntime
         else if (kind == JobKind.FloorDeconstruct)
         {
             // Floor stays; throw the marker away. Re-designate spawns fresh.
+            entity.DeleteEntity();
+        }
+        else if (kind == JobKind.RoofBuild || kind == JobKind.RoofRemove)
+        {
+            // Roof state unchanged; throw the marker away.
             entity.DeleteEntity();
         }
         else if (kind == JobKind.DoorDeconstruct)
@@ -1876,121 +1915,144 @@ public sealed class SimRuntime
     }
 
     // After a room recompute, ensure every interior tile + its bordering
-    // wall/door tiles are roofed (unless the player marked them no-roof).
-    // Auto-roof only ADDS — it never strips an existing roof. Removing
-    // is the player's call via the remove-roof designator. This matches
-    // typical "rooms get roofed automatically, stuff already roofed stays
-    // roofed until you delete it" behavior.
+    // wall/door tiles have either an existing roof or a queued RoofBuild
+    // job. Auto-roof only POSTS jobs — it never adds tiles directly and
+    // it never tears anything down. Skips tiles flagged no-roof and tiles
+    // that already have any job (so a wall blueprint isn't shadowed by a
+    // competing roof job; the next recompute after the wall finishes
+    // catches it).
     private void AutoRoofAfterRecompute()
     {
         int w = Map.Width, h = Map.Height;
-        int n = w * h;
-        if (_roofTiles.Length != n) _roofTiles = new byte[n];
-        if (_noRoofTiles.Length != n) _noRoofTiles = new byte[n];
+        EnsureRoofArrays(w, h);
 
-        bool changed = false;
-        // Pass 1: interior tiles get roofed directly.
+        // Pass 1: interior tiles.
         for (int y = 0; y < h; y++)
         {
             int row = y * w;
             for (int x = 0; x < w; x++)
             {
                 int idx = row + x;
-                if (_roomTiles[idx] == 0) continue;          // not interior
-                if (_noRoofTiles[idx] != 0) continue;        // player forbade
-                if (_roofTiles[idx] != 0) continue;
-                _roofTiles[idx] = 1;
-                changed = true;
-            }
-        }
-        // Pass 2: barrier tiles (walls/doors) that touch an interior tile
-        // get roofed too — that's "the external volume including walls".
-        for (int y = 0; y < h; y++)
-        {
-            int row = y * w;
-            for (int x = 0; x < w; x++)
-            {
-                int idx = row + x;
-                if (_roomTiles[idx] != 0) continue;          // skip interiors (handled above)
+                if (_roomTiles[idx] == 0) continue;
                 if (_noRoofTiles[idx] != 0) continue;
                 if (_roofTiles[idx] != 0) continue;
-                // Only barrier tiles inside a wall ring count — i.e. tiles
-                // that have a 4-neighbour pointing at an interior room.
+                TryPostRoofBuildJob(new TilePos(x, y));
+            }
+        }
+        // Pass 2: barrier tiles (walls/doors) with at least one interior
+        // 4-neighbour — that's the "external volume including walls".
+        for (int y = 0; y < h; y++)
+        {
+            int row = y * w;
+            for (int x = 0; x < w; x++)
+            {
+                int idx = row + x;
+                if (_roomTiles[idx] != 0) continue;
+                if (_noRoofTiles[idx] != 0) continue;
+                if (_roofTiles[idx] != 0) continue;
                 bool nearInterior = false;
                 if (x > 0     && _roomTiles[idx - 1] != 0) nearInterior = true;
                 else if (x + 1 < w && _roomTiles[idx + 1] != 0) nearInterior = true;
                 else if (y > 0     && _roomTiles[idx - w] != 0) nearInterior = true;
                 else if (y + 1 < h && _roomTiles[idx + w] != 0) nearInterior = true;
                 if (!nearInterior) continue;
-                _roofTiles[idx] = 1;
-                changed = true;
+                TryPostRoofBuildJob(new TilePos(x, y));
             }
         }
-        if (changed) RoofVersion++;
+    }
+
+    // Post a RoofBuild job at the tile if none of the gates trip:
+    //   - out of bounds
+    //   - tile is already roofed
+    //   - tile is flagged no-roof
+    //   - the tile already carries any other job (wall blueprint, decon,
+    //     pre-existing roof job, etc — first-come-first-served)
+    public bool TryPostRoofBuildJob(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return false;
+        int idx = tile.Y * Map.Width + tile.X;
+        EnsureRoofArrays(Map.Width, Map.Height);
+        if (_roofTiles[idx] != 0) return false;
+        if (_noRoofTiles[idx] != 0) return false;
+        if (Jobs.HasTile(tile)) return false;
+        var e = Store.CreateEntity();
+        e.AddComponent(new RoofBlueprint { Tile = tile, Build = true });
+        var id = Jobs.Post(JobKind.RoofBuild, tile, e);
+        if (id.IsNone) { e.DeleteEntity(); return false; }
+        return true;
+    }
+
+    // Post a RoofRemove job if the tile is currently roofed and isn't
+    // already queued for anything. Returns true if a job was posted.
+    public bool TryPostRoofRemoveJob(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return false;
+        int idx = tile.Y * Map.Width + tile.X;
+        EnsureRoofArrays(Map.Width, Map.Height);
+        if (_roofTiles[idx] == 0) return false;
+        if (Jobs.HasTile(tile)) return false;
+        var e = Store.CreateEntity();
+        e.AddComponent(new RoofBlueprint { Tile = tile, Build = false });
+        var id = Jobs.Post(JobKind.RoofRemove, tile, e);
+        if (id.IsNone) { e.DeleteEntity(); return false; }
+        return true;
     }
 
     // === Roof designator entry points ===
-    // Drag-rect "build roof" — set the tile to roofed unless the player
-    // has marked it no-roof. Skips out-of-bounds. Bumps RoofVersion if
-    // anything actually changed so the renderer rebuilds its overlay.
+    // Drag-rect "build roof" — posts one RoofBuild job per eligible tile.
+    // No instant placement; colonists must walk to each tile and work
+    // RoofSystem.RoofBuildTimeSec before the bit flips.
     public void PaintRoofRect(TilePos a, TilePos b)
     {
         int w = Map.Width, h = Map.Height;
         EnsureRoofArrays(w, h);
         int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
         int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
-        bool changed = false;
         for (int y = Math.Max(0, ymin); y <= Math.Min(h - 1, ymax); y++)
-        {
-            int row = y * w;
             for (int x = Math.Max(0, xmin); x <= Math.Min(w - 1, xmax); x++)
-            {
-                int idx = row + x;
-                if (_noRoofTiles[idx] != 0) continue;
-                if (_roofTiles[idx] != 0) continue;
-                _roofTiles[idx] = 1;
-                changed = true;
-            }
-        }
-        if (changed) RoofVersion++;
+                TryPostRoofBuildJob(new TilePos(x, y));
     }
 
-    // Drag-rect "remove roof". Clears the roof flag on every tile in the
-    // rect. Does NOT touch the no-roof mark — separate verb.
+    // Drag-rect "remove roof". For each tile in the rect:
+    //   - if there's a pending RoofBuild job, cancel it (tile wasn't
+    //     built yet, so nothing to remove)
+    //   - if the tile is currently roofed (and no RoofRemove queued
+    //     already), post a RoofRemove job
+    // Does NOT touch the no-roof mark — that's a separate verb.
     public void RemoveRoofRect(TilePos a, TilePos b)
     {
         int w = Map.Width, h = Map.Height;
         EnsureRoofArrays(w, h);
         int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
         int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
-        bool changed = false;
         for (int y = Math.Max(0, ymin); y <= Math.Min(h - 1, ymax); y++)
         {
-            int row = y * w;
             for (int x = Math.Max(0, xmin); x <= Math.Min(w - 1, xmax); x++)
             {
-                int idx = row + x;
-                if (_roofTiles[idx] == 0) continue;
-                _roofTiles[idx] = 0;
-                changed = true;
+                var tile = new TilePos(x, y);
+                var existing = Jobs.GetByTile(tile);
+                if (existing is not null && existing.Kind == JobKind.RoofBuild)
+                {
+                    CancelJob(existing.Id);
+                    continue;
+                }
+                TryPostRoofRemoveJob(tile);
             }
         }
-        if (changed) RoofVersion++;
     }
 
-    // Drag-rect "no-roof zone". When mark = true the rect becomes a
-    // permanent no-roof area (auto-roof will skip it on every future
-    // recompute) AND any existing roof in the rect is stripped at the
-    // same time. When mark = false the rect is freed for auto-roofing
-    // again; existing roof tiles are left alone (the next room recompute
-    // restores them if they're interior).
+    // Drag-rect "no-roof zone". mark=true sets the no-roof flag AND
+    // cancels any pending RoofBuild AND posts a RoofRemove for any
+    // already-built roof in the rect. mark=false clears the flag and
+    // re-runs auto-roof on the next tick (so freshly-eligible tiles
+    // get build jobs queued again).
     public void SetNoRoofRect(TilePos a, TilePos b, bool mark)
     {
         int w = Map.Width, h = Map.Height;
         EnsureRoofArrays(w, h);
         int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
         int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
-        bool changed = false;
+        bool flagChanged = false;
         byte want = mark ? (byte)1 : (byte)0;
         for (int y = Math.Max(0, ymin); y <= Math.Min(h - 1, ymax); y++)
         {
@@ -2001,21 +2063,21 @@ public sealed class SimRuntime
                 if (_noRoofTiles[idx] != want)
                 {
                     _noRoofTiles[idx] = want;
-                    changed = true;
+                    flagChanged = true;
                 }
-                if (mark && _roofTiles[idx] != 0)
+                if (!mark) continue;
+                var tile = new TilePos(x, y);
+                var existing = Jobs.GetByTile(tile);
+                if (existing is not null && existing.Kind == JobKind.RoofBuild)
                 {
-                    _roofTiles[idx] = 0;
-                    changed = true;
+                    CancelJob(existing.Id);
                 }
+                if (_roofTiles[idx] != 0) TryPostRoofRemoveJob(tile);
             }
         }
-        if (changed)
+        if (flagChanged)
         {
             RoofVersion++;
-            // Clearing a no-roof mark on a tile inside an interior room
-            // should re-trigger auto-roof. Mark rooms dirty so end-of-tick
-            // recompute fills the freshly-eligible tiles in.
             if (!mark) _roomsDirty = true;
         }
     }

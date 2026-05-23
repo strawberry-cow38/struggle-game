@@ -28,6 +28,10 @@ public sealed class SimSnapshot
     public DoorRenderState[] Doors { get; }
     public StockpileState[] Stockpiles { get; }
     public GrowZoneState[] GrowZones { get; }
+    // Pending RoofBuild / RoofRemove jobs. Build=true draws as a roof
+    // blueprint outline; Build=false draws as a remove-X over the
+    // already-roofed tile.
+    public RoofBlueprintState[] RoofBlueprints { get; }
 
     // Set when the game has a selected colonist; null otherwise.
     public int? SelectedDummyId { get; }
@@ -58,6 +62,7 @@ public sealed class SimSnapshot
         DoorRenderState[] doors,
         StockpileState[] stockpiles,
         GrowZoneState[] growZones,
+        RoofBlueprintState[] roofBlueprints,
         int? selectedDummyId = null,
         TilePos[]? selectedPath = null,
         TilePos[]? selectedOrders = null,
@@ -81,6 +86,7 @@ public sealed class SimSnapshot
         Doors = doors;
         Stockpiles = stockpiles;
         GrowZones = growZones;
+        RoofBlueprints = roofBlueprints;
         SelectedDummyId = selectedDummyId;
         SelectedPath = selectedPath;
         SelectedOrders = selectedOrders;
@@ -157,6 +163,11 @@ public readonly record struct StockpileState(
     StockpilePriority Priority,
     TilePos[] Tiles,
     string[] AllowedItemPaths);
+
+// Pending roof job. Progress = 0..1 normalised by RoofSystem build /
+// remove time. Build=true paints as a roof blueprint outline; false
+// paints as an X over the already-roofed tile.
+public readonly record struct RoofBlueprintState(TilePos Tile, float Progress, bool Build, bool Forbidden);
 
 // Render-friendly grow zone. Mirror of StockpileState. AllowCutting +
 // AllowSowing drive the manager's auto-job posting; CropKind decides

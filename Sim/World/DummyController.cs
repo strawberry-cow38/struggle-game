@@ -197,10 +197,12 @@ public sealed class DummyController
                 HandleHaul(ref pos, ref path, entity, cb, view, job, here, store);
                 return;
             }
-            else if (job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct)
+            else if (job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct
+                  || job.Kind == JobKind.RoofBuild  || job.Kind == JobKind.RoofRemove)
             {
-                // Floors don't block movement and the worker can stand on
-                // the tile itself — approach = job.Tile, adjacency permissive.
+                // Floors + roofs don't block movement and the worker can
+                // stand on the tile itself — approach = job.Tile,
+                // adjacency permissive.
                 if (BuildAdjacency.InRangeOrOnTile(pos.X, pos.Y, job.Tile.X, job.Tile.Y))
                 {
                     path.Waypoints = null;
@@ -354,7 +356,9 @@ public sealed class DummyController
                 && job.Kind != JobKind.Haul
                 && job.Kind != JobKind.CutPlants
                 && job.Kind != JobKind.Harvest
-                && job.Kind != JobKind.Sow) continue;
+                && job.Kind != JobKind.Sow
+                && job.Kind != JobKind.RoofBuild
+                && job.Kind != JobKind.RoofRemove) continue;
             if (job.State != JobState.Open) continue;
             if (job.Forbidden) continue;
             // A pawn still hauling (forbidden cargo retained from a prior
@@ -367,7 +371,8 @@ public sealed class DummyController
             TilePos approach;
             bool isHaul = job.Kind == JobKind.Haul;
             bool isFloor = job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct;
-            if (isHaul || isFloor)
+            bool isRoof = job.Kind == JobKind.RoofBuild || job.Kind == JobKind.RoofRemove;
+            if (isHaul || isFloor || isRoof)
             {
                 // Haul pickup walks onto the source tile itself, not a
                 // neighbor. Floors also walk onto the tile — they don't

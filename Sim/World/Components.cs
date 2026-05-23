@@ -137,6 +137,18 @@ public struct Decon : IComponent
     public float ProgressSec;
 }
 
+// Pending roof job on a tile. Build=true is "raise a roof here";
+// Build=false is "tear the existing roof down". ProgressSec ticks
+// while a worker is on the tile (roofs build from underneath, like
+// flooring). On completion SimRuntime flips _roofTiles[idx] and
+// bumps RoofVersion; the entity is deleted.
+public struct RoofBlueprint : IComponent
+{
+    public TilePos Tile;
+    public float ProgressSec;
+    public bool Build;
+}
+
 // Pending wood-flooring blueprint on a tile. Floor sits atop terrain;
 // walls can be raised on top of it. ProgressSec advances while a
 // builder is adjacent; on completion the flooring layer becomes Wood

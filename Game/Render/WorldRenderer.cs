@@ -259,6 +259,14 @@ public partial class WorldRenderer : Node2D
                 DrawDoorBlueprint(dbp.Tile, dbp.Progress);
                 if (dbp.Forbidden) DrawForbidX(dbp.Tile);
             }
+
+            foreach (var rbp in snap.RoofBlueprints)
+            {
+                if (rbp.Tile.X < viewMinTileX || rbp.Tile.X > viewMaxTileX
+                    || rbp.Tile.Y < viewMinTileY || rbp.Tile.Y > viewMaxTileY) continue;
+                DrawRoofBlueprint(rbp.Tile, rbp.Progress, rbp.Build);
+                if (rbp.Forbidden) DrawForbidX(rbp.Tile);
+            }
         }
 
         using (FrameProfiler.Instance.BeginScope("Doors"))
@@ -868,6 +876,40 @@ public partial class WorldRenderer : Node2D
         float inset = PixelsPerTile * 0.18f;
         DrawLine(new Vector2(left + inset, top + inset), new Vector2(right - inset, bottom - inset), DoorForbidMark, width: 3f);
         DrawLine(new Vector2(right - inset, top + inset), new Vector2(left + inset, bottom - inset), DoorForbidMark, width: 3f);
+    }
+
+    private static readonly Color RoofBpFill = new(0.20f, 0.55f, 0.95f, 0.22f);
+    private static readonly Color RoofBpBorder = new(0.55f, 0.85f, 1.00f, 0.95f);
+    private static readonly Color RoofRemoveFill = new(0.95f, 0.30f, 0.20f, 0.22f);
+    private static readonly Color RoofRemoveBorder = new(1.00f, 0.55f, 0.45f, 0.95f);
+
+    private void DrawRoofBlueprint(TilePos tile, float progress, bool build)
+    {
+        var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+        DrawRect(rect, build ? RoofBpFill : RoofRemoveFill, filled: true);
+        DrawRect(rect, build ? RoofBpBorder : RoofRemoveBorder, filled: false, width: 2f);
+        // Remove jobs paint a small X so a teardown reads differently
+        // from a build at a glance.
+        if (!build)
+        {
+            float inset = PixelsPerTile * 0.22f;
+            var a = new Vector2(rect.Position.X + inset, rect.Position.Y + inset);
+            var b = new Vector2(rect.Position.X + PixelsPerTile - inset, rect.Position.Y + PixelsPerTile - inset);
+            var c = new Vector2(rect.Position.X + PixelsPerTile - inset, rect.Position.Y + inset);
+            var d = new Vector2(rect.Position.X + inset, rect.Position.Y + PixelsPerTile - inset);
+            DrawLine(a, b, RoofRemoveBorder, width: 2f);
+            DrawLine(c, d, RoofRemoveBorder, width: 2f);
+        }
+        if (progress > 0f)
+        {
+            float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
+            var bar = new Rect2(
+                rect.Position.X,
+                rect.Position.Y + (PixelsPerTile - h),
+                PixelsPerTile,
+                h);
+            DrawRect(bar, BlueprintProgress, filled: true);
+        }
     }
 
     private void DrawFloorBlueprint(TilePos tile, float progress)
