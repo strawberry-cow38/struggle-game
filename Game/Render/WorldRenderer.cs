@@ -63,13 +63,12 @@ public partial class WorldRenderer : Node2D
     private int[]? _cachedSelectedWoodIdRef;
     private HashSet<int>? _cachedSelectedWoodSet;
 
-    // Wall base color — bumped from (0.18, 0.16, 0.14) so the mul light
-    // overlay has visible dynamic range on dark brick. Old dark-wall +
-    // mul ambient (0.55) put walls at ~0.10 brightness; the swing
-    // 0.10→0.18 across full day was too subtle to read as "wall darken
-    // under shadow". With the brighter base, walls swing ~0.33→0.60 —
-    // visibly dim at night, visibly bright at noon, lamp tint reads.
-    private static readonly Color WallColor = new(0.60f, 0.54f, 0.46f);
+    // Wall base color — brown brick mid-tone. Old (0.18, 0.16, 0.14)
+    // was too dark for the mul overlay swing to read; the bumped 0.60
+    // looked washed out / white. Settled on a clearer brown that holds
+    // brick identity at lit (0.42, 0.32, 0.22) and still has visible
+    // shadow swing (mul ambient 0.55 → ~0.23, 0.18, 0.12).
+    private static readonly Color WallColor = new(0.42f, 0.32f, 0.22f);
     private static readonly Color DummyColor = new(0.95f, 0.55f, 0.20f);
     private static readonly Color BlueprintFill = new(0.20f, 0.55f, 0.95f, 0.30f);
     private static readonly Color BlueprintBorder = new(0.45f, 0.75f, 1.00f, 0.85f);
