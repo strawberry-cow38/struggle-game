@@ -44,6 +44,7 @@ public partial class VisualLighting : Node2D
 
     private readonly Dictionary<TilePos, PointLight2D> _lampNodes = new();
     private readonly Dictionary<TilePos, LightOccluder2D> _doorNodes = new();
+    private readonly Dictionary<TilePos, LightOccluder2D> _wallNodes = new();
 
     // Visual lamp throw radius (purely cosmetic - sim's gameplay light
     // grid still uses LampOuterSq = 9.5 tiles). Larger spread reads as
@@ -130,25 +131,41 @@ public partial class VisualLighting : Node2D
         }
     }
 
+    // Incremental: diff against the previously seen wall set so a single
+    // wall placement only adds one occluder, not N. Freeing + recreating
+    // every occluder per MapVersion bump was contributing to the wall-
+    // build freeze.
     private void RebuildWallOccluders(byte[] wallBytes)
     {
         if (_wallsRoot is null || _wallPolyPrototype is null) return;
-        foreach (var child in _wallsRoot.GetChildren())
-        {
-            child.QueueFree();
-        }
+        var seen = new HashSet<TilePos>();
         for (int y = 0; y < MapHeight; y++)
         {
             int row = y * MapWidth;
             for (int x = 0; x < MapWidth; x++)
             {
                 if (wallBytes[row + x] == 0) continue;
+                var t = new TilePos(x, y);
+                seen.Add(t);
+                if (_wallNodes.ContainsKey(t)) continue;
                 var occ = new LightOccluder2D
                 {
                     Occluder = _wallPolyPrototype,
                     Position = new Vector2(x * PixelsPerTile, y * PixelsPerTile),
                 };
                 _wallsRoot.AddChild(occ);
+                _wallNodes[t] = occ;
+            }
+        }
+        if (_wallNodes.Count != seen.Count)
+        {
+            var toRemove = new List<TilePos>();
+            foreach (var kvp in _wallNodes)
+                if (!seen.Contains(kvp.Key)) toRemove.Add(kvp.Key);
+            foreach (var t in toRemove)
+            {
+                _wallNodes[t].QueueFree();
+                _wallNodes.Remove(t);
             }
         }
     }

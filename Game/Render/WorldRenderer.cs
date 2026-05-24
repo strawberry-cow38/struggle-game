@@ -1085,61 +1085,69 @@ public partial class WorldRenderer : Node2D
     {
         int w = width * WallSubpx;
         int h = height * WallSubpx;
-        var img = Image.CreateEmpty(w, h, false, Image.Format.Rgba8);
-        var transparent = new Color(0f, 0f, 0f, 0f);
+        // Raw RGBA8 byte buffer + Image.CreateFromData. SetPixel-per-pixel
+        // at this resolution (e.g. 100x100 tiles = 1600x1600 = 2.56M
+        // calls) freezes the main thread for ~1s per wall placement —
+        // unacceptable when building. Default-zero bytes are already
+        // transparent, so non-wall tiles cost nothing.
+        var data = new byte[w * h * 4];
         bool IsWall(int x, int y) => x >= 0 && y >= 0 && x < width && y < height && tiles[y * width + x] != 0;
+
+        // Precomputed per-subpixel face contribution. Per-pixel inner loop
+        // becomes one max + four table lookups instead of four divs +
+        // branches.
+        var liftSouth = new float[WallSubpx];
+        var liftNorth = new float[WallSubpx];
+        var liftWest = new float[WallSubpx];
+        var liftEast = new float[WallSubpx];
+        for (int s = 0; s < WallSubpx; s++)
+        {
+            float f = (s + 0.5f) / WallSubpx;
+            float tS = (1f - f) / WallFaceWidthSouth;
+            liftSouth[s] = tS < 1f ? WallFaceLiftSouth * (1f - tS) : 0f;
+            float tN = f / WallFaceWidthNorth;
+            liftNorth[s] = tN < 1f ? WallFaceLiftNorth * (1f - tN) : 0f;
+            float tW = f / WallFaceWidthSide;
+            liftWest[s] = tW < 1f ? WallFaceLiftSide * (1f - tW) : 0f;
+            float tE = (1f - f) / WallFaceWidthSide;
+            liftEast[s] = tE < 1f ? WallFaceLiftSide * (1f - tE) : 0f;
+        }
+
+        float baseR = WallColor.R, baseG = WallColor.G, baseB = WallColor.B;
+        float invR = 1f - baseR, invG = 1f - baseG, invB = 1f - baseB;
+
         for (int ty = 0; ty < height; ty++)
         {
             for (int tx = 0; tx < width; tx++)
             {
-                int baseX = tx * WallSubpx;
-                int baseY = ty * WallSubpx;
-                if (!IsWall(tx, ty))
-                {
-                    for (int sy = 0; sy < WallSubpx; sy++)
-                        for (int sx = 0; sx < WallSubpx; sx++)
-                            img.SetPixel(baseX + sx, baseY + sy, transparent);
-                    continue;
-                }
+                if (!IsWall(tx, ty)) continue;
                 bool faceN = !IsWall(tx, ty - 1);
                 bool faceS = !IsWall(tx, ty + 1);
                 bool faceW = !IsWall(tx - 1, ty);
                 bool faceE = !IsWall(tx + 1, ty);
+                int baseX = tx * WallSubpx;
+                int baseY = ty * WallSubpx;
                 for (int sy = 0; sy < WallSubpx; sy++)
                 {
-                    float fy = (sy + 0.5f) / WallSubpx;
+                    float lY = 0f;
+                    if (faceS && liftSouth[sy] > lY) lY = liftSouth[sy];
+                    if (faceN && liftNorth[sy] > lY) lY = liftNorth[sy];
+                    int rowStart = ((baseY + sy) * w + baseX) * 4;
                     for (int sx = 0; sx < WallSubpx; sx++)
                     {
-                        float fx = (sx + 0.5f) / WallSubpx;
-                        float lift = 0f;
-                        if (faceS)
-                        {
-                            float t = (1f - fy) / WallFaceWidthSouth;
-                            if (t < 1f) lift = MathF.Max(lift, WallFaceLiftSouth * (1f - t));
-                        }
-                        if (faceN)
-                        {
-                            float t = fy / WallFaceWidthNorth;
-                            if (t < 1f) lift = MathF.Max(lift, WallFaceLiftNorth * (1f - t));
-                        }
-                        if (faceW)
-                        {
-                            float t = fx / WallFaceWidthSide;
-                            if (t < 1f) lift = MathF.Max(lift, WallFaceLiftSide * (1f - t));
-                        }
-                        if (faceE)
-                        {
-                            float t = (1f - fx) / WallFaceWidthSide;
-                            if (t < 1f) lift = MathF.Max(lift, WallFaceLiftSide * (1f - t));
-                        }
-                        float r = WallColor.R + (1f - WallColor.R) * lift;
-                        float g = WallColor.G + (1f - WallColor.G) * lift;
-                        float b = WallColor.B + (1f - WallColor.B) * lift;
-                        img.SetPixel(baseX + sx, baseY + sy, new Color(r, g, b, 1f));
+                        float lift = lY;
+                        if (faceW && liftWest[sx] > lift) lift = liftWest[sx];
+                        if (faceE && liftEast[sx] > lift) lift = liftEast[sx];
+                        int idx = rowStart + sx * 4;
+                        data[idx + 0] = (byte)(255f * (baseR + invR * lift));
+                        data[idx + 1] = (byte)(255f * (baseG + invG * lift));
+                        data[idx + 2] = (byte)(255f * (baseB + invB * lift));
+                        data[idx + 3] = 255;
                     }
                 }
             }
         }
+        var img = Image.CreateFromData(w, h, false, Image.Format.Rgba8, data);
         return ImageTexture.CreateFromImage(img);
     }
 
