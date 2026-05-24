@@ -31,7 +31,7 @@ public partial class VisualLighting : Node2D
     // Floor brightness: where the sim grid says a tile is fully dark
     // (roofed + unlit), we still let this fraction of the underlying
     // world bleed through. 0 = pitch black indoors, 1 = no darkening.
-    private const float AmbientMin = 0.27f;
+    private const float AmbientMin = 0.55f;
 
     // Halo footprint in tiles (diameter). Bigger = softer wider bloom.
     private const float HaloDiameterTiles = 3.0f;
