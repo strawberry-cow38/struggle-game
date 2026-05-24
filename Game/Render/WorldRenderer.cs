@@ -1148,11 +1148,16 @@ public partial class WorldRenderer : Node2D
                 // Corner inheritance: blocked face borrows light from the
                 // diagonal open-floor tiles past the blocking wall, then
                 // the bevel strip on that face is enabled so the corner
-                // wall reads as part of the lit room.
-                if (!faceN && IsWall(tx, ty - 1)) { lN = BorrowDiagonal(tx - 1, ty - 1, tx + 1, ty - 1); faceN = true; }
-                if (!faceS && IsWall(tx, ty + 1)) { lS = BorrowDiagonal(tx - 1, ty + 1, tx + 1, ty + 1); faceS = true; }
-                if (!faceW && IsWall(tx - 1, ty)) { lW = BorrowDiagonal(tx - 1, ty - 1, tx - 1, ty + 1); faceW = true; }
-                if (!faceE && IsWall(tx + 1, ty)) { lE = BorrowDiagonal(tx + 1, ty - 1, tx + 1, ty + 1); faceE = true; }
+                // wall reads as part of the lit room. Gated on the OPPOSITE
+                // face being open — this distinguishes a true inner corner
+                // (one wall on the axis) from a straight wall run (walls
+                // on both ends of the axis), where painting the strip
+                // would create banding at every wall-wall contact.
+                bool oN = faceN, oS = faceS, oW = faceW, oE = faceE;
+                if (!oN && oS && IsWall(tx, ty - 1)) { lN = BorrowDiagonal(tx - 1, ty - 1, tx + 1, ty - 1); faceN = true; }
+                if (!oS && oN && IsWall(tx, ty + 1)) { lS = BorrowDiagonal(tx - 1, ty + 1, tx + 1, ty + 1); faceS = true; }
+                if (!oW && oE && IsWall(tx - 1, ty)) { lW = BorrowDiagonal(tx - 1, ty - 1, tx - 1, ty + 1); faceW = true; }
+                if (!oE && oW && IsWall(tx + 1, ty)) { lE = BorrowDiagonal(tx + 1, ty - 1, tx + 1, ty + 1); faceE = true; }
                 int baseX = tx * WallSubpx;
                 int baseY = ty * WallSubpx;
                 for (int sy = 0; sy < WallSubpx; sy++)
