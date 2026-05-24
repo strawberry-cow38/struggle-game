@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "lighting: brown brick base (0.42/0.32/0.22), mul handles swing";
+    private const string BuildTag = "lighting: walls=0 in grid (no neighbor-fill); bilinear self-shades wall, no through-leak";
 
     private Label _label = null!;
     private Label _versionLabel = null!;

@@ -2680,24 +2680,16 @@ public sealed class SimRuntime
                     byte r, g, b;
                     if (isWall)
                     {
-                        // Average up-to-4 non-wall neighbors. Each
-                        // neighbor's value = its own composed (lamp +
-                        // optional sun) light.
-                        int sumR = 0, sumG = 0, sumB = 0, count = 0;
-                        AccumulateNeighbor(x - 1, y, w, h, sR, sG, sB, ref sumR, ref sumG, ref sumB, ref count);
-                        AccumulateNeighbor(x + 1, y, w, h, sR, sG, sB, ref sumR, ref sumG, ref sumB, ref count);
-                        AccumulateNeighbor(x, y - 1, w, h, sR, sG, sB, ref sumR, ref sumG, ref sumB, ref count);
-                        AccumulateNeighbor(x, y + 1, w, h, sR, sG, sB, ref sumR, ref sumG, ref sumB, ref count);
-                        if (count > 0)
-                        {
-                            r = (byte)(sumR / count);
-                            g = (byte)(sumG / count);
-                            b = (byte)(sumB / count);
-                        }
-                        else
-                        {
-                            r = g = b = 0;
-                        }
+                        // Walls store 0 in the light grid. Bilinear
+                        // sampling then falls off from lit-floor → 0 at
+                        // the wall center, which (a) naturally shades
+                        // the wall (the half facing lit space reads
+                        // brighter, the half facing dark reads dim) and
+                        // (b) stops light bleeding through: dark-outside
+                        // → 0-wall = 0 across the whole wall span. The
+                        // old neighbor-avg fill let inside-lit rooms
+                        // leak across walls to outside-adjacent pixels.
+                        r = g = b = 0;
                     }
                     else
                     {
@@ -2716,22 +2708,6 @@ public sealed class SimRuntime
             }
             return rgb;
         }
-    }
-
-    private void AccumulateNeighbor(int x, int y, int w, int h, byte sR, byte sG, byte sB,
-                                    ref int sumR, ref int sumG, ref int sumB, ref int count)
-    {
-        if (x < 0 || x >= w || y < 0 || y >= h) return;
-        if (Map.GetWall(x, y) != WallType.None) return;
-        int ni = y * w + x;
-        byte r = _lampR[ni], g = _lampG[ni], b = _lampB[ni];
-        if (_roofTiles[ni] == 0)
-        {
-            if (sR > r) r = sR;
-            if (sG > g) g = sG;
-            if (sB > b) b = sB;
-        }
-        sumR += r; sumG += g; sumB += b; count++;
     }
 
     public int[] CopyRoomTilesForRender()
