@@ -42,9 +42,10 @@ public partial class VisualLighting : Node2D
     private const float LightCurveExp = 0.4f;
 
     // Halo footprint in tiles (diameter). Bigger = softer wider bloom.
-    // Bumped 1.5 → 2.25 (+50%) per master ask to make the lamp glow
-    // pop more without touching the sim's per-tile light values.
-    private const float HaloDiameterTiles = 2.25f;
+    // Bumped 1.5 → 2.7 (+80% cumulative) per master ask to make the
+    // lamp glow pop more without touching the sim's per-tile light
+    // values.
+    private const float HaloDiameterTiles = 2.7f;
 
     private long _lastLightVersion = -1;
     private long _lastLampSnapTick = -2;
@@ -177,13 +178,16 @@ public partial class VisualLighting : Node2D
 
     // Apply LightCurveExp to one channel: simByte/255 → pow(t, exp) →
     // lerp into [floor, 1] → 0..255 byte. Pulled out so the per-tile
-    // RGB loop stays tight.
+    // RGB loop stays tight. CurveBoost > 1 lifts mids past their
+    // linear lerp (then clamps at 1.0) so lit areas read brighter
+    // without dragging shadows up — pure visual intensity buff.
+    private const float CurveBoost = 1.2f;
     private static byte Curve(byte simByte, float floor, float range)
     {
         float t = simByte / 255f;
         if (t <= 0f) return (byte)Mathf.RoundToInt(floor * 255f);
         float shaped = Mathf.Pow(t, LightCurveExp);
-        float v = floor + range * shaped;
+        float v = floor + range * shaped * CurveBoost;
         if (v >= 1f) return 255;
         return (byte)Mathf.RoundToInt(v * 255f);
     }
