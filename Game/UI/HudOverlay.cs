@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "lighting: walls=0 in grid (no neighbor-fill); bilinear self-shades wall, no through-leak";
+    private const string BuildTag = "lighting: +50% lamp visual boost (HUD % untouched) + bigger halos";
 
     private Label _label = null!;
     private Label _versionLabel = null!;

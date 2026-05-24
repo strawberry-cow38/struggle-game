@@ -42,7 +42,9 @@ public partial class VisualLighting : Node2D
     private const float LightCurveExp = 0.4f;
 
     // Halo footprint in tiles (diameter). Bigger = softer wider bloom.
-    private const float HaloDiameterTiles = 1.5f;
+    // Bumped 1.5 → 2.25 (+50%) per master ask to make the lamp glow
+    // pop more without touching the sim's per-tile light values.
+    private const float HaloDiameterTiles = 2.25f;
 
     private long _lastLightVersion = -1;
     private long _lastLampSnapTick = -2;

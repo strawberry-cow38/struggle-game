@@ -2693,7 +2693,17 @@ public sealed class SimRuntime
                     }
                     else
                     {
-                        r = _lampR[i]; g = _lampG[i]; b = _lampB[i];
+                        // +50% visual boost on lamp contribution only —
+                        // HUD's LightAt() reads raw _lampR so per-tile
+                        // percentages stay truthful, but the render-side
+                        // multiply overlay gets brighter lamp pops.
+                        int lr = (_lampR[i] * 3) / 2;
+                        int lg = (_lampG[i] * 3) / 2;
+                        int lb = (_lampB[i] * 3) / 2;
+                        if (lr > 255) lr = 255;
+                        if (lg > 255) lg = 255;
+                        if (lb > 255) lb = 255;
+                        r = (byte)lr; g = (byte)lg; b = (byte)lb;
                         if (_roofTiles[i] == 0)
                         {
                             if (sR > r) r = sR;
