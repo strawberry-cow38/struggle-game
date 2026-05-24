@@ -49,6 +49,10 @@ public partial class VisualLighting : Node2D
     private SimSnapshot? _lastLampSnap;
 
     private ImageTexture? _lightTex;
+    // Exposed for the wall sprite's ShaderMaterial — wall shader bilinear-
+    // samples this same per-tile RGB texture so wall lighting tracks ground
+    // lighting exactly without a CPU bake per LightVersion bump.
+    public Texture2D? LightTex => _lightTex;
     private Sprite2D? _lightOverlay;
     private Node2D? _halosRoot;
     private Texture2D? _haloTex;

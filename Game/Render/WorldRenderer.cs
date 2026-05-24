@@ -42,6 +42,16 @@ public partial class WorldRenderer : Node2D
     // gameplay; this node mirrors lamp/wall state from the snapshot to
     // drive Godot's stock 2D lighting for the pretty visual.
     private VisualLighting? _visualLighting;
+    // Wall overlay rendered as a Sprite2D with a ShaderMaterial sitting
+    // ABOVE the multiply light overlay. The shader bilinear-samples the
+    // same per-tile light texture and applies a wall-friendly curve with
+    // a >1 lit boost so dark brick visibly brightens under sun/lamp
+    // instead of saturating early. Lighting tracks every LightVersion
+    // bump for free on the renderer side (no CPU bake — GPU resamples
+    // per pixel every frame).
+    private Sprite2D? _wallSprite;
+    private ShaderMaterial? _wallMaterial;
+    private bool _wallShaderLightTexBound;
 
     // Snapshot pair used for render-side interpolation. _prevSnap is the
     // last snapshot we drew from, _currSnap is the next one. We render at
@@ -115,7 +125,47 @@ public partial class WorldRenderer : Node2D
 
         _visualLighting = new VisualLighting { Host = Host, MapWidth = _mapWidth, MapHeight = _mapHeight };
         AddChild(_visualLighting);
+
+        // Wall sprite added AFTER VisualLighting so its tree order puts
+        // it above the mul overlay in canvas draw order. ZIndex left at
+        // default — wall sprite renders above the light overlay, below
+        // any sibling added later (none currently).
+        var wallShader = new Shader
+        {
+            Code = WallShaderCode,
+        };
+        _wallMaterial = new ShaderMaterial { Shader = wallShader };
+        _wallSprite = new Sprite2D
+        {
+            Centered = false,
+            Position = Vector2.Zero,
+            TextureFilter = TextureFilterEnum.Nearest,
+            Material = _wallMaterial,
+            Visible = false,
+        };
+        AddChild(_wallSprite);
     }
+
+    // Wall fragment shader: brick texture × per-tile light (bilinear).
+    // ambient_floor anchors unlit walls; lit_boost > 1 lets the bright
+    // case push past brick's base color so dark brick visibly pops under
+    // sun / lamps instead of capping at the base brightness. curve_exp
+    // mirrors VisualLighting.LightCurveExp so wall mids brighten in step
+    // with ground mids — wall and ground stay perceptually matched.
+    private const string WallShaderCode = @"shader_type canvas_item;
+uniform sampler2D light_tex : filter_linear;
+uniform float ambient_floor = 0.45;
+uniform float curve_exp = 0.4;
+uniform float lit_boost = 1.55;
+void fragment() {
+    vec4 brick = texture(TEXTURE, UV);
+    if (brick.a < 0.01) discard;
+    vec3 light = texture(light_tex, UV).rgb;
+    vec3 shaped = pow(light, vec3(curve_exp));
+    vec3 lit = vec3(ambient_floor) + (lit_boost - ambient_floor) * shaped;
+    COLOR = vec4(min(brick.rgb * lit, vec3(1.0)), brick.a);
+}
+";
 
     public override void _Process(double delta)
     {
@@ -167,7 +217,23 @@ public partial class WorldRenderer : Node2D
             if (_lastWallBytes is not null)
             {
                 _wallOverlayTex = BuildWallOverlay(_lastWallBytes, _mapWidth, _mapHeight);
+                if (_wallSprite is not null)
+                {
+                    _wallSprite.Texture = _wallOverlayTex;
+                    _wallSprite.Visible = true;
+                }
             }
+        }
+
+        // Bind the wall shader's light_tex uniform once the light texture
+        // has been created (first VisualLighting tick). The texture is
+        // reused thereafter — VisualLighting calls Update() on the same
+        // ImageTexture — so a single bind is enough.
+        if (!_wallShaderLightTexBound && _wallMaterial is not null
+            && _visualLighting?.LightTex is { } lt)
+        {
+            _wallMaterial.SetShaderParameter("light_tex", lt);
+            _wallShaderLightTexBound = true;
         }
         if (snap is not null && snap.RoofVersion != _lastRoofVersion)
         {
@@ -181,10 +247,11 @@ public partial class WorldRenderer : Node2D
         {
             DrawTextureRect(_groundTex, mapRect, tile: false);
             DrawFlooringTiles();
-            if (_wallOverlayTex is not null)
-            {
-                DrawTextureRect(_wallOverlayTex, mapRect, tile: false);
-            }
+            // Walls are NOT drawn here anymore — _wallSprite (child node,
+            // added after VisualLighting) draws them above the mul
+            // overlay with its own shader-based lighting. The sprite is
+            // sized via Sprite2D.Scale=1 + texture = full mapPixel-sized
+            // wall overlay so it covers the same rect this used to.
         }
 
         if (snap is null) { FrameProfiler.Instance.EndFrame(); return; }
