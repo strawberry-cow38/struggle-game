@@ -2458,11 +2458,11 @@ public sealed class SimRuntime
     // model so colored lamps composite the same way day or night.
     // Noon = warm dim sun (was pure 1,1,1 white). Slight orange cast
     // and a small dim so the world doesn't look bleached at peak day.
-    private const float SunMidR = 0.90f, SunMidG = 0.45f, SunMidB = 0.10f;          // noon — saturated orange (rev 3)
+    private const float SunMidR = 1.00f, SunMidG = 0.50f, SunMidB = 0.11f;          // noon — full R, orange tint
     // Sunrise/sunset = very saturated orange-red. Was 1.0/0.55/0.25;
     // dropped green + blue hard so the horizon ramp reads as a deep
     // golden-hour glow instead of a beige tint.
-    private const float SunHorizonR = 1.00f, SunHorizonG = 0.22f, SunHorizonB = 0.00f; // sunrise/sunset deep red-orange
+    private const float SunHorizonR = 1.00f, SunHorizonG = 0.22f, SunHorizonB = 0.00f; // sunrise/sunset deep red-orange (R already 1.0)
     public static void ComputeSun(double worldTimeSec, out byte r, out byte g, out byte b)
     {
         // hourOfDay: floating 0..24. Modulo on double so it survives any
