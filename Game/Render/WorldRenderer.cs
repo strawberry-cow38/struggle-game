@@ -22,7 +22,6 @@ public partial class WorldRenderer : Node2D
     // from a deterministic per-tile hash.
     private ImageTexture? _groundTex;
     private ImageTexture? _wallOverlayTex;
-    private ImageTexture? _roomOverlayTex;
     // Cached flooring layer (one byte per tile). Drawn per-frame as small
     // DrawRects rather than as a giant per-pixel texture overlay — the
     // old (mapSize*PixelsPerTile)^2 image was 1GB at 256x256 tiles and
@@ -35,7 +34,6 @@ public partial class WorldRenderer : Node2D
     private int _mapWidth;
     private int _mapHeight;
     private long _lastMapVersion = -1;
-    private long _lastRoomVersion = -1;
     private long _lastRoofVersion = -1;
     private long _lastLightVersion = -1;
     private byte[]? _lastWallBytes;
@@ -180,12 +178,6 @@ public partial class WorldRenderer : Node2D
         {
             _wallOverlayTex = BuildWallOverlay(_lastWallBytes, _lastLightRgb, _mapWidth, _mapHeight);
         }
-        if (snap is not null && snap.RoomVersion != _lastRoomVersion)
-        {
-            var roomTiles = Host!.CopyRoomTilesForRender();
-            _roomOverlayTex = BuildRoomOverlay(roomTiles, _mapWidth, _mapHeight);
-            _lastRoomVersion = snap.RoomVersion;
-        }
         if (snap is not null && snap.RoofVersion != _lastRoofVersion)
         {
             var noRoofBytes = Host!.CopyNoRoofTilesForRender();
@@ -198,10 +190,6 @@ public partial class WorldRenderer : Node2D
         {
             DrawTextureRect(_groundTex, mapRect, tile: false);
             DrawFlooringTiles();
-            if (_roomOverlayTex is not null)
-            {
-                DrawTextureRect(_roomOverlayTex, mapRect, tile: false);
-            }
             if (_wallOverlayTex is not null)
             {
                 DrawTextureRect(_wallOverlayTex, mapRect, tile: false);
@@ -1055,35 +1043,6 @@ public partial class WorldRenderer : Node2D
                 DrawRect(new Rect2(ox, oy + plankY2, PixelsPerTile, 1f), WoodFloorPlank, filled: true);
             }
         }
-    }
-
-    // Per-tile translucent tint, one hue per room id. Skips id 0
-    // (barrier + outdoor — RoomMap.Compute already remaps every
-    // border-touching component to 0). Deterministic golden-angle hue
-    // picker keeps adjacent rooms visually distinct.
-    private static ImageTexture BuildRoomOverlay(int[] roomTiles, int width, int height)
-    {
-        var img = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
-        var transparent = new Color(0f, 0f, 0f, 0f);
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                int id = roomTiles[y * width + x];
-                if (id == 0)
-                {
-                    img.SetPixel(x, y, transparent);
-                    continue;
-                }
-                // Golden-angle hue spread keeps colors well separated.
-                float hue = (id * 0.6180339887f) % 1f;
-                var c = Color.FromHsv(hue, 0.55f, 1.0f);
-                c.A = 0.40f;
-                img.SetPixel(x, y, c);
-            }
-        }
-        return ImageTexture.CreateFromImage(img);
     }
 
     // Wall face bevel constants. Each face has a strip width (fraction of
