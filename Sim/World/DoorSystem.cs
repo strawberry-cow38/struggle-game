@@ -28,6 +28,18 @@ public sealed class DoorSystem
             blockedTiles.Add(w.Tile);
         });
 
+        // Colonists physically standing on a door tile keep it open too —
+        // otherwise a pawn standing in the doorway gets sliced as a
+        // second pawn walks through and triggers the close timer. Mover
+        // already resets IdleSec while a pawn is actively crossing, but
+        // a pawn that has STOPPED on the tile (paused job, idle) wasn't
+        // ticking that reset.
+        var occupiedTiles = new HashSet<TilePos>();
+        store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
+        {
+            occupiedTiles.Add(new TilePos((int)p.X, (int)p.Y));
+        });
+
         var q = store.Query<Door>();
         q.ForEachEntity((ref Door door, Entity _) =>
         {
@@ -46,7 +58,7 @@ public sealed class DoorSystem
                     door.ProgressSec = OpenTimeSec;
                 }
             }
-            bool blocked = blockedTiles.Contains(door.Tile);
+            bool blocked = blockedTiles.Contains(door.Tile) || occupiedTiles.Contains(door.Tile);
             switch (door.State)
             {
                 case DoorState.Closed:
