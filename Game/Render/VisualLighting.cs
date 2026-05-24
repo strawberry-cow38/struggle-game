@@ -251,12 +251,16 @@ public partial class VisualLighting : Node2D
                     // overlapping lamps cap at the lamp color instead
                     // of doubling into a nuclear hotspot.
                     BlendMode = Light2D.BlendModeEnum.Mix,
-                    // Shadows disabled entirely. Walls still block
-                    // gameplay light via the sim's Bresenham LOS in
-                    // RecomputeLightAll, and wall sprites occlude the
-                    // ground behind them visually. The Light2D pass
-                    // just paints a smooth radial glow on top.
-                    ShadowEnabled = false,
+                    // ShadowEnabled per-lamp so wall occluders mask
+                    // the lit region — without this lamp glow bleeds
+                    // through wall sprites onto ground beyond. Alpha-0
+                    // shadow color means the shadow region just reads
+                    // as ambient (no dark cone). No PCF / no smooth =
+                    // hard edge, cheap, no fluff.
+                    ShadowEnabled = true,
+                    ShadowColor = new Color(0f, 0f, 0f, 0f),
+                    ShadowFilter = Light2D.ShadowFilterEnum.None,
+                    ShadowFilterSmooth = 0f,
                 };
                 _lampsRoot.AddChild(node);
                 _lampNodes[lamp.Tile] = node;
