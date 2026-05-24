@@ -1110,6 +1110,28 @@ public partial class WorldRenderer : Node2D
             return (lightRgb[idx] / 255f, lightRgb[idx + 1] / 255f, lightRgb[idx + 2] / 255f);
         }
 
+        // Inner-corner inheritance: when a face is blocked by another wall,
+        // look at that neighbor wall's two perpendicular open-floor
+        // neighbors and pull the brighter color onto our face. Walls don't
+        // emit (sim forces them to 0), so we sample the room tile diagonal
+        // to us. Without this, corner walls — whose only open faces point
+        // OUT of the room — render with no light on the room-side bevel.
+        (float r, float g, float b) BorrowDiagonal(int ax, int ay, int bx, int by)
+        {
+            float ar = 0f, ag = 0f, ab = 0f, br = 0f, bg = 0f, bb = 0f;
+            if (ax >= 0 && ay >= 0 && ax < width && ay < height && tiles[ay * width + ax] == 0)
+            {
+                int i = (ay * width + ax) * 3;
+                ar = lightRgb[i] / 255f; ag = lightRgb[i + 1] / 255f; ab = lightRgb[i + 2] / 255f;
+            }
+            if (bx >= 0 && by >= 0 && bx < width && by < height && tiles[by * width + bx] == 0)
+            {
+                int i = (by * width + bx) * 3;
+                br = lightRgb[i] / 255f; bg = lightRgb[i + 1] / 255f; bb = lightRgb[i + 2] / 255f;
+            }
+            return (ar > br ? ar : br, ag > bg ? ag : bg, ab > bb ? ab : bb);
+        }
+
         for (int ty = 0; ty < height; ty++)
         {
             for (int tx = 0; tx < width; tx++)
@@ -1123,6 +1145,14 @@ public partial class WorldRenderer : Node2D
                 var lS = faceS ? NeighborLight(lightRgb, tx, ty + 1, width, height) : (r: 0f, g: 0f, b: 0f);
                 var lW = faceW ? NeighborLight(lightRgb, tx - 1, ty, width, height) : (r: 0f, g: 0f, b: 0f);
                 var lE = faceE ? NeighborLight(lightRgb, tx + 1, ty, width, height) : (r: 0f, g: 0f, b: 0f);
+                // Corner inheritance: blocked face borrows light from the
+                // diagonal open-floor tiles past the blocking wall, then
+                // the bevel strip on that face is enabled so the corner
+                // wall reads as part of the lit room.
+                if (!faceN && IsWall(tx, ty - 1)) { lN = BorrowDiagonal(tx - 1, ty - 1, tx + 1, ty - 1); faceN = true; }
+                if (!faceS && IsWall(tx, ty + 1)) { lS = BorrowDiagonal(tx - 1, ty + 1, tx + 1, ty + 1); faceS = true; }
+                if (!faceW && IsWall(tx - 1, ty)) { lW = BorrowDiagonal(tx - 1, ty - 1, tx - 1, ty + 1); faceW = true; }
+                if (!faceE && IsWall(tx + 1, ty)) { lE = BorrowDiagonal(tx + 1, ty - 1, tx + 1, ty + 1); faceE = true; }
                 int baseX = tx * WallSubpx;
                 int baseY = ty * WallSubpx;
                 for (int sy = 0; sy < WallSubpx; sy++)
