@@ -262,8 +262,11 @@ public partial class VisualLighting : Node2D
                     // per extra lamp. With alpha 0 the unlit area just
                     // reads as ambient, no stacking.
                     ShadowColor = new Color(0f, 0f, 0f, 0f),
-                    ShadowFilter = Light2D.ShadowFilterEnum.Pcf5,
-                    ShadowFilterSmooth = 1.0f,
+                    // Hard shadow edge. PCF5 + smooth was the "fancy"
+                    // soft-shadow look — now just a crisp cut at the wall
+                    // so occlusion stays but shadows don't fluff.
+                    ShadowFilter = Light2D.ShadowFilterEnum.None,
+                    ShadowFilterSmooth = 0f,
                 };
                 _lampsRoot.AddChild(node);
                 _lampNodes[lamp.Tile] = node;
