@@ -2436,7 +2436,13 @@ public sealed class SimRuntime
     private const float LampInnerSq = 56.25f;
     private const float LampMidSq   = 72.25f;
     private const float LampOuterSq = 90.25f;
-    private const byte LampInner = 128;
+    // Lamp brightness ramp. AmbientMin (visual side) sets the dark
+    // floor; lamp values must exceed AmbientMin or the lit disc reads
+    // the same as shadow. Tuned for AmbientMin = 0.55 (≈ byte 140).
+    private const byte LampInner    = 220;  // ≈86% — clearly lit
+    private const byte LampMidStart = 215;  // edge of inner disc
+    private const byte LampMidEnd   = 165;  // ring fade
+    private const byte LampOuterEnd = 0;    // beyond visible (clamped by ambient)
 
     // Scratch buffers for outdoor lamp tinting. _outdoorTintR/G/B hold
     // the max-blended tint across all outdoor lamps that touched each
@@ -2523,17 +2529,17 @@ public sealed class SimRuntime
                     }
                     else if (d2 <= LampMidSq)
                     {
-                        // 49% → 25% across (sqrt(56.25)=7.5 .. sqrt(72.25)=8.5)
+                        // sqrt(56.25)=7.5 .. sqrt(72.25)=8.5
                         float r = MathF.Sqrt(d2);
                         float t = (r - 7.5f) / 1.0f;
-                        contrib = (byte)Math.Round(125 - (125 - 64) * t);
+                        contrib = (byte)Math.Round(LampMidStart - (LampMidStart - LampMidEnd) * t);
                     }
                     else
                     {
-                        // 24% → 0% across (8.5 .. 9.5)
+                        // 8.5 .. 9.5
                         float r = MathF.Sqrt(d2);
                         float t = (r - 8.5f) / 1.0f;
-                        contrib = (byte)Math.Round(61 - 61 * t);
+                        contrib = (byte)Math.Round(LampMidEnd - (LampMidEnd - LampOuterEnd) * t);
                     }
                     int idx = row + x;
                     if (_roofTiles[idx] != 0)
