@@ -37,10 +37,8 @@ public partial class VisualLighting : Node2D
     private const float HaloDiameterTiles = 1.5f;
 
     private long _lastLightVersion = -1;
-    private long _lastMapVersion = -1;
     private long _lastLampSnapTick = -2;
     private SimSnapshot? _lastLampSnap;
-    private byte[]? _wallBytes;
 
     private ImageTexture? _lightTex;
     private Sprite2D? _lightOverlay;
@@ -77,15 +75,6 @@ public partial class VisualLighting : Node2D
         var snap = Host.LatestSnapshot;
         if (snap is null) return;
 
-        if (snap.MapVersion != _lastMapVersion)
-        {
-            _wallBytes = Host.CopyLayerForRender(MapLayer.Wall);
-            _lastMapVersion = snap.MapVersion;
-            // Wall set changed → force rebuild so wall-fill picks up
-            // the new occupancy even if LightVersion didn't bump.
-            _lastLightVersion = -1;
-        }
-
         if (snap.LightVersion != _lastLightVersion)
         {
             RebuildLightTexture();
@@ -120,49 +109,6 @@ public partial class VisualLighting : Node2D
             data[o + 1] = (byte)sg;
             data[o + 2] = (byte)sb;
             data[o + 3] = 255;
-        }
-        // Second pass: replace each wall texel with the max RGB across
-        // its 4 orthogonal floor neighbors. Without this, bilinear
-        // sampling drags brightness down at inner room corners where a
-        // lit floor texel sits diagonally next to two wall texels at
-        // the ambient floor — the corner reads visibly dimmer than the
-        // rest of the lit floor. Filling walls with the brightest
-        // neighbor floor value eliminates the corner dimming.
-        var walls = _wallBytes;
-        if (walls is not null)
-        {
-            for (int y = 0; y < MapHeight; y++)
-            {
-                int row = y * MapWidth;
-                for (int x = 0; x < MapWidth; x++)
-                {
-                    int idx = row + x;
-                    if (walls[idx] == 0) continue;
-                    int o0 = idx * 4;
-                    // Seed with current wall value (AmbientMin floor)
-                    // so isolated walls — no lit floor neighbor — keep
-                    // their ambient instead of getting blacked out.
-                    int br = data[o0 + 0], bg = data[o0 + 1], bb = data[o0 + 2];
-                    void Sample(int sx, int sy)
-                    {
-                        if ((uint)sx >= (uint)MapWidth || (uint)sy >= (uint)MapHeight) return;
-                        int si = sy * MapWidth + sx;
-                        if (walls[si] != 0) return;
-                        int so = si * 4;
-                        if (data[so + 0] > br) br = data[so + 0];
-                        if (data[so + 1] > bg) bg = data[so + 1];
-                        if (data[so + 2] > bb) bb = data[so + 2];
-                    }
-                    Sample(x - 1, y);
-                    Sample(x + 1, y);
-                    Sample(x, y - 1);
-                    Sample(x, y + 1);
-                    int o = idx * 4;
-                    data[o + 0] = (byte)br;
-                    data[o + 1] = (byte)bg;
-                    data[o + 2] = (byte)bb;
-                }
-            }
         }
         var img = Image.CreateFromData(MapWidth, MapHeight, false, Image.Format.Rgba8, data);
         if (_lightTex is null)
