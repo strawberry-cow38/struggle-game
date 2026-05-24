@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "sun: noon (0.70/0.48/0.22) + sunrise 6-8am sunset 7-9pm";
+    private const string BuildTag = "sun: noon (0.90/0.45/0.10) + horizon (1.0/0.22/0.0)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
