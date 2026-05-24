@@ -37,10 +37,8 @@ public partial class VisualLighting : Node2D
     private const float HaloDiameterTiles = 3.0f;
 
     private long _lastLightVersion = -1;
-    private long _lastMapVersion = -1;
     private long _lastLampSnapTick = -2;
     private SimSnapshot? _lastLampSnap;
-    private byte[]? _wallBytes;
 
     private ImageTexture? _lightTex;
     private Sprite2D? _lightOverlay;
@@ -77,15 +75,6 @@ public partial class VisualLighting : Node2D
         var snap = Host.LatestSnapshot;
         if (snap is null) return;
 
-        if (snap.MapVersion != _lastMapVersion)
-        {
-            _wallBytes = Host.CopyLayerForRender(MapLayer.Wall);
-            _lastMapVersion = snap.MapVersion;
-            // Wall set changed → force a light tex rebuild so the new
-            // walls get force-zeroed even if LightVersion didn't bump.
-            _lastLightVersion = -1;
-        }
-
         if (snap.LightVersion != _lastLightVersion)
         {
             RebuildLightTexture();
@@ -107,25 +96,9 @@ public partial class VisualLighting : Node2D
         int n = MapWidth * MapHeight;
         var data = new byte[n * 4];
         int minA = (int)(AmbientMin * 255);
-        var walls = _wallBytes;
         for (int i = 0; i < n; i++)
         {
             int o = i * 4;
-            // Wall tiles: force pitch black. Sim still writes lamp
-            // contribution into the wall tile (Bresenham excludes
-            // endpoints so adjacent lamps reach the wall cell), but
-            // visually the wall sprite shouldn't read as 'lit' — wall
-            // faces are handled by the WorldRenderer overlay which
-            // samples neighbor tiles, so the wall cell itself stays
-            // dark.
-            if (walls is not null && walls[i] != 0)
-            {
-                data[o + 0] = 0;
-                data[o + 1] = 0;
-                data[o + 2] = 0;
-                data[o + 3] = 255;
-                continue;
-            }
             int sr = rgb[i * 3];
             int sg = rgb[i * 3 + 1];
             int sb = rgb[i * 3 + 2];
