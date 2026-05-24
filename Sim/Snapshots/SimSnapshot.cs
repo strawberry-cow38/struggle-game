@@ -20,6 +20,11 @@ public sealed class SimSnapshot
     // tomorrow: indoor light sources + time-of-day sun). Renderer keys
     // the darkness overlay off this.
     public long LightVersion { get; }
+    // In-sim seconds since the Jan 1 2000 epoch. UI derives clock +
+    // calendar from this; renderer can derive day/night state for
+    // skybox / debug overlays if it wants. Advances only on the sim
+    // thread; safe to read off the published snapshot.
+    public double WorldTimeSec { get; }
     public DummyState[] Dummies { get; }
     public BlueprintState[] Blueprints { get; }
     public BlueprintState[] FloorBlueprints { get; }
@@ -59,6 +64,7 @@ public sealed class SimSnapshot
         int roomCount,
         long roofVersion,
         long lightVersion,
+        double worldTimeSec,
         DummyState[] dummies,
         BlueprintState[] blueprints,
         BlueprintState[] floorBlueprints,
@@ -86,6 +92,7 @@ public sealed class SimSnapshot
         RoomCount = roomCount;
         RoofVersion = roofVersion;
         LightVersion = lightVersion;
+        WorldTimeSec = worldTimeSec;
         Dummies = dummies;
         Blueprints = blueprints;
         FloorBlueprints = floorBlueprints;

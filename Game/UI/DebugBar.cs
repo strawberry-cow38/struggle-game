@@ -1,5 +1,6 @@
 using Godot;
 using StruggleGame.Game.Tools;
+using StruggleGame.Sim.Commands;
 
 namespace StruggleGame.Game.UI;
 
@@ -35,6 +36,8 @@ public partial class DebugBar : CanvasLayer
         AddButton(_hbox, ToolMode.SpawnPawn, "Spawn Pawn");
         AddButton(_hbox, ToolMode.RemovePawn, "Remove Pawn");
         AddOneShotButton(_hbox, "Reroll Map", () => Host?.Reroll(System.Environment.TickCount));
+        AddOneShotButton(_hbox, "-1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(-3600)));
+        AddOneShotButton(_hbox, "+1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(3600)));
 
         _hbox.Resized += Reposition;
         GetTree().Root.SizeChanged += Reposition;

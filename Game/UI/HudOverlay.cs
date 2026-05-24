@@ -103,7 +103,16 @@ public partial class HudOverlay : CanvasLayer
             hoverLine = "\nHOVER -";
         }
 
-        _label.Text = $"FPS  {fps:0}\nTPS  {tps:0} / {Host.TickHz}{paused}\nSPEED {speed:0.##}x\nROOMS {rooms}{hoverLine}";
+        // World time + calendar from the latest snapshot (sim-thread
+        // authoritative). Default to epoch if no snap yet so the format
+        // string never blanks.
+        var dt = Host.LatestSnapshot is { } snap
+            ? SimRuntime.WorldEpoch.AddSeconds(snap.WorldTimeSec)
+            : SimRuntime.WorldEpoch;
+        string clock = dt.ToString("HH:mm");
+        string date = dt.ToString("ddd MMM d, yyyy");
+
+        _label.Text = $"FPS  {fps:0}\nTPS  {tps:0} / {Host.TickHz}{paused}\nSPEED {speed:0.##}x\nROOMS {rooms}\n{clock}  {date}{hoverLine}";
 
         var w = Host.Watcher;
         var recent = w.Recent;

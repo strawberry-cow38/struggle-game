@@ -636,6 +636,15 @@ public sealed class SpawnDummyCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SpawnRandomDummy();
 }
 
+// Debug bar action: shift world time by N in-sim seconds. Negative
+// rewinds. Buttons hand in ±3600 for the ±1hr controls.
+public sealed class AdvanceWorldTimeCommand : ISimCommand
+{
+    public double DeltaSec { get; }
+    public AdvanceWorldTimeCommand(double deltaSec) { DeltaSec = deltaSec; }
+    public void Apply(SimRuntime sim) => sim.AdvanceWorldTime(DeltaSec);
+}
+
 // Debug bar action: delete a wanderer by entity id (point-and-click).
 public sealed class RemoveDummyCommand : ISimCommand
 {
