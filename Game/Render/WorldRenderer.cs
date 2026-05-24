@@ -1058,6 +1058,80 @@ public partial class WorldRenderer : Node2D
     // average to whichever floor side dominates.
     private const int WallSubpx = 16;
     private const float WallLightLift = 0.55f;
+    // Tileable stone-brick texture sampled per wall texel. Generated once,
+    // power-of-two so the modulo collapses to a bitmask. Brick rows
+    // staggered (offset by half-width every other row) with darker mortar
+    // lines + per-brick tint variation + per-pixel noise.
+    private const int WallTexSize = 64;
+    private static byte[]? _wallBaseTex;
+    private static byte[] EnsureWallBaseTex()
+    {
+        if (_wallBaseTex != null) return _wallBaseTex;
+        var tex = new byte[WallTexSize * WallTexSize * 3];
+        var rng = new Random(8675309);
+        const int BrickW = 16;
+        const int BrickH = 8;
+        const int MortarPx = 1;
+        float baseR = WallColor.R, baseG = WallColor.G, baseB = WallColor.B;
+        // Per-brick tint table — deterministic so adjacent bricks differ.
+        int bricksX = WallTexSize / BrickW;
+        int bricksY = WallTexSize / BrickH;
+        var brickTint = new float[bricksX * bricksY * 2 * 3];
+        for (int by = 0; by < bricksY; by++)
+        {
+            for (int rowOff = 0; rowOff < 2; rowOff++)
+            {
+                for (int bx = 0; bx < bricksX; bx++)
+                {
+                    int bi = ((by * 2 + rowOff) * bricksX + bx) * 3;
+                    float t = (float)(rng.NextDouble() - 0.5) * 0.12f;
+                    brickTint[bi]     = t;
+                    brickTint[bi + 1] = t * 0.9f;
+                    brickTint[bi + 2] = t * 0.7f;
+                }
+            }
+        }
+        for (int y = 0; y < WallTexSize; y++)
+        {
+            int rowInBrick = y % BrickH;
+            int brickRow = y / BrickH;
+            int rowOff = brickRow & 1;
+            int xShift = rowOff * (BrickW / 2);
+            bool mortarY = rowInBrick < MortarPx;
+            for (int x = 0; x < WallTexSize; x++)
+            {
+                int colInBrick = (x + xShift) % BrickW;
+                bool mortarX = colInBrick < MortarPx;
+                float r, g, b;
+                if (mortarX || mortarY)
+                {
+                    // Mortar: noticeably darker than base + slight noise.
+                    float n = (float)(rng.NextDouble() - 0.5) * 0.04f;
+                    r = baseR * 0.45f + n;
+                    g = baseG * 0.45f + n;
+                    b = baseB * 0.45f + n;
+                }
+                else
+                {
+                    int bx = ((x + xShift) % WallTexSize) / BrickW;
+                    int bi = ((brickRow * 2 + rowOff) * bricksX + bx) * 3;
+                    float n = (float)(rng.NextDouble() - 0.5) * 0.08f;
+                    r = baseR + brickTint[bi]     + n;
+                    g = baseG + brickTint[bi + 1] + n * 0.95f;
+                    b = baseB + brickTint[bi + 2] + n * 0.90f;
+                }
+                if (r < 0f) r = 0f; if (r > 1f) r = 1f;
+                if (g < 0f) g = 0f; if (g > 1f) g = 1f;
+                if (b < 0f) b = 0f; if (b > 1f) b = 1f;
+                int oi = (y * WallTexSize + x) * 3;
+                tex[oi]     = (byte)(255f * r);
+                tex[oi + 1] = (byte)(255f * g);
+                tex[oi + 2] = (byte)(255f * b);
+            }
+        }
+        _wallBaseTex = tex;
+        return tex;
+    }
 
     private static ImageTexture BuildWallOverlay(byte[] tiles, byte[] lightRgb, int width, int height)
     {
@@ -1116,7 +1190,8 @@ public partial class WorldRenderer : Node2D
         var fwd = new float[WallSubpx];
         for (int s = 0; s < WallSubpx; s++) fwd[s] = (s + 0.5f) / WallSubpx;
 
-        float baseR = WallColor.R, baseG = WallColor.G, baseB = WallColor.B;
+        var wtex = EnsureWallBaseTex();
+        const int TexMask = WallTexSize - 1;
 
         for (int ty = 0; ty < height; ty++)
         {
@@ -1145,6 +1220,7 @@ public partial class WorldRenderer : Node2D
                     float rG = iy * trG + fy * brG;
                     float rB = iy * trB + fy * brB;
                     int rowStart = ((baseY + sy) * w + baseX) * 4;
+                    int tv = (baseY + sy) & TexMask;
                     for (int sx = 0; sx < WallSubpx; sx++)
                     {
                         float fx = fwd[sx];
@@ -1152,6 +1228,11 @@ public partial class WorldRenderer : Node2D
                         float sR = ix * lR + fx * rR;
                         float sG = ix * lG + fx * rG;
                         float sB = ix * lB + fx * rB;
+                        int tu = (baseX + sx) & TexMask;
+                        int ti = (tv * WallTexSize + tu) * 3;
+                        float baseR = wtex[ti]     / 255f;
+                        float baseG = wtex[ti + 1] / 255f;
+                        float baseB = wtex[ti + 2] / 255f;
                         float r = baseR + WallLightLift * sR; if (r > 1f) r = 1f;
                         float g = baseG + WallLightLift * sG; if (g > 1f) g = 1f;
                         float b = baseB + WallLightLift * sB; if (b > 1f) b = 1f;
