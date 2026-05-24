@@ -2453,7 +2453,7 @@ public sealed class SimRuntime
     // model so colored lamps composite the same way day or night.
     // Noon = warm dim sun (was pure 1,1,1 white). Slight orange cast
     // and a small dim so the world doesn't look bleached at peak day.
-    private const float SunMidR = 0.82f, SunMidG = 0.65f, SunMidB = 0.38f;          // noon — dimmer + more orange
+    private const float SunMidR = 0.70f, SunMidG = 0.48f, SunMidB = 0.22f;          // noon — dimmer + more orange (rev 2)
     // Sunrise/sunset = very saturated orange-red. Was 1.0/0.55/0.25;
     // dropped green + blue hard so the horizon ramp reads as a deep
     // golden-hour glow instead of a beige tint.
@@ -2466,19 +2466,21 @@ public sealed class SimRuntime
         double hod = hours - Math.Floor(hours / 24.0) * 24.0;
         float intensity;
         float t; // 0 at horizon end of ramp, 1 at full-day end
-        if (hod >= 8.0 && hod < 20.0)
+        if (hod >= 8.0 && hod < 19.0)
         {
             intensity = 1f;
             t = 1f;
         }
-        else if (hod >= 7.0 && hod < 8.0)
+        else if (hod >= 6.0 && hod < 8.0)
         {
-            t = (float)(hod - 7.0);
+            // Sunrise ramp: 6→8am (2hr). t=0 at 6am (horizon), t=1 at 8am (full day).
+            t = (float)((hod - 6.0) / 2.0);
             intensity = Smoothstep(t);
         }
-        else if (hod >= 20.0 && hod < 21.0)
+        else if (hod >= 19.0 && hod < 21.0)
         {
-            t = (float)(21.0 - hod);
+            // Sunset ramp: 7→9pm (2hr). t=1 at 7pm (full day), t=0 at 9pm (horizon).
+            t = (float)((21.0 - hod) / 2.0);
             intensity = Smoothstep(t);
         }
         else
