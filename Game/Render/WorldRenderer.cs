@@ -35,9 +35,7 @@ public partial class WorldRenderer : Node2D
     private int _mapHeight;
     private long _lastMapVersion = -1;
     private long _lastRoofVersion = -1;
-    private long _lastLightVersion = -1;
     private byte[]? _lastWallBytes;
-    private byte[]? _lastLightRgb;
     private ImageTexture? _noRoofOverlayTex;
     // Visual-only lighting layer (CanvasModulate + per-lamp Light2D +
     // per-wall LightOccluder2D). Sim's per-tile RGB grid stays for
@@ -155,28 +153,21 @@ public partial class WorldRenderer : Node2D
             if (interpAlpha > 1f) interpAlpha = 1f;
         }
 
-        // Rebuild overlays if the sim mutated the map since last frame.
-        // Wall overlay also rebuilds when LightVersion bumps because face
-        // bevels are tinted by neighbor tile's light color — lamps don't
-        // reach the wall's own tile (forced 0 in sim), so the per-face
-        // glow must read from the adjacent tile's light grid.
-        bool wallOverlayDirty = false;
+        // Wall overlay = unlit brick stamps per wall tile. All lighting
+        // (sun, lamps, ambient floor) is applied by the VisualLighting
+        // multiply overlay sitting on top, so wall bake only rebuilds
+        // when the wall geometry itself changes (MapVersion). Sun ticks
+        // during dawn/dusk previously thrashed FPS by re-baking every
+        // texel — now they're free on the renderer side too.
         if (snap is not null && snap.MapVersion != _lastMapVersion)
         {
             _lastWallBytes = Host!.CopyLayerForRender(MapLayer.Wall);
             _floorBytes = Host!.CopyLayerForRender(MapLayer.Flooring);
             _lastMapVersion = snap.MapVersion;
-            wallOverlayDirty = true;
-        }
-        if (snap is not null && snap.LightVersion != _lastLightVersion)
-        {
-            _lastLightRgb = Host!.CopyLightRgbForRender();
-            _lastLightVersion = snap.LightVersion;
-            wallOverlayDirty = true;
-        }
-        if (wallOverlayDirty && _lastWallBytes is not null && _lastLightRgb is not null)
-        {
-            _wallOverlayTex = BuildWallOverlay(_lastWallBytes, _lastLightRgb, _mapWidth, _mapHeight);
+            if (_lastWallBytes is not null)
+            {
+                _wallOverlayTex = BuildWallOverlay(_lastWallBytes, _mapWidth, _mapHeight);
+            }
         }
         if (snap is not null && snap.RoofVersion != _lastRoofVersion)
         {
@@ -1057,16 +1048,6 @@ public partial class WorldRenderer : Node2D
     // runs stay clean because corners between two wall-flanked tiles
     // average to whichever floor side dominates.
     private const int WallSubpx = 16;
-    // Multiplicative wall lighting. Final = baseTexel * (WallAmbient +
-    // WallLitScale * sampledLight) so the texture's hue survives at every
-    // brightness — additive lift was washing brown brick to gray under
-    // sun. Per-channel multiply lets a red lamp tint the wall red on the
-    // lit channel while the others stay near ambient.
-    //   Sun-lit (sR=1.0):    base * (0.40 + 0.90 * 1.0) = base * 1.30 → clamps near base hue
-    //   Fully dark (sR=0):   base * 0.40 = noticeably dim
-    //   Red lamp (sR=1,0,0): R channel bright, G/B at ambient = red tint
-    private const float WallAmbient  = 0.40f;
-    private const float WallLitScale = 0.90f;
     // Tileable stone-brick texture sampled per wall texel. Generated once,
     // power-of-two so the modulo collapses to a bitmask. Brick rows
     // staggered (offset by half-width every other row) with darker mortar
@@ -1142,7 +1123,7 @@ public partial class WorldRenderer : Node2D
         return tex;
     }
 
-    private static ImageTexture BuildWallOverlay(byte[] tiles, byte[] lightRgb, int width, int height)
+    private static ImageTexture BuildWallOverlay(byte[] tiles, int width, int height)
     {
         int w = width * WallSubpx;
         int h = height * WallSubpx;
@@ -1153,52 +1134,6 @@ public partial class WorldRenderer : Node2D
         // transparent, so non-wall tiles cost nothing.
         var data = new byte[w * h * 4];
 
-        // Corner light grid: (width+1) x (height+1). Each entry = average
-        // of the 4 surrounding tile lights, skipping wall tiles (sim
-        // forces walls to 0 — averaging them in would drag corners down
-        // and lose the lit-room signal). Stored as packed [r,g,b] floats
-        // in 0..1.
-        int cw = width + 1;
-        int ch = height + 1;
-        var corner = new float[cw * ch * 3];
-        for (int cy = 0; cy < ch; cy++)
-        {
-            for (int cx = 0; cx < cw; cx++)
-            {
-                float sr = 0f, sg = 0f, sb = 0f;
-                int n = 0;
-                for (int dy = -1; dy <= 0; dy++)
-                {
-                    int ty = cy + dy;
-                    if (ty < 0 || ty >= height) continue;
-                    for (int dx = -1; dx <= 0; dx++)
-                    {
-                        int tx = cx + dx;
-                        if (tx < 0 || tx >= width) continue;
-                        if (tiles[ty * width + tx] != 0) continue;
-                        int i = (ty * width + tx) * 3;
-                        sr += lightRgb[i]     / 255f;
-                        sg += lightRgb[i + 1] / 255f;
-                        sb += lightRgb[i + 2] / 255f;
-                        n++;
-                    }
-                }
-                int oi = (cy * cw + cx) * 3;
-                if (n > 0)
-                {
-                    float inv = 1f / n;
-                    corner[oi]     = sr * inv;
-                    corner[oi + 1] = sg * inv;
-                    corner[oi + 2] = sb * inv;
-                }
-            }
-        }
-
-        // Precomputed bilinear weights per subpixel position. f = (s+0.5)/N
-        // so we sample at texel centers. weightFar = f, weightNear = 1-f.
-        var fwd = new float[WallSubpx];
-        for (int s = 0; s < WallSubpx; s++) fwd[s] = (s + 0.5f) / WallSubpx;
-
         var wtex = EnsureWallBaseTex();
         const int TexMask = WallTexSize - 1;
 
@@ -1207,48 +1142,20 @@ public partial class WorldRenderer : Node2D
             for (int tx = 0; tx < width; tx++)
             {
                 if (tiles[ty * width + tx] == 0) continue;
-                int tlIdx = (ty * cw + tx) * 3;
-                int trIdx = tlIdx + 3;
-                int blIdx = ((ty + 1) * cw + tx) * 3;
-                int brIdx = blIdx + 3;
-                float tlR = corner[tlIdx],     tlG = corner[tlIdx + 1], tlB = corner[tlIdx + 2];
-                float trR = corner[trIdx],     trG = corner[trIdx + 1], trB = corner[trIdx + 2];
-                float blR = corner[blIdx],     blG = corner[blIdx + 1], blB = corner[blIdx + 2];
-                float brR = corner[brIdx],     brG = corner[brIdx + 1], brB = corner[brIdx + 2];
                 int baseX = tx * WallSubpx;
                 int baseY = ty * WallSubpx;
                 for (int sy = 0; sy < WallSubpx; sy++)
                 {
-                    float fy = fwd[sy];
-                    float iy = 1f - fy;
-                    // Pre-blend top + bottom edges along Y, then blend along X per texel.
-                    float lR = iy * tlR + fy * blR;
-                    float lG = iy * tlG + fy * blG;
-                    float lB = iy * tlB + fy * blB;
-                    float rR = iy * trR + fy * brR;
-                    float rG = iy * trG + fy * brG;
-                    float rB = iy * trB + fy * brB;
                     int rowStart = ((baseY + sy) * w + baseX) * 4;
                     int tv = (baseY + sy) & TexMask;
                     for (int sx = 0; sx < WallSubpx; sx++)
                     {
-                        float fx = fwd[sx];
-                        float ix = 1f - fx;
-                        float sR = ix * lR + fx * rR;
-                        float sG = ix * lG + fx * rG;
-                        float sB = ix * lB + fx * rB;
                         int tu = (baseX + sx) & TexMask;
                         int ti = (tv * WallTexSize + tu) * 3;
-                        float baseR = wtex[ti]     / 255f;
-                        float baseG = wtex[ti + 1] / 255f;
-                        float baseB = wtex[ti + 2] / 255f;
-                        float r = baseR * (WallAmbient + WallLitScale * sR); if (r > 1f) r = 1f;
-                        float g = baseG * (WallAmbient + WallLitScale * sG); if (g > 1f) g = 1f;
-                        float b = baseB * (WallAmbient + WallLitScale * sB); if (b > 1f) b = 1f;
                         int idx = rowStart + sx * 4;
-                        data[idx + 0] = (byte)(255f * r);
-                        data[idx + 1] = (byte)(255f * g);
-                        data[idx + 2] = (byte)(255f * b);
+                        data[idx + 0] = wtex[ti];
+                        data[idx + 1] = wtex[ti + 1];
+                        data[idx + 2] = wtex[ti + 2];
                         data[idx + 3] = 255;
                     }
                 }

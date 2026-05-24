@@ -2655,30 +2655,83 @@ public sealed class SimRuntime
     // Packed RGB per-tile light, composed at copy time. Output length =
     // 3 * width * height, interleaved as R,G,B,R,G,B,... For each tile:
     // roofed → lamp bytes only; outdoor → max(sun, lamp) per channel.
-    // Renderer reinterprets as an RGB8 ImageTexture for the multiply
-    // overlay.
+    // Wall tiles get the average of their non-wall neighbors instead of
+    // their own (forced-zero) value — the multiply overlay sits on top
+    // of the wall texture, and sampling the wall tile's own zero would
+    // render walls in lit rooms as black. Neighbor-fill keeps lit-room
+    // walls glowing without per-vertex bake work on the renderer side.
     public byte[] CopyLightRgbForRender()
     {
         lock (_mapLock)
         {
+            int w = Map.Width;
+            int h = Map.Height;
             int n = _lampR.Length;
             var rgb = new byte[n * 3];
             byte sR = _lastSunR, sG = _lastSunG, sB = _lastSunB;
-            for (int i = 0, j = 0; i < n; i++)
+            for (int y = 0; y < h; y++)
             {
-                byte r = _lampR[i], g = _lampG[i], b = _lampB[i];
-                if (_roofTiles[i] == 0)
+                int row = y * w;
+                for (int x = 0; x < w; x++)
                 {
-                    if (sR > r) r = sR;
-                    if (sG > g) g = sG;
-                    if (sB > b) b = sB;
+                    int i = row + x;
+                    int j = i * 3;
+                    bool isWall = Map.GetWall(x, y) != WallType.None;
+                    byte r, g, b;
+                    if (isWall)
+                    {
+                        // Average up-to-4 non-wall neighbors. Each
+                        // neighbor's value = its own composed (lamp +
+                        // optional sun) light.
+                        int sumR = 0, sumG = 0, sumB = 0, count = 0;
+                        AccumulateNeighbor(x - 1, y, w, h, sR, sG, sB, ref sumR, ref sumG, ref sumB, ref count);
+                        AccumulateNeighbor(x + 1, y, w, h, sR, sG, sB, ref sumR, ref sumG, ref sumB, ref count);
+                        AccumulateNeighbor(x, y - 1, w, h, sR, sG, sB, ref sumR, ref sumG, ref sumB, ref count);
+                        AccumulateNeighbor(x, y + 1, w, h, sR, sG, sB, ref sumR, ref sumG, ref sumB, ref count);
+                        if (count > 0)
+                        {
+                            r = (byte)(sumR / count);
+                            g = (byte)(sumG / count);
+                            b = (byte)(sumB / count);
+                        }
+                        else
+                        {
+                            r = g = b = 0;
+                        }
+                    }
+                    else
+                    {
+                        r = _lampR[i]; g = _lampG[i]; b = _lampB[i];
+                        if (_roofTiles[i] == 0)
+                        {
+                            if (sR > r) r = sR;
+                            if (sG > g) g = sG;
+                            if (sB > b) b = sB;
+                        }
+                    }
+                    rgb[j]     = r;
+                    rgb[j + 1] = g;
+                    rgb[j + 2] = b;
                 }
-                rgb[j++] = r;
-                rgb[j++] = g;
-                rgb[j++] = b;
             }
             return rgb;
         }
+    }
+
+    private void AccumulateNeighbor(int x, int y, int w, int h, byte sR, byte sG, byte sB,
+                                    ref int sumR, ref int sumG, ref int sumB, ref int count)
+    {
+        if (x < 0 || x >= w || y < 0 || y >= h) return;
+        if (Map.GetWall(x, y) != WallType.None) return;
+        int ni = y * w + x;
+        byte r = _lampR[ni], g = _lampG[ni], b = _lampB[ni];
+        if (_roofTiles[ni] == 0)
+        {
+            if (sR > r) r = sR;
+            if (sG > g) g = sG;
+            if (sB > b) b = sB;
+        }
+        sumR += r; sumG += g; sumB += b; count++;
     }
 
     public int[] CopyRoomTilesForRender()
