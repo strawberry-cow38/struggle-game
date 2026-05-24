@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "sun: warm dim noon (0.95/0.85/0.65) + VERY orange horizon (1.0/0.32/0.05)";
+    private const string BuildTag = "sun: dimmer orange noon (0.82/0.65/0.38) + VERY orange horizon (1.0/0.32/0.05)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;

@@ -2453,7 +2453,7 @@ public sealed class SimRuntime
     // model so colored lamps composite the same way day or night.
     // Noon = warm dim sun (was pure 1,1,1 white). Slight orange cast
     // and a small dim so the world doesn't look bleached at peak day.
-    private const float SunMidR = 0.95f, SunMidG = 0.85f, SunMidB = 0.65f;          // noon — warm dim
+    private const float SunMidR = 0.82f, SunMidG = 0.65f, SunMidB = 0.38f;          // noon — dimmer + more orange
     // Sunrise/sunset = very saturated orange-red. Was 1.0/0.55/0.25;
     // dropped green + blue hard so the horizon ramp reads as a deep
     // golden-hour glow instead of a beige tint.
