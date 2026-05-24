@@ -1051,12 +1051,12 @@ public partial class WorldRenderer : Node2D
     // neighbor in that direction is also a wall (faces only show where the
     // wall block meets open space, not inside continuous wall runs).
     private const int WallSubpx = 16;
-    private const float WallFaceWidthSouth = 0.30f;
-    private const float WallFaceWidthNorth = 0.05f;
-    private const float WallFaceWidthSide  = 0.15f;
-    private const float WallFaceLiftSouth  = 0.30f;
-    private const float WallFaceLiftNorth  = 0.05f;
-    private const float WallFaceLiftSide   = 0.15f;
+    private const float WallFaceWidthSouth = 0.45f;
+    private const float WallFaceWidthNorth = 0.20f;
+    private const float WallFaceWidthSide  = 0.30f;
+    private const float WallFaceLiftSouth  = 0.45f;
+    private const float WallFaceLiftNorth  = 0.20f;
+    private const float WallFaceLiftSide   = 0.30f;
 
     private static ImageTexture BuildWallOverlay(byte[] tiles, byte[] lightRgb, int width, int height)
     {
