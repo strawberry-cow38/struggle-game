@@ -43,6 +43,15 @@ public partial class WorldRenderer : Node2D
     // drive Godot's stock 2D lighting for the pretty visual.
     private VisualLighting? _visualLighting;
 
+    // Isolated single-pillar wall sprites: pre-rendered 64x64 PNG (from
+    // Blender wall_base scene) stamped per tile that has no orthogonal
+    // wall neighbors. BuildWallOverlay skips these tiles so the sprite
+    // shows through. Connected walls still use the procedural brick
+    // overlay until the neighbor-mask variants are baked.
+    private Texture2D? _pillarTex;
+    private Node2D? _pillarsRoot;
+    private readonly Dictionary<TilePos, Sprite2D> _pillarSprites = new();
+
     // Snapshot pair used for render-side interpolation. _prevSnap is the
     // last snapshot we drew from, _currSnap is the next one. We render at
     // alpha across the wall-clock interval between them so visible motion
@@ -118,8 +127,21 @@ public partial class WorldRenderer : Node2D
         _mapPixelHeight = _mapHeight * PixelsPerTile;
         _groundTex = BuildGroundTexture(_mapWidth, _mapHeight, seed: 1337);
 
+        _pillarsRoot = new Node2D { Name = "WallPillars", TextureFilter = TextureFilterEnum.Nearest };
+        AddChild(_pillarsRoot);
+        _pillarTex = LoadPillarTexture();
+
         _visualLighting = new VisualLighting { Host = Host, MapWidth = _mapWidth, MapHeight = _mapHeight };
         AddChild(_visualLighting);
+    }
+
+    private static Texture2D? LoadPillarTexture()
+    {
+        const string path = "res://assets/walls/pillar.png";
+        var img = new Image();
+        var err = img.Load(ProjectSettings.GlobalizePath(path));
+        if (err != Error.Ok) return null;
+        return ImageTexture.CreateFromImage(img);
     }
 
     public override void _Process(double delta)
@@ -172,6 +194,7 @@ public partial class WorldRenderer : Node2D
             if (_lastWallBytes is not null)
             {
                 _wallOverlayTex = BuildWallOverlay(_lastWallBytes, _mapWidth, _mapHeight);
+                UpdateWallPillars(_lastWallBytes, _mapWidth, _mapHeight);
             }
         }
         if (snap is not null && snap.RoofVersion != _lastRoofVersion)
@@ -1147,6 +1170,7 @@ public partial class WorldRenderer : Node2D
             for (int tx = 0; tx < width; tx++)
             {
                 if (tiles[ty * width + tx] == 0) continue;
+                if (IsIsolatedWall(tiles, tx, ty, width, height)) continue;
                 int baseX = tx * WallSubpx;
                 int baseY = ty * WallSubpx;
                 for (int sy = 0; sy < WallSubpx; sy++)
@@ -1168,6 +1192,60 @@ public partial class WorldRenderer : Node2D
         }
         var img = Image.CreateFromData(w, h, false, Image.Format.Rgba8, data);
         return ImageTexture.CreateFromImage(img);
+    }
+
+    private static bool IsIsolatedWall(byte[] tiles, int tx, int ty, int width, int height)
+    {
+        if (tx > 0 && tiles[ty * width + (tx - 1)] != 0) return false;
+        if (tx < width - 1 && tiles[ty * width + (tx + 1)] != 0) return false;
+        if (ty > 0 && tiles[(ty - 1) * width + tx] != 0) return false;
+        if (ty < height - 1 && tiles[(ty + 1) * width + tx] != 0) return false;
+        return true;
+    }
+
+    private void UpdateWallPillars(byte[] tiles, int width, int height)
+    {
+        if (_pillarsRoot is null || _pillarTex is null) return;
+        var seen = new HashSet<TilePos>();
+        for (int ty = 0; ty < height; ty++)
+        {
+            for (int tx = 0; tx < width; tx++)
+            {
+                if (tiles[ty * width + tx] == 0) continue;
+                if (!IsIsolatedWall(tiles, tx, ty, width, height)) continue;
+                var tile = new TilePos(tx, ty);
+                seen.Add(tile);
+                if (!_pillarSprites.TryGetValue(tile, out var spr))
+                {
+                    spr = new Sprite2D
+                    {
+                        Texture = _pillarTex,
+                        Centered = false,
+                        TextureFilter = TextureFilterEnum.Nearest,
+                    };
+                    spr.Position = new Vector2(tx * PixelsPerTile, ty * PixelsPerTile);
+                    int srcW = _pillarTex.GetWidth();
+                    if (srcW > 0)
+                    {
+                        float s = (float)PixelsPerTile / srcW;
+                        spr.Scale = new Vector2(s, s);
+                    }
+                    _pillarsRoot.AddChild(spr);
+                    _pillarSprites[tile] = spr;
+                }
+            }
+        }
+        if (_pillarSprites.Count != seen.Count)
+        {
+            var rm = new List<TilePos>();
+            foreach (var kv in _pillarSprites)
+                if (!seen.Contains(kv.Key)) rm.Add(kv.Key);
+            foreach (var t in rm)
+            {
+                _pillarSprites[t].QueueFree();
+                _pillarSprites.Remove(t);
+            }
+        }
     }
 
     // No-roof overlay: yellow tint with checker dithering so the

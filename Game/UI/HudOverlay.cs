@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "sun: noon (1.0/0.50/0.11) full R for 100% light reading";
+    private const string BuildTag = "isolated wall pillars use baked 64px sprite";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
