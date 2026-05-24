@@ -1057,7 +1057,7 @@ public partial class WorldRenderer : Node2D
     // runs stay clean because corners between two wall-flanked tiles
     // average to whichever floor side dominates.
     private const int WallSubpx = 16;
-    private const float WallLightLift = 0.55f;
+    private const float WallLightLift = 0.25f;
 
     private static ImageTexture BuildWallOverlay(byte[] tiles, byte[] lightRgb, int width, int height)
     {
