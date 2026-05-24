@@ -2486,7 +2486,10 @@ public sealed class SimRuntime
             _lightB[i] = sun;
             _lightTiles[i] = sun;
         }
-        // Lamp pass.
+        // Lamp pass. Walls block light: for each (lamp, target) pair, walk
+        // a Bresenham line between them and skip the contribution if any
+        // intermediate tile is a wall. Endpoints excluded so the lamp's
+        // own tile + the wall tile adjacent to the lamp still light up.
         foreach (var (tile, lampEnt) in _lampMap)
         {
             if (!lampEnt.HasComponent<Lamp>()) continue;
@@ -2507,6 +2510,7 @@ public sealed class SimRuntime
                     int dx = x - cx;
                     float d2 = dx * dx + dy * dy;
                     if (d2 > LampOuterSq) continue;
+                    if (!LampLosClear(cx, cy, x, y)) continue;
                     byte contrib;
                     if (d2 <= LampInnerSq)
                     {
@@ -2573,6 +2577,26 @@ public sealed class SimRuntime
             _lightTiles[i] = m;
         }
         LightVersion++;
+    }
+
+    // Bresenham line from (cx,cy) to (tx,ty). Returns false if any
+    // intermediate tile (exclusive of both endpoints) carries a wall.
+    // Used by RecomputeLightAll to stop lamp light leaking through walls.
+    private bool LampLosClear(int cx, int cy, int tx, int ty)
+    {
+        if (cx == tx && cy == ty) return true;
+        int dx = Math.Abs(tx - cx), dy = Math.Abs(ty - cy);
+        int sx = cx < tx ? 1 : -1, sy = cy < ty ? 1 : -1;
+        int err = dx - dy;
+        int x = cx, y = cy;
+        while (true)
+        {
+            int e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x += sx; }
+            if (e2 <  dx) { err += dx; y += sy; }
+            if (x == tx && y == ty) return true;
+            if (Map.GetWall(x, y) != WallType.None) return false;
+        }
     }
 
     // 0..1 light value at a tile. Out-of-bounds reads as dark (0).

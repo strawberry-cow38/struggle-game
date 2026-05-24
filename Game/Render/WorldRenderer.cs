@@ -1118,6 +1118,12 @@ public partial class WorldRenderer : Node2D
         var liftNorth = new float[WallSubpx];
         var liftWest = new float[WallSubpx];
         var liftEast = new float[WallSubpx];
+        // Y in image data = top-down. Master's "south face" is the wall
+        // edge that faces the camera (= the edge touching the SOUTH
+        // neighbor at ty+1) — visually the bottom of the wall sprite.
+        // Strip pixels: south face at largest sy, north face at smallest.
+        // Each strip's color contribution comes from the neighbor on the
+        // same side: south-face strip reads (tx, ty+1) light, etc.
         for (int s = 0; s < WallSubpx; s++)
         {
             float f = (s + 0.5f) / WallSubpx;
