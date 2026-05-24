@@ -2510,6 +2510,11 @@ public sealed class SimRuntime
                     int dx = x - cx;
                     float d2 = dx * dx + dy * dy;
                     if (d2 > LampOuterSq) continue;
+                    // Wall tiles read as 0% lit — the wall itself is
+                    // opaque, no surface for light to land on. Skip
+                    // before the LOS walk so adjacent lamps don't
+                    // bleed into the wall cell.
+                    if (Map.GetWall(x, y) != WallType.None) continue;
                     if (!LampLosClear(cx, cy, x, y)) continue;
                     byte contrib;
                     if (d2 <= LampInnerSq)
