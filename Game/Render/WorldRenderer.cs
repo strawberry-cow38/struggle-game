@@ -1057,7 +1057,16 @@ public partial class WorldRenderer : Node2D
     // runs stay clean because corners between two wall-flanked tiles
     // average to whichever floor side dominates.
     private const int WallSubpx = 16;
-    private const float WallLightLift = 0.55f;
+    // Multiplicative wall lighting. Final = baseTexel * (WallAmbient +
+    // WallLitScale * sampledLight) so the texture's hue survives at every
+    // brightness — additive lift was washing brown brick to gray under
+    // sun. Per-channel multiply lets a red lamp tint the wall red on the
+    // lit channel while the others stay near ambient.
+    //   Sun-lit (sR=1.0):    base * (0.40 + 0.90 * 1.0) = base * 1.30 → clamps near base hue
+    //   Fully dark (sR=0):   base * 0.40 = noticeably dim
+    //   Red lamp (sR=1,0,0): R channel bright, G/B at ambient = red tint
+    private const float WallAmbient  = 0.40f;
+    private const float WallLitScale = 0.90f;
     // Tileable stone-brick texture sampled per wall texel. Generated once,
     // power-of-two so the modulo collapses to a bitmask. Brick rows
     // staggered (offset by half-width every other row) with darker mortar
@@ -1233,9 +1242,9 @@ public partial class WorldRenderer : Node2D
                         float baseR = wtex[ti]     / 255f;
                         float baseG = wtex[ti + 1] / 255f;
                         float baseB = wtex[ti + 2] / 255f;
-                        float r = baseR + WallLightLift * sR; if (r > 1f) r = 1f;
-                        float g = baseG + WallLightLift * sG; if (g > 1f) g = 1f;
-                        float b = baseB + WallLightLift * sB; if (b > 1f) b = 1f;
+                        float r = baseR * (WallAmbient + WallLitScale * sR); if (r > 1f) r = 1f;
+                        float g = baseG * (WallAmbient + WallLitScale * sG); if (g > 1f) g = 1f;
+                        float b = baseB * (WallAmbient + WallLitScale * sB); if (b > 1f) b = 1f;
                         int idx = rowStart + sx * 4;
                         data[idx + 0] = (byte)(255f * r);
                         data[idx + 1] = (byte)(255f * g);
