@@ -1045,18 +1045,19 @@ public partial class WorldRenderer : Node2D
         }
     }
 
-    // Wall face bevel constants. Each face has a strip width (fraction of
-    // tile) and a peak brightness lift (additive toward white at the face,
-    // fading linearly to 0 at the inner strip edge). Skipped when the
-    // neighbor in that direction is also a wall (faces only show where the
-    // wall block meets open space, not inside continuous wall runs).
+    // Per-vertex wall lighting. Each tile *corner* (width+1 x height+1
+    // grid) gets a color = average of its up-to-4 surrounding open-floor
+    // tile lights. Walls don't emit (sim writes 0) so they're excluded
+    // from the average — a wall corner surrounded by 3 walls + 1 lit
+    // floor tile inherits that floor's color at full strength. For each
+    // wall texel, bilinear-blend the 4 corners of its tile; the texel
+    // color is base wall + WallLightLift * sampledLight, clamped. This
+    // replaces per-face bevels: inner corners light naturally because
+    // the lit diagonal floor is one of the corner samples; straight wall
+    // runs stay clean because corners between two wall-flanked tiles
+    // average to whichever floor side dominates.
     private const int WallSubpx = 16;
-    private const float WallFaceWidthSouth = 0.45f;
-    private const float WallFaceWidthNorth = 0.20f;
-    private const float WallFaceWidthSide  = 0.30f;
-    private const float WallFaceLiftSouth  = 0.45f;
-    private const float WallFaceLiftNorth  = 0.20f;
-    private const float WallFaceLiftSide   = 0.30f;
+    private const float WallLightLift = 0.55f;
 
     private static ImageTexture BuildWallOverlay(byte[] tiles, byte[] lightRgb, int width, int height)
     {
@@ -1068,113 +1069,92 @@ public partial class WorldRenderer : Node2D
         // unacceptable when building. Default-zero bytes are already
         // transparent, so non-wall tiles cost nothing.
         var data = new byte[w * h * 4];
-        bool IsWall(int x, int y) => x >= 0 && y >= 0 && x < width && y < height && tiles[y * width + x] != 0;
 
-        // Precomputed per-subpixel face contribution. Per-pixel inner loop
-        // becomes one max + four table lookups instead of four divs +
-        // branches.
-        var liftSouth = new float[WallSubpx];
-        var liftNorth = new float[WallSubpx];
-        var liftWest = new float[WallSubpx];
-        var liftEast = new float[WallSubpx];
-        // Y in image data = top-down. Master's "south face" is the wall
-        // edge that faces the camera (= the edge touching the SOUTH
-        // neighbor at ty+1) — visually the bottom of the wall sprite.
-        // Strip pixels: south face at largest sy, north face at smallest.
-        // Each strip's color contribution comes from the neighbor on the
-        // same side: south-face strip reads (tx, ty+1) light, etc.
-        for (int s = 0; s < WallSubpx; s++)
+        // Corner light grid: (width+1) x (height+1). Each entry = average
+        // of the 4 surrounding tile lights, skipping wall tiles (sim
+        // forces walls to 0 — averaging them in would drag corners down
+        // and lose the lit-room signal). Stored as packed [r,g,b] floats
+        // in 0..1.
+        int cw = width + 1;
+        int ch = height + 1;
+        var corner = new float[cw * ch * 3];
+        for (int cy = 0; cy < ch; cy++)
         {
-            float f = (s + 0.5f) / WallSubpx;
-            float tS = (1f - f) / WallFaceWidthSouth;
-            liftSouth[s] = tS < 1f ? WallFaceLiftSouth * (1f - tS) : 0f;
-            float tN = f / WallFaceWidthNorth;
-            liftNorth[s] = tN < 1f ? WallFaceLiftNorth * (1f - tN) : 0f;
-            float tW = f / WallFaceWidthSide;
-            liftWest[s] = tW < 1f ? WallFaceLiftSide * (1f - tW) : 0f;
-            float tE = (1f - f) / WallFaceWidthSide;
-            liftEast[s] = tE < 1f ? WallFaceLiftSide * (1f - tE) : 0f;
+            for (int cx = 0; cx < cw; cx++)
+            {
+                float sr = 0f, sg = 0f, sb = 0f;
+                int n = 0;
+                for (int dy = -1; dy <= 0; dy++)
+                {
+                    int ty = cy + dy;
+                    if (ty < 0 || ty >= height) continue;
+                    for (int dx = -1; dx <= 0; dx++)
+                    {
+                        int tx = cx + dx;
+                        if (tx < 0 || tx >= width) continue;
+                        if (tiles[ty * width + tx] != 0) continue;
+                        int i = (ty * width + tx) * 3;
+                        sr += lightRgb[i]     / 255f;
+                        sg += lightRgb[i + 1] / 255f;
+                        sb += lightRgb[i + 2] / 255f;
+                        n++;
+                    }
+                }
+                int oi = (cy * cw + cx) * 3;
+                if (n > 0)
+                {
+                    float inv = 1f / n;
+                    corner[oi]     = sr * inv;
+                    corner[oi + 1] = sg * inv;
+                    corner[oi + 2] = sb * inv;
+                }
+            }
         }
+
+        // Precomputed bilinear weights per subpixel position. f = (s+0.5)/N
+        // so we sample at texel centers. weightFar = f, weightNear = 1-f.
+        var fwd = new float[WallSubpx];
+        for (int s = 0; s < WallSubpx; s++) fwd[s] = (s + 0.5f) / WallSubpx;
 
         float baseR = WallColor.R, baseG = WallColor.G, baseB = WallColor.B;
-
-        // Sim forces walls to 0 light internally — sampling the wall's
-        // own tile would always return black. Instead each face reads
-        // light from the tile it faces (south face = south neighbor, etc).
-        // Face bevel strength × neighbor light color gets added to base
-        // wall color so the wall glows in the lamp's color on lit sides.
-        static (float r, float g, float b) NeighborLight(byte[] lightRgb, int x, int y, int w_, int h_)
-        {
-            if (x < 0 || y < 0 || x >= w_ || y >= h_) return (0f, 0f, 0f);
-            int idx = (y * w_ + x) * 3;
-            return (lightRgb[idx] / 255f, lightRgb[idx + 1] / 255f, lightRgb[idx + 2] / 255f);
-        }
-
-        // Inner-corner inheritance: when a face is blocked by another wall,
-        // look at that neighbor wall's two perpendicular open-floor
-        // neighbors and pull the brighter color onto our face. Walls don't
-        // emit (sim forces them to 0), so we sample the room tile diagonal
-        // to us. Without this, corner walls — whose only open faces point
-        // OUT of the room — render with no light on the room-side bevel.
-        (float r, float g, float b) BorrowDiagonal(int ax, int ay, int bx, int by)
-        {
-            float ar = 0f, ag = 0f, ab = 0f, br = 0f, bg = 0f, bb = 0f;
-            if (ax >= 0 && ay >= 0 && ax < width && ay < height && tiles[ay * width + ax] == 0)
-            {
-                int i = (ay * width + ax) * 3;
-                ar = lightRgb[i] / 255f; ag = lightRgb[i + 1] / 255f; ab = lightRgb[i + 2] / 255f;
-            }
-            if (bx >= 0 && by >= 0 && bx < width && by < height && tiles[by * width + bx] == 0)
-            {
-                int i = (by * width + bx) * 3;
-                br = lightRgb[i] / 255f; bg = lightRgb[i + 1] / 255f; bb = lightRgb[i + 2] / 255f;
-            }
-            return (ar > br ? ar : br, ag > bg ? ag : bg, ab > bb ? ab : bb);
-        }
 
         for (int ty = 0; ty < height; ty++)
         {
             for (int tx = 0; tx < width; tx++)
             {
-                if (!IsWall(tx, ty)) continue;
-                bool faceN = !IsWall(tx, ty - 1);
-                bool faceS = !IsWall(tx, ty + 1);
-                bool faceW = !IsWall(tx - 1, ty);
-                bool faceE = !IsWall(tx + 1, ty);
-                var lN = faceN ? NeighborLight(lightRgb, tx, ty - 1, width, height) : (r: 0f, g: 0f, b: 0f);
-                var lS = faceS ? NeighborLight(lightRgb, tx, ty + 1, width, height) : (r: 0f, g: 0f, b: 0f);
-                var lW = faceW ? NeighborLight(lightRgb, tx - 1, ty, width, height) : (r: 0f, g: 0f, b: 0f);
-                var lE = faceE ? NeighborLight(lightRgb, tx + 1, ty, width, height) : (r: 0f, g: 0f, b: 0f);
-                // Corner inheritance: blocked face borrows light from the
-                // diagonal open-floor tiles past the blocking wall, then
-                // the bevel strip on that face is enabled so the corner
-                // wall reads as part of the lit room. Gated on the OPPOSITE
-                // face being open — this distinguishes a true inner corner
-                // (one wall on the axis) from a straight wall run (walls
-                // on both ends of the axis), where painting the strip
-                // would create banding at every wall-wall contact.
-                bool oN = faceN, oS = faceS, oW = faceW, oE = faceE;
-                if (!oN && oS && IsWall(tx, ty - 1)) { lN = BorrowDiagonal(tx - 1, ty - 1, tx + 1, ty - 1); faceN = true; }
-                if (!oS && oN && IsWall(tx, ty + 1)) { lS = BorrowDiagonal(tx - 1, ty + 1, tx + 1, ty + 1); faceS = true; }
-                if (!oW && oE && IsWall(tx - 1, ty)) { lW = BorrowDiagonal(tx - 1, ty - 1, tx - 1, ty + 1); faceW = true; }
-                if (!oE && oW && IsWall(tx + 1, ty)) { lE = BorrowDiagonal(tx + 1, ty - 1, tx + 1, ty + 1); faceE = true; }
+                if (tiles[ty * width + tx] == 0) continue;
+                int tlIdx = (ty * cw + tx) * 3;
+                int trIdx = tlIdx + 3;
+                int blIdx = ((ty + 1) * cw + tx) * 3;
+                int brIdx = blIdx + 3;
+                float tlR = corner[tlIdx],     tlG = corner[tlIdx + 1], tlB = corner[tlIdx + 2];
+                float trR = corner[trIdx],     trG = corner[trIdx + 1], trB = corner[trIdx + 2];
+                float blR = corner[blIdx],     blG = corner[blIdx + 1], blB = corner[blIdx + 2];
+                float brR = corner[brIdx],     brG = corner[brIdx + 1], brB = corner[brIdx + 2];
                 int baseX = tx * WallSubpx;
                 int baseY = ty * WallSubpx;
                 for (int sy = 0; sy < WallSubpx; sy++)
                 {
-                    float lsS = faceS ? liftSouth[sy] : 0f;
-                    float lsN = faceN ? liftNorth[sy] : 0f;
+                    float fy = fwd[sy];
+                    float iy = 1f - fy;
+                    // Pre-blend top + bottom edges along Y, then blend along X per texel.
+                    float lR = iy * tlR + fy * blR;
+                    float lG = iy * tlG + fy * blG;
+                    float lB = iy * tlB + fy * blB;
+                    float rR = iy * trR + fy * brR;
+                    float rG = iy * trG + fy * brG;
+                    float rB = iy * trB + fy * brB;
                     int rowStart = ((baseY + sy) * w + baseX) * 4;
                     for (int sx = 0; sx < WallSubpx; sx++)
                     {
-                        float lsW = faceW ? liftWest[sx] : 0f;
-                        float lsE = faceE ? liftEast[sx] : 0f;
-                        float addR = lsS * lS.r + lsN * lN.r + lsW * lW.r + lsE * lE.r;
-                        float addG = lsS * lS.g + lsN * lN.g + lsW * lW.g + lsE * lE.g;
-                        float addB = lsS * lS.b + lsN * lN.b + lsW * lW.b + lsE * lE.b;
-                        float r = baseR + addR; if (r > 1f) r = 1f;
-                        float g = baseG + addG; if (g > 1f) g = 1f;
-                        float b = baseB + addB; if (b > 1f) b = 1f;
+                        float fx = fwd[sx];
+                        float ix = 1f - fx;
+                        float sR = ix * lR + fx * rR;
+                        float sG = ix * lG + fx * rG;
+                        float sB = ix * lB + fx * rB;
+                        float r = baseR + WallLightLift * sR; if (r > 1f) r = 1f;
+                        float g = baseG + WallLightLift * sG; if (g > 1f) g = 1f;
+                        float b = baseB + WallLightLift * sB; if (b > 1f) b = 1f;
                         int idx = rowStart + sx * 4;
                         data[idx + 0] = (byte)(255f * r);
                         data[idx + 1] = (byte)(255f * g);
