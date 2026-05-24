@@ -43,14 +43,15 @@ public partial class WorldRenderer : Node2D
     // drive Godot's stock 2D lighting for the pretty visual.
     private VisualLighting? _visualLighting;
 
-    // Isolated single-pillar wall sprites: pre-rendered 64x64 PNG (from
-    // Blender wall_base scene) stamped per tile that has no orthogonal
-    // wall neighbors. BuildWallOverlay skips these tiles so the sprite
-    // shows through. Connected walls still use the procedural brick
-    // overlay until the neighbor-mask variants are baked.
-    private Texture2D? _pillarTex;
-    private Node2D? _pillarsRoot;
-    private readonly Dictionary<TilePos, Sprite2D> _pillarSprites = new();
+    // Pre-rendered 64×64 wall sprites for each of the 16 orthogonal
+    // neighbor masks (N|E|S|W bits, matching the Blender wall_base
+    // builder). When all 16 load, BuildWallOverlay skips every wall
+    // tile and we stamp the correct sprite per tile based on the
+    // tile's neighbor mask. Missing textures fall back to the
+    // procedural brick overlay for that tile.
+    private readonly Texture2D?[] _wallTextures = new Texture2D?[16];
+    private Node2D? _wallSpritesRoot;
+    private readonly Dictionary<TilePos, Sprite2D> _wallSprites = new();
 
     // Snapshot pair used for render-side interpolation. _prevSnap is the
     // last snapshot we drew from, _currSnap is the next one. We render at
@@ -127,17 +128,20 @@ public partial class WorldRenderer : Node2D
         _mapPixelHeight = _mapHeight * PixelsPerTile;
         _groundTex = BuildGroundTexture(_mapWidth, _mapHeight, seed: 1337);
 
-        _pillarsRoot = new Node2D { Name = "WallPillars", TextureFilter = TextureFilterEnum.Nearest };
-        AddChild(_pillarsRoot);
-        _pillarTex = LoadPillarTexture();
+        _wallSpritesRoot = new Node2D { Name = "WallSprites", TextureFilter = TextureFilterEnum.Nearest };
+        AddChild(_wallSpritesRoot);
+        for (int m = 0; m < 16; m++)
+        {
+            string bits = $"{((m >> 3) & 1)}{((m >> 2) & 1)}{((m >> 1) & 1)}{(m & 1)}";
+            _wallTextures[m] = LoadWallTexture($"res://assets/walls/wall_{bits}.png");
+        }
 
         _visualLighting = new VisualLighting { Host = Host, MapWidth = _mapWidth, MapHeight = _mapHeight };
         AddChild(_visualLighting);
     }
 
-    private static Texture2D? LoadPillarTexture()
+    private static Texture2D? LoadWallTexture(string path)
     {
-        const string path = "res://assets/walls/pillar.png";
         var img = new Image();
         var err = img.Load(ProjectSettings.GlobalizePath(path));
         if (err != Error.Ok) return null;
@@ -194,7 +198,7 @@ public partial class WorldRenderer : Node2D
             if (_lastWallBytes is not null)
             {
                 _wallOverlayTex = BuildWallOverlay(_lastWallBytes, _mapWidth, _mapHeight);
-                UpdateWallPillars(_lastWallBytes, _mapWidth, _mapHeight);
+                UpdateWallSprites(_lastWallBytes, _mapWidth, _mapHeight);
             }
         }
         if (snap is not null && snap.RoofVersion != _lastRoofVersion)
@@ -1170,7 +1174,8 @@ public partial class WorldRenderer : Node2D
             for (int tx = 0; tx < width; tx++)
             {
                 if (tiles[ty * width + tx] == 0) continue;
-                if (IsIsolatedWall(tiles, tx, ty, width, height)) continue;
+                int mask = WallNeighborMask(tiles, tx, ty, width, height);
+                if (_wallTextures[mask] is not null) continue;
                 int baseX = tx * WallSubpx;
                 int baseY = ty * WallSubpx;
                 for (int sy = 0; sy < WallSubpx; sy++)
@@ -1194,56 +1199,62 @@ public partial class WorldRenderer : Node2D
         return ImageTexture.CreateFromImage(img);
     }
 
-    private static bool IsIsolatedWall(byte[] tiles, int tx, int ty, int width, int height)
+    // Neighbor mask: bit3=N, bit2=E, bit1=S, bit0=W. Matches Blender
+    // wall_NNNN.png file naming (N|E|S|W). +Y in game is south (image
+    // bottom in the bake), so the axis convention lines up directly.
+    private static int WallNeighborMask(byte[] tiles, int tx, int ty, int width, int height)
     {
-        if (tx > 0 && tiles[ty * width + (tx - 1)] != 0) return false;
-        if (tx < width - 1 && tiles[ty * width + (tx + 1)] != 0) return false;
-        if (ty > 0 && tiles[(ty - 1) * width + tx] != 0) return false;
-        if (ty < height - 1 && tiles[(ty + 1) * width + tx] != 0) return false;
-        return true;
+        int m = 0;
+        if (ty > 0 && tiles[(ty - 1) * width + tx] != 0) m |= 8;            // N
+        if (tx < width - 1 && tiles[ty * width + (tx + 1)] != 0) m |= 4;    // E
+        if (ty < height - 1 && tiles[(ty + 1) * width + tx] != 0) m |= 2;   // S
+        if (tx > 0 && tiles[ty * width + (tx - 1)] != 0) m |= 1;            // W
+        return m;
     }
 
-    private void UpdateWallPillars(byte[] tiles, int width, int height)
+    private void UpdateWallSprites(byte[] tiles, int width, int height)
     {
-        if (_pillarsRoot is null || _pillarTex is null) return;
+        if (_wallSpritesRoot is null) return;
         var seen = new HashSet<TilePos>();
         for (int ty = 0; ty < height; ty++)
         {
             for (int tx = 0; tx < width; tx++)
             {
                 if (tiles[ty * width + tx] == 0) continue;
-                if (!IsIsolatedWall(tiles, tx, ty, width, height)) continue;
+                int mask = WallNeighborMask(tiles, tx, ty, width, height);
+                var tex = _wallTextures[mask];
+                if (tex is null) continue;
                 var tile = new TilePos(tx, ty);
                 seen.Add(tile);
-                if (!_pillarSprites.TryGetValue(tile, out var spr))
+                if (!_wallSprites.TryGetValue(tile, out var spr))
                 {
                     spr = new Sprite2D
                     {
-                        Texture = _pillarTex,
                         Centered = false,
                         TextureFilter = TextureFilterEnum.Nearest,
                     };
-                    spr.Position = new Vector2(tx * PixelsPerTile, ty * PixelsPerTile);
-                    int srcW = _pillarTex.GetWidth();
-                    if (srcW > 0)
-                    {
-                        float s = (float)PixelsPerTile / srcW;
-                        spr.Scale = new Vector2(s, s);
-                    }
-                    _pillarsRoot.AddChild(spr);
-                    _pillarSprites[tile] = spr;
+                    _wallSpritesRoot.AddChild(spr);
+                    _wallSprites[tile] = spr;
+                }
+                spr.Texture = tex;
+                spr.Position = new Vector2(tx * PixelsPerTile, ty * PixelsPerTile);
+                int srcW = tex.GetWidth();
+                if (srcW > 0)
+                {
+                    float s = (float)PixelsPerTile / srcW;
+                    spr.Scale = new Vector2(s, s);
                 }
             }
         }
-        if (_pillarSprites.Count != seen.Count)
+        if (_wallSprites.Count != seen.Count)
         {
             var rm = new List<TilePos>();
-            foreach (var kv in _pillarSprites)
+            foreach (var kv in _wallSprites)
                 if (!seen.Contains(kv.Key)) rm.Add(kv.Key);
             foreach (var t in rm)
             {
-                _pillarSprites[t].QueueFree();
-                _pillarSprites.Remove(t);
+                _wallSprites[t].QueueFree();
+                _wallSprites.Remove(t);
             }
         }
     }
