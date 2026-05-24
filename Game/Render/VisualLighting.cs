@@ -33,6 +33,14 @@ public partial class VisualLighting : Node2D
     // world bleed through. 0 = pitch black indoors, 1 = no darkening.
     private const float AmbientMin = 0.55f;
 
+    // Non-linear remap exponent applied to per-channel sim brightness
+    // before lerping into [AmbientMin, 1]. Sim publishes lamps at their
+    // literal spec (50% inner = byte 128) and this curve pushes mid
+    // values toward full bright so 50%-lit reads close to 100%-lit,
+    // while shadow→ambient contrast stays untouched (sim 0 still maps
+    // to AmbientMin). Lower = brighter mids.
+    private const float LightCurveExp = 0.4f;
+
     // Halo footprint in tiles (diameter). Bigger = softer wider bloom.
     private const float HaloDiameterTiles = 1.5f;
 
@@ -95,19 +103,14 @@ public partial class VisualLighting : Node2D
         var rgb = Host!.CopyLightRgbForRender();
         int n = MapWidth * MapHeight;
         var data = new byte[n * 4];
-        int minA = (int)(AmbientMin * 255);
+        float floor = AmbientMin;
+        float range = 1f - AmbientMin;
         for (int i = 0; i < n; i++)
         {
             int o = i * 4;
-            int sr = rgb[i * 3];
-            int sg = rgb[i * 3 + 1];
-            int sb = rgb[i * 3 + 2];
-            if (sr < minA) sr = minA;
-            if (sg < minA) sg = minA;
-            if (sb < minA) sb = minA;
-            data[o + 0] = (byte)sr;
-            data[o + 1] = (byte)sg;
-            data[o + 2] = (byte)sb;
+            data[o + 0] = Curve(rgb[i * 3], floor, range);
+            data[o + 1] = Curve(rgb[i * 3 + 1], floor, range);
+            data[o + 2] = Curve(rgb[i * 3 + 2], floor, range);
             data[o + 3] = 255;
         }
         var img = Image.CreateFromData(MapWidth, MapHeight, false, Image.Format.Rgba8, data);
@@ -164,6 +167,19 @@ public partial class VisualLighting : Node2D
                 _halos.Remove(t);
             }
         }
+    }
+
+    // Apply LightCurveExp to one channel: simByte/255 → pow(t, exp) →
+    // lerp into [floor, 1] → 0..255 byte. Pulled out so the per-tile
+    // RGB loop stays tight.
+    private static byte Curve(byte simByte, float floor, float range)
+    {
+        float t = simByte / 255f;
+        if (t <= 0f) return (byte)Mathf.RoundToInt(floor * 255f);
+        float shaped = Mathf.Pow(t, LightCurveExp);
+        float v = floor + range * shaped;
+        if (v >= 1f) return 255;
+        return (byte)Mathf.RoundToInt(v * 255f);
     }
 
     // Radial gradient, white center → transparent edge. Used as the

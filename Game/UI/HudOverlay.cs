@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "lamps: place blueprint + power cheat toggle, 15/17/19 falloff bands";
+    private const string BuildTag = "lighting: sun split from lamp buffer (no full recompute per sun tick) + non-linear visual curve";
 
     private Label _label = null!;
     private Label _versionLabel = null!;

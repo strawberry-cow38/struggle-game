@@ -35,15 +35,15 @@ public sealed class SimRuntime
     private byte[] _roofTiles = Array.Empty<byte>();
     private byte[] _noRoofTiles = Array.Empty<byte>();
     public long RoofVersion { get; private set; }
-    // Per-tile light, 0..255 mapped to 0..100% in LightAt. Derived from
-    // roof state (unroofed = current sun, roofed = 0) plus colored
-    // lamp emission max-blended in. _lightTiles holds the brightness
-    // (max of RGB) for legacy callers; _lightR/G/B hold per-channel tint
-    // for the renderer's colored darkness overlay.
-    private byte[] _lightTiles = Array.Empty<byte>();
-    private byte[] _lightR = Array.Empty<byte>();
-    private byte[] _lightG = Array.Empty<byte>();
-    private byte[] _lightB = Array.Empty<byte>();
+    // Per-tile LAMP contribution only (max-blend of every powered lamp,
+    // walls block via Bresenham LOS). Sun is NOT in here — it's a global
+    // triple composed against this buffer at read time (LightAt /
+    // CopyLightRgbForRender). Sun changing every tick during sunrise /
+    // sunset would otherwise force a full-map rewrite + lamp re-pass; the
+    // split makes a sun tick free on the sim side.
+    private byte[] _lampR = Array.Empty<byte>();
+    private byte[] _lampG = Array.Empty<byte>();
+    private byte[] _lampB = Array.Empty<byte>();
     public long LightVersion { get; private set; }
 
     // World time, in in-sim seconds since the Jan 1 2000 00:00:00 epoch.
@@ -57,13 +57,14 @@ public sealed class SimRuntime
     private double _worldTimeSec;
     public double WorldTimeSec => _worldTimeSec;
     public DateTime WorldDateTime => WorldEpoch.AddSeconds(_worldTimeSec);
-    // Last sun RGB written to the pre-init pass. Used to short-circuit
-    // RecomputeLightAll when the sun byte hasn't changed since last tick
-    // (sun changes only during the sunrise/sunset hour ramps, ~14 ticks
-    // per byte step at 1x speed — well under one recompute per tick).
+    // Current sun RGB (global, applies to every non-roofed tile in the
+    // composition pass). Updated when Step detects the sun bytes have
+    // moved (sunrise/sunset hour ramps). Sun changes do NOT touch the
+    // lamp buffer — they just bump LightVersion so the renderer
+    // recomposites.
     private byte _lastSunR, _lastSunG, _lastSunB;
-    // Set by Step when sun bytes change since last recompute. Cleared
-    // after RecomputeLightAll fires.
+    // Set when sun bytes change since last publish. Coalesces N sub-tick
+    // sun changes into one LightVersion bump per Step.
     private bool _sunDirty;
     // Index = room id (0 = outdoor faux room, 1..RoomCount = enclosed
     // interiors). Resized + repopulated by DoRecomputeRooms whenever
@@ -242,7 +243,7 @@ public sealed class SimRuntime
         // even if N walls/doors mutated this tick.
         if (_mapDirty) { DoRebuildMapView(); _mapDirty = false; }
         if (_roomsDirty) { DoRecomputeRooms(); _roomsDirty = false; }
-        if (_sunDirty) { RecomputeLightAll(); _sunDirty = false; }
+        if (_sunDirty) { _lastSunR = sR; _lastSunG = sG; _lastSunB = sB; LightVersion++; _sunDirty = false; }
         Tick++;
         Watcher.Observe(Tick, Store, Jobs);
     }
@@ -688,7 +689,9 @@ public sealed class SimRuntime
                     if (_roofTiles[idx] == 0) { _roofTiles[idx] = 1; any = true; }
                 }
             }
-            if (any) { RoofVersion++; RecomputeLightAll(); }
+            // Roof toggle is composition-only — sun gating happens at
+            // read time, lamp buffer is independent. Just bump versions.
+            if (any) { RoofVersion++; LightVersion++; }
         }
         else if (kind == JobKind.RoofRemove)
         {
@@ -711,7 +714,7 @@ public sealed class SimRuntime
                     if (_roofTiles[idx] != 0) { _roofTiles[idx] = 0; any = true; }
                 }
             }
-            if (any) { RoofVersion++; RecomputeLightAll(); }
+            if (any) { RoofVersion++; LightVersion++; }
         }
         else if (kind == JobKind.LampBuild)
         {
@@ -723,7 +726,7 @@ public sealed class SimRuntime
             entity.RemoveComponent<LampBlueprint>();
             entity.AddComponent(new Lamp { Tile = tile, PoweredOn = true, Color = bpColor });
             _lampMap[tile] = entity;
-            RecomputeLightAll();
+            RecomputeLampLight();
             // Auto-roof pass on the lamp's own tile: while the lamp
             // build job was active Jobs.HasTile blocked the original
             // auto-roof from posting here, leaving an uncovered hole.
@@ -742,7 +745,7 @@ public sealed class SimRuntime
             {
                 _lampMap.Remove(tile);
                 lampEnt.DeleteEntity();
-                RecomputeLightAll();
+                RecomputeLampLight();
             }
         }
         else if (kind == JobKind.Deconstruct)
@@ -1032,7 +1035,7 @@ public sealed class SimRuntime
         ref var lamp = ref lampEnt.GetComponent<Lamp>();
         if (lamp.PoweredOn == on) return;
         lamp.PoweredOn = on;
-        RecomputeLightAll();
+        RecomputeLampLight();
     }
 
     // Recolor a built lamp + re-stamp the light layer so the new tint
@@ -1043,7 +1046,7 @@ public sealed class SimRuntime
         ref var lamp = ref lampEnt.GetComponent<Lamp>();
         if (lamp.Color.Equals(color)) return;
         lamp.Color = color;
-        if (lamp.PoweredOn) RecomputeLightAll();
+        if (lamp.PoweredOn) RecomputeLampLight();
     }
 
     // Flip a built door's Forbidden flag. Forbidden = treated as a
@@ -2418,53 +2421,35 @@ public sealed class SimRuntime
         int n = w * h;
         if (_roofTiles.Length != n) _roofTiles = new byte[n];
         if (_noRoofTiles.Length != n) _noRoofTiles = new byte[n];
-        if (_lightTiles.Length != n)
+        if (_lampR.Length != n)
         {
-            _lightTiles = new byte[n];
-            _lightR = new byte[n];
-            _lightG = new byte[n];
-            _lightB = new byte[n];
+            _lampR = new byte[n];
+            _lampG = new byte[n];
+            _lampB = new byte[n];
+            // Lamp buffer starts at zero — no lamps placed yet. Sun is
+            // composed in at read time so we only need to seed the
+            // global sun triple here.
             ComputeSun(_worldTimeSec, out byte sR, out byte sG, out byte sB);
-            byte sM = sR; if (sG > sM) sM = sG; if (sB > sM) sM = sB;
-            for (int i = 0; i < n; i++)
-            {
-                _lightTiles[i] = sM;
-                _lightR[i] = sR;
-                _lightG[i] = sG;
-                _lightB[i] = sB;
-            }
             _lastSunR = sR; _lastSunG = sG; _lastSunB = sB;
             LightVersion++;
         }
     }
 
-    // Recompute one tile's light from its roof bit. Cheap; callers bump
-    // LightVersion themselves only if they care about coalescing. We bump
-    // it on every change since indoor sources aren't a thing yet so per-
-    // tile churn equals per-roof-job churn.
+    // Single-tile roof toggle. Roof state is composition-only (it gates
+    // whether sun reaches this tile at read time); the lamp buffer is
+    // unaffected by roof flips. Just bump LightVersion so the renderer
+    // recomposites.
     private void RecomputeLightAt(int idx)
     {
-        if (idx < 0 || idx >= _lightTiles.Length) return;
-        ComputeSun(_worldTimeSec, out byte sunR, out byte sunG, out byte sunB);
-        byte wantR = _roofTiles[idx] != 0 ? (byte)0 : sunR;
-        byte wantG = _roofTiles[idx] != 0 ? (byte)0 : sunG;
-        byte wantB = _roofTiles[idx] != 0 ? (byte)0 : sunB;
-        byte wantM = wantR; if (wantG > wantM) wantM = wantG; if (wantB > wantM) wantM = wantB;
-        if (_lightTiles[idx] != wantM || _lightR[idx] != wantR || _lightG[idx] != wantG || _lightB[idx] != wantB)
-        {
-            _lightTiles[idx] = wantM;
-            _lightR[idx] = wantR;
-            _lightG[idx] = wantG;
-            _lightB[idx] = wantB;
-            LightVersion++;
-        }
+        if (idx < 0 || idx >= _lampR.Length) return;
+        LightVersion++;
     }
 
     // Day/night sun. Hour-of-day drives intensity (smoothstep ramps over
     // 1h at dawn/dusk, full daylight 8-20, fully dark 21-7) and color
     // (orange near horizon at the bookends of each ramp, white at full
     // daylight). The renderer + every wall/floor lighting consumer reads
-    // the published _lightR/G/B grid; sun lives behind the same channel
+    // composed lamp + sun RGB grid; sun lives behind the same channel
     // model so colored lamps composite the same way day or night.
     private const float SunMidR = 1.00f, SunMidG = 1.00f, SunMidB = 1.00f;          // noon
     private const float SunHorizonR = 1.00f, SunHorizonG = 0.55f, SunHorizonB = 0.25f; // sunrise/sunset orange
@@ -2534,46 +2519,29 @@ public sealed class SimRuntime
     private const float LampInnerSq = 56.25f;
     private const float LampMidSq   = 72.25f;
     private const float LampOuterSq = 90.25f;
-    // Lamp brightness ramp. AmbientMin (visual side) sets the dark
-    // floor; lamp values must exceed AmbientMin or the lit disc reads
-    // the same as shadow. Tuned for AmbientMin = 0.55 (≈ byte 140).
-    private const byte LampInner    = 220;  // ≈86% — clearly lit
-    private const byte LampMidStart = 215;  // edge of inner disc
-    private const byte LampMidEnd   = 165;  // ring fade
-    private const byte LampOuterEnd = 0;    // beyond visible (clamped by ambient)
+    // Lamp brightness ramp — literal spec values (50/49→25/24→0).
+    // Sim publishes raw 0..255 bytes; the visual side applies a
+    // non-linear curve so 50% reads close to 100% bright while shadows
+    // keep the full ambient-vs-zero contrast.
+    private const byte LampInner    = 128;  // 50%
+    private const byte LampMidStart = 125;  // 49% — edge of inner disc
+    private const byte LampMidEnd   = 64;   // 25% — ring fade
+    private const byte LampOuterEnd = 0;    // 0%  — beyond visible
 
 
-    // Full-array recompute. Used after room/roof bulk changes where it's
-    // simpler to scan than to track per-tile dirty flags. Also folds in
-    // every powered lamp's circular emission.
-    //
-    // Indoor lamps (tile is roofed): additive max-blend per channel —
-    // lamps light up a dark room and overlapping colors mix to white.
-    // Outdoor lamps (tile is unroofed): tint the sun. Per-lamp tint =
-    // lerp(255, lampColor, strength); combined across lamps via per-
-    // channel max so red + green lamps overlapping outdoors still read
-    // yellow. Sun brightness never increases — lamps outside just shift
-    // hue, they don't push past full sun.
-    private void RecomputeLightAll()
+    // Full lamp-buffer recompute. Walks every powered lamp, max-blends
+    // its falloff disc into _lampR/G/B with wall-LOS gating. Sun is NOT
+    // touched here — it's composed in at read time (LightAt /
+    // CopyLightRgbForRender) so this method only needs to fire when
+    // lamps / walls / lamp power / lamp color change. Sun ticks during
+    // sunrise/sunset are free.
+    private void RecomputeLampLight()
     {
         int w = Map.Width, h = Map.Height;
-        int n = _lightTiles.Length;
-        // Pre-init: outdoor = current sun (time-of-day driven), indoor = 0.
-        // Snapshot the sun bytes now and stash them so Step's per-tick
-        // diff has a baseline.
-        ComputeSun(_worldTimeSec, out byte sunR, out byte sunG, out byte sunB);
-        _lastSunR = sunR; _lastSunG = sunG; _lastSunB = sunB;
-        for (int i = 0; i < n; i++)
-        {
-            bool roofed = _roofTiles[i] != 0;
-            _lightR[i] = roofed ? (byte)0 : sunR;
-            _lightG[i] = roofed ? (byte)0 : sunG;
-            _lightB[i] = roofed ? (byte)0 : sunB;
-            byte m = _lightR[i];
-            if (_lightG[i] > m) m = _lightG[i];
-            if (_lightB[i] > m) m = _lightB[i];
-            _lightTiles[i] = m;
-        }
+        int n = _lampR.Length;
+        Array.Clear(_lampR, 0, n);
+        Array.Clear(_lampG, 0, n);
+        Array.Clear(_lampB, 0, n);
         // Lamp pass. Walls block light: for each (lamp, target) pair, walk
         // a Bresenham line between them and skip the contribution if any
         // intermediate tile is a wall. Endpoints excluded so the lamp's
@@ -2624,34 +2592,21 @@ public sealed class SimRuntime
                         contrib = (byte)Math.Round(LampMidEnd - (LampMidEnd - LampOuterEnd) * t);
                     }
                     int idx = row + x;
-                    // Per-channel max-blend, indoor or outdoor. Sun
-                    // dominates outdoors during the day (sunR=255 > any
-                    // lamp's 220 contrib); at night sun=0 so lamps fully
-                    // light the area. Colored lamp overlap mixes per
-                    // channel — red+green = yellow regardless of roof.
                     byte cr = (byte)(contrib * col.R / 255);
                     byte cg = (byte)(contrib * col.G / 255);
                     byte cb = (byte)(contrib * col.B / 255);
-                    if (_lightR[idx] < cr) _lightR[idx] = cr;
-                    if (_lightG[idx] < cg) _lightG[idx] = cg;
-                    if (_lightB[idx] < cb) _lightB[idx] = cb;
+                    if (_lampR[idx] < cr) _lampR[idx] = cr;
+                    if (_lampG[idx] < cg) _lampG[idx] = cg;
+                    if (_lampB[idx] < cb) _lampB[idx] = cb;
                 }
             }
-        }
-        // Final brightness pass for legacy LightAt callers.
-        for (int i = 0; i < n; i++)
-        {
-            byte m = _lightR[i];
-            if (_lightG[i] > m) m = _lightG[i];
-            if (_lightB[i] > m) m = _lightB[i];
-            _lightTiles[i] = m;
         }
         LightVersion++;
     }
 
     // Bresenham line from (cx,cy) to (tx,ty). Returns false if any
     // intermediate tile (exclusive of both endpoints) carries a wall.
-    // Used by RecomputeLightAll to stop lamp light leaking through walls.
+    // Used by RecomputeLampLight to stop lamp light leaking through walls.
     private bool LampLosClear(int cx, int cy, int tx, int ty)
     {
         if (cx == tx && cy == ty) return true;
@@ -2669,13 +2624,22 @@ public sealed class SimRuntime
         }
     }
 
-    // 0..1 light value at a tile. Out-of-bounds reads as dark (0).
+    // 0..1 brightness at a tile. Composes lamp + (sun if unroofed) on
+    // demand. Out-of-bounds reads as dark (0).
     public float LightAt(TilePos tile)
     {
         if (!Map.InBounds(tile)) return 0f;
         int idx = tile.Y * Map.Width + tile.X;
-        if (idx < 0 || idx >= _lightTiles.Length) return 0f;
-        return _lightTiles[idx] / 255f;
+        if (idx < 0 || idx >= _lampR.Length) return 0f;
+        byte r = _lampR[idx], g = _lampG[idx], b = _lampB[idx];
+        if (_roofTiles[idx] == 0)
+        {
+            if (_lastSunR > r) r = _lastSunR;
+            if (_lastSunG > g) g = _lastSunG;
+            if (_lastSunB > b) b = _lastSunB;
+        }
+        byte m = r; if (g > m) m = g; if (b > m) m = b;
+        return m / 255f;
     }
 
     public byte[] CopyRoofTilesForRender()
@@ -2688,25 +2652,30 @@ public sealed class SimRuntime
         lock (_mapLock) { return (byte[])_noRoofTiles.Clone(); }
     }
 
-    public byte[] CopyLightTilesForRender()
-    {
-        lock (_mapLock) { return (byte[])_lightTiles.Clone(); }
-    }
-
-    // Packed RGB per-tile light. Output length = 3 * width * height,
-    // interleaved as R,G,B,R,G,B,... Renderer reinterprets as an RGB8
-    // ImageTexture for the colored multiply overlay.
+    // Packed RGB per-tile light, composed at copy time. Output length =
+    // 3 * width * height, interleaved as R,G,B,R,G,B,... For each tile:
+    // roofed → lamp bytes only; outdoor → max(sun, lamp) per channel.
+    // Renderer reinterprets as an RGB8 ImageTexture for the multiply
+    // overlay.
     public byte[] CopyLightRgbForRender()
     {
         lock (_mapLock)
         {
-            int n = _lightR.Length;
+            int n = _lampR.Length;
             var rgb = new byte[n * 3];
+            byte sR = _lastSunR, sG = _lastSunG, sB = _lastSunB;
             for (int i = 0, j = 0; i < n; i++)
             {
-                rgb[j++] = _lightR[i];
-                rgb[j++] = _lightG[i];
-                rgb[j++] = _lightB[i];
+                byte r = _lampR[i], g = _lampG[i], b = _lampB[i];
+                if (_roofTiles[i] == 0)
+                {
+                    if (sR > r) r = sR;
+                    if (sG > g) g = sG;
+                    if (sB > b) b = sB;
+                }
+                rgb[j++] = r;
+                rgb[j++] = g;
+                rgb[j++] = b;
             }
             return rgb;
         }

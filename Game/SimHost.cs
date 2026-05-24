@@ -234,7 +234,6 @@ public sealed class SimHost : IDisposable
     // any of the roof designator commands, and on the no-roof toggle.
     public byte[] CopyRoofTilesForRender() => _sim.CopyRoofTilesForRender();
     public byte[] CopyNoRoofTilesForRender() => _sim.CopyNoRoofTilesForRender();
-    public byte[] CopyLightTilesForRender() => _sim.CopyLightTilesForRender();
     public byte[] CopyLightRgbForRender() => _sim.CopyLightRgbForRender();
 
     // 0..1 light fraction at a tile. Stub today: 1.0 unroofed, 0 roofed.
