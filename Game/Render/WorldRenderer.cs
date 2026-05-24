@@ -37,6 +37,9 @@ public partial class WorldRenderer : Node2D
     private long _lastMapVersion = -1;
     private long _lastRoomVersion = -1;
     private long _lastRoofVersion = -1;
+    private long _lastLightVersion = -1;
+    private byte[]? _lastWallBytes;
+    private byte[]? _lastLightRgb;
     private ImageTexture? _noRoofOverlayTex;
     // Visual-only lighting layer (CanvasModulate + per-lamp Light2D +
     // per-wall LightOccluder2D). Sim's per-tile RGB grid stays for
@@ -155,12 +158,27 @@ public partial class WorldRenderer : Node2D
         }
 
         // Rebuild overlays if the sim mutated the map since last frame.
+        // Wall overlay also rebuilds when LightVersion bumps because face
+        // bevels are tinted by neighbor tile's light color — lamps don't
+        // reach the wall's own tile (forced 0 in sim), so the per-face
+        // glow must read from the adjacent tile's light grid.
+        bool wallOverlayDirty = false;
         if (snap is not null && snap.MapVersion != _lastMapVersion)
         {
-            var wallBytes = Host!.CopyLayerForRender(MapLayer.Wall);
-            _wallOverlayTex = BuildWallOverlay(wallBytes, _mapWidth, _mapHeight);
+            _lastWallBytes = Host!.CopyLayerForRender(MapLayer.Wall);
             _floorBytes = Host!.CopyLayerForRender(MapLayer.Flooring);
             _lastMapVersion = snap.MapVersion;
+            wallOverlayDirty = true;
+        }
+        if (snap is not null && snap.LightVersion != _lastLightVersion)
+        {
+            _lastLightRgb = Host!.CopyLightRgbForRender();
+            _lastLightVersion = snap.LightVersion;
+            wallOverlayDirty = true;
+        }
+        if (wallOverlayDirty && _lastWallBytes is not null && _lastLightRgb is not null)
+        {
+            _wallOverlayTex = BuildWallOverlay(_lastWallBytes, _lastLightRgb, _mapWidth, _mapHeight);
         }
         if (snap is not null && snap.RoomVersion != _lastRoomVersion)
         {
@@ -1081,7 +1099,7 @@ public partial class WorldRenderer : Node2D
     private const float WallFaceLiftNorth  = 0.05f;
     private const float WallFaceLiftSide   = 0.15f;
 
-    private static ImageTexture BuildWallOverlay(byte[] tiles, int width, int height)
+    private static ImageTexture BuildWallOverlay(byte[] tiles, byte[] lightRgb, int width, int height)
     {
         int w = width * WallSubpx;
         int h = height * WallSubpx;
@@ -1114,7 +1132,18 @@ public partial class WorldRenderer : Node2D
         }
 
         float baseR = WallColor.R, baseG = WallColor.G, baseB = WallColor.B;
-        float invR = 1f - baseR, invG = 1f - baseG, invB = 1f - baseB;
+
+        // Sim forces walls to 0 light internally — sampling the wall's
+        // own tile would always return black. Instead each face reads
+        // light from the tile it faces (south face = south neighbor, etc).
+        // Face bevel strength × neighbor light color gets added to base
+        // wall color so the wall glows in the lamp's color on lit sides.
+        static (float r, float g, float b) NeighborLight(byte[] lightRgb, int x, int y, int w_, int h_)
+        {
+            if (x < 0 || y < 0 || x >= w_ || y >= h_) return (0f, 0f, 0f);
+            int idx = (y * w_ + x) * 3;
+            return (lightRgb[idx] / 255f, lightRgb[idx + 1] / 255f, lightRgb[idx + 2] / 255f);
+        }
 
         for (int ty = 0; ty < height; ty++)
         {
@@ -1125,23 +1154,31 @@ public partial class WorldRenderer : Node2D
                 bool faceS = !IsWall(tx, ty + 1);
                 bool faceW = !IsWall(tx - 1, ty);
                 bool faceE = !IsWall(tx + 1, ty);
+                var lN = faceN ? NeighborLight(lightRgb, tx, ty - 1, width, height) : (r: 0f, g: 0f, b: 0f);
+                var lS = faceS ? NeighborLight(lightRgb, tx, ty + 1, width, height) : (r: 0f, g: 0f, b: 0f);
+                var lW = faceW ? NeighborLight(lightRgb, tx - 1, ty, width, height) : (r: 0f, g: 0f, b: 0f);
+                var lE = faceE ? NeighborLight(lightRgb, tx + 1, ty, width, height) : (r: 0f, g: 0f, b: 0f);
                 int baseX = tx * WallSubpx;
                 int baseY = ty * WallSubpx;
                 for (int sy = 0; sy < WallSubpx; sy++)
                 {
-                    float lY = 0f;
-                    if (faceS && liftSouth[sy] > lY) lY = liftSouth[sy];
-                    if (faceN && liftNorth[sy] > lY) lY = liftNorth[sy];
+                    float lsS = faceS ? liftSouth[sy] : 0f;
+                    float lsN = faceN ? liftNorth[sy] : 0f;
                     int rowStart = ((baseY + sy) * w + baseX) * 4;
                     for (int sx = 0; sx < WallSubpx; sx++)
                     {
-                        float lift = lY;
-                        if (faceW && liftWest[sx] > lift) lift = liftWest[sx];
-                        if (faceE && liftEast[sx] > lift) lift = liftEast[sx];
+                        float lsW = faceW ? liftWest[sx] : 0f;
+                        float lsE = faceE ? liftEast[sx] : 0f;
+                        float addR = lsS * lS.r + lsN * lN.r + lsW * lW.r + lsE * lE.r;
+                        float addG = lsS * lS.g + lsN * lN.g + lsW * lW.g + lsE * lE.g;
+                        float addB = lsS * lS.b + lsN * lN.b + lsW * lW.b + lsE * lE.b;
+                        float r = baseR + addR; if (r > 1f) r = 1f;
+                        float g = baseG + addG; if (g > 1f) g = 1f;
+                        float b = baseB + addB; if (b > 1f) b = 1f;
                         int idx = rowStart + sx * 4;
-                        data[idx + 0] = (byte)(255f * (baseR + invR * lift));
-                        data[idx + 1] = (byte)(255f * (baseG + invG * lift));
-                        data[idx + 2] = (byte)(255f * (baseB + invB * lift));
+                        data[idx + 0] = (byte)(255f * r);
+                        data[idx + 1] = (byte)(255f * g);
+                        data[idx + 2] = (byte)(255f * b);
                         data[idx + 3] = 255;
                     }
                 }
