@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "lighting: +80% lamp visual + 1.2x curve boost on mids (HUD % untouched)";
+    private const string BuildTag = "lighting: core-only lamp boost (range preserved) + 1.2x curve mids";
 
     private Label _label = null!;
     private Label _versionLabel = null!;

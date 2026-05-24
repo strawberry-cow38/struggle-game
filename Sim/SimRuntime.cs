@@ -2528,6 +2528,21 @@ public sealed class SimRuntime
     private const byte LampMidEnd   = 64;   // 25% — ring fade
     private const byte LampOuterEnd = 0;    // 0%  — beyond visible
 
+    // Render-side lamp visual brightness boost. Applied per byte in
+    // CopyLightRgbForRender — bytes at or above LampVisualBoostFloor
+    // (the inner disc) get scaled by LampVisualBoostScale clamped at
+    // 255. Bytes below stay raw so the bilinear-extended lit area
+    // does NOT grow visually — only the bright core pops harder.
+    private const byte LampVisualBoostFloor = 125;
+    private const float LampVisualBoostScale = 1.8f;
+    private static byte BoostLampCore(byte raw)
+    {
+        if (raw < LampVisualBoostFloor) return raw;
+        int v = (int)(raw * LampVisualBoostScale);
+        if (v > 255) v = 255;
+        return (byte)v;
+    }
+
 
     // Full lamp-buffer recompute. Walks every powered lamp, max-blends
     // its falloff disc into _lampR/G/B with wall-LOS gating. Sun is NOT
@@ -2693,17 +2708,16 @@ public sealed class SimRuntime
                     }
                     else
                     {
-                        // +80% visual boost on lamp contribution only —
-                        // HUD's LightAt() reads raw _lampR so per-tile
-                        // percentages stay truthful, but the render-side
-                        // multiply overlay gets brighter lamp pops.
-                        int lr = (_lampR[i] * 9) / 5;
-                        int lg = (_lampG[i] * 9) / 5;
-                        int lb = (_lampB[i] * 9) / 5;
-                        if (lr > 255) lr = 255;
-                        if (lg > 255) lg = 255;
-                        if (lb > 255) lb = 255;
-                        r = (byte)lr; g = (byte)lg; b = (byte)lb;
+                        // Lamp visual boost — only scales bytes inside
+                        // the lamp's core (>= LampVisualBoostFloor).
+                        // Outer-ring falloff bytes stay at their raw
+                        // values so bilinear sampling does NOT visually
+                        // extend the lit area; only the bright core
+                        // pops brighter. HUD's LightAt() reads raw
+                        // _lampR so per-tile percentages stay truthful.
+                        r = BoostLampCore(_lampR[i]);
+                        g = BoostLampCore(_lampG[i]);
+                        b = BoostLampCore(_lampB[i]);
                         if (_roofTiles[i] == 0)
                         {
                             if (sR > r) r = sR;
