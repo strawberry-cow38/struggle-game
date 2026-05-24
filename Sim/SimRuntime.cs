@@ -822,6 +822,9 @@ public sealed class SimRuntime
             // Doors don't affect walkability, so no map rebuild — but
             // they DO bound rooms, so flag the room layer dirty.
             _roomsDirty = true;
+            // Doors are LOS-opaque for lamp light; relight so neighbors
+            // stop bleeding through the new door tile immediately.
+            RecomputeLampLight();
         }
         else if (kind == JobKind.DoorDeconstruct)
         {
@@ -841,6 +844,8 @@ public sealed class SimRuntime
                 wood.AddComponent(new Wood { Tile = tile, Count = WallDeconWoodReturn });
             }
             RebuildMapView();
+            // Door gone = light can flow through that tile again. Relight.
+            RecomputeLampLight();
         }
     }
 
@@ -2627,8 +2632,11 @@ public sealed class SimRuntime
     }
 
     // Bresenham line from (cx,cy) to (tx,ty). Returns false if any
-    // intermediate tile (exclusive of both endpoints) carries a wall.
-    // Used by RecomputeLampLight to stop lamp light leaking through walls.
+    // intermediate tile (exclusive of both endpoints) carries a wall
+    // or a door. Doors are LOS-opaque regardless of open/closed state —
+    // the door tile itself still receives light because it's an endpoint
+    // for lamps that target it, but light stops cold at the door so it
+    // can't bleed into the next room.
     private bool LampLosClear(int cx, int cy, int tx, int ty)
     {
         if (cx == tx && cy == ty) return true;
@@ -2643,6 +2651,7 @@ public sealed class SimRuntime
             if (e2 <  dx) { err += dx; y += sy; }
             if (x == tx && y == ty) return true;
             if (Map.GetWall(x, y) != WallType.None) return false;
+            if (_doorMap.ContainsKey(new TilePos(x, y))) return false;
         }
     }
 

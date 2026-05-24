@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "sun: noon (0.90/0.45/0.10) + horizon (1.0/0.22/0.0)";
+    private const string BuildTag = "doors block lamp light (LOS) — door tile still lit";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
