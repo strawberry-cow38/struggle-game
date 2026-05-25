@@ -392,7 +392,7 @@ public partial class HarnessController : Node2D
                     int x0 = c - half, x1 = c + half;
                     int y0 = c - half, y1 = c + half;
                     _schedule.Add((0.05, h => h.SetWorldTimeAt(12, 0), "noon 12:00"));
-                    _schedule.Add((0.1, h => h.SetCameraZoom(3.0f), "zoom"));
+                    _schedule.Add((0.1, h => h.SetCameraZoom(5.0f), "zoom"));
                     for (int x = x0; x <= x1; x++)
                     {
                         int xc = x;
@@ -616,7 +616,8 @@ public partial class HarnessController : Node2D
         var root = GetTree().Root;
         var cam = FindCamera(root);
         if (cam is null) return;
-        cam.Zoom = new Vector2(zoom, zoom);
+        if (cam is StruggleGame.Game.Camera.GameCamera gc) gc.ForceZoom(zoom);
+        else cam.Zoom = new Vector2(zoom, zoom);
     }
 
     private static Camera2D? FindCamera(Node n)

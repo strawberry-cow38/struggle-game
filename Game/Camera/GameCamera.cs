@@ -117,4 +117,13 @@ public partial class GameCamera : Camera2D
         _zoomIndex = idx;
         _targetZoom = ZoomLevels[idx];
     }
+
+    // Harness/screenshot use: jam zoom to an arbitrary value and snap the
+    // tween's target so _Process doesn't pull it back toward the user-
+    // driven step level.
+    public void ForceZoom(float zoom)
+    {
+        _targetZoom = zoom;
+        Zoom = new Vector2(zoom, zoom);
+    }
 }
