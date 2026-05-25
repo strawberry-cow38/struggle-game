@@ -1155,7 +1155,7 @@ public partial class WorldRenderer : Node2D
         return tex;
     }
 
-    private static ImageTexture BuildWallOverlay(byte[] tiles, int width, int height)
+    private ImageTexture BuildWallOverlay(byte[] tiles, int width, int height)
     {
         int w = width * WallSubpx;
         int h = height * WallSubpx;
