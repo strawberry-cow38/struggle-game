@@ -138,7 +138,10 @@ public partial class Bootstrap : Node2D
         string? scenario = null;
         string? outDir = null;
         bool movieMode = false;
-        foreach (var arg in OS.GetCmdlineArgs())
+        var all = new System.Collections.Generic.List<string>();
+        all.AddRange(OS.GetCmdlineArgs());
+        all.AddRange(OS.GetCmdlineUserArgs());
+        foreach (var arg in all)
         {
             if (arg == "--harness") scenario ??= "default";
             else if (arg.StartsWith("--harness=")) scenario = arg.Substring("--harness=".Length);
