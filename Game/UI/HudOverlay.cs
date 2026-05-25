@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "all 16 neighbor-mask wall variants baked";
+    private const string BuildTag = "wall bevel shading inverted (top bright, bevels dim)";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
