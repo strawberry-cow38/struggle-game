@@ -9,7 +9,7 @@ using TileMap = StruggleGame.Sim.Map.TileMap;
 
 namespace StruggleGame.Game.Render;
 
-// Renders the static tile map (per-tile flat green ground + a wall
+// Renders the static tile map (tileable noisy dirt ground + a wall
 // overlay rebuilt whenever SimSnapshot.MapVersion changes), the
 // pending blueprints from the snapshot, and the dynamic dummies on
 // top.
@@ -17,9 +17,8 @@ public partial class WorldRenderer : Node2D
 {
     private const int PixelsPerTile = SimConstants.PixelsPerTile;
 
-    // One pixel per tile, drawn stretched to tile size with the Nearest
-    // filter — each tile gets a slightly different green shade picked
-    // from a deterministic per-tile hash.
+    // Tileable noisy dirt PNG (assets/ground/dirt.png), tiled across the
+    // whole map with Nearest filter so the texel grit stays crisp.
     private ImageTexture? _groundTex;
     private ImageTexture? _wallOverlayTex;
     // Cached flooring layer (one byte per tile). Drawn per-frame as small
@@ -127,7 +126,7 @@ public partial class WorldRenderer : Node2D
         _mapHeight = Host.Map.Height;
         _mapPixelWidth = _mapWidth * PixelsPerTile;
         _mapPixelHeight = _mapHeight * PixelsPerTile;
-        _groundTex = BuildGroundTexture(_mapWidth, _mapHeight, seed: 1337);
+        _groundTex = LoadGroundTexture("res://assets/ground/dirt.png");
 
         _wallSpritesRoot = new Node2D { Name = "WallSprites", TextureFilter = TextureFilterEnum.Nearest };
         AddChild(_wallSpritesRoot);
@@ -212,7 +211,7 @@ public partial class WorldRenderer : Node2D
         var mapRect = new Rect2(0, 0, _mapPixelWidth, _mapPixelHeight);
         using (FrameProfiler.Instance.BeginScope("Map"))
         {
-            DrawTextureRect(_groundTex, mapRect, tile: false);
+            DrawTextureRect(_groundTex, mapRect, tile: true);
             DrawFlooringTiles();
             if (_wallOverlayTex is not null)
             {
@@ -750,25 +749,13 @@ public partial class WorldRenderer : Node2D
         }
     }
 
-    // One pixel per tile, each a small jitter around a base green. The
-    // resulting Image is drawn stretched to (mapWidth*PixelsPerTile,
-    // mapHeight*PixelsPerTile) so every tile shows its own flat shade
-    // (Nearest filter — no blur between neighbors).
-    private static ImageTexture BuildGroundTexture(int mapWidth, int mapHeight, int seed)
+    // Tileable noisy dirt PNG, repeated across the whole map. Nearest
+    // filter on the renderer keeps the texel grit crisp.
+    private static ImageTexture? LoadGroundTexture(string path)
     {
-        var rng = new Random(seed);
-        var img = Image.CreateEmpty(mapWidth, mapHeight, false, Image.Format.Rgba8);
-        for (int y = 0; y < mapHeight; y++)
-        {
-            for (int x = 0; x < mapWidth; x++)
-            {
-                float n = (float)rng.NextDouble();
-                float r = 0.20f + n * 0.10f;
-                float g = 0.40f + n * 0.18f;
-                float b = 0.16f + n * 0.10f;
-                img.SetPixel(x, y, new Color(r, g, b));
-            }
-        }
+        var img = new Image();
+        var err = img.Load(ProjectSettings.GlobalizePath(path));
+        if (err != Error.Ok) return null;
         return ImageTexture.CreateFromImage(img);
     }
 
