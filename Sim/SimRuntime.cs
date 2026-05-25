@@ -546,6 +546,86 @@ public sealed class SimRuntime
     // about even if a sim tick is mid-mutation.
     public byte[] CopyLayerForRender(MapLayer layer) => MapView.AssembleFlat(layer);
 
+    // Harness shortcut: drop a finished door on the tile, no blueprint
+    // or build job. Removes any wall already there; orientation is
+    // resolved from the live wall layer.
+    public bool InstantPlaceDoor(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return false;
+        if (_doorMap.ContainsKey(tile)) return false;
+        if (_trees.TryGetValue(tile, out var tree)) { _trees.Remove(tile); tree.DeleteEntity(); }
+        lock (_mapLock)
+        {
+            if (Map.GetWall(tile) != WallType.None)
+            {
+                Map.SetWall(tile, WallType.None);
+                _playerWalls.Remove(tile);
+            }
+        }
+        var orientation = ComputeDoorOrientation(tile);
+        var e = Store.CreateEntity();
+        e.AddComponent(new Door
+        {
+            Tile = tile,
+            Orientation = orientation,
+            State = DoorState.Closed,
+            ProgressSec = 0f,
+            WantsOpen = false,
+            IdleSec = 0f,
+            Forbidden = false,
+            Locked = true,
+            Priority = DoorPriority.Medium,
+        });
+        _doorMap[tile] = e;
+        _roomsDirty = true;
+        RebuildMapView();
+        return true;
+    }
+
+    // Harness shortcut: drop a powered, color-tinted lamp on the tile.
+    public bool InstantPlaceLamp(TilePos tile, LightColor color)
+    {
+        if (!Map.InBounds(tile)) return false;
+        if (_lampMap.ContainsKey(tile)) return false;
+        if (Map.GetWall(tile) != WallType.None) return false;
+        if (_doorMap.ContainsKey(tile)) return false;
+        if (_trees.TryGetValue(tile, out var tree)) { _trees.Remove(tile); tree.DeleteEntity(); }
+        var e = Store.CreateEntity();
+        e.AddComponent(new Lamp { Tile = tile, PoweredOn = true, Color = color });
+        _lampMap[tile] = e;
+        RecomputeLampLight();
+        return true;
+    }
+
+    // Harness shortcut: stamp roof bytes directly across a rect. Skips
+    // the chunked build-job pipeline used by PaintRoofRect.
+    public void InstantPaintRoofRect(TilePos a, TilePos b)
+    {
+        int w = Map.Width, h = Map.Height;
+        EnsureRoofArrays(w, h);
+        int xmin = Math.Min(a.X, b.X), xmax = Math.Max(a.X, b.X);
+        int ymin = Math.Min(a.Y, b.Y), ymax = Math.Max(a.Y, b.Y);
+        bool any = false;
+        for (int y = Math.Max(0, ymin); y <= Math.Min(h - 1, ymax); y++)
+        {
+            int row = y * w;
+            for (int x = Math.Max(0, xmin); x <= Math.Min(w - 1, xmax); x++)
+            {
+                int idx = row + x;
+                if (_roofTiles[idx] == 0) { _roofTiles[idx] = 1; any = true; }
+            }
+        }
+        if (any) { RoofVersion++; LightVersion++; }
+    }
+
+    // Harness/debug shortcut: jump world time to an absolute second on
+    // the world clock. Forces sun recompute next tick.
+    public void SetWorldTime(double seconds)
+    {
+        _worldTimeSec = seconds < 0 ? 0 : seconds;
+        _sunDirty = true;
+    }
+
     // Harness shortcut: stamp a finished stone wall directly. Skips the
     // blueprint + build job path. Wipes a tree on the tile first so the
     // visual harness can drop walls onto procgen tiles without staging.

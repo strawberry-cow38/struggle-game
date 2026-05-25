@@ -30,6 +30,37 @@ public sealed class InstantPlaceWallCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.InstantPlaceWall(Tile);
 }
 
+public sealed class InstantPlaceDoorCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public InstantPlaceDoorCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.InstantPlaceDoor(Tile);
+}
+
+public sealed class InstantPlaceLampCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public LightColor Color { get; }
+    public InstantPlaceLampCommand(TilePos tile) : this(tile, LightColor.White) { }
+    public InstantPlaceLampCommand(TilePos tile, LightColor color) { Tile = tile; Color = color; }
+    public void Apply(SimRuntime sim) => sim.InstantPlaceLamp(Tile, Color);
+}
+
+public sealed class InstantPaintRoofRectCommand : ISimCommand
+{
+    public TilePos A { get; }
+    public TilePos B { get; }
+    public InstantPaintRoofRectCommand(TilePos a, TilePos b) { A = a; B = b; }
+    public void Apply(SimRuntime sim) => sim.InstantPaintRoofRect(A, B);
+}
+
+public sealed class SetWorldTimeCommand : ISimCommand
+{
+    public double Seconds { get; }
+    public SetWorldTimeCommand(double seconds) { Seconds = seconds; }
+    public void Apply(SimRuntime sim) => sim.SetWorldTime(Seconds);
+}
+
 // Single-tile door designation. Orientation is derived inside
 // TryPlaceDoorBlueprint from the flanking wall layout.
 public sealed class PlaceDoorBlueprintCommand : ISimCommand

@@ -11,7 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     // Bump on every build so the running game shows whether it is current.
-    private const string BuildTag = "wall-grid harness scenario added";
+    private const string BuildTag = "lit-room-night harness scenario";
 
     private Label _label = null!;
     private Label _versionLabel = null!;
