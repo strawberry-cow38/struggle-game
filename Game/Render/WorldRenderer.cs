@@ -43,13 +43,14 @@ public partial class WorldRenderer : Node2D
     // drive Godot's stock 2D lighting for the pretty visual.
     private VisualLighting? _visualLighting;
 
-    // Pre-rendered 64×64 wall sprites for each of the 16 orthogonal
-    // neighbor masks (N|E|S|W bits, matching the Blender wall_base
-    // builder). When all 16 load, BuildWallOverlay skips every wall
+    // Pre-rendered 64×64 wall sprites for each of the 256 neighbor
+    // masks (low nibble = NESW cardinals, high nibble = NE/SE/SW/NW
+    // diagonals). Pinch-corner geometry is baked per-variant in Blender.
+    // When all 256 load, BuildWallOverlay skips every wall
     // tile and we stamp the correct sprite per tile based on the
     // tile's neighbor mask. Missing textures fall back to the
     // procedural brick overlay for that tile.
-    private readonly Texture2D?[] _wallTextures = new Texture2D?[16];
+    private readonly Texture2D?[] _wallTextures = new Texture2D?[256];
     private Node2D? _wallSpritesRoot;
     private readonly Dictionary<TilePos, Sprite2D> _wallSprites = new();
 
@@ -130,9 +131,9 @@ public partial class WorldRenderer : Node2D
 
         _wallSpritesRoot = new Node2D { Name = "WallSprites", TextureFilter = TextureFilterEnum.Nearest };
         AddChild(_wallSpritesRoot);
-        for (int m = 0; m < 16; m++)
+        for (int m = 0; m < 256; m++)
         {
-            string bits = $"{((m >> 3) & 1)}{((m >> 2) & 1)}{((m >> 1) & 1)}{(m & 1)}";
+            string bits = Convert.ToString(m, 2).PadLeft(8, '0');
             _wallTextures[m] = LoadWallTexture($"res://assets/walls/wall_{bits}.png");
         }
 
@@ -1199,16 +1200,29 @@ public partial class WorldRenderer : Node2D
         return ImageTexture.CreateFromImage(img);
     }
 
-    // Neighbor mask: bit3=N, bit2=E, bit1=S, bit0=W. Matches Blender
-    // wall_NNNN.png file naming (N|E|S|W). +Y in game is south (image
-    // bottom in the bake), so the axis convention lines up directly.
+    // Neighbor mask (8-bit): low nibble = NESW cardinals (bit3=N, bit2=E,
+    // bit1=S, bit0=W). High nibble = diagonals (bit7=NW, bit6=SW, bit5=SE,
+    // bit4=NE). Matches Blender wall_NNNNNNNN.png 8-char binary file
+    // naming. Pinch-corner geometry is pre-baked per variant.
     private static int WallNeighborMask(byte[] tiles, int tx, int ty, int width, int height)
     {
         int m = 0;
-        if (ty > 0 && tiles[(ty - 1) * width + tx] != 0) m |= 8;            // N
-        if (tx < width - 1 && tiles[ty * width + (tx + 1)] != 0) m |= 4;    // E
-        if (ty < height - 1 && tiles[(ty + 1) * width + tx] != 0) m |= 2;   // S
-        if (tx > 0 && tiles[ty * width + (tx - 1)] != 0) m |= 1;            // W
+        bool n = ty > 0 && tiles[(ty - 1) * width + tx] != 0;
+        bool e = tx < width - 1 && tiles[ty * width + (tx + 1)] != 0;
+        bool s = ty < height - 1 && tiles[(ty + 1) * width + tx] != 0;
+        bool w = tx > 0 && tiles[ty * width + (tx - 1)] != 0;
+        if (n) m |= 8;
+        if (e) m |= 4;
+        if (s) m |= 2;
+        if (w) m |= 1;
+        bool ne = ty > 0 && tx < width - 1 && tiles[(ty - 1) * width + (tx + 1)] != 0;
+        bool se = ty < height - 1 && tx < width - 1 && tiles[(ty + 1) * width + (tx + 1)] != 0;
+        bool sw = ty < height - 1 && tx > 0 && tiles[(ty + 1) * width + (tx - 1)] != 0;
+        bool nw = ty > 0 && tx > 0 && tiles[(ty - 1) * width + (tx - 1)] != 0;
+        if (ne) m |= 16;
+        if (se) m |= 32;
+        if (sw) m |= 64;
+        if (nw) m |= 128;
         return m;
     }
 
