@@ -384,6 +384,35 @@ public partial class HarnessController : Node2D
                     _screenshotEverySec = double.PositiveInfinity;
                 }
                 break;
+            case "lit-room-day":
+                // Same as lit-room-night but world time set to noon so the
+                // sun dominates and the lamp halo is washed out.
+                {
+                    int half = 2;
+                    int x0 = c - half, x1 = c + half;
+                    int y0 = c - half, y1 = c + half;
+                    _schedule.Add((0.05, h => h.SetWorldTimeAt(12, 0), "noon 12:00"));
+                    _schedule.Add((0.1, h => h.SetCameraZoom(3.0f), "zoom"));
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        int xc = x;
+                        _schedule.Add((0.2, h => h.InstantWall(xc, y0), $"wall N {xc}"));
+                        if (xc != c) _schedule.Add((0.2, h => h.InstantWall(xc, y1), $"wall S {xc}"));
+                    }
+                    for (int y = y0 + 1; y <= y1 - 1; y++)
+                    {
+                        int yc = y;
+                        _schedule.Add((0.2, h => h.InstantWall(x0, yc), $"wall W {yc}"));
+                        _schedule.Add((0.2, h => h.InstantWall(x1, yc), $"wall E {yc}"));
+                    }
+                    _schedule.Add((0.3, h => h.InstantDoor(c, y1), "south door"));
+                    _schedule.Add((0.4, h => h.InstantRoofRect(x0 + 1, y0 + 1, x1 - 1, y1 - 1), "roof interior"));
+                    _schedule.Add((0.5, h => h.InstantLamp(c, c), "lamp center"));
+                    _schedule.Add((2.0, h => h.Screenshot(), "shot"));
+                    _schedule.Add((3.0, h => h.Finish("lit-room-day done"), "finish"));
+                    _screenshotEverySec = double.PositiveInfinity;
+                }
+                break;
             case "wall-grid":
                 // Visual harness: lay out all 16 neighbor-mask wall
                 // variants in a 4x4 grid of clusters. Each cluster is
