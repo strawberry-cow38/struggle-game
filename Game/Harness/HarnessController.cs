@@ -353,6 +353,35 @@ public partial class HarnessController : Node2D
                 }
                 _schedule.Add((120.0, h => h.Finish("rgb-wheel complete"), "finish"));
                 break;
+            case "wall-grid":
+                // Visual harness: lay out all 16 neighbor-mask wall
+                // variants in a 4x4 grid of clusters. Each cluster is
+                // a 3x3 footprint: center wall + up to 4 neighbors
+                // present per the cluster's mask bits (N=8 E=4 S=2 W=1).
+                // Bits run 0000..1111 left-to-right top-to-bottom.
+                {
+                    int spacing = 4;
+                    int originX = c - (4 * spacing) / 2;
+                    int originY = c - (4 * spacing) / 2;
+                    _schedule.Add((0.1, h => h.SetCameraZoom(1.5f), "zoom in"));
+                    for (int mask = 0; mask < 16; mask++)
+                    {
+                        int col = mask % 4;
+                        int row = mask / 4;
+                        int cx = originX + col * spacing + 1;
+                        int cy = originY + row * spacing + 1;
+                        int m = mask;
+                        _schedule.Add((0.5, h => h.InstantWall(cx, cy), $"center {m:x}"));
+                        if ((m & 8) != 0) _schedule.Add((0.6, h => h.InstantWall(cx, cy - 1), $"N {m:x}"));
+                        if ((m & 4) != 0) _schedule.Add((0.6, h => h.InstantWall(cx + 1, cy), $"E {m:x}"));
+                        if ((m & 2) != 0) _schedule.Add((0.6, h => h.InstantWall(cx, cy + 1), $"S {m:x}"));
+                        if ((m & 1) != 0) _schedule.Add((0.6, h => h.InstantWall(cx - 1, cy), $"W {m:x}"));
+                    }
+                    _schedule.Add((2.0, h => h.Screenshot(), "shot"));
+                    _schedule.Add((3.0, h => h.Finish("wall-grid complete"), "finish"));
+                    _screenshotEverySec = double.PositiveInfinity;
+                }
+                break;
             case "stress":
                 for (int r = 2; r <= 6; r++)
                 {
@@ -472,6 +501,11 @@ public partial class HarnessController : Node2D
     private void PlaceWall(int x, int y)
     {
         Host.QueueCommand(new PlaceWallBlueprintCommand(new TilePos(x, y)));
+    }
+
+    private void InstantWall(int x, int y)
+    {
+        Host.QueueCommand(new InstantPlaceWallCommand(new TilePos(x, y)));
     }
 
     private void PlaceDoor(int x, int y)

@@ -546,6 +546,31 @@ public sealed class SimRuntime
     // about even if a sim tick is mid-mutation.
     public byte[] CopyLayerForRender(MapLayer layer) => MapView.AssembleFlat(layer);
 
+    // Harness shortcut: stamp a finished stone wall directly. Skips the
+    // blueprint + build job path. Wipes a tree on the tile first so the
+    // visual harness can drop walls onto procgen tiles without staging.
+    // Returns false if the tile is still occupied by something un-clearable.
+    public bool InstantPlaceWall(TilePos tile)
+    {
+        if (!Map.InBounds(tile)) return false;
+        if (Map.GetWall(tile) != WallType.None) return false;
+        if (_doorMap.ContainsKey(tile)) return false;
+        if (Jobs.HasTile(tile)) return false;
+        if (_trees.TryGetValue(tile, out var tree))
+        {
+            _trees.Remove(tile);
+            tree.DeleteEntity();
+        }
+        lock (_mapLock)
+        {
+            Map.SetWall(tile, WallType.Stone);
+            _playerWalls.Add(tile);
+        }
+        RefreshDoorOrientationsAround(tile);
+        RebuildMapView();
+        return true;
+    }
+
     public bool TryPlaceWallBlueprint(TilePos tile)
     {
         if (!Map.InBounds(tile)) return false;

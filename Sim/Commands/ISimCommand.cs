@@ -20,6 +20,16 @@ public sealed class PlaceWallBlueprintCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.TryPlaceWallBlueprint(Tile);
 }
 
+// Harness/debug shortcut: drop a finished wall onto the tile with no
+// blueprint or build job. Used by visual harness scenarios so the
+// scene reaches its target topology in a single tick.
+public sealed class InstantPlaceWallCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public InstantPlaceWallCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.InstantPlaceWall(Tile);
+}
+
 // Single-tile door designation. Orientation is derived inside
 // TryPlaceDoorBlueprint from the flanking wall layout.
 public sealed class PlaceDoorBlueprintCommand : ISimCommand
