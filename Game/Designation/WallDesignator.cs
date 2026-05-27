@@ -83,10 +83,17 @@ public partial class WallDesignator : Node2D
     {
         if (_dragging)
         {
+            int xmin = int.MaxValue, ymin = int.MaxValue;
+            int xmax = int.MinValue, ymax = int.MinValue;
             foreach (var t in CardinalLine(_startTile, _currentTile))
             {
                 DrawTilePreview(t);
+                if (t.X < xmin) xmin = t.X;
+                if (t.Y < ymin) ymin = t.Y;
+                if (t.X > xmax) xmax = t.X;
+                if (t.Y > ymax) ymax = t.Y;
             }
+            if (xmin <= xmax) DragMeasureOverlay.Draw(this, xmin, ymin, xmax, ymax);
         }
         else if (_hovering)
         {

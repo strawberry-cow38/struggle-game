@@ -94,6 +94,7 @@ public partial class FloorDesignator : Node2D
                 (ymax - ymin + 1) * PixelsPerTile);
             DrawRect(rect, FillColor, filled: true);
             DrawRect(rect, BorderColor, filled: false, width: 2f);
+            DragMeasureOverlay.Draw(this, xmin, ymin, xmax, ymax);
         }
         else if (_hovering)
         {

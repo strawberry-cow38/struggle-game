@@ -376,7 +376,21 @@ public sealed class SimRuntime
         dq.ForEachEntity((ref WorldPos p, ref Wanderer _, Entity ent) =>
         {
             bool drafted = ent.HasComponent<Drafted>();
-            string label = drafted ? "Drafted" : "Idle";
+            string label;
+            if (drafted)
+            {
+                label = "Drafted";
+            }
+            else
+            {
+                bool moving = false;
+                if (ent.HasComponent<PathFollower>())
+                {
+                    var pf = ent.GetComponent<PathFollower>();
+                    moving = pf.Waypoints is { Count: > 0 } && pf.Index < pf.Waypoints.Count;
+                }
+                label = moving ? "Wandering" : "Standing";
+            }
             if (!drafted && ent.HasComponent<BuildTarget>())
             {
                 var bt = ent.GetComponent<BuildTarget>();

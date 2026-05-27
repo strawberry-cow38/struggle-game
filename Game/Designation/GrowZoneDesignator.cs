@@ -114,6 +114,7 @@ public partial class GrowZoneDesignator : Node2D
         else if (Tools.Mode == ToolMode.GrowZoneShrink) { fill = ShrinkFill; border = ShrinkBorder; }
         DrawRect(rect, fill, filled: true);
         DrawRect(rect, border, filled: false, width: 2f);
+        DragMeasureOverlay.Draw(this, xmin, ymin, xmax, ymax);
     }
 
     private void ClearPreview()

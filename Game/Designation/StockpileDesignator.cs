@@ -117,6 +117,7 @@ public partial class StockpileDesignator : Node2D
         else if (Tools.Mode == ToolMode.StockpileShrink) { fill = ShrinkFill; border = ShrinkBorder; }
         DrawRect(rect, fill, filled: true);
         DrawRect(rect, border, filled: false, width: 2f);
+        DragMeasureOverlay.Draw(this, xmin, ymin, xmax, ymax);
     }
 
     private void ClearPreview()

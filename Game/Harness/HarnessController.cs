@@ -516,7 +516,7 @@ public partial class HarnessController : Node2D
         {
             if (d.Drafted) drafted++;
             else if (d.Job == "WallBuild") building++;
-            else if (d.Job == "Idle") idle++;
+            else if (d.Job == "Standing") idle++;
             else walking++;
         }
         var sb = new StringBuilder();

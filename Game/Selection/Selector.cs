@@ -90,7 +90,7 @@ public partial class Selector : Node2D
                     var drafted = CollectDraftedSelected();
                     if (drafted.Length == 0) return;
                     _rmbDragging = true;
-                    _rmbStartWorld = _rmbEndWorld = GetGlobalMousePosition();
+                    _rmbStartWorld = _rmbEndWorld = SnapToTileCenter(GetGlobalMousePosition());
                     _rmbShift = mb.ShiftPressed;
                     _rmbDraftedIds = drafted;
                     GetViewport().SetInputAsHandled();
@@ -114,8 +114,12 @@ public partial class Selector : Node2D
             }
             if (_rmbDragging)
             {
-                _rmbEndWorld = GetGlobalMousePosition();
-                QueueRedraw();
+                var snapped = SnapToTileCenter(GetGlobalMousePosition());
+                if (snapped != _rmbEndWorld)
+                {
+                    _rmbEndWorld = snapped;
+                    QueueRedraw();
+                }
             }
         }
     }
@@ -205,6 +209,13 @@ public partial class Selector : Node2D
             }
         }
         return slots;
+    }
+
+    private static Vector2 SnapToTileCenter(Vector2 w)
+    {
+        int tx = Mathf.FloorToInt(w.X / PixelsPerTile);
+        int ty = Mathf.FloorToInt(w.Y / PixelsPerTile);
+        return new Vector2((tx + 0.5f) * PixelsPerTile, (ty + 0.5f) * PixelsPerTile);
     }
 
     private TilePos FindFreeWalkable(TilePos start, HashSet<TilePos> used)
