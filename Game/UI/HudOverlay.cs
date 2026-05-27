@@ -17,6 +17,13 @@ public partial class HudOverlay : CanvasLayer
     private Label _versionLabel = null!;
     private Label _watcherLabel = null!;
 
+    // Refresh the readout at most this often. Per-frame at 1500+ fps the
+    // sim queries + string interpolation showed up under the mouse-move
+    // perf hit; cap it to 30Hz so hover info still feels responsive
+    // without spinning the CPU.
+    private const double RefreshIntervalSec = 1.0 / 30.0;
+    private double _refreshAccum;
+
     public override void _Ready()
     {
         Layer = 100;
@@ -73,6 +80,9 @@ public partial class HudOverlay : CanvasLayer
     public override void _Process(double delta)
     {
         if (Host is null) return;
+        _refreshAccum += delta;
+        if (_refreshAccum < RefreshIntervalSec) return;
+        _refreshAccum = 0;
         float fps = (float)Engine.GetFramesPerSecond();
         float tps = Host.ActualTps;
         float speed = Host.TickHz / (float)SimConstants.TickHz;
