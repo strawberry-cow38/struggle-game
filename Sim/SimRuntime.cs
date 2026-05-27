@@ -352,7 +352,7 @@ public sealed class SimRuntime
         Array.Resize(ref arr, next);
     }
 
-    public SimSnapshot BuildSnapshot(int? selectedDummyId = null, IReadOnlyCollection<int>? selectedTreeIds = null, IReadOnlyCollection<int>? selectedWoodIds = null)
+    public SimSnapshot BuildSnapshot(int? selectedDummyId = null, int[]? selectedDummyIds = null, IReadOnlyCollection<int>? selectedTreeIds = null, IReadOnlyCollection<int>? selectedWoodIds = null)
     {
         _useSlotA = !_useSlotA;
         var snap = _useSlotA ? _snapSlotA : _snapSlotB;
@@ -365,6 +365,7 @@ public sealed class SimRuntime
         snap.LightVersion = LightVersion;
         snap.WorldTimeSec = _worldTimeSec;
         snap.SelectedDummyId = selectedDummyId;
+        snap.SelectedDummyIds = selectedDummyIds ?? Array.Empty<int>();
         snap.SelectedPath = null;
         snap.SelectedOrders = null;
 

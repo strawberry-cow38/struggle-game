@@ -22,41 +22,140 @@ public partial class Selector : Node2D
 {
     private const float PickRadiusPx = SimConstants.PixelsPerTile * 0.6f;
     private const int PixelsPerTile = SimConstants.PixelsPerTile;
+    private const float DragThresholdPx = 6f;
 
     public SimHost? Host { get; set; }
     public ToolService? Tools { get; set; }
 
+    private bool _dragging;
+    private Vector2 _dragStartWorld;
+    private Vector2 _dragEndWorld;
+    private bool _dragShift;
+    private bool _dragDoubleClick;
+
     public override void _Ready()
     {
-        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.None);
+        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.None, ClearDrag);
+    }
+
+    private void ClearDrag()
+    {
+        if (!_dragging) return;
+        _dragging = false;
+        QueueRedraw();
     }
 
     public override void _UnhandledInput(InputEvent @event)
     {
         if (Host is null || Tools is null) return;
         if (Tools.Mode != ToolMode.None) return;
-        if (@event is not InputEventMouseButton mb || !mb.Pressed) return;
 
-        if (mb.ButtonIndex == MouseButton.Left)
+        if (@event is InputEventMouseButton mb)
         {
-            HandleSelect(mb.ShiftPressed, mb.DoubleClick);
-            GetViewport().SetInputAsHandled();
-        }
-        else if (mb.ButtonIndex == MouseButton.Right)
-        {
-            if (HandleOrder(mb.ShiftPressed))
+            if (mb.ButtonIndex == MouseButton.Left)
             {
-                GetViewport().SetInputAsHandled();
+                if (mb.Pressed)
+                {
+                    _dragging = true;
+                    _dragStartWorld = _dragEndWorld = GetGlobalMousePosition();
+                    _dragShift = mb.ShiftPressed;
+                    _dragDoubleClick = mb.DoubleClick;
+                    GetViewport().SetInputAsHandled();
+                }
+                else if (_dragging)
+                {
+                    _dragging = false;
+                    float dx = _dragEndWorld.X - _dragStartWorld.X;
+                    float dy = _dragEndWorld.Y - _dragStartWorld.Y;
+                    if (dx * dx + dy * dy > DragThresholdPx * DragThresholdPx)
+                        HandleRectSelectPawns(_dragStartWorld, _dragEndWorld, _dragShift);
+                    else
+                        HandleSelect(_dragStartWorld, _dragShift, _dragDoubleClick);
+                    QueueRedraw();
+                    GetViewport().SetInputAsHandled();
+                }
             }
+            else if (mb.ButtonIndex == MouseButton.Right && mb.Pressed)
+            {
+                if (HandleOrder(mb.ShiftPressed))
+                {
+                    GetViewport().SetInputAsHandled();
+                }
+            }
+        }
+        else if (@event is InputEventMouseMotion && _dragging)
+        {
+            _dragEndWorld = GetGlobalMousePosition();
+            QueueRedraw();
         }
     }
 
-    private void HandleSelect(bool shift, bool doubleClick)
+    public override void _Draw()
+    {
+        if (!_dragging) return;
+        float dx = _dragEndWorld.X - _dragStartWorld.X;
+        float dy = _dragEndWorld.Y - _dragStartWorld.Y;
+        if (dx * dx + dy * dy <= DragThresholdPx * DragThresholdPx) return;
+        float minX = Mathf.Min(_dragStartWorld.X, _dragEndWorld.X);
+        float maxX = Mathf.Max(_dragStartWorld.X, _dragEndWorld.X);
+        float minY = Mathf.Min(_dragStartWorld.Y, _dragEndWorld.Y);
+        float maxY = Mathf.Max(_dragStartWorld.Y, _dragEndWorld.Y);
+        var rect = new Rect2(minX, minY, maxX - minX, maxY - minY);
+        DrawRect(rect, new Color(0.4f, 1f, 0.4f, 0.18f), filled: true);
+        DrawRect(rect, new Color(0.4f, 1f, 0.4f, 0.85f), filled: false, width: 1.5f);
+    }
+
+    private void HandleRectSelectPawns(Vector2 a, Vector2 b, bool shift)
     {
         var snap = Host!.LatestSnapshot;
         if (snap is null) return;
+        float minX = Mathf.Min(a.X, b.X), maxX = Mathf.Max(a.X, b.X);
+        float minY = Mathf.Min(a.Y, b.Y), maxY = Mathf.Max(a.Y, b.Y);
 
-        var world = GetGlobalMousePosition();
+        var set = shift ? new HashSet<int>(Host.SelectedDummyIds) : new HashSet<int>();
+        foreach (var d in snap.Dummies)
+        {
+            float px = d.X * PixelsPerTile;
+            float py = d.Y * PixelsPerTile;
+            if (px < minX || px > maxX) continue;
+            if (py < minY || py > maxY) continue;
+            set.Add(d.EntityId);
+        }
+
+        var arr = new int[set.Count];
+        int i = 0;
+        foreach (var id in set) arr[i++] = id;
+        Host.SelectedDummyIds = arr;
+
+        if (arr.Length > 0)
+        {
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
+            Host.SelectedWallTiles = Array.Empty<TilePos>();
+            Host.SelectedDoorTiles = Array.Empty<TilePos>();
+            Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
+            Host.SelectedLampTiles = Array.Empty<TilePos>();
+        }
+        else if (!shift)
+        {
+            Host.SelectedDummyId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
+            Host.SelectedWallTiles = Array.Empty<TilePos>();
+            Host.SelectedDoorTiles = Array.Empty<TilePos>();
+            Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
+            Host.SelectedLampTiles = Array.Empty<TilePos>();
+        }
+    }
+
+    private void HandleSelect(Vector2 world, bool shift, bool doubleClick)
+    {
+        var snap = Host!.LatestSnapshot;
+        if (snap is null) return;
 
         if (doubleClick)
         {

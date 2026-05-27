@@ -80,6 +80,7 @@ public sealed class SimSnapshot
     public SnapshotList<BlueprintState> LampBlueprints => new(LampBlueprintsBuf, LampBlueprintsCount);
 
     public int? SelectedDummyId { get; internal set; }
+    public int[] SelectedDummyIds { get; internal set; } = System.Array.Empty<int>();
     public TilePos[]? SelectedPath { get; internal set; }
     public TilePos[]? SelectedOrders { get; internal set; }
     public int[] SelectedTreeIds { get; internal set; } = System.Array.Empty<int>();

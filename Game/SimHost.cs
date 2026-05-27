@@ -70,7 +70,7 @@ public sealed class SimHost : IDisposable
             Volatile.Write(ref _selectedDoorTiles, Array.Empty<TilePos>());
             Volatile.Write(ref _selectedBlueprintTiles, Array.Empty<TilePos>());
             Volatile.Write(ref _selectedLampTiles, Array.Empty<TilePos>());
-            Volatile.Write(ref _latest, _sim.BuildSnapshot(null, null, null));
+            Volatile.Write(ref _latest, _sim.BuildSnapshot(null, null, null, null));
         }
     }
 
@@ -102,9 +102,10 @@ public sealed class SimHost : IDisposable
         {
             _sim.Step(dt);
             int sel = Volatile.Read(ref _selectedDummyId);
+            var ids = Volatile.Read(ref _selectedDummyIds);
             var trees = Volatile.Read(ref _selectedTreeIds);
             var woods = Volatile.Read(ref _selectedWoodIds);
-            Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
+            Volatile.Write(ref _latest, _sim.BuildSnapshot(ids.Length == 1 ? ids[0] : (int?)null, ids.Length > 0 ? ids : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
         }
     }
 
@@ -281,6 +282,7 @@ public sealed class SimHost : IDisposable
                 {
                     bool needPublish = _sim.ApplyQueuedCommands();
                     int sel = Volatile.Read(ref _selectedDummyId);
+                    var ids = Volatile.Read(ref _selectedDummyIds);
                     var trees = Volatile.Read(ref _selectedTreeIds);
                     var woods = Volatile.Read(ref _selectedWoodIds);
                     // Also republish if selection changed while paused so
@@ -291,6 +293,7 @@ public sealed class SimHost : IDisposable
                     {
                         int? selBoxed = sel >= 0 ? sel : null;
                         if (cur.SelectedDummyId != selBoxed
+                            || !SelectionArrayEquals(cur.SelectedDummyIds, ids)
                             || !SelectionArrayEquals(cur.SelectedTreeIds, trees)
                             || !SelectionArrayEquals(cur.SelectedWoodIds, woods))
                         {
@@ -299,7 +302,7 @@ public sealed class SimHost : IDisposable
                     }
                     if (needPublish)
                     {
-                        Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
+                        Volatile.Write(ref _latest, _sim.BuildSnapshot(ids.Length == 1 ? ids[0] : (int?)null, ids.Length > 0 ? ids : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
                     }
                 }
                 Thread.Sleep(5);
@@ -314,9 +317,10 @@ public sealed class SimHost : IDisposable
                 {
                     _sim.Step(dt);
                     int sel = Volatile.Read(ref _selectedDummyId);
+                    var ids = Volatile.Read(ref _selectedDummyIds);
                     var trees = Volatile.Read(ref _selectedTreeIds);
                     var woods = Volatile.Read(ref _selectedWoodIds);
-                    Volatile.Write(ref _latest, _sim.BuildSnapshot(sel >= 0 ? sel : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
+                    Volatile.Write(ref _latest, _sim.BuildSnapshot(ids.Length == 1 ? ids[0] : (int?)null, ids.Length > 0 ? ids : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
                 }
                 ticksThisWindow++;
                 nextTick += tickStride;

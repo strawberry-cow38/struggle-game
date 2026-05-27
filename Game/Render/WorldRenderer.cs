@@ -62,6 +62,7 @@ public partial class WorldRenderer : Node2D
     private SimSnapshot? _currSnap;
     private ulong _currSnapStartMs;
     private Dictionary<int, DummyState>? _prevDummyByIdScratch;
+    private HashSet<int>? _selectedDummyIdsScratch;
     private Dictionary<TilePos, DoorRenderState>? _prevDoorByTileScratch;
 
     // Selection sets are cached by reference identity of the snapshot's
@@ -456,6 +457,9 @@ public partial class WorldRenderer : Node2D
         {
             foreach (var pd in _prevSnap.Dummies) _prevDummyByIdScratch[pd.EntityId] = pd;
         }
+        _selectedDummyIdsScratch ??= new HashSet<int>();
+        _selectedDummyIdsScratch.Clear();
+        foreach (var sid in snap.SelectedDummyIds) _selectedDummyIdsScratch.Add(sid);
         using (FrameProfiler.Instance.BeginScope("Dummies"))
         {
             foreach (var d in snap.Dummies)
@@ -485,7 +489,7 @@ public partial class WorldRenderer : Node2D
                     DrawRect(carry, WoodColor, filled: true);
                     DrawRect(new Rect2(carry.Position + new Vector2(0, 1f), new Vector2(carry.Size.X, 2f)), WoodHighlight, filled: true);
                 }
-                if (snap.SelectedDummyId is int sel && d.EntityId == sel)
+                if (_selectedDummyIdsScratch.Contains(d.EntityId))
                 {
                     DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
                 }
