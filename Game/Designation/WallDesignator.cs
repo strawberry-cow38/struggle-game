@@ -28,6 +28,7 @@ public partial class WallDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 50;
+        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.BuildWall);
     }
 
     public override void _UnhandledInput(InputEvent @event)

@@ -24,6 +24,7 @@ public partial class LampDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 55;
+        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.Lamp);
     }
 
     public override void _UnhandledInput(InputEvent @event)

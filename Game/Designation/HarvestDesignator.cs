@@ -26,6 +26,7 @@ public partial class HarvestDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 52;
+        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.Harvest);
     }
 
     public override void _UnhandledInput(InputEvent @event)

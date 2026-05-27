@@ -26,6 +26,7 @@ public partial class CancelDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 51;
+        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.Cancel);
     }
 
     public override void _UnhandledInput(InputEvent @event)

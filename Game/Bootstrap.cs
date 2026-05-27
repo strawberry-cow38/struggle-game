@@ -151,9 +151,19 @@ public partial class Bootstrap : Node2D
 
     private static void RelaxMouseFilters(Node node)
     {
+        // Decorative widgets — don't capture mouse, so don't participate
+        // in Godot's per-motion-event hover hit-test scan.
         if (node is Label lbl) lbl.MouseFilter = Control.MouseFilterEnum.Ignore;
         else if (node is HSeparator hs) hs.MouseFilter = Control.MouseFilterEnum.Ignore;
         else if (node is VSeparator vs) vs.MouseFilter = Control.MouseFilterEnum.Ignore;
+        // Layout-only containers — their children handle their own mouse
+        // input; the box wrapping them never needs to be a hover target.
+        // (Panel intentionally left at Stop so panel-background clicks
+        // are still consumed and don't pass through to the world.)
+        else if (node is BoxContainer bc) bc.MouseFilter = Control.MouseFilterEnum.Ignore;
+        else if (node is MarginContainer mc) mc.MouseFilter = Control.MouseFilterEnum.Ignore;
+        else if (node is CenterContainer cc) cc.MouseFilter = Control.MouseFilterEnum.Ignore;
+        else if (node is GridContainer gc) gc.MouseFilter = Control.MouseFilterEnum.Ignore;
         foreach (var c in node.GetChildren()) RelaxMouseFilters(c);
     }
 

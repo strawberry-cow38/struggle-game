@@ -35,9 +35,10 @@ public partial class StockpileDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 53;
+        if (Tools is not null) this.BindInputToMode(Tools, IsStockpileMode);
     }
 
-    private bool IsStockpileMode(ToolMode m) =>
+    private static bool IsStockpileMode(ToolMode m) =>
         m == ToolMode.Stockpile || m == ToolMode.StockpileExpand || m == ToolMode.StockpileShrink;
 
     public override void _UnhandledInput(InputEvent @event)

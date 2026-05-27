@@ -28,6 +28,7 @@ public partial class FloorDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 54;
+        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.Floor);
     }
 
     public override void _UnhandledInput(InputEvent @event)

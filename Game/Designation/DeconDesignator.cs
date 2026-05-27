@@ -26,6 +26,7 @@ public partial class DeconDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 53;
+        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.Decon);
     }
 
     public override void _UnhandledInput(InputEvent @event)

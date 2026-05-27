@@ -36,6 +36,7 @@ public partial class RoofDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 53;
+        if (Tools is not null) this.BindInputToMode(Tools, IsRoofMode);
     }
 
     private static bool IsRoofMode(ToolMode m) =>

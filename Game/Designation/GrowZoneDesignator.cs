@@ -34,9 +34,10 @@ public partial class GrowZoneDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 53;
+        if (Tools is not null) this.BindInputToMode(Tools, IsZoneMode);
     }
 
-    private bool IsZoneMode(ToolMode m) =>
+    private static bool IsZoneMode(ToolMode m) =>
         m == ToolMode.GrowZone || m == ToolMode.GrowZoneExpand || m == ToolMode.GrowZoneShrink;
 
     public override void _UnhandledInput(InputEvent @event)

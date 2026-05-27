@@ -1,4 +1,5 @@
 using Godot;
+using StruggleGame.Game.Designation;
 using StruggleGame.Game.Tools;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
@@ -13,6 +14,11 @@ public partial class SpawnPawnDesignator : Node2D
 {
     public SimHost? Host { get; set; }
     public ToolService? Tools { get; set; }
+
+    public override void _Ready()
+    {
+        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.SpawnPawn);
+    }
 
     public override void _UnhandledInput(InputEvent @event)
     {
