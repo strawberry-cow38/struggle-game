@@ -17,6 +17,7 @@ public partial class Toolbar : CanvasLayer
 
     private readonly Dictionary<ToolMode, Button> _buttons = new();
     private HBoxContainer _hbox = null!;
+    private Button _buildToggle = null!;
 
     public override void _Ready()
     {
@@ -27,9 +28,27 @@ public partial class Toolbar : CanvasLayer
         {
             Name = "ToolRow",
             MouseFilter = Control.MouseFilterEnum.Pass,
+            Visible = false,
         };
         _hbox.AddThemeConstantOverride("separation", ButtonGap);
         AddChild(_hbox);
+
+        _buildToggle = new Button
+        {
+            Name = "BuildToggle",
+            Text = "Build",
+            ToggleMode = true,
+            CustomMinimumSize = new Vector2(ButtonSize * 1.4f, ButtonSize),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        _buildToggle.Pressed += () =>
+        {
+            _hbox.Visible = _buildToggle.ButtonPressed;
+            if (!_hbox.Visible && Tools is not null) Tools.Mode = ToolMode.None;
+            CallDeferred(nameof(Reposition));
+        };
+        AddChild(_buildToggle);
+        _buildToggle.Resized += Reposition;
 
         AddButton(_hbox, ToolMode.BuildWall, "Wall");
         AddButton(_hbox, ToolMode.Door, "Door");
@@ -61,11 +80,17 @@ public partial class Toolbar : CanvasLayer
 
     private void Reposition()
     {
-        if (_hbox is null) return;
+        if (_hbox is null || _buildToggle is null) return;
         var vp = GetViewport().GetVisibleRect().Size;
-        _hbox.Position = new Vector2(
-            vp.X - _hbox.Size.X - MarginRight,
-            vp.Y - _hbox.Size.Y - MarginBottom);
+        _buildToggle.Position = new Vector2(
+            vp.X - _buildToggle.Size.X - MarginRight,
+            vp.Y - _buildToggle.Size.Y - MarginBottom);
+        if (_hbox.Visible)
+        {
+            _hbox.Position = new Vector2(
+                _buildToggle.Position.X - _hbox.Size.X - ButtonGap,
+                vp.Y - _hbox.Size.Y - MarginBottom);
+        }
     }
 
     public override void _ExitTree()
