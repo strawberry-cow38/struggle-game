@@ -166,6 +166,14 @@ public sealed class ToggleDraftCommand : ISimCommand
         {
             ent.RemoveComponent<Drafted>();
             if (ent.HasComponent<OrderQueue>()) ent.RemoveComponent<OrderQueue>();
+            if (ent.HasComponent<PathFollower>())
+            {
+                ref var pf = ref ent.GetComponent<PathFollower>();
+                if (pf.PendingPathId != 0) sim.PathService.Discard(pf.PendingPathId);
+                pf.PendingPathId = 0;
+                pf.Waypoints = null;
+                pf.Index = 0;
+            }
             return;
         }
 

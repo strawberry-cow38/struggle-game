@@ -33,6 +33,12 @@ public partial class Selector : Node2D
     private bool _dragShift;
     private bool _dragDoubleClick;
 
+    private bool _rmbDragging;
+    private Vector2 _rmbStartWorld;
+    private Vector2 _rmbEndWorld;
+    private bool _rmbShift;
+    private int[] _rmbDraftedIds = Array.Empty<int>();
+
     public override void _Ready()
     {
         if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.None, ClearDrag);
@@ -40,9 +46,11 @@ public partial class Selector : Node2D
 
     private void ClearDrag()
     {
-        if (!_dragging) return;
+        bool any = _dragging || _rmbDragging;
         _dragging = false;
-        QueueRedraw();
+        _rmbDragging = false;
+        _rmbDraftedIds = Array.Empty<int>();
+        if (any) QueueRedraw();
     }
 
     public override void _UnhandledInput(InputEvent @event)
@@ -75,34 +83,156 @@ public partial class Selector : Node2D
                     GetViewport().SetInputAsHandled();
                 }
             }
-            else if (mb.ButtonIndex == MouseButton.Right && mb.Pressed)
+            else if (mb.ButtonIndex == MouseButton.Right)
             {
-                if (HandleOrder(mb.ShiftPressed))
+                if (mb.Pressed)
                 {
+                    var drafted = CollectDraftedSelected();
+                    if (drafted.Length == 0) return;
+                    _rmbDragging = true;
+                    _rmbStartWorld = _rmbEndWorld = GetGlobalMousePosition();
+                    _rmbShift = mb.ShiftPressed;
+                    _rmbDraftedIds = drafted;
+                    GetViewport().SetInputAsHandled();
+                }
+                else if (_rmbDragging)
+                {
+                    _rmbDragging = false;
+                    IssueOrders(_rmbDraftedIds, _rmbStartWorld, _rmbEndWorld, _rmbShift);
+                    _rmbDraftedIds = Array.Empty<int>();
+                    QueueRedraw();
                     GetViewport().SetInputAsHandled();
                 }
             }
         }
-        else if (@event is InputEventMouseMotion && _dragging)
+        else if (@event is InputEventMouseMotion)
         {
-            _dragEndWorld = GetGlobalMousePosition();
-            QueueRedraw();
+            if (_dragging)
+            {
+                _dragEndWorld = GetGlobalMousePosition();
+                QueueRedraw();
+            }
+            if (_rmbDragging)
+            {
+                _rmbEndWorld = GetGlobalMousePosition();
+                QueueRedraw();
+            }
         }
     }
 
     public override void _Draw()
     {
-        if (!_dragging) return;
-        float dx = _dragEndWorld.X - _dragStartWorld.X;
-        float dy = _dragEndWorld.Y - _dragStartWorld.Y;
-        if (dx * dx + dy * dy <= DragThresholdPx * DragThresholdPx) return;
-        float minX = Mathf.Min(_dragStartWorld.X, _dragEndWorld.X);
-        float maxX = Mathf.Max(_dragStartWorld.X, _dragEndWorld.X);
-        float minY = Mathf.Min(_dragStartWorld.Y, _dragEndWorld.Y);
-        float maxY = Mathf.Max(_dragStartWorld.Y, _dragEndWorld.Y);
-        var rect = new Rect2(minX, minY, maxX - minX, maxY - minY);
-        DrawRect(rect, new Color(0.4f, 1f, 0.4f, 0.18f), filled: true);
-        DrawRect(rect, new Color(0.4f, 1f, 0.4f, 0.85f), filled: false, width: 1.5f);
+        if (_dragging)
+        {
+            float dx = _dragEndWorld.X - _dragStartWorld.X;
+            float dy = _dragEndWorld.Y - _dragStartWorld.Y;
+            if (dx * dx + dy * dy > DragThresholdPx * DragThresholdPx)
+            {
+                float minX = Mathf.Min(_dragStartWorld.X, _dragEndWorld.X);
+                float maxX = Mathf.Max(_dragStartWorld.X, _dragEndWorld.X);
+                float minY = Mathf.Min(_dragStartWorld.Y, _dragEndWorld.Y);
+                float maxY = Mathf.Max(_dragStartWorld.Y, _dragEndWorld.Y);
+                var rect = new Rect2(minX, minY, maxX - minX, maxY - minY);
+                DrawRect(rect, new Color(0.4f, 1f, 0.4f, 0.18f), filled: true);
+                DrawRect(rect, new Color(0.4f, 1f, 0.4f, 0.85f), filled: false, width: 1.5f);
+            }
+        }
+
+        if (_rmbDragging && _rmbDraftedIds.Length > 0)
+        {
+            var slots = ComputeOrderSlots(_rmbDraftedIds.Length, _rmbStartWorld, _rmbEndWorld);
+            var dotColor = new Color(1f, 0.85f, 0.3f, 0.95f);
+            float r = PixelsPerTile * 0.18f;
+            foreach (var t in slots)
+            {
+                var c = new Vector2((t.X + 0.5f) * PixelsPerTile, (t.Y + 0.5f) * PixelsPerTile);
+                DrawCircle(c, r, dotColor);
+            }
+            float ddx = _rmbEndWorld.X - _rmbStartWorld.X;
+            float ddy = _rmbEndWorld.Y - _rmbStartWorld.Y;
+            if (ddx * ddx + ddy * ddy > DragThresholdPx * DragThresholdPx && _rmbDraftedIds.Length > 1)
+            {
+                DrawLine(_rmbStartWorld, _rmbEndWorld, new Color(1f, 0.85f, 0.3f, 0.6f), 1.5f, antialiased: true);
+            }
+        }
+    }
+
+    private int[] CollectDraftedSelected()
+    {
+        var snap = Host!.LatestSnapshot;
+        if (snap is null) return Array.Empty<int>();
+        var selected = Host.SelectedDummyIds;
+        if (selected.Length == 0) return Array.Empty<int>();
+        var draftedSet = new HashSet<int>();
+        foreach (var d in snap.Dummies)
+        {
+            if (d.Drafted) draftedSet.Add(d.EntityId);
+        }
+        var result = new List<int>(selected.Length);
+        foreach (var id in selected)
+            if (draftedSet.Contains(id)) result.Add(id);
+        return result.ToArray();
+    }
+
+    private TilePos[] ComputeOrderSlots(int n, Vector2 startWorld, Vector2 endWorld)
+    {
+        float dx = endWorld.X - startWorld.X;
+        float dy = endWorld.Y - startWorld.Y;
+        bool isLine = n > 1 && dx * dx + dy * dy > DragThresholdPx * DragThresholdPx;
+        var used = new HashSet<TilePos>();
+        var slots = new TilePos[n];
+        if (isLine)
+        {
+            for (int i = 0; i < n; i++)
+            {
+                float t = (float)i / (n - 1);
+                float wx = Mathf.Lerp(startWorld.X, endWorld.X, t);
+                float wy = Mathf.Lerp(startWorld.Y, endWorld.Y, t);
+                var seed = new TilePos(Mathf.FloorToInt(wx / PixelsPerTile), Mathf.FloorToInt(wy / PixelsPerTile));
+                var slot = FindFreeWalkable(seed, used);
+                slots[i] = slot;
+                used.Add(slot);
+            }
+        }
+        else
+        {
+            var center = new TilePos(Mathf.FloorToInt(endWorld.X / PixelsPerTile), Mathf.FloorToInt(endWorld.Y / PixelsPerTile));
+            for (int i = 0; i < n; i++)
+            {
+                var slot = FindFreeWalkable(center, used);
+                slots[i] = slot;
+                used.Add(slot);
+            }
+        }
+        return slots;
+    }
+
+    private TilePos FindFreeWalkable(TilePos start, HashSet<TilePos> used)
+    {
+        if (Host!.Map.Walkable(start) && !used.Contains(start)) return start;
+        for (int r = 1; r <= 24; r++)
+        {
+            for (int dy = -r; dy <= r; dy++)
+            {
+                for (int dx = -r; dx <= r; dx++)
+                {
+                    if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != r) continue;
+                    var t = new TilePos(start.X + dx, start.Y + dy);
+                    if (Host.Map.Walkable(t) && !used.Contains(t)) return t;
+                }
+            }
+        }
+        return start;
+    }
+
+    private void IssueOrders(int[] ids, Vector2 startWorld, Vector2 endWorld, bool append)
+    {
+        if (ids.Length == 0) return;
+        var slots = ComputeOrderSlots(ids.Length, startWorld, endWorld);
+        for (int i = 0; i < ids.Length; i++)
+        {
+            Host!.QueueCommand(new IssueMoveOrderCommand(ids[i], slots[i], append));
+        }
     }
 
     private void HandleRectSelectPawns(Vector2 a, Vector2 b, bool shift)
@@ -545,24 +675,4 @@ public partial class Selector : Node2D
         }
     }
 
-    private bool HandleOrder(bool append)
-    {
-        if (Host!.SelectedDummyId is not int sel) return false;
-        var snap = Host.LatestSnapshot;
-        if (snap is null) return false;
-
-        bool drafted = false;
-        foreach (var d in snap.Dummies)
-        {
-            if (d.EntityId == sel) { drafted = d.Drafted; break; }
-        }
-        if (!drafted) return false;
-
-        var world = GetGlobalMousePosition();
-        var tile = new TilePos(
-            Mathf.FloorToInt(world.X / PixelsPerTile),
-            Mathf.FloorToInt(world.Y / PixelsPerTile));
-        Host.QueueCommand(new IssueMoveOrderCommand(sel, tile, append));
-        return true;
-    }
 }
