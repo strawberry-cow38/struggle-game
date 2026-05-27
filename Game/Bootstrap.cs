@@ -226,8 +226,28 @@ public partial class Bootstrap : Node2D
                 var pawnIds = _host.SelectedDummyIds;
                 if (pawnIds.Length > 0)
                 {
-                    foreach (var pid in pawnIds)
-                        _host.QueueCommand(new Sim.Commands.ToggleDraftCommand(pid));
+                    // Group toggle: if any selected pawn isn't drafted yet,
+                    // draft the missing ones (so a mixed selection flips
+                    // toward all-drafted on the first press). Once every
+                    // pawn is drafted, the next press undrafts the whole
+                    // group. Same shape as the F-key door forbid handler.
+                    var rsnap = _host.LatestSnapshot;
+                    if (rsnap is null) return;
+                    var sel = new HashSet<int>(pawnIds);
+                    int draftedCount = 0, totalSeen = 0;
+                    foreach (var d in rsnap.Dummies)
+                    {
+                        if (!sel.Contains(d.EntityId)) continue;
+                        totalSeen++;
+                        if (d.Drafted) draftedCount++;
+                    }
+                    bool draftAll = draftedCount < totalSeen;
+                    foreach (var d in rsnap.Dummies)
+                    {
+                        if (!sel.Contains(d.EntityId)) continue;
+                        if (d.Drafted == draftAll) continue;
+                        _host.QueueCommand(new Sim.Commands.ToggleDraftCommand(d.EntityId));
+                    }
                     GetViewport().SetInputAsHandled();
                 }
                 return;
