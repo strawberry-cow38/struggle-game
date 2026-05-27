@@ -19,6 +19,16 @@ public partial class Bootstrap : Node2D
 
     public override void _Ready()
     {
+        // vsync is off (project.godot) so without a cap the renderer
+        // spins as fast as it can. At 1500+ fps, every per-frame cost
+        // gets multiplied huge — and mouse motion makes it worse because
+        // each frame Godot's GUI system hit-tests ~50 Controls to update
+        // hover state. Bounding FPS turns that storm into a budget.
+        Engine.MaxFps = 240;
+        // Default is true in Godot 4 but set explicit so a high polling-
+        // rate mouse stays collated to one motion event per frame.
+        Input.UseAccumulatedInput = true;
+
         // Fresh world every launch. Harness still gets the deterministic
         // SimHost() default via --harness wiring elsewhere.
         _host = new SimHost(System.Environment.TickCount);
