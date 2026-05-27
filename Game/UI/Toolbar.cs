@@ -9,6 +9,7 @@ namespace StruggleGame.Game.UI;
 public partial class Toolbar : CanvasLayer
 {
     public ToolService? Tools { get; set; }
+    public WorkTab? WorkTab { get; set; }
 
     private const int ButtonSize = 56;
     private const int ButtonGap = 6;
@@ -18,6 +19,7 @@ public partial class Toolbar : CanvasLayer
     private readonly Dictionary<ToolMode, Button> _buttons = new();
     private HBoxContainer _hbox = null!;
     private Button _buildToggle = null!;
+    private Button _workToggle = null!;
 
     public override void _Ready()
     {
@@ -49,6 +51,24 @@ public partial class Toolbar : CanvasLayer
         };
         AddChild(_buildToggle);
         _buildToggle.Resized += Reposition;
+
+        _workToggle = new Button
+        {
+            Name = "WorkToggle",
+            Text = "Work",
+            ToggleMode = true,
+            CustomMinimumSize = new Vector2(ButtonSize * 1.4f, ButtonSize),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        _workToggle.Pressed += () =>
+        {
+            if (WorkTab is null) return;
+            if (_workToggle.ButtonPressed) WorkTab.Open();
+            else WorkTab.Close();
+            CallDeferred(nameof(Reposition));
+        };
+        AddChild(_workToggle);
+        _workToggle.Resized += Reposition;
 
         AddButton(_hbox, ToolMode.BuildWall, "Wall");
         AddButton(_hbox, ToolMode.Door, "Door");
@@ -85,10 +105,19 @@ public partial class Toolbar : CanvasLayer
         _buildToggle.Position = new Vector2(
             vp.X - _buildToggle.Size.X - MarginRight,
             vp.Y - _buildToggle.Size.Y - MarginBottom);
+        if (_workToggle is not null)
+        {
+            _workToggle.Position = new Vector2(
+                _buildToggle.Position.X - _workToggle.Size.X - ButtonGap,
+                vp.Y - _workToggle.Size.Y - MarginBottom);
+        }
         if (_hbox.Visible)
         {
+            float rightEdge = _workToggle is not null
+                ? _workToggle.Position.X - ButtonGap
+                : _buildToggle.Position.X - ButtonGap;
             _hbox.Position = new Vector2(
-                _buildToggle.Position.X - _hbox.Size.X - ButtonGap,
+                rightEdge - _hbox.Size.X,
                 vp.Y - _hbox.Size.Y - MarginBottom);
         }
     }

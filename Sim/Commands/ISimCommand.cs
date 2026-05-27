@@ -1,6 +1,7 @@
 using Friflo.Engine.ECS;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Stockpiles;
+using StruggleGame.Sim.Work;
 using StruggleGame.Sim.World;
 
 namespace StruggleGame.Sim.Commands;
@@ -692,6 +693,43 @@ public sealed class AdvanceWorldTimeCommand : ISimCommand
     public double DeltaSec { get; }
     public AdvanceWorldTimeCommand(double deltaSec) { DeltaSec = deltaSec; }
     public void Apply(SimRuntime sim) => sim.AdvanceWorldTime(DeltaSec);
+}
+
+// Work tab: set pawn's per-WorkType priority. priority=0 disables, 1..8
+// otherwise (1 = highest urgency, 8 = lowest). Only consulted when sim
+// is in priority mode (CheckmarkMode == false). Setting priority to 0
+// on the active WorkType also cancels any in-flight job of that type.
+public sealed class SetWorkPriorityCommand : ISimCommand
+{
+    public int EntityId { get; }
+    public WorkType Type { get; }
+    public byte Priority { get; }
+    public SetWorkPriorityCommand(int entityId, WorkType type, byte priority)
+    { EntityId = entityId; Type = type; Priority = priority; }
+    public void Apply(SimRuntime sim) => sim.SetWorkPriority(EntityId, Type, Priority);
+}
+
+// Work tab: set pawn's per-WorkType checkmark (allowed/disallowed).
+// Only consulted when sim is in checkmark mode (CheckmarkMode == true).
+// Flipping a WorkType off also cancels any in-flight job of that type.
+public sealed class SetWorkCheckmarkCommand : ISimCommand
+{
+    public int EntityId { get; }
+    public WorkType Type { get; }
+    public bool Allowed { get; }
+    public SetWorkCheckmarkCommand(int entityId, WorkType type, bool allowed)
+    { EntityId = entityId; Type = type; Allowed = allowed; }
+    public void Apply(SimRuntime sim) => sim.SetWorkCheckmark(EntityId, Type, Allowed);
+}
+
+// Work tab: flip sim-global checkmark/priority mode. Stored on
+// SimRuntime; DummyController consults it when deciding which of the
+// two parallel WorkPriorities arrays to read.
+public sealed class SetCheckmarkModeCommand : ISimCommand
+{
+    public bool CheckmarkMode { get; }
+    public SetCheckmarkModeCommand(bool checkmarkMode) { CheckmarkMode = checkmarkMode; }
+    public void Apply(SimRuntime sim) => sim.SetCheckmarkMode(CheckmarkMode);
 }
 
 // Debug bar action: delete a wanderer by entity id (point-and-click).

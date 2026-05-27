@@ -79,6 +79,13 @@ public sealed class SimSnapshot
     internal int LampBlueprintsCount;
     public SnapshotList<BlueprintState> LampBlueprints => new(LampBlueprintsBuf, LampBlueprintsCount);
 
+    // Sim-global work-tab mode flag. true = checkmark, false = priority 1..8.
+    public bool CheckmarkMode { get; internal set; } = true;
+
+    internal PawnWorkState[] PawnWorkBuf = System.Array.Empty<PawnWorkState>();
+    internal int PawnWorkCount;
+    public SnapshotList<PawnWorkState> PawnWork => new(PawnWorkBuf, PawnWorkCount);
+
     public int? SelectedDummyId { get; internal set; }
     public int[] SelectedDummyIds { get; internal set; } = System.Array.Empty<int>();
     public TilePos[]? SelectedPath { get; internal set; }
@@ -101,6 +108,12 @@ public readonly record struct DummyState(
     float MaxCarryBulk);
 
 public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath, int Count, bool Forbidden);
+
+// Per-pawn work-tab row data. Priorities[i] is 0..8 (0 = disabled);
+// Allowed[i] is the parallel checkmark-mode state. Both arrays are
+// length WorkTypes.Count and indexed by (int)WorkType. Snapshots are
+// shallow copies so the UI can read across ticks without locks.
+public readonly record struct PawnWorkState(int EntityId, string Name, byte[] Priorities, bool[] Allowed);
 
 public readonly record struct BlueprintState(TilePos Tile, float Progress, bool Forbidden);
 

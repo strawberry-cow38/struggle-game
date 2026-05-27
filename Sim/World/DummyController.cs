@@ -3,6 +3,7 @@ using StruggleGame.Sim.Items;
 using StruggleGame.Sim.Jobs;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Pathfinding;
+using StruggleGame.Sim.Work;
 
 namespace StruggleGame.Sim.World;
 
@@ -37,6 +38,10 @@ public sealed class DummyController
     private readonly Action<JobId> _cancelJob;
     private readonly DoorLookup _tryGetDoor;
     private readonly Random _rng;
+    // Per-pawn priority lookup. Wired from SimRuntime so the controller
+    // doesn't have to know about the runtime's CheckmarkMode flag or the
+    // parallel Allowed/Priorities arrays.
+    private readonly Func<Entity, WorkType, byte> _getPriority;
     // Optional callback for haul completion. Set by SimRuntime so we
     // don't need to plumb the runtime through the controller's surface.
     // Fires when a pawn physically picks up one item entity. Hooked by
@@ -60,7 +65,8 @@ public sealed class DummyController
         Func<MapView> viewProvider,
         Action<JobId> cancelJob,
         int seed,
-        DoorLookup tryGetDoor)
+        DoorLookup tryGetDoor,
+        Func<Entity, WorkType, byte> getPriority)
     {
         _paths = paths;
         _jobs = jobs;
@@ -68,6 +74,7 @@ public sealed class DummyController
         _cancelJob = cancelJob;
         _tryGetDoor = tryGetDoor;
         _rng = new Random(seed);
+        _getPriority = getPriority;
     }
 
     public void Step(EntityStore store, float dt)
@@ -379,36 +386,28 @@ public sealed class DummyController
 
     private bool TryClaimJob(MapView view, TilePos from, Entity entity, CommandBuffer cb, ref PathFollower path)
     {
-        JobId bestId = JobId.None;
-        TilePos bestNeighbor = default;
-        bool bestIsHaul = false;
-        int bestDist = int.MaxValue;
+        // Per-priority-bucket nearest job. Iterate priority 1..8 in order
+        // — within a bucket we still pick the closest, but we never spill
+        // into a lower-priority bucket while a higher one has work.
+        Span<JobId> bestId = stackalloc JobId[9];
+        Span<TilePos> bestApproach = stackalloc TilePos[9];
+        Span<int> bestDist = stackalloc int[9];
+        for (int i = 0; i < 9; i++) { bestId[i] = JobId.None; bestDist[i] = int.MaxValue; }
+
         foreach (var job in _jobs.All)
         {
-            if (job.Kind != JobKind.WallBuild
-                && job.Kind != JobKind.ChopTree
-                && job.Kind != JobKind.Deconstruct
-                && job.Kind != JobKind.FloorBuild
-                && job.Kind != JobKind.FloorDeconstruct
-                && job.Kind != JobKind.DoorBuild
-                && job.Kind != JobKind.DoorDeconstruct
-                && job.Kind != JobKind.Haul
-                && job.Kind != JobKind.CutPlants
-                && job.Kind != JobKind.Harvest
-                && job.Kind != JobKind.Sow
-                && job.Kind != JobKind.RoofBuild
-                && job.Kind != JobKind.RoofRemove
-                && job.Kind != JobKind.LampBuild
-                && job.Kind != JobKind.LampDeconstruct) continue;
             if (job.State != JobState.Open) continue;
             if (job.Forbidden) continue;
+            if (!WorkTypes.TryGet(job.Kind, out var wt)) continue;
+            byte pr = _getPriority(entity, wt);
+            if (pr == 0 || pr > 8) continue;
             // A pawn still hauling (forbidden cargo retained from a prior
             // delivery, mid-flight cargo, etc.) must not pick up another
             // haul — HandleHaul would treat the old Carrying as the active
             // job and walk to its stale DestTile.
             if (job.Kind == JobKind.Haul && entity.HasComponent<Carrying>()) continue;
             int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
-            if (d >= bestDist) continue;
+            if (d >= bestDist[pr]) continue;
             TilePos approach;
             bool isHaul = job.Kind == JobKind.Haul;
             bool isFloor = job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct;
@@ -416,48 +415,37 @@ public sealed class DummyController
             bool isLamp = job.Kind == JobKind.LampBuild || job.Kind == JobKind.LampDeconstruct;
             if (isHaul || isFloor || isLamp)
             {
-                // Haul pickup walks onto the source tile itself, not a
-                // neighbor. Floors + lamps also walk onto the tile —
-                // they don't block pathing and the worker can stand on
-                // them. Lamp placement rules already gate out walls /
-                // doors, so the tile is reliably walkable.
                 if (!view.Walkable(job.Tile)) continue;
                 approach = job.Tile;
             }
             else if (isRoof)
             {
-                // Roofs are built from underneath: stand on the tile when
-                // it's walkable (open interior, floor), else stand on an
-                // adjacent walkable tile (roof over a wall or door).
-                if (view.Walkable(job.Tile))
-                {
-                    approach = job.Tile;
-                }
-                else
-                {
-                    if (!TryPickNeighbor(view, from, job.Tile, out var neighbor)) continue;
-                    approach = neighbor;
-                }
+                if (view.Walkable(job.Tile)) approach = job.Tile;
+                else if (TryPickNeighbor(view, from, job.Tile, out var neighbor)) approach = neighbor;
+                else continue;
             }
             else
             {
                 if (!TryPickNeighbor(view, from, job.Tile, out var neighbor)) continue;
                 approach = neighbor;
             }
-            bestId = job.Id;
-            bestNeighbor = approach;
-            bestIsHaul = isHaul;
-            bestDist = d;
+            bestId[pr] = job.Id;
+            bestApproach[pr] = approach;
+            bestDist[pr] = d;
         }
-        if (bestId.IsNone) return false;
-        if (!_jobs.TryClaim(bestId, entity)) return false;
 
-        cb.AddComponent(entity.Id, new BuildTarget { JobId = bestId });
-        if (bestNeighbor != from)
+        for (int level = 1; level <= 8; level++)
         {
-            path.PendingPathId = _paths.Request(from, bestNeighbor);
+            if (bestId[level].IsNone) continue;
+            if (!_jobs.TryClaim(bestId[level], entity)) continue;
+            cb.AddComponent(entity.Id, new BuildTarget { JobId = bestId[level] });
+            if (bestApproach[level] != from)
+            {
+                path.PendingPathId = _paths.Request(from, bestApproach[level]);
+            }
+            return true;
         }
-        return true;
+        return false;
     }
 
     // Multi-pickup haul: walk to primary pickup tile (job.Tile) → pickup

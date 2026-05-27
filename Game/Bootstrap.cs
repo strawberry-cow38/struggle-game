@@ -95,7 +95,10 @@ public partial class Bootstrap : Node2D
         var hud = new HudOverlay { Host = _host, Name = "Hud" };
         AddChild(hud);
 
-        var toolbar = new Toolbar { Tools = _tools, Name = "Toolbar" };
+        var workTab = new WorkTab { Host = _host, Name = "WorkTab" };
+        AddChild(workTab);
+
+        var toolbar = new Toolbar { Tools = _tools, WorkTab = workTab, Name = "Toolbar" };
         AddChild(toolbar);
 
         var stockpilePanel = new StockpilePanel { Host = _host, Tools = _tools, Name = "StockpilePanel" };

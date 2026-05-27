@@ -9,6 +9,7 @@ using StruggleGame.Sim.Pathfinding;
 using StruggleGame.Sim.Snapshots;
 using StruggleGame.Sim.Stockpiles;
 using StruggleGame.Sim.GrowZones;
+using StruggleGame.Sim.Work;
 using StruggleGame.Sim.World;
 
 namespace StruggleGame.Sim;
@@ -219,7 +220,7 @@ public sealed class SimRuntime
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
         _spawnRng = new Random(seed + 7);
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
-        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor);
+        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority);
         _dummies.OnHaulPickup = (carriedEnt, cb) => OnHaulPickedUp(carriedEnt, cb);
         _dummies.OnHaulDeliver = (carrierEntity, dropTile, cb) => DeliverCarrying(carrierEntity, dropTile, cb);
         _builds = new BuildSystem(this, Jobs);
@@ -289,6 +290,154 @@ public sealed class SimRuntime
 
     public IReadOnlyCollection<TilePos> TreeTiles => _trees.Keys;
     public bool TryGetTree(TilePos tile, out Entity entity) => _trees.TryGetValue(tile, out entity!);
+
+    // Work-tab global mode. true = checkmark mode (DummyController reads
+    // WorkPriorities.Allowed and treats each WorkType as on/off with the
+    // default priority); false = priority mode (reads Priorities[] 1..8,
+    // 0 = disabled). Defaults to checkmark — fresh worlds behave like the
+    // pre-work-tab build until the player customises.
+    public bool CheckmarkMode { get; private set; } = true;
+
+    // Apply a work-priority change from the work tab. Cancels any active
+    // job of that work type if the new priority is "disabled" (0 in
+    // priority mode, false in checkmark mode) so the pawn doesn't keep
+    // working a job the player just forbade.
+    public void SetWorkPriority(int entityId, WorkType type, byte priority)
+    {
+        if (!Store.TryGetEntityById(entityId, out var ent)) return;
+        if (!ent.HasComponent<Wanderer>()) return;
+        EnsureWorkPriorities(ent);
+        ref var wp = ref ent.GetComponent<WorkPriorities>();
+        if (priority > 8) priority = 8;
+        wp.Priorities![(int)type] = priority;
+        if (!CheckmarkMode && priority == 0) AbortJobIfWorkType(ent, type);
+    }
+
+    public void SetWorkCheckmark(int entityId, WorkType type, bool allowed)
+    {
+        if (!Store.TryGetEntityById(entityId, out var ent)) return;
+        if (!ent.HasComponent<Wanderer>()) return;
+        EnsureWorkPriorities(ent);
+        ref var wp = ref ent.GetComponent<WorkPriorities>();
+        wp.Allowed![(int)type] = allowed;
+        if (CheckmarkMode && !allowed) AbortJobIfWorkType(ent, type);
+    }
+
+    public void SetCheckmarkMode(bool checkmarkMode)
+    {
+        if (CheckmarkMode == checkmarkMode) return;
+        CheckmarkMode = checkmarkMode;
+        // Switching mode can make in-flight jobs newly forbidden. Scan
+        // every pawn and abort jobs whose work type is disallowed under
+        // the new mode.
+        Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity ent) =>
+        {
+            if (!ent.HasComponent<BuildTarget>()) return;
+            var bt = ent.GetComponent<BuildTarget>();
+            var job = Jobs.Get(bt.JobId);
+            if (job is null) return;
+            if (!WorkTypes.TryGet(job.Kind, out var wt)) return;
+            if (!IsWorkTypeAllowed(ent, wt)) AbortPawnJob(ent);
+        });
+    }
+
+    public static void EnsureWorkPriorities(Entity ent)
+    {
+        if (ent.HasComponent<WorkPriorities>())
+        {
+            ref var existing = ref ent.GetComponent<WorkPriorities>();
+            if (existing.Priorities is null || existing.Priorities.Length != WorkTypes.Count)
+            {
+                existing.Priorities = new byte[WorkTypes.Count];
+                for (int i = 0; i < WorkTypes.Count; i++) existing.Priorities[i] = WorkPriorities.DefaultPriority;
+            }
+            if (existing.Allowed is null || existing.Allowed.Length != WorkTypes.Count)
+            {
+                existing.Allowed = new bool[WorkTypes.Count];
+                for (int i = 0; i < WorkTypes.Count; i++) existing.Allowed[i] = true;
+            }
+            return;
+        }
+        var wp = new WorkPriorities
+        {
+            Priorities = new byte[WorkTypes.Count],
+            Allowed = new bool[WorkTypes.Count],
+        };
+        for (int i = 0; i < WorkTypes.Count; i++)
+        {
+            wp.Priorities[i] = WorkPriorities.DefaultPriority;
+            wp.Allowed[i] = true;
+        }
+        ent.AddComponent(wp);
+    }
+
+    // Effective per-work-type priority for a pawn. Reads either Allowed
+    // (checkmark mode) or Priorities (priority mode). Returns 0 = pawn
+    // refuses jobs of that work type; 1..8 = take with that priority bucket
+    // (1 highest, 8 lowest).
+    public byte EffectivePriority(Entity ent, WorkType type)
+    {
+        if (!ent.HasComponent<WorkPriorities>()) return WorkPriorities.DefaultPriority;
+        var wp = ent.GetComponent<WorkPriorities>();
+        int idx = (int)type;
+        if (CheckmarkMode)
+        {
+            bool allowed = wp.Allowed is not null && idx < wp.Allowed.Length && wp.Allowed[idx];
+            return allowed ? WorkPriorities.DefaultPriority : (byte)0;
+        }
+        if (wp.Priorities is null || idx >= wp.Priorities.Length) return WorkPriorities.DefaultPriority;
+        byte p = wp.Priorities[idx];
+        return p > 8 ? (byte)8 : p;
+    }
+
+    public bool IsWorkTypeAllowed(Entity ent, WorkType type) => EffectivePriority(ent, type) > 0;
+
+    private void AbortJobIfWorkType(Entity ent, WorkType type)
+    {
+        if (!ent.HasComponent<BuildTarget>()) return;
+        var bt = ent.GetComponent<BuildTarget>();
+        var job = Jobs.Get(bt.JobId);
+        if (job is null) return;
+        if (!WorkTypes.TryGet(job.Kind, out var jt)) return;
+        if (jt != type) return;
+        AbortPawnJob(ent);
+    }
+
+    private void AbortPawnJob(Entity ent)
+    {
+        var bt = ent.GetComponent<BuildTarget>();
+        // Mid-haul: drop carried items at the pawn's current tile (or
+        // dest as a fallback) so cargo doesn't vanish.
+        if (ent.HasComponent<Carrying>())
+        {
+            TilePos here;
+            if (ent.HasComponent<WorldPos>())
+            {
+                var wp = ent.GetComponent<WorldPos>();
+                here = new TilePos((int)wp.X, (int)wp.Y);
+            }
+            else
+            {
+                here = ent.GetComponent<Carrying>().DestTile;
+            }
+            var cb = Store.GetCommandBuffer();
+            DeliverCarrying(ent, here, cb);
+            cb.Playback();
+        }
+        else
+        {
+            Jobs.Release(bt.JobId);
+        }
+        ent.RemoveComponent<BuildTarget>();
+        if (ent.HasComponent<PathFollower>())
+        {
+            ref var pf = ref ent.GetComponent<PathFollower>();
+            if (pf.PendingPathId != 0) PathService.Discard(pf.PendingPathId);
+            pf.PendingPathId = 0;
+            pf.Waypoints = null;
+            pf.Index = 0;
+        }
+    }
 
     public IReadOnlyCollection<TilePos> DoorTiles => _doorMap.Keys;
     public bool TryGetDoor(TilePos tile, out Entity entity) => _doorMap.TryGetValue(tile, out entity!);
@@ -368,6 +517,7 @@ public sealed class SimRuntime
         snap.SelectedDummyIds = selectedDummyIds ?? Array.Empty<int>();
         snap.SelectedPath = null;
         snap.SelectedOrders = null;
+        snap.CheckmarkMode = CheckmarkMode;
 
         var dq = Store.Query<WorldPos, Wanderer>();
         EnsureCap(ref snap.DummiesBuf, dq.Count);
@@ -453,6 +603,21 @@ public sealed class SimRuntime
             }
         });
         snap.DummiesCount = i;
+
+        EnsureCap(ref snap.PawnWorkBuf, dq.Count);
+        var pwBuf = snap.PawnWorkBuf;
+        int pwi = 0;
+        Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity ent) =>
+        {
+            EnsureWorkPriorities(ent);
+            var wp = ent.GetComponent<WorkPriorities>();
+            var pr = new byte[WorkTypes.Count];
+            var al = new bool[WorkTypes.Count];
+            if (wp.Priorities is not null) Array.Copy(wp.Priorities, pr, Math.Min(wp.Priorities.Length, WorkTypes.Count));
+            if (wp.Allowed is not null) Array.Copy(wp.Allowed, al, Math.Min(wp.Allowed.Length, WorkTypes.Count));
+            pwBuf[pwi++] = new PawnWorkState(ent.Id, $"Colonist {ent.Id}", pr, al);
+        });
+        snap.PawnWorkCount = pwi;
 
         EnsureCap(ref snap.BlueprintsBuf, Jobs.Count);
         var bpsBuf = snap.BlueprintsBuf;
@@ -3285,6 +3450,7 @@ public sealed class SimRuntime
             e.AddComponent(new WorldPos { X = x + 0.5f, Y = y + 0.5f });
             e.AddComponent(new PathFollower());
             e.AddComponent(new Wanderer());
+            EnsureWorkPriorities(e);
             return true;
         }
         return false;
@@ -3329,6 +3495,7 @@ public sealed class SimRuntime
                     e.AddComponent(new WorldPos { X = x + 0.5f, Y = y + 0.5f });
                     e.AddComponent(new PathFollower());
                     e.AddComponent(new Wanderer());
+                    EnsureWorkPriorities(e);
                     return;
                 }
             }

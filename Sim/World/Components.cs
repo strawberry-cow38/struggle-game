@@ -55,6 +55,21 @@ public struct Drafted : IComponent
 {
 }
 
+// Per-colonist priority table for each WorkType. Priorities[i] = 0
+// means "disabled" — pawn refuses jobs of that work type. 1 is highest,
+// 8 is lowest. Allowed[i] is the parallel checkmark-mode state: true
+// means "the colonist may take jobs of this work type when the work tab
+// is in checkmark mode" (priority then defaults to DefaultPriority).
+// The two arrays are kept in sync so flipping between modes never wipes
+// the player's tuning.
+public struct WorkPriorities : IComponent
+{
+    public byte[]? Priorities;
+    public bool[]? Allowed;
+
+    public const byte DefaultPriority = 3;
+}
+
 // FIFO queue of move orders for a drafted colonist. The next order is
 // popped when the current path runs out; appended on shift+RMB.
 public struct OrderQueue : IComponent
