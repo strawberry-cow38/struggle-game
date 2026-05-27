@@ -10,6 +10,7 @@ public partial class Toolbar : CanvasLayer
 {
     public ToolService? Tools { get; set; }
     public WorkTab? WorkTab { get; set; }
+    public ScheduleTab? ScheduleTab { get; set; }
 
     private const int ButtonSize = 56;
     private const int ButtonGap = 6;
@@ -20,6 +21,7 @@ public partial class Toolbar : CanvasLayer
     private HBoxContainer _hbox = null!;
     private Button _buildToggle = null!;
     private Button _workToggle = null!;
+    private Button _scheduleToggle = null!;
 
     public override void _Ready()
     {
@@ -70,6 +72,24 @@ public partial class Toolbar : CanvasLayer
         AddChild(_workToggle);
         _workToggle.Resized += Reposition;
 
+        _scheduleToggle = new Button
+        {
+            Name = "ScheduleToggle",
+            Text = "Sched",
+            ToggleMode = true,
+            CustomMinimumSize = new Vector2(ButtonSize * 1.4f, ButtonSize),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        _scheduleToggle.Pressed += () =>
+        {
+            if (ScheduleTab is null) return;
+            if (_scheduleToggle.ButtonPressed) ScheduleTab.Open();
+            else ScheduleTab.Close();
+            CallDeferred(nameof(Reposition));
+        };
+        AddChild(_scheduleToggle);
+        _scheduleToggle.Resized += Reposition;
+
         AddButton(_hbox, ToolMode.BuildWall, "Wall");
         AddButton(_hbox, ToolMode.Door, "Door");
         AddButton(_hbox, ToolMode.Floor, "Floor");
@@ -111,11 +131,19 @@ public partial class Toolbar : CanvasLayer
                 _buildToggle.Position.X - _workToggle.Size.X - ButtonGap,
                 vp.Y - _workToggle.Size.Y - MarginBottom);
         }
+        if (_scheduleToggle is not null)
+        {
+            float anchorX = _workToggle is not null ? _workToggle.Position.X : _buildToggle.Position.X;
+            _scheduleToggle.Position = new Vector2(
+                anchorX - _scheduleToggle.Size.X - ButtonGap,
+                vp.Y - _scheduleToggle.Size.Y - MarginBottom);
+        }
         if (_hbox.Visible)
         {
-            float rightEdge = _workToggle is not null
-                ? _workToggle.Position.X - ButtonGap
-                : _buildToggle.Position.X - ButtonGap;
+            float rightEdge;
+            if (_scheduleToggle is not null) rightEdge = _scheduleToggle.Position.X - ButtonGap;
+            else if (_workToggle is not null) rightEdge = _workToggle.Position.X - ButtonGap;
+            else rightEdge = _buildToggle.Position.X - ButtonGap;
             _hbox.Position = new Vector2(
                 rightEdge - _hbox.Size.X,
                 vp.Y - _hbox.Size.Y - MarginBottom);

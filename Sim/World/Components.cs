@@ -70,6 +70,26 @@ public struct WorkPriorities : IComponent
     public const byte DefaultPriority = 3;
 }
 
+// Per-hour schedule slots. Length 24, indexed by local hour 0..23.
+// A "general guide" — DummyController consults it before claiming a
+// new job; mid-job behavior is unaffected. Without tired/recreation
+// stats yet, Sleep and Recreation both translate to "don't pick up
+// fresh work, just idle/wander" — the distinction is preserved in
+// the data so future stat-driven behavior can split them.
+public enum ScheduleCategory : byte
+{
+    Any = 0,
+    Work = 1,
+    Sleep = 2,
+    Recreation = 3,
+}
+
+public struct Schedule : IComponent
+{
+    public byte[]? Slots;
+    public const int Hours = 24;
+}
+
 // FIFO queue of move orders for a drafted colonist. The next order is
 // popped when the current path runs out; appended on shift+RMB.
 public struct OrderQueue : IComponent

@@ -42,6 +42,10 @@ public sealed class DummyController
     // doesn't have to know about the runtime's CheckmarkMode flag or the
     // parallel Allowed/Priorities arrays.
     private readonly Func<Entity, WorkType, byte> _getPriority;
+    // Per-pawn schedule category for the current world hour. Wired from
+    // SimRuntime so the controller doesn't need to know about the world
+    // clock or per-pawn Schedule components.
+    private readonly Func<Entity, ScheduleCategory> _getScheduleSlot;
     // Optional callback for haul completion. Set by SimRuntime so we
     // don't need to plumb the runtime through the controller's surface.
     // Fires when a pawn physically picks up one item entity. Hooked by
@@ -66,7 +70,8 @@ public sealed class DummyController
         Action<JobId> cancelJob,
         int seed,
         DoorLookup tryGetDoor,
-        Func<Entity, WorkType, byte> getPriority)
+        Func<Entity, WorkType, byte> getPriority,
+        Func<Entity, ScheduleCategory> getScheduleSlot)
     {
         _paths = paths;
         _jobs = jobs;
@@ -75,6 +80,7 @@ public sealed class DummyController
         _tryGetDoor = tryGetDoor;
         _rng = new Random(seed);
         _getPriority = getPriority;
+        _getScheduleSlot = getScheduleSlot;
     }
 
     public void Step(EntityStore store, float dt)
@@ -310,8 +316,15 @@ public sealed class DummyController
             }
         }
 
-        // 3. Claim a new job.
-        if (_jobs.Count > 0 && TryClaimJob(view, here, entity, cb, ref path))
+        // 3. Claim a new job — gated by the pawn's current schedule slot.
+        // Sleep / Recreation pawns leave open jobs alone and fall through
+        // to wander (placeholder for future tired/rec behavior). Work +
+        // Any slots claim normally. Mid-job pawns reach this branch only
+        // after their BuildTarget closes, so existing work always finishes
+        // regardless of the slot — schedule is a guide, not a chokehold.
+        var slot = _getScheduleSlot(entity);
+        bool mayWork = slot == ScheduleCategory.Work || slot == ScheduleCategory.Any;
+        if (mayWork && _jobs.Count > 0 && TryClaimJob(view, here, entity, cb, ref path))
         {
             return;
         }

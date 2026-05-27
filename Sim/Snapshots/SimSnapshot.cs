@@ -113,7 +113,7 @@ public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath
 // Allowed[i] is the parallel checkmark-mode state. Both arrays are
 // length WorkTypes.Count and indexed by (int)WorkType. Snapshots are
 // shallow copies so the UI can read across ticks without locks.
-public readonly record struct PawnWorkState(int EntityId, string Name, byte[] Priorities, bool[] Allowed);
+public readonly record struct PawnWorkState(int EntityId, string Name, byte[] Priorities, bool[] Allowed, byte[] Schedule);
 
 public readonly record struct BlueprintState(TilePos Tile, float Progress, bool Forbidden);
 

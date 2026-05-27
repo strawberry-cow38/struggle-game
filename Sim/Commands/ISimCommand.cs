@@ -732,6 +732,19 @@ public sealed class SetCheckmarkModeCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetCheckmarkMode(CheckmarkMode);
 }
 
+// Schedule tab: paint pawn's schedule for hours [HourStart..HourEnd]
+// with Category. Inclusive on both ends; range may wrap past 23 → 0.
+public sealed class PaintScheduleCommand : ISimCommand
+{
+    public int EntityId { get; }
+    public int HourStart { get; }
+    public int HourEnd { get; }
+    public ScheduleCategory Category { get; }
+    public PaintScheduleCommand(int entityId, int hourStart, int hourEnd, ScheduleCategory category)
+    { EntityId = entityId; HourStart = hourStart; HourEnd = hourEnd; Category = category; }
+    public void Apply(SimRuntime sim) => sim.PaintSchedule(EntityId, HourStart, HourEnd, Category);
+}
+
 // Debug bar action: delete a wanderer by entity id (point-and-click).
 public sealed class RemoveDummyCommand : ISimCommand
 {

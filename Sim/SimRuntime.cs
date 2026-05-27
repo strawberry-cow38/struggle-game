@@ -220,7 +220,7 @@ public sealed class SimRuntime
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
         _spawnRng = new Random(seed + 7);
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
-        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority);
+        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority, CurrentScheduleSlot);
         _dummies.OnHaulPickup = (carriedEnt, cb) => OnHaulPickedUp(carriedEnt, cb);
         _dummies.OnHaulDeliver = (carrierEntity, dropTile, cb) => DeliverCarrying(carrierEntity, dropTile, cb);
         _builds = new BuildSystem(this, Jobs);
@@ -439,6 +439,77 @@ public sealed class SimRuntime
         }
     }
 
+    // Default schedule applied to every fresh pawn. RimWorld-ish split:
+    // night sleep, light morning, productive day, evening recreation.
+    private static readonly ScheduleCategory[] DefaultSchedule = new ScheduleCategory[24]
+    {
+        ScheduleCategory.Sleep, ScheduleCategory.Sleep, ScheduleCategory.Sleep, ScheduleCategory.Sleep,
+        ScheduleCategory.Sleep, ScheduleCategory.Sleep,                                      // 0-5
+        ScheduleCategory.Any, ScheduleCategory.Any,                                          // 6-7
+        ScheduleCategory.Work, ScheduleCategory.Work, ScheduleCategory.Work, ScheduleCategory.Work, // 8-11
+        ScheduleCategory.Recreation, ScheduleCategory.Recreation,                            // 12-13
+        ScheduleCategory.Work, ScheduleCategory.Work, ScheduleCategory.Work, ScheduleCategory.Work, // 14-17
+        ScheduleCategory.Recreation, ScheduleCategory.Recreation, ScheduleCategory.Recreation, ScheduleCategory.Recreation, // 18-21
+        ScheduleCategory.Sleep, ScheduleCategory.Sleep,                                      // 22-23
+    };
+
+    public static void EnsureSchedule(Entity ent)
+    {
+        if (ent.HasComponent<Schedule>())
+        {
+            ref var existing = ref ent.GetComponent<Schedule>();
+            if (existing.Slots is null || existing.Slots.Length != Schedule.Hours)
+            {
+                existing.Slots = new byte[Schedule.Hours];
+                for (int i = 0; i < Schedule.Hours; i++) existing.Slots[i] = (byte)DefaultSchedule[i];
+            }
+            return;
+        }
+        var s = new Schedule { Slots = new byte[Schedule.Hours] };
+        for (int i = 0; i < Schedule.Hours; i++) s.Slots[i] = (byte)DefaultSchedule[i];
+        ent.AddComponent(s);
+    }
+
+    public int CurrentHour
+    {
+        get
+        {
+            int h = ((int)Math.Floor(_worldTimeSec / 3600.0)) % 24;
+            if (h < 0) h += 24;
+            return h;
+        }
+    }
+
+    // Per-pawn schedule slot for the current world hour. Falls back to
+    // Any when the pawn has no Schedule component, so legacy spawn paths
+    // and tests behave like the pre-schedule build.
+    public ScheduleCategory CurrentScheduleSlot(Entity ent)
+    {
+        if (!ent.HasComponent<Schedule>()) return ScheduleCategory.Any;
+        var s = ent.GetComponent<Schedule>();
+        if (s.Slots is null || s.Slots.Length != Schedule.Hours) return ScheduleCategory.Any;
+        return (ScheduleCategory)s.Slots[CurrentHour];
+    }
+
+    // Paint inclusive range [hourStart..hourEnd] with the given category.
+    // Range is allowed to wrap (e.g. 22..2 covers 22,23,0,1,2) so the UI
+    // can drag across the midnight seam.
+    public void PaintSchedule(int entityId, int hourStart, int hourEnd, ScheduleCategory cat)
+    {
+        if (!Store.TryGetEntityById(entityId, out var ent)) return;
+        if (!ent.HasComponent<Wanderer>()) return;
+        EnsureSchedule(ent);
+        ref var sched = ref ent.GetComponent<Schedule>();
+        if (hourStart < 0 || hourStart >= 24 || hourEnd < 0 || hourEnd >= 24) return;
+        int h = hourStart;
+        while (true)
+        {
+            sched.Slots![h] = (byte)cat;
+            if (h == hourEnd) break;
+            h = (h + 1) % 24;
+        }
+    }
+
     public IReadOnlyCollection<TilePos> DoorTiles => _doorMap.Keys;
     public bool TryGetDoor(TilePos tile, out Entity entity) => _doorMap.TryGetValue(tile, out entity!);
 
@@ -610,12 +681,16 @@ public sealed class SimRuntime
         Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity ent) =>
         {
             EnsureWorkPriorities(ent);
+            EnsureSchedule(ent);
             var wp = ent.GetComponent<WorkPriorities>();
+            var sched = ent.GetComponent<Schedule>();
             var pr = new byte[WorkTypes.Count];
             var al = new bool[WorkTypes.Count];
+            var sl = new byte[Schedule.Hours];
             if (wp.Priorities is not null) Array.Copy(wp.Priorities, pr, Math.Min(wp.Priorities.Length, WorkTypes.Count));
             if (wp.Allowed is not null) Array.Copy(wp.Allowed, al, Math.Min(wp.Allowed.Length, WorkTypes.Count));
-            pwBuf[pwi++] = new PawnWorkState(ent.Id, $"Colonist {ent.Id}", pr, al);
+            if (sched.Slots is not null) Array.Copy(sched.Slots, sl, Math.Min(sched.Slots.Length, Schedule.Hours));
+            pwBuf[pwi++] = new PawnWorkState(ent.Id, $"Colonist {ent.Id}", pr, al, sl);
         });
         snap.PawnWorkCount = pwi;
 
@@ -3451,6 +3526,7 @@ public sealed class SimRuntime
             e.AddComponent(new PathFollower());
             e.AddComponent(new Wanderer());
             EnsureWorkPriorities(e);
+            EnsureSchedule(e);
             return true;
         }
         return false;
@@ -3496,6 +3572,7 @@ public sealed class SimRuntime
                     e.AddComponent(new PathFollower());
                     e.AddComponent(new Wanderer());
                     EnsureWorkPriorities(e);
+            EnsureSchedule(e);
                     return;
                 }
             }

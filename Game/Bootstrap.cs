@@ -98,7 +98,10 @@ public partial class Bootstrap : Node2D
         var workTab = new WorkTab { Host = _host, Name = "WorkTab" };
         AddChild(workTab);
 
-        var toolbar = new Toolbar { Tools = _tools, WorkTab = workTab, Name = "Toolbar" };
+        var scheduleTab = new ScheduleTab { Host = _host, Name = "ScheduleTab" };
+        AddChild(scheduleTab);
+
+        var toolbar = new Toolbar { Tools = _tools, WorkTab = workTab, ScheduleTab = scheduleTab, Name = "Toolbar" };
         AddChild(toolbar);
 
         var stockpilePanel = new StockpilePanel { Host = _host, Tools = _tools, Name = "StockpilePanel" };
