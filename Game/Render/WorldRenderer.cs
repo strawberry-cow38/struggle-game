@@ -148,28 +148,126 @@ public partial class WorldRenderer : Node2D
         return ImageTexture.CreateFromImage(img);
     }
 
+    // Conditional-redraw bookkeeping. Idle frames (no snap advance, no
+    // camera move, no hover change, no selection change, no in-progress
+    // pawn/door motion) should not retrigger _Draw — at 1800fps that's
+    // ~1800 wasted entity-loop passes per second.
+    private SimSnapshot? _observedSnap;
+    private bool _interpMotionActive;
+    private Transform2D _observedCanvasXform;
+    private TilePos _observedHover = new(int.MinValue, int.MinValue);
+    private TilePos[]? _observedSelWalls;
+    private TilePos[]? _observedSelDoors;
+    private TilePos[]? _observedSelBp;
+    private TilePos[]? _observedSelLamps;
+    private int? _observedSelStock;
+    private int? _observedSelGrow;
+    private bool _observedInitialized;
+
     public override void _Process(double delta)
     {
-        QueueRedraw();
+        bool needsRedraw = false;
+
+        var snap = Host?.LatestSnapshot;
+        if (!ReferenceEquals(snap, _observedSnap))
+        {
+            _interpMotionActive = HasPawnOrDoorMotion(_observedSnap, snap);
+            // Maintain the snap pair + timestamp here (was previously
+            // done in _Draw). With QueueRedraw now gated, _Draw might
+            // not see every snap reference change directly — keeping
+            // the pair canonical in _Process means _Draw only consumes.
+            if (snap is not null)
+            {
+                _prevSnap = _currSnap;
+                _currSnap = snap;
+                _currSnapStartMs = Time.GetTicksMsec();
+            }
+            _observedSnap = snap;
+            needsRedraw = true;
+        }
+
+        // Mid-tick interp window: only force per-frame redraws when there
+        // is actual motion to interpolate. Idle colonists + still doors =
+        // no need to redraw between sim ticks.
+        if (_interpMotionActive && Host is not null && _currSnapStartMs != 0)
+        {
+            float interval = 1000f / Math.Max(1, Host.TickHz);
+            float elapsed = Time.GetTicksMsec() - _currSnapStartMs;
+            if (elapsed < interval) needsRedraw = true;
+            else _interpMotionActive = false;
+        }
+
+        var xform = GetCanvasTransform();
+        if (!_observedInitialized || xform != _observedCanvasXform)
+        {
+            _observedCanvasXform = xform;
+            needsRedraw = true;
+        }
+
+        var mouseLocal = GetLocalMousePosition();
+        var hoverTile = new TilePos(
+            Mathf.FloorToInt(mouseLocal.X / PixelsPerTile),
+            Mathf.FloorToInt(mouseLocal.Y / PixelsPerTile));
+        if (hoverTile != _observedHover)
+        {
+            _observedHover = hoverTile;
+            needsRedraw = true;
+        }
+
+        if (Host is not null)
+        {
+            if (!ReferenceEquals(Host.SelectedWallTiles, _observedSelWalls))
+                { _observedSelWalls = Host.SelectedWallTiles; needsRedraw = true; }
+            if (!ReferenceEquals(Host.SelectedDoorTiles, _observedSelDoors))
+                { _observedSelDoors = Host.SelectedDoorTiles; needsRedraw = true; }
+            if (!ReferenceEquals(Host.SelectedBlueprintTiles, _observedSelBp))
+                { _observedSelBp = Host.SelectedBlueprintTiles; needsRedraw = true; }
+            if (!ReferenceEquals(Host.SelectedLampTiles, _observedSelLamps))
+                { _observedSelLamps = Host.SelectedLampTiles; needsRedraw = true; }
+            if (Host.SelectedStockpileId != _observedSelStock)
+                { _observedSelStock = Host.SelectedStockpileId; needsRedraw = true; }
+            if (Host.SelectedGrowZoneId != _observedSelGrow)
+                { _observedSelGrow = Host.SelectedGrowZoneId; needsRedraw = true; }
+        }
+
+        _observedInitialized = true;
+        if (needsRedraw) QueueRedraw();
         _visualLighting?.Tick();
+    }
+
+    // Diff pawn positions + door open amounts between consecutive snaps.
+    // Used to decide whether the interp window should keep redrawing at
+    // engine fps. O(N) via small dict for cheap lookups; called once per
+    // snap reference change (i.e. once per sim tick).
+    private static readonly Dictionary<int, (float X, float Y)> _motionPawnScratch = new();
+    private static readonly Dictionary<TilePos, float> _motionDoorScratch = new();
+    private static bool HasPawnOrDoorMotion(SimSnapshot? prev, SimSnapshot? curr)
+    {
+        if (prev is null || curr is null) return true;
+        _motionPawnScratch.Clear();
+        foreach (var p in prev.Dummies) _motionPawnScratch[p.EntityId] = (p.X, p.Y);
+        foreach (var c in curr.Dummies)
+        {
+            if (!_motionPawnScratch.TryGetValue(c.EntityId, out var prevXY)) return true;
+            if (prevXY.X != c.X || prevXY.Y != c.Y) return true;
+        }
+        _motionDoorScratch.Clear();
+        foreach (var d in prev.Doors) _motionDoorScratch[d.Tile] = d.OpenAmount;
+        foreach (var d in curr.Doors)
+        {
+            if (!_motionDoorScratch.TryGetValue(d.Tile, out var prevOpen)) return true;
+            if (prevOpen != d.OpenAmount) return true;
+        }
+        return false;
     }
 
     public override void _Draw()
     {
         if (_groundTex is null || Host is null) return;
 
-        var latest = Host.LatestSnapshot;
-        // Reference compare, not Tick: paused republishes (selection
-        // change, designation while paused) reuse the same Tick but are
-        // a brand new snapshot object — Tick-only check would miss them
-        // and the selection rings/outlines would lag until unpause.
-        if (latest is not null && !ReferenceEquals(latest, _currSnap))
-        {
-            _prevSnap = _currSnap;
-            _currSnap = latest;
-            _currSnapStartMs = Time.GetTicksMsec();
-        }
-        var snap = _currSnap ?? latest;
+        // Snap pair + timestamp are now maintained in _Process (so the
+        // bookkeeping survives even when _Draw is gated off).
+        var snap = _currSnap ?? Host.LatestSnapshot;
 
         // Wall-clock alpha into the [_prevSnap, _currSnap] interval, clamped
         // to [0,1]. Used to lerp pawn positions and door open amounts so
