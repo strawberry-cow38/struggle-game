@@ -336,12 +336,41 @@ public sealed class SimRuntime
         return true;
     }
 
+    // Double-buffered snapshot. We alternate which slot BuildSnapshot
+    // writes into so the renderer can keep reading the previously
+    // published instance while the next one is being assembled. Section
+    // arrays inside each slot are pooled + reused across ticks.
+    private readonly SimSnapshot _snapSlotA = new();
+    private readonly SimSnapshot _snapSlotB = new();
+    private bool _useSlotA;
+
+    private static void EnsureCap<T>(ref T[] arr, int needed)
+    {
+        if (arr.Length >= needed) return;
+        int next = Math.Max(4, arr.Length == 0 ? needed : arr.Length * 2);
+        while (next < needed) next *= 2;
+        Array.Resize(ref arr, next);
+    }
+
     public SimSnapshot BuildSnapshot(int? selectedDummyId = null, IReadOnlyCollection<int>? selectedTreeIds = null, IReadOnlyCollection<int>? selectedWoodIds = null)
     {
+        _useSlotA = !_useSlotA;
+        var snap = _useSlotA ? _snapSlotA : _snapSlotB;
+
+        snap.Tick = Tick;
+        snap.MapVersion = MapVersion;
+        snap.RoomVersion = RoomVersion;
+        snap.RoomCount = RoomCount;
+        snap.RoofVersion = RoofVersion;
+        snap.LightVersion = LightVersion;
+        snap.WorldTimeSec = _worldTimeSec;
+        snap.SelectedDummyId = selectedDummyId;
+        snap.SelectedPath = null;
+        snap.SelectedOrders = null;
+
         var dq = Store.Query<WorldPos, Wanderer>();
-        var dummies = new DummyState[dq.Count];
-        TilePos[]? selectedPath = null;
-        TilePos[]? selectedOrders = null;
+        EnsureCap(ref snap.DummiesBuf, dq.Count);
+        var dummiesBuf = snap.DummiesBuf;
         int i = 0;
         dq.ForEachEntity((ref WorldPos p, ref Wanderer _, Entity ent) =>
         {
@@ -376,7 +405,7 @@ public sealed class SimRuntime
                     }
                 }
             }
-            dummies[i++] = new DummyState(
+            dummiesBuf[i++] = new DummyState(
                 ent.Id, p.X, p.Y, label, drafted, carrying,
                 inventory, carryW, carryB,
                 SimConstants.MaxCarryWeight, SimConstants.MaxCarryBulk);
@@ -391,9 +420,10 @@ public sealed class SimRuntime
                         int remaining = pf.Waypoints.Count - pf.Index;
                         if (remaining > 0)
                         {
-                            selectedPath = new TilePos[remaining];
+                            var sp = new TilePos[remaining];
                             for (int k = 0; k < remaining; k++)
-                                selectedPath[k] = pf.Waypoints[pf.Index + k];
+                                sp[k] = pf.Waypoints[pf.Index + k];
+                            snap.SelectedPath = sp;
                         }
                     }
                 }
@@ -402,56 +432,63 @@ public sealed class SimRuntime
                     var oq = ent.GetComponent<OrderQueue>();
                     if (oq.Tiles is { Count: > 0 })
                     {
-                        selectedOrders = oq.Tiles.ToArray();
+                        snap.SelectedOrders = oq.Tiles.ToArray();
                     }
                 }
             }
         });
+        snap.DummiesCount = i;
 
-        var bps = new BlueprintState[Jobs.Count];
+        EnsureCap(ref snap.BlueprintsBuf, Jobs.Count);
+        var bpsBuf = snap.BlueprintsBuf;
         int j = 0;
         foreach (var job in Jobs.All)
         {
             if (job.Kind != JobKind.WallBuild) continue;
             var bp = job.Entity.GetComponent<Blueprint>();
-            bps[j++] = new BlueprintState(job.Tile, bp.ProgressSec / BuildSystem.BuildTimeSec, job.Forbidden);
+            bpsBuf[j++] = new BlueprintState(job.Tile, bp.ProgressSec / BuildSystem.BuildTimeSec, job.Forbidden);
         }
-        if (j < bps.Length) Array.Resize(ref bps, j);
+        snap.BlueprintsCount = j;
 
-        var floorBps = new List<BlueprintState>();
+        EnsureCap(ref snap.FloorBlueprintsBuf, Jobs.Count);
+        var floorBuf = snap.FloorBlueprintsBuf;
+        int fj = 0;
         foreach (var job in Jobs.All)
         {
             if (job.Kind != JobKind.FloorBuild) continue;
             var bp = job.Entity.GetComponent<FloorBlueprint>();
-            floorBps.Add(new BlueprintState(job.Tile, bp.ProgressSec / FloorSystem.FloorTimeSec, job.Forbidden));
+            floorBuf[fj++] = new BlueprintState(job.Tile, bp.ProgressSec / FloorSystem.FloorTimeSec, job.Forbidden);
         }
+        snap.FloorBlueprintsCount = fj;
 
         // Roof jobs are invisible: pawns still walk + claim them, but
         // the player never sees a blueprint outline or progress bar.
-        // Completion happens on the first tick the pawn is in range
-        // (RoofBuild/RemoveTimeSec are 0), so any blueprint state would
-        // flicker for a single tick anyway.
-        var roofBps = new List<RoofBlueprintState>();
+        snap.RoofBlueprintsCount = 0;
 
-        var trees = new TreeState[_trees.Count];
-        int k = 0;
+        EnsureCap(ref snap.TreesBuf, _trees.Count);
+        var treesBuf = snap.TreesBuf;
+        int k2 = 0;
         foreach (var (tile, ent) in _trees)
         {
             var tc = ent.GetComponent<Tree>();
             bool hasJob = Jobs.GetByTile(tile)?.Kind == JobKind.ChopTree;
             float stage = ent.HasComponent<Growth>() ? ent.GetComponent<Growth>().Stage : 1f;
-            trees[k++] = new TreeState(ent.Id, tile, tc.ChopProgressSec / ChopSystem.ChopTimeSec, hasJob, stage);
+            treesBuf[k2++] = new TreeState(ent.Id, tile, tc.ChopProgressSec / ChopSystem.ChopTimeSec, hasJob, stage);
         }
+        snap.TreesCount = k2;
 
         var woodQuery = Store.Query<Wood>();
-        var woods = new WoodState[woodQuery.Count];
+        EnsureCap(ref snap.WoodBuf, woodQuery.Count);
+        var woodsBuf = snap.WoodBuf;
         int wi = 0;
         woodQuery.ForEachEntity((ref Wood w, Entity e) =>
         {
-            woods[wi++] = new WoodState(e.Id, w.Tile, w.Count, ItemCatalog.Wood.FullPath, e.HasComponent<Forbidden>());
+            woodsBuf[wi++] = new WoodState(e.Id, w.Tile, w.Count, ItemCatalog.Wood.FullPath, e.HasComponent<Forbidden>());
         });
+        snap.WoodCount = wi;
 
-        var crops = new CropState[_crops.Count];
+        EnsureCap(ref snap.CropsBuf, _crops.Count);
+        var cropsBuf = snap.CropsBuf;
         int ci = 0;
         foreach (var (cTile, cEnt) in _crops)
         {
@@ -468,34 +505,41 @@ public sealed class SimRuntime
                     : CutPlantSystem.CutTimeSec;
                 work = cc.WorkProgressSec / denom;
             }
-            crops[ci++] = new CropState(cEnt.Id, cTile, cc.Kind, cStage, work, activeKind);
+            cropsBuf[ci++] = new CropState(cEnt.Id, cTile, cc.Kind, cStage, work, activeKind);
         }
+        snap.CropsCount = ci;
 
         var pileQuery = Store.Query<ItemPile>();
-        var piles = new ItemPileState[pileQuery.Count];
+        EnsureCap(ref snap.ItemPilesBuf, pileQuery.Count);
+        var pilesBuf = snap.ItemPilesBuf;
         int pi = 0;
         pileQuery.ForEachEntity((ref ItemPile p, Entity e) =>
         {
-            piles[pi++] = new ItemPileState(e.Id, p.Tile, p.Count, p.ItemPath);
+            pilesBuf[pi++] = new ItemPileState(e.Id, p.Tile, p.Count, p.ItemPath);
         });
+        snap.ItemPilesCount = pi;
 
-        int[]? selTreeArr = null;
+        int[] selTreeArr = Array.Empty<int>();
         if (selectedTreeIds is { Count: > 0 })
         {
             selTreeArr = new int[selectedTreeIds.Count];
             int si = 0;
             foreach (var id in selectedTreeIds) selTreeArr[si++] = id;
         }
+        snap.SelectedTreeIds = selTreeArr;
 
-        int[]? selWoodArr = null;
+        int[] selWoodArr = Array.Empty<int>();
         if (selectedWoodIds is { Count: > 0 })
         {
             selWoodArr = new int[selectedWoodIds.Count];
             int si = 0;
             foreach (var id in selectedWoodIds) selWoodArr[si++] = id;
         }
+        snap.SelectedWoodIds = selWoodArr;
 
-        var decons = new List<DeconState>();
+        EnsureCap(ref snap.DeconsBuf, Jobs.Count);
+        var deconsBuf = snap.DeconsBuf;
+        int dj = 0;
         foreach (var job in Jobs.All)
         {
             if (job.Kind != JobKind.Deconstruct
@@ -505,32 +549,36 @@ public sealed class SimRuntime
             float denom = job.Kind == JobKind.LampDeconstruct
                 ? LampSystem.LampDeconTimeSec
                 : DeconSystem.DeconTimeSec;
-            decons.Add(new DeconState(job.Tile, d.ProgressSec / denom, job.Forbidden));
+            deconsBuf[dj++] = new DeconState(job.Tile, d.ProgressSec / denom, job.Forbidden);
         }
+        snap.DeconsCount = dj;
 
         // Include both active door-build blueprints and ones parked
         // waiting on a deconstruct (they have no DoorBuild job yet).
-        // Iterating the component covers both — pending entries have
-        // ProgressSec == 0.
-        var doorBps = new List<BlueprintState>();
-        Store.Query<DoorBlueprint>().ForEachEntity((ref DoorBlueprint bp, Entity _) =>
+        var doorBpQuery = Store.Query<DoorBlueprint>();
+        EnsureCap(ref snap.DoorBlueprintsBuf, doorBpQuery.Count);
+        var doorBpBuf = snap.DoorBlueprintsBuf;
+        int dbi = 0;
+        doorBpQuery.ForEachEntity((ref DoorBlueprint bp, Entity _) =>
         {
-            // Door blueprints can live without an active job (parked
-            // waiting for a wall decon) — look up the job by tile to
-            // surface the Forbidden flag when one exists.
             bool forbidden = Jobs.GetByTile(bp.Tile)?.Forbidden ?? false;
-            doorBps.Add(new BlueprintState(bp.Tile, bp.ProgressSec / DoorBuildSystem.DoorTimeSec, forbidden));
+            doorBpBuf[dbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / DoorBuildSystem.DoorTimeSec, forbidden);
         });
+        snap.DoorBlueprintsCount = dbi;
 
-        var doorRender = new List<DoorRenderState>();
         var doorQuery = Store.Query<Door>();
+        EnsureCap(ref snap.DoorsBuf, doorQuery.Count);
+        var doorBuf = snap.DoorsBuf;
+        int dri = 0;
         doorQuery.ForEachEntity((ref Door d, Entity _) =>
         {
             float open = Math.Clamp(d.ProgressSec / DoorSystem.OpenTimeSec, 0f, 1f);
-            doorRender.Add(new DoorRenderState(d.Tile, d.Orientation, open, d.Forbidden, d.Locked, d.Priority));
+            doorBuf[dri++] = new DoorRenderState(d.Tile, d.Orientation, open, d.Forbidden, d.Locked, d.Priority);
         });
+        snap.DoorsCount = dri;
 
-        var stockpiles = new StockpileState[_stockpiles.Count];
+        EnsureCap(ref snap.StockpilesBuf, _stockpiles.Count);
+        var spBuf = snap.StockpilesBuf;
         for (int si = 0; si < _stockpiles.Count; si++)
         {
             var p = _stockpiles[si];
@@ -540,43 +588,44 @@ public sealed class SimRuntime
             var allowed = new string[p.AllowedItemPaths.Count];
             int ai = 0;
             foreach (var path in p.AllowedItemPaths) allowed[ai++] = path;
-            stockpiles[si] = new StockpileState(p.Id, p.Name, p.Priority, tiles, allowed);
+            spBuf[si] = new StockpileState(p.Id, p.Name, p.Priority, tiles, allowed);
         }
+        snap.StockpilesCount = _stockpiles.Count;
 
-        var growZones = new GrowZoneState[_growZones.Count];
+        EnsureCap(ref snap.GrowZonesBuf, _growZones.Count);
+        var gzBuf = snap.GrowZonesBuf;
         for (int zi = 0; zi < _growZones.Count; zi++)
         {
             var z = _growZones[zi];
             var tiles = new TilePos[z.Tiles.Count];
             int ti = 0;
             foreach (var t in z.Tiles) tiles[ti++] = t;
-            growZones[zi] = new GrowZoneState(
-                z.Id, z.Name, z.CropKind, z.AllowCutting, z.AllowSowing, tiles);
+            gzBuf[zi] = new GrowZoneState(z.Id, z.Name, z.CropKind, z.AllowCutting, z.AllowSowing, tiles);
         }
+        snap.GrowZonesCount = _growZones.Count;
 
-        var lamps = new LampState[_lampMap.Count];
+        EnsureCap(ref snap.LampsBuf, _lampMap.Count);
+        var lampBuf = snap.LampsBuf;
         int li = 0;
         foreach (var (lTile, lEnt) in _lampMap)
         {
             var lc = lEnt.GetComponent<Lamp>();
-            lamps[li++] = new LampState(lTile, lc.PoweredOn, lc.Color);
+            lampBuf[li++] = new LampState(lTile, lc.PoweredOn, lc.Color);
         }
+        snap.LampsCount = li;
 
-        var lampBps = new List<BlueprintState>();
-        Store.Query<LampBlueprint>().ForEachEntity((ref LampBlueprint bp, Entity _) =>
+        var lampBpQuery = Store.Query<LampBlueprint>();
+        EnsureCap(ref snap.LampBlueprintsBuf, lampBpQuery.Count);
+        var lampBpBuf = snap.LampBlueprintsBuf;
+        int lbi = 0;
+        lampBpQuery.ForEachEntity((ref LampBlueprint bp, Entity _) =>
         {
             bool forbidden = Jobs.GetByTile(bp.Tile)?.Forbidden ?? false;
-            lampBps.Add(new BlueprintState(bp.Tile, bp.ProgressSec / LampSystem.LampBuildTimeSec, forbidden));
+            lampBpBuf[lbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / LampSystem.LampBuildTimeSec, forbidden);
         });
+        snap.LampBlueprintsCount = lbi;
 
-        return new SimSnapshot(
-            Tick, MapVersion, RoomVersion, RoomCount, RoofVersion, LightVersion,
-            _worldTimeSec,
-            dummies, bps, floorBps.ToArray(), trees, crops, woods, piles, decons.ToArray(),
-            doorBps.ToArray(), doorRender.ToArray(),
-            stockpiles, growZones, roofBps.ToArray(),
-            lamps, lampBps.ToArray(),
-            selectedDummyId, selectedPath, selectedOrders, selTreeArr, selWoodArr);
+        return snap;
     }
 
     // Render layer snapshot: assembled from the published MapView's
