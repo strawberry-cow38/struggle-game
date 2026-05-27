@@ -131,7 +131,22 @@ public sealed class SimRuntime
         // raw 0..255 uncolored contribution per cell, parallel to Indices
         public byte[] Contribs = Array.Empty<byte>();
         public bool Dirty = true;
+        // unique chunk ids this disc occupies — drives partial composite
+        // and the per-chunk reverse-index subscription
+        public int[] ChunkIds = Array.Empty<int>();
     }
+
+    // Lightmap chunk grid. Chunked composite only re-clears + re-walks
+    // lamps for chunks whose lamp set or wall layout has changed since
+    // the last RecomputeLampLight pass. Distant chunks keep their bytes.
+    private const int LightChunkSize = 16;
+    private int _lightChunksW;
+    private int _lightChunksH;
+    private bool[] _lightChunkDirty = Array.Empty<bool>();
+    // Reverse index: lamps whose disc touches each chunk. Kept in sync
+    // with each bake's ChunkIds via SubscribeLampToChunks /
+    // UnsubscribeLampFromChunks.
+    private List<TilePos>[] _lampsByChunk = Array.Empty<List<TilePos>>();
     // Subset of doors flagged Forbidden — passed to MapView so A* + the
     // mover treat them like walls. Kept in sync with the Door component.
     private readonly HashSet<TilePos> _forbiddenDoorTiles = new();
@@ -613,6 +628,7 @@ public sealed class SimRuntime
         var e = Store.CreateEntity();
         e.AddComponent(new Lamp { Tile = tile, PoweredOn = true, Color = color });
         _lampMap[tile] = e;
+        EnsureLampBaked(tile);
         RecomputeLampLight();
         return true;
     }
@@ -858,6 +874,7 @@ public sealed class SimRuntime
             entity.RemoveComponent<LampBlueprint>();
             entity.AddComponent(new Lamp { Tile = tile, PoweredOn = true, Color = bpColor });
             _lampMap[tile] = entity;
+            EnsureLampBaked(tile);
             RecomputeLampLight();
             // Auto-roof pass on the lamp's own tile: while the lamp
             // build job was active Jobs.HasTile blocked the original
@@ -1179,6 +1196,7 @@ public sealed class SimRuntime
         ref var lamp = ref lampEnt.GetComponent<Lamp>();
         if (lamp.PoweredOn == on) return;
         lamp.PoweredOn = on;
+        MarkLampChunksDirty(tile);
         RecomputeLampLight();
     }
 
@@ -1190,7 +1208,11 @@ public sealed class SimRuntime
         ref var lamp = ref lampEnt.GetComponent<Lamp>();
         if (lamp.Color.Equals(color)) return;
         lamp.Color = color;
-        if (lamp.PoweredOn) RecomputeLampLight();
+        if (lamp.PoweredOn)
+        {
+            MarkLampChunksDirty(tile);
+            RecomputeLampLight();
+        }
     }
 
     // Flip a built door's Forbidden flag. Forbidden = treated as a
@@ -2577,6 +2599,7 @@ public sealed class SimRuntime
             _lastSunR = sR; _lastSunG = sG; _lastSunB = sB;
             LightVersion++;
         }
+        EnsureLightChunkArrays(w, h);
     }
 
     // Single-tile roof toggle. Roof state is composition-only (it gates
@@ -2722,6 +2745,52 @@ public sealed class SimRuntime
         return lut;
     }
 
+    // (Re)size + reset the per-chunk dirty + reverse-index arrays for a
+    // map of width w / height h. When chunk grid dimensions change every
+    // existing bake's ChunkIds (relative to the old grid) is no longer
+    // valid, so reset them, mark all chunks dirty, and force a rebake.
+    private void EnsureLightChunkArrays(int w, int h)
+    {
+        int cw = (w + LightChunkSize - 1) / LightChunkSize;
+        int ch = (h + LightChunkSize - 1) / LightChunkSize;
+        int cn = cw * ch;
+        if (_lightChunksW == cw && _lightChunksH == ch && _lightChunkDirty.Length == cn) return;
+        _lightChunksW = cw;
+        _lightChunksH = ch;
+        _lightChunkDirty = new bool[cn];
+        _lampsByChunk = new List<TilePos>[cn];
+        for (int i = 0; i < cn; i++) { _lampsByChunk[i] = new List<TilePos>(); _lightChunkDirty[i] = true; }
+        foreach (var bake in _lampBakes.Values)
+        {
+            bake.ChunkIds = Array.Empty<int>();
+            bake.Dirty = true;
+        }
+    }
+
+    private int ChunkIdForTile(int tx, int ty) =>
+        (ty / LightChunkSize) * _lightChunksW + (tx / LightChunkSize);
+
+    private void SubscribeLampToChunks(TilePos lamp, int[] chunkIds)
+    {
+        for (int i = 0; i < chunkIds.Length; i++)
+        {
+            int c = chunkIds[i];
+            var list = _lampsByChunk[c];
+            if (!list.Contains(lamp)) list.Add(lamp);
+            _lightChunkDirty[c] = true;
+        }
+    }
+
+    private void UnsubscribeLampFromChunks(TilePos lamp, int[] chunkIds)
+    {
+        for (int i = 0; i < chunkIds.Length; i++)
+        {
+            int c = chunkIds[i];
+            _lampsByChunk[c].Remove(lamp);
+            _lightChunkDirty[c] = true;
+        }
+    }
+
     // Bake one lamp's disc against the current wall/door layout. The
     // result is two parallel arrays (tile index, uncolored contribution)
     // that the composite loop scans without any sqrt / LOS work. Color
@@ -2762,31 +2831,97 @@ public sealed class SimRuntime
         if (bake.Contribs.Length != count) bake.Contribs = new byte[count];
         Array.Copy(idxBuf, bake.Indices, count);
         Array.Copy(conBuf, bake.Contribs, count);
+        // Derive unique chunk ids from indices. Small lists per disc so
+        // a linear de-dup beats a HashSet alloc.
+        Span<int> chunkScratch = stackalloc int[32];
+        int chunkCount = 0;
+        for (int i = 0; i < count; i++)
+        {
+            int idx = bake.Indices[i];
+            int tx = idx % w;
+            int ty = idx / w;
+            int cid = ChunkIdForTile(tx, ty);
+            bool seen = false;
+            for (int k = 0; k < chunkCount; k++) if (chunkScratch[k] == cid) { seen = true; break; }
+            if (!seen && chunkCount < chunkScratch.Length) chunkScratch[chunkCount++] = cid;
+        }
+        bake.ChunkIds = new int[chunkCount];
+        for (int i = 0; i < chunkCount; i++) bake.ChunkIds[i] = chunkScratch[i];
         bake.Dirty = false;
     }
 
-    // Composite the lamp buffer from cached per-lamp bakes. Each lamp is
-    // baked on demand (or when Dirty); the composite itself is a fast
-    // index/contrib scan — no sqrt, no LOS, no wall reads. Sun is NOT
-    // composed here — it composes in at read time (LightAt /
-    // CopyLightRgbForRender) so sunrise/sunset ticks don't touch lamps.
+    // Rebake a lamp: unsub old chunks (marks them dirty), recompute the
+    // disc against the current wall layout, sub new chunks (marks them
+    // dirty). Old and new chunk sets typically overlap; the union ends
+    // up dirty so the next composite picks up the change.
+    private void RebakeLamp(TilePos centerTile, LampBake bake)
+    {
+        UnsubscribeLampFromChunks(centerTile, bake.ChunkIds);
+        BakeLampDisc(centerTile, bake);
+        SubscribeLampToChunks(centerTile, bake.ChunkIds);
+    }
+
+    // Ensure a lamp has a fresh bake. Call this after lamp lifecycle
+    // events (place / rebuild / move) so the chunk grid knows about it
+    // before RecomputeLampLight runs.
+    private void EnsureLampBaked(TilePos tile)
+    {
+        if (!_lampMap.TryGetValue(tile, out var ent)) return;
+        if (!ent.HasComponent<Lamp>()) return;
+        if (!_lampBakes.TryGetValue(tile, out var bake))
+        {
+            bake = new LampBake();
+            _lampBakes[tile] = bake;
+        }
+        if (bake.Dirty) RebakeLamp(tile, bake);
+    }
+
+    // Composite the lamp buffer from cached per-lamp bakes. Only chunks
+    // marked dirty (lamp lifecycle, color/power toggle, or wall change
+    // nearby) get cleared and recomposited; the rest keep their bytes.
+    // Sun is NOT composed here — it composes in at read time
+    // (LightAt / CopyLightRgbForRender) so sunrise/sunset ticks don't
+    // touch lamps.
     private void RecomputeLampLight()
     {
-        int n = _lampR.Length;
-        Array.Clear(_lampR, 0, n);
-        Array.Clear(_lampG, 0, n);
-        Array.Clear(_lampB, 0, n);
+        // Phase 1: bring all dirty bakes up to date (this marks their
+        // old + new chunks dirty via un/subscribe).
         foreach (var (tile, lampEnt) in _lampMap)
         {
             if (!lampEnt.HasComponent<Lamp>()) continue;
-            var lamp = lampEnt.GetComponent<Lamp>();
-            if (!lamp.PoweredOn) continue;
             if (!_lampBakes.TryGetValue(tile, out var bake))
             {
                 bake = new LampBake();
                 _lampBakes[tile] = bake;
             }
-            if (bake.Dirty) BakeLampDisc(tile, bake);
+            if (bake.Dirty) RebakeLamp(tile, bake);
+        }
+
+        // Phase 2: clear dirty chunk bytes + collect unique lamps to replay.
+        var replay = new HashSet<TilePos>();
+        bool anyDirty = false;
+        int cn = _lightChunkDirty.Length;
+        for (int c = 0; c < cn; c++)
+        {
+            if (!_lightChunkDirty[c]) continue;
+            anyDirty = true;
+            ClearLightChunk(c);
+            var list = _lampsByChunk[c];
+            for (int i = 0; i < list.Count; i++) replay.Add(list[i]);
+            _lightChunkDirty[c] = false;
+        }
+        if (!anyDirty) return;
+
+        // Phase 3: replay each unique lamp's bake once. Max-blend is
+        // idempotent, so writes to chunks that were not cleared simply
+        // re-affirm the existing bytes — no aliasing risk.
+        foreach (var tile in replay)
+        {
+            if (!_lampMap.TryGetValue(tile, out var ent)) continue;
+            if (!ent.HasComponent<Lamp>()) continue;
+            var lamp = ent.GetComponent<Lamp>();
+            if (!lamp.PoweredOn) continue;
+            if (!_lampBakes.TryGetValue(tile, out var bake)) continue;
             var col = lamp.Color;
             byte colR = col.R, colG = col.G, colB = col.B;
             int len = bake.Indices.Length;
@@ -2804,17 +2939,50 @@ public sealed class SimRuntime
                 if (_lampB[idx] < cb) _lampB[idx] = cb;
             }
         }
+
         LightVersion++;
     }
 
+    // Zero one chunk's slice of the lamp R/G/B buffers. Edge chunks at
+    // the map's right/bottom can be partial; clamp to the map bounds.
+    private void ClearLightChunk(int chunkId)
+    {
+        int cx = chunkId % _lightChunksW;
+        int cy = chunkId / _lightChunksW;
+        int w = Map.Width;
+        int x0 = cx * LightChunkSize;
+        int y0 = cy * LightChunkSize;
+        int x1 = Math.Min(w, x0 + LightChunkSize);
+        int y1 = Math.Min(Map.Height, y0 + LightChunkSize);
+        int rowLen = x1 - x0;
+        if (rowLen <= 0) return;
+        for (int y = y0; y < y1; y++)
+        {
+            int s = y * w + x0;
+            Array.Clear(_lampR, s, rowLen);
+            Array.Clear(_lampG, s, rowLen);
+            Array.Clear(_lampB, s, rowLen);
+        }
+    }
+
     // Drop a lamp's cached bake. Call when the lamp is deconstructed —
-    // the lamp itself is gone, no future composite needs its disc.
-    private void DropLampBake(TilePos tile) => _lampBakes.Remove(tile);
+    // unsubscribes from its chunks (marking them dirty so the next
+    // composite re-fills them without this lamp's contribution).
+    private void DropLampBake(TilePos tile)
+    {
+        if (_lampBakes.TryGetValue(tile, out var bake))
+        {
+            UnsubscribeLampFromChunks(tile, bake.ChunkIds);
+            _lampBakes.Remove(tile);
+        }
+    }
 
     // Mark every lamp bake whose disc could contain `tile` as dirty.
     // Used when a wall or door is placed/removed at `tile`: only lamps
     // within R=9 of the change can have shadowed-through-the-new-wall
-    // tiles inside their disc. Distant lamps keep their cached bake.
+    // tiles inside their disc. Their currently-subscribed chunks are
+    // marked dirty too, so we don't have to wait for the rebake step
+    // to clear them.
     private void InvalidateLampBakesNear(TilePos tile)
     {
         if (_lampBakes.Count == 0) return;
@@ -2822,8 +2990,25 @@ public sealed class SimRuntime
         {
             int dx = lampTile.X - tile.X;
             int dy = lampTile.Y - tile.Y;
-            if (dx * dx + dy * dy < LampContribLutLen) bake.Dirty = true;
+            if (dx * dx + dy * dy < LampContribLutLen)
+            {
+                bake.Dirty = true;
+                for (int i = 0; i < bake.ChunkIds.Length; i++)
+                    _lightChunkDirty[bake.ChunkIds[i]] = true;
+            }
         }
+    }
+
+    // Power toggle / color change don't invalidate the bake but the
+    // bake's contribution to the buffer needs re-composition. Mark the
+    // lamp's currently-subscribed chunks dirty so they get re-cleared
+    // and replayed (without this lamp if powered off, with its new
+    // color if recolored).
+    private void MarkLampChunksDirty(TilePos tile)
+    {
+        if (!_lampBakes.TryGetValue(tile, out var bake)) return;
+        for (int i = 0; i < bake.ChunkIds.Length; i++)
+            _lightChunkDirty[bake.ChunkIds[i]] = true;
     }
 
     // Bresenham line from (cx,cy) to (tx,ty). Returns false if any
