@@ -85,10 +85,21 @@ public partial class FrameProfilerOverlay : CanvasLayer
         {
             sb.AppendFormat("sim tps    {0,6:0} / {1}\n", Host.ActualTps, Host.TickHz);
         }
-        sb.Append("\n-- render sections (avg | max) --\n");
+
+        var fs = FrameProfiler.Instance.FrameRingStats();
+        sb.Append("\n-- frame window --\n");
+        sb.AppendFormat("frame avg  {0,6:0.00} ms  max {1,6:0.00}\n", fs.FrameAvgMs, fs.FrameMaxMs);
+        sb.AppendFormat("gc pause   {0,6:0.00} ms  max {1,6:0.00}  ({2:0}% frames)\n",
+            fs.GcAvgMs, fs.GcMaxMs, fs.GcFramePct);
+        sb.AppendFormat("gc rate    g0 {0,5:0.0}/s  g1 {1,4:0.0}/s  g2 {2,4:0.0}/s\n",
+            fs.Gen0PerSec, fs.Gen1PerSec, fs.Gen2PerSec);
+
+        sb.Append("\n-- sections (avg | clean max | tainted max) --\n");
         foreach (var s in FrameProfiler.Instance.Sections)
         {
-            sb.AppendFormat("{0,-14} {1,6:0.00} | {2,6:0.00} ms\n", s.Name, s.AvgMs(), s.MaxMs());
+            var st = s.Stats();
+            sb.AppendFormat("{0,-14} {1,6:0.00} | {2,6:0.00} | {3,6:0.00} ms\n",
+                s.Name, st.CleanAvgMs, st.CleanMaxMs, st.TaintedMaxMs);
         }
         _label.Text = sb.ToString();
     }

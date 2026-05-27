@@ -170,6 +170,8 @@ public partial class WorldRenderer : Node2D
     {
         if (_groundTex is null || Host is null) return;
 
+        FrameProfiler.Instance.BeginFrame();
+
         var latest = Host.LatestSnapshot;
         // Reference compare, not Tick: paused republishes (selection
         // change, designation while paused) reuse the same Tick but are
