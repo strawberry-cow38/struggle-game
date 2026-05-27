@@ -15,6 +15,11 @@ public sealed class HaulSystem
     private readonly JobBoard _jobs;
     private readonly SimRuntime _sim;
 
+    // Reused per-tick scratch so HaulSystem.Step doesn't allocate a fresh
+    // List/Dictionary every 1/60s. Cleared at the top of Step.
+    private readonly List<Entity> _candidates = new();
+    private readonly Dictionary<TilePos, int> _woodAt = new();
+
     public HaulSystem(SimRuntime sim, JobBoard jobs)
     {
         _sim = sim;
@@ -23,16 +28,23 @@ public sealed class HaulSystem
 
     public void Step(EntityStore store, float dt)
     {
-        // Snapshot first to avoid mutating wood entities mid-iteration.
-        var candidates = new List<Entity>();
+        // Single pass over the Wood query: collect haul candidates AND
+        // build the tile→count index used to score dest tiles. Prior
+        // version paid an O(W) Query<Wood> scan per candidate inside
+        // TryFindBestHaulDest, making per-tick cost O(W²).
+        // MergeCoincidentWood guarantees at-most-one Wood entity per
+        // tile so direct assignment (not aggregation) is correct.
+        _candidates.Clear();
+        _woodAt.Clear();
         store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
         {
+            _woodAt[w.Tile] = w.Count;
             if (ent.HasComponent<HaulReserved>()) return;
             if (ent.HasComponent<Forbidden>()) return;
-            candidates.Add(ent);
+            _candidates.Add(ent);
         });
 
-        foreach (var ent in candidates)
+        foreach (var ent in _candidates)
         {
             var w = ent.GetComponent<Wood>();
             var sourceTile = w.Tile;
@@ -41,7 +53,7 @@ public sealed class HaulSystem
             bool onAllowedStockpile = _sim.TryGetStockpileAt(sourceTile, out var pileHere)
                 && pileHere.Allows(ItemCatalog.Wood);
 
-            if (!_sim.TryFindBestHaulDest(sourceTile, ItemCatalog.Wood, count,
+            if (!_sim.TryFindBestHaulDest(sourceTile, ItemCatalog.Wood, count, _woodAt,
                 out var destTile, out var stockpileId)) continue;
 
             // Already on an allowed stockpile tile: only post a merge haul
@@ -51,7 +63,7 @@ public sealed class HaulSystem
             if (onAllowedStockpile)
             {
                 if (destTile == sourceTile) continue;
-                int existing = _sim.WoodCountAtTile(destTile);
+                int existing = _woodAt.TryGetValue(destTile, out var ec) ? ec : 0;
                 if (existing < count) continue;
                 if (existing == count)
                 {

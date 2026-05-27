@@ -1694,6 +1694,16 @@ public sealed class SimRuntime
     public bool TryFindBestHaulDest(TilePos source, ItemDef def, out TilePos dest, out int stockpileId)
         => TryFindBestHaulDest(source, def, 1, out dest, out stockpileId);
 
+    public bool TryFindBestHaulDest(TilePos source, ItemDef def, int countToMove, out TilePos dest, out int stockpileId)
+    {
+        var woodAt = new Dictionary<TilePos, int>();
+        Store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
+        {
+            woodAt[w.Tile] = w.Count;
+        });
+        return TryFindBestHaulDest(source, def, countToMove, woodAt, out dest, out stockpileId);
+    }
+
     // Walks the player's zones and picks the best cell that accepts the item.
     // A cell is valid if it's empty OR holds the same item with room for
     // countToMove. Two-pass merge bias: pass 1 considers only partial-stack
@@ -1702,17 +1712,16 @@ public sealed class SimRuntime
     // partial sits in a lower-priority zone). Pass 2 falls back to empty
     // tiles only if no merge target exists anywhere. Within each pass:
     // priority > existing count > distance.
-    public bool TryFindBestHaulDest(TilePos source, ItemDef def, int countToMove, out TilePos dest, out int stockpileId)
+    //
+    // woodAt is a tile→count index built by the caller (HaulSystem reuses
+    // one allocation per tick across all candidates). Source tile is
+    // forced to existing=0 so a pile sitting on a stockpile cell doesn't
+    // pick itself as the best merge target.
+    public bool TryFindBestHaulDest(TilePos source, ItemDef def, int countToMove,
+        Dictionary<TilePos, int> woodAt, out TilePos dest, out int stockpileId)
     {
         dest = default;
         stockpileId = 0;
-
-        var woodAt = new Dictionary<TilePos, int>();
-        Store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
-        {
-            if (w.Tile == source) return; // source tile doesn't block itself
-            woodAt[w.Tile] = w.Count;
-        });
 
         for (int pass = 0; pass < 2; pass++)
         {
@@ -1733,7 +1742,7 @@ public sealed class SimRuntime
                 foreach (var t in pile.Tiles)
                 {
                     if (_reservedHaulDests.Contains(t)) continue;
-                    int existing = woodAt.TryGetValue(t, out var c) ? c : 0;
+                    int existing = (t != source && woodAt.TryGetValue(t, out var c)) ? c : 0;
                     if (mergePass && existing <= 0) continue;
                     if (!mergePass && existing > 0) continue;
                     if (existing > 0 && existing + countToMove > WoodMaxStack) continue;
