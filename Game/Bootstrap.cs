@@ -134,7 +134,27 @@ public partial class Bootstrap : Node2D
         _menu = new MainMenuPanel { Host = _host, Name = "MainMenu" };
         AddChild(_menu);
 
+        // Decorative Labels and Separators don't need mouse interaction —
+        // but Godot's GUI hover system hit-tests every Pass/Stop Control
+        // on every mouse motion event. With ~50 visible Controls across
+        // panels, that adds real per-event cost. Relax them to Ignore so
+        // the hover system skips past them.
+        CallDeferred(nameof(RelaxDecorativeMouseFilters));
+
         TryStartHarness();
+    }
+
+    private void RelaxDecorativeMouseFilters()
+    {
+        RelaxMouseFilters(this);
+    }
+
+    private static void RelaxMouseFilters(Node node)
+    {
+        if (node is Label lbl) lbl.MouseFilter = Control.MouseFilterEnum.Ignore;
+        else if (node is HSeparator hs) hs.MouseFilter = Control.MouseFilterEnum.Ignore;
+        else if (node is VSeparator vs) vs.MouseFilter = Control.MouseFilterEnum.Ignore;
+        foreach (var c in node.GetChildren()) RelaxMouseFilters(c);
     }
 
     private void TryStartHarness()

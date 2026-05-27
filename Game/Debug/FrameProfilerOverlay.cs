@@ -14,6 +14,9 @@ public partial class FrameProfilerOverlay : CanvasLayer
     private Label _label = null!;
     private bool _visible = true;
 
+    private const double RefreshIntervalSec = 1.0 / 30.0;
+    private double _refreshAccum;
+
     public override void _Ready()
     {
         Layer = 110;
@@ -51,6 +54,9 @@ public partial class FrameProfilerOverlay : CanvasLayer
     public override void _Process(double delta)
     {
         if (!_visible) return;
+        _refreshAccum += delta;
+        if (_refreshAccum < RefreshIntervalSec) return;
+        _refreshAccum = 0;
 
         double frameMs = delta * 1000.0;
         double processMs = Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000.0;
