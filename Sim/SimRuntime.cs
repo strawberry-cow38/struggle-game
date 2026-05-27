@@ -116,6 +116,22 @@ public sealed class SimRuntime
     // the map keeps them addressable for selection / power toggle /
     // decon and lets the light recompute iterate every powered lamp.
     private readonly Dictionary<TilePos, Entity> _lampMap = new();
+    // Cached per-lamp disc bake. Each entry is the lamp's static
+    // contribution pattern (relative to its tile) baked against the
+    // current wall/door layout. Color and power state are NOT baked —
+    // those compose at RecomputeLampLight() time so changing them
+    // never invalidates a bake. Wall/door change near a lamp marks
+    // that bake Dirty so the next composite rebakes it.
+    private readonly Dictionary<TilePos, LampBake> _lampBakes = new();
+
+    private sealed class LampBake
+    {
+        // tile indices in the lamp buffer touched by this lamp's disc
+        public int[] Indices = Array.Empty<int>();
+        // raw 0..255 uncolored contribution per cell, parallel to Indices
+        public byte[] Contribs = Array.Empty<byte>();
+        public bool Dirty = true;
+    }
     // Subset of doors flagged Forbidden — passed to MapView so A* + the
     // mover treat them like walls. Kept in sync with the Door component.
     private readonly HashSet<TilePos> _forbiddenDoorTiles = new();
@@ -579,6 +595,10 @@ public sealed class SimRuntime
         _doorMap[tile] = e;
         _roomsDirty = true;
         RebuildMapView();
+        // Door blocks LOS for lamp light; relight (instant-place
+        // bypasses the job pipeline that normally handles this).
+        InvalidateLampBakesNear(tile);
+        RecomputeLampLight();
         return true;
     }
 
@@ -648,6 +668,10 @@ public sealed class SimRuntime
         }
         RefreshDoorOrientationsAround(tile);
         RebuildMapView();
+        // Wall blocks LOS for lamp light; relight (instant-place
+        // bypasses the job pipeline that normally handles this).
+        InvalidateLampBakesNear(tile);
+        RecomputeLampLight();
         return true;
     }
 
@@ -689,6 +713,9 @@ public sealed class SimRuntime
             }
             RefreshDoorOrientationsAround(tile);
             RebuildMapView();
+            // Wall now blocks LOS for nearby lamps; rebake those discs.
+            InvalidateLampBakesNear(tile);
+            RecomputeLampLight();
         }
         else if (kind == JobKind.ChopTree)
         {
@@ -850,6 +877,7 @@ public sealed class SimRuntime
             {
                 _lampMap.Remove(tile);
                 lampEnt.DeleteEntity();
+                DropLampBake(tile);
                 RecomputeLampLight();
             }
         }
@@ -871,6 +899,10 @@ public sealed class SimRuntime
                 wood.AddComponent(new Wood { Tile = tile, Count = WallDeconWoodReturn });
             }
             RebuildMapView();
+            // Wall gone = light can flow through that tile again; rebake
+            // nearby lamps that were previously LOS-blocked by it.
+            InvalidateLampBakesNear(tile);
+            RecomputeLampLight();
             // Chain: a door blueprint was parked waiting on this decon.
             // Post its DoorBuild job now that the wall is gone.
             if (_pendingDoorAfterDecon.TryGetValue(tile, out var pendingBp))
@@ -929,6 +961,7 @@ public sealed class SimRuntime
             _roomsDirty = true;
             // Doors are LOS-opaque for lamp light; relight so neighbors
             // stop bleeding through the new door tile immediately.
+            InvalidateLampBakesNear(tile);
             RecomputeLampLight();
         }
         else if (kind == JobKind.DoorDeconstruct)
@@ -950,6 +983,7 @@ public sealed class SimRuntime
             }
             RebuildMapView();
             // Door gone = light can flow through that tile again. Relight.
+            InvalidateLampBakesNear(tile);
             RecomputeLampLight();
         }
     }
@@ -2661,79 +2695,135 @@ public sealed class SimRuntime
     }
 
 
-    // Full lamp-buffer recompute. Walks every powered lamp, max-blends
-    // its falloff disc into _lampR/G/B with wall-LOS gating. Sun is NOT
-    // touched here — it's composed in at read time (LightAt /
-    // CopyLightRgbForRender) so this method only needs to fire when
-    // lamps / walls / lamp power / lamp color change. Sun ticks during
-    // sunrise/sunset are free.
-    private void RecomputeLampLight()
+    // d² → uncolored contribution byte LUT. d² is always a non-negative
+    // integer here (dx, dy ∈ ℤ inside a 19×19 disc), so a flat byte[91]
+    // covers every value inside the LampOuterSq=90.25 disc. Built once.
+    // Outside that range the loop culls before indexing.
+    private const int LampContribLutLen = 91;
+    private static readonly byte[] LampContribLut = BuildLampContribLut();
+    private static byte[] BuildLampContribLut()
+    {
+        var lut = new byte[LampContribLutLen];
+        for (int d2 = 0; d2 < LampContribLutLen; d2++)
+        {
+            if (d2 <= LampInnerSq) { lut[d2] = LampInner; continue; }
+            float r = MathF.Sqrt(d2);
+            if (d2 <= LampMidSq)
+            {
+                float t = r - 7.5f;
+                lut[d2] = (byte)Math.Round(LampMidStart - (LampMidStart - LampMidEnd) * t);
+            }
+            else
+            {
+                float t = r - 8.5f;
+                lut[d2] = (byte)Math.Round(LampMidEnd - (LampMidEnd - LampOuterEnd) * t);
+            }
+        }
+        return lut;
+    }
+
+    // Bake one lamp's disc against the current wall/door layout. The
+    // result is two parallel arrays (tile index, uncolored contribution)
+    // that the composite loop scans without any sqrt / LOS work. Color
+    // and power state are applied later, so a bake stays valid until
+    // walls/doors near the lamp change.
+    private void BakeLampDisc(TilePos centerTile, LampBake bake)
     {
         int w = Map.Width, h = Map.Height;
+        int cx = centerTile.X, cy = centerTile.Y;
+        int x0 = Math.Max(0, cx - 9);
+        int x1 = Math.Min(w - 1, cx + 9);
+        int y0 = Math.Max(0, cy - 9);
+        int y1 = Math.Min(h - 1, cy + 9);
+        // Worst-case 19×19 = 361 cells; in practice many are culled.
+        var idxBuf = new int[361];
+        var conBuf = new byte[361];
+        int count = 0;
+        for (int y = y0; y <= y1; y++)
+        {
+            int dy = y - cy;
+            int dy2 = dy * dy;
+            int row = y * w;
+            for (int x = x0; x <= x1; x++)
+            {
+                int dx = x - cx;
+                int d2 = dx * dx + dy2;
+                if (d2 >= LampContribLutLen) continue;
+                // Wall tiles read as 0% lit — the wall itself is opaque,
+                // no surface for light to land on.
+                if (Map.GetWall(x, y) != WallType.None) continue;
+                if (!LampLosClear(cx, cy, x, y)) continue;
+                idxBuf[count] = row + x;
+                conBuf[count] = LampContribLut[d2];
+                count++;
+            }
+        }
+        if (bake.Indices.Length != count) bake.Indices = new int[count];
+        if (bake.Contribs.Length != count) bake.Contribs = new byte[count];
+        Array.Copy(idxBuf, bake.Indices, count);
+        Array.Copy(conBuf, bake.Contribs, count);
+        bake.Dirty = false;
+    }
+
+    // Composite the lamp buffer from cached per-lamp bakes. Each lamp is
+    // baked on demand (or when Dirty); the composite itself is a fast
+    // index/contrib scan — no sqrt, no LOS, no wall reads. Sun is NOT
+    // composed here — it composes in at read time (LightAt /
+    // CopyLightRgbForRender) so sunrise/sunset ticks don't touch lamps.
+    private void RecomputeLampLight()
+    {
         int n = _lampR.Length;
         Array.Clear(_lampR, 0, n);
         Array.Clear(_lampG, 0, n);
         Array.Clear(_lampB, 0, n);
-        // Lamp pass. Walls block light: for each (lamp, target) pair, walk
-        // a Bresenham line between them and skip the contribution if any
-        // intermediate tile is a wall. Endpoints excluded so the lamp's
-        // own tile + the wall tile adjacent to the lamp still light up.
         foreach (var (tile, lampEnt) in _lampMap)
         {
             if (!lampEnt.HasComponent<Lamp>()) continue;
             var lamp = lampEnt.GetComponent<Lamp>();
             if (!lamp.PoweredOn) continue;
-            var col = lamp.Color;
-            int cx = tile.X, cy = tile.Y;
-            int x0 = Math.Max(0, cx - 9);
-            int x1 = Math.Min(w - 1, cx + 9);
-            int y0 = Math.Max(0, cy - 9);
-            int y1 = Math.Min(h - 1, cy + 9);
-            for (int y = y0; y <= y1; y++)
+            if (!_lampBakes.TryGetValue(tile, out var bake))
             {
-                int dy = y - cy;
-                int row = y * w;
-                for (int x = x0; x <= x1; x++)
-                {
-                    int dx = x - cx;
-                    float d2 = dx * dx + dy * dy;
-                    if (d2 > LampOuterSq) continue;
-                    // Wall tiles read as 0% lit — the wall itself is
-                    // opaque, no surface for light to land on. Skip
-                    // before the LOS walk so adjacent lamps don't
-                    // bleed into the wall cell.
-                    if (Map.GetWall(x, y) != WallType.None) continue;
-                    if (!LampLosClear(cx, cy, x, y)) continue;
-                    byte contrib;
-                    if (d2 <= LampInnerSq)
-                    {
-                        contrib = LampInner;
-                    }
-                    else if (d2 <= LampMidSq)
-                    {
-                        // sqrt(56.25)=7.5 .. sqrt(72.25)=8.5
-                        float r = MathF.Sqrt(d2);
-                        float t = (r - 7.5f) / 1.0f;
-                        contrib = (byte)Math.Round(LampMidStart - (LampMidStart - LampMidEnd) * t);
-                    }
-                    else
-                    {
-                        // 8.5 .. 9.5
-                        float r = MathF.Sqrt(d2);
-                        float t = (r - 8.5f) / 1.0f;
-                        contrib = (byte)Math.Round(LampMidEnd - (LampMidEnd - LampOuterEnd) * t);
-                    }
-                    int idx = row + x;
-                    byte cr = (byte)(contrib * col.R / 255);
-                    byte cg = (byte)(contrib * col.G / 255);
-                    byte cb = (byte)(contrib * col.B / 255);
-                    if (_lampR[idx] < cr) _lampR[idx] = cr;
-                    if (_lampG[idx] < cg) _lampG[idx] = cg;
-                    if (_lampB[idx] < cb) _lampB[idx] = cb;
-                }
+                bake = new LampBake();
+                _lampBakes[tile] = bake;
+            }
+            if (bake.Dirty) BakeLampDisc(tile, bake);
+            var col = lamp.Color;
+            byte colR = col.R, colG = col.G, colB = col.B;
+            int len = bake.Indices.Length;
+            var indices = bake.Indices;
+            var contribs = bake.Contribs;
+            for (int i = 0; i < len; i++)
+            {
+                int idx = indices[i];
+                byte contrib = contribs[i];
+                byte cr = (byte)(contrib * colR / 255);
+                byte cg = (byte)(contrib * colG / 255);
+                byte cb = (byte)(contrib * colB / 255);
+                if (_lampR[idx] < cr) _lampR[idx] = cr;
+                if (_lampG[idx] < cg) _lampG[idx] = cg;
+                if (_lampB[idx] < cb) _lampB[idx] = cb;
             }
         }
         LightVersion++;
+    }
+
+    // Drop a lamp's cached bake. Call when the lamp is deconstructed —
+    // the lamp itself is gone, no future composite needs its disc.
+    private void DropLampBake(TilePos tile) => _lampBakes.Remove(tile);
+
+    // Mark every lamp bake whose disc could contain `tile` as dirty.
+    // Used when a wall or door is placed/removed at `tile`: only lamps
+    // within R=9 of the change can have shadowed-through-the-new-wall
+    // tiles inside their disc. Distant lamps keep their cached bake.
+    private void InvalidateLampBakesNear(TilePos tile)
+    {
+        if (_lampBakes.Count == 0) return;
+        foreach (var (lampTile, bake) in _lampBakes)
+        {
+            int dx = lampTile.X - tile.X;
+            int dy = lampTile.Y - tile.Y;
+            if (dx * dx + dy * dy < LampContribLutLen) bake.Dirty = true;
+        }
     }
 
     // Bresenham line from (cx,cy) to (tx,ty). Returns false if any
