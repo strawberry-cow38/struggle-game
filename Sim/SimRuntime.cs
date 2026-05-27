@@ -147,6 +147,14 @@ public sealed class SimRuntime
     // with each bake's ChunkIds via SubscribeLampToChunks /
     // UnsubscribeLampFromChunks.
     private List<TilePos>[] _lampsByChunk = Array.Empty<List<TilePos>>();
+    // Per-chunk roof / wall counts. Recomputed lazily when RoofVersion /
+    // MapVersion bumps; consulted by the renderer composite to classify
+    // each chunk as pure-open (no walls, no roofs, no lamps → just sun)
+    // vs mixed (existing per-tile composite path).
+    private int[] _chunkRoofCount = Array.Empty<int>();
+    private int[] _chunkWallCount = Array.Empty<int>();
+    private long _chunkRoofCountVersion = -1;
+    private long _chunkWallCountVersion = -1;
     // Subset of doors flagged Forbidden — passed to MapView so A* + the
     // mover treat them like walls. Kept in sync with the Door component.
     private readonly HashSet<TilePos> _forbiddenDoorTiles = new();
@@ -2876,6 +2884,45 @@ public sealed class SimRuntime
         if (bake.Dirty) RebakeLamp(tile, bake);
     }
 
+    private void EnsureChunkRoofCounts()
+    {
+        if (_chunkRoofCountVersion == RoofVersion && _chunkRoofCount.Length == _lightChunkDirty.Length) return;
+        int cn = _lightChunkDirty.Length;
+        if (_chunkRoofCount.Length != cn) _chunkRoofCount = new int[cn];
+        else Array.Clear(_chunkRoofCount, 0, cn);
+        int w = Map.Width, h = Map.Height;
+        for (int y = 0; y < h; y++)
+        {
+            int row = y * w;
+            int cyOff = (y / LightChunkSize) * _lightChunksW;
+            for (int x = 0; x < w; x++)
+            {
+                if (_roofTiles[row + x] != 0)
+                    _chunkRoofCount[cyOff + (x / LightChunkSize)]++;
+            }
+        }
+        _chunkRoofCountVersion = RoofVersion;
+    }
+
+    private void EnsureChunkWallCounts()
+    {
+        if (_chunkWallCountVersion == MapVersion && _chunkWallCount.Length == _lightChunkDirty.Length) return;
+        int cn = _lightChunkDirty.Length;
+        if (_chunkWallCount.Length != cn) _chunkWallCount = new int[cn];
+        else Array.Clear(_chunkWallCount, 0, cn);
+        int w = Map.Width, h = Map.Height;
+        for (int y = 0; y < h; y++)
+        {
+            int cyOff = (y / LightChunkSize) * _lightChunksW;
+            for (int x = 0; x < w; x++)
+            {
+                if (Map.GetWall(x, y) != WallType.None)
+                    _chunkWallCount[cyOff + (x / LightChunkSize)]++;
+            }
+        }
+        _chunkWallCountVersion = MapVersion;
+    }
+
     // Composite the lamp buffer from cached per-lamp bakes. Only chunks
     // marked dirty (lamp lifecycle, color/power toggle, or wall change
     // nearby) get cleared and recomposited; the rest keep their bytes.
@@ -3066,64 +3113,75 @@ public sealed class SimRuntime
     // Packed RGB per-tile light, composed at copy time. Output length =
     // 3 * width * height, interleaved as R,G,B,R,G,B,... For each tile:
     // roofed → lamp bytes only; outdoor → max(sun, lamp) per channel.
-    // Wall tiles get the average of their non-wall neighbors instead of
-    // their own (forced-zero) value — the multiply overlay sits on top
-    // of the wall texture, and sampling the wall tile's own zero would
-    // render walls in lit rooms as black. Neighbor-fill keeps lit-room
-    // walls glowing without per-vertex bake work on the renderer side.
+    // Walls are forced to 0 so bilinear sampling shades them naturally
+    // and stops light bleeding through to outside-adjacent pixels.
+    //
+    // Per-chunk dispatch: chunks with zero walls + zero roofs + zero
+    // lamp influence are "pure-sky" — every pixel reads as the sun
+    // triple, so we broadcast the sun bytes across the chunk instead of
+    // running the per-tile composite. Sunrise/sunset becomes O(chunks)
+    // for open areas instead of O(map) per tick.
     public byte[] CopyLightRgbForRender()
     {
         lock (_mapLock)
         {
+            EnsureChunkRoofCounts();
+            EnsureChunkWallCounts();
             int w = Map.Width;
             int h = Map.Height;
             int n = _lampR.Length;
             var rgb = new byte[n * 3];
             byte sR = _lastSunR, sG = _lastSunG, sB = _lastSunB;
-            for (int y = 0; y < h; y++)
+            int cn = _lightChunkDirty.Length;
+            for (int chunkId = 0; chunkId < cn; chunkId++)
             {
-                int row = y * w;
-                for (int x = 0; x < w; x++)
+                int cxg = chunkId % _lightChunksW;
+                int cyg = chunkId / _lightChunksW;
+                int x0 = cxg * LightChunkSize;
+                int y0 = cyg * LightChunkSize;
+                int x1 = Math.Min(w, x0 + LightChunkSize);
+                int y1 = Math.Min(h, y0 + LightChunkSize);
+                bool pureSky = _chunkRoofCount[chunkId] == 0
+                              && _chunkWallCount[chunkId] == 0
+                              && _lampsByChunk[chunkId].Count == 0;
+                if (pureSky)
                 {
-                    int i = row + x;
-                    int j = i * 3;
-                    bool isWall = Map.GetWall(x, y) != WallType.None;
-                    byte r, g, b;
-                    if (isWall)
+                    for (int y = y0; y < y1; y++)
                     {
-                        // Walls store 0 in the light grid. Bilinear
-                        // sampling then falls off from lit-floor → 0 at
-                        // the wall center, which (a) naturally shades
-                        // the wall (the half facing lit space reads
-                        // brighter, the half facing dark reads dim) and
-                        // (b) stops light bleeding through: dark-outside
-                        // → 0-wall = 0 across the whole wall span. The
-                        // old neighbor-avg fill let inside-lit rooms
-                        // leak across walls to outside-adjacent pixels.
-                        r = g = b = 0;
+                        int rowI = y * w;
+                        for (int x = x0; x < x1; x++)
+                        {
+                            int j = (rowI + x) * 3;
+                            rgb[j]     = sR;
+                            rgb[j + 1] = sG;
+                            rgb[j + 2] = sB;
+                        }
                     }
-                    else
+                    continue;
+                }
+                for (int y = y0; y < y1; y++)
+                {
+                    int rowI = y * w;
+                    for (int x = x0; x < x1; x++)
                     {
-                        // Lamp visual boost — only scales bytes inside
-                        // the lamp's core (>= LampVisualBoostFloor).
-                        // Outer-ring falloff bytes stay at their raw
-                        // values so bilinear sampling does NOT visually
-                        // extend the lit area; only the bright core
-                        // pops brighter. HUD's LightAt() reads raw
-                        // _lampR so per-tile percentages stay truthful.
-                        r = BoostLampCore(_lampR[i]);
-                        g = BoostLampCore(_lampG[i]);
-                        b = BoostLampCore(_lampB[i]);
+                        int i = rowI + x;
+                        int j = i * 3;
+                        if (Map.GetWall(x, y) != WallType.None)
+                        {
+                            rgb[j] = 0; rgb[j + 1] = 0; rgb[j + 2] = 0;
+                            continue;
+                        }
+                        byte r = BoostLampCore(_lampR[i]);
+                        byte g = BoostLampCore(_lampG[i]);
+                        byte b = BoostLampCore(_lampB[i]);
                         if (_roofTiles[i] == 0)
                         {
                             if (sR > r) r = sR;
                             if (sG > g) g = sG;
                             if (sB > b) b = sB;
                         }
+                        rgb[j] = r; rgb[j + 1] = g; rgb[j + 2] = b;
                     }
-                    rgb[j]     = r;
-                    rgb[j + 1] = g;
-                    rgb[j + 2] = b;
                 }
             }
             return rgb;
