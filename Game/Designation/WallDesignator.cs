@@ -28,7 +28,7 @@ public partial class WallDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 50;
-        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.BuildWall);
+        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.BuildWall, ClearPreview);
     }
 
     public override void _UnhandledInput(InputEvent @event)
@@ -107,6 +107,14 @@ public partial class WallDesignator : Node2D
         {
             Host!.QueueCommand(new PlaceWallBlueprintCommand(t));
         }
+    }
+
+    private void ClearPreview()
+    {
+        if (!_dragging && !_hovering) return;
+        _dragging = false;
+        _hovering = false;
+        QueueRedraw();
     }
 
     private TilePos MouseToTile()

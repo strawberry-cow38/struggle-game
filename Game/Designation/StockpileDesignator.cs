@@ -35,7 +35,7 @@ public partial class StockpileDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 53;
-        if (Tools is not null) this.BindInputToMode(Tools, IsStockpileMode);
+        if (Tools is not null) this.BindInputToMode(Tools, IsStockpileMode, ClearPreview);
     }
 
     private static bool IsStockpileMode(ToolMode m) =>
@@ -117,6 +117,13 @@ public partial class StockpileDesignator : Node2D
         else if (Tools.Mode == ToolMode.StockpileShrink) { fill = ShrinkFill; border = ShrinkBorder; }
         DrawRect(rect, fill, filled: true);
         DrawRect(rect, border, filled: false, width: 2f);
+    }
+
+    private void ClearPreview()
+    {
+        if (!_dragging) return;
+        _dragging = false;
+        QueueRedraw();
     }
 
     private TilePos MouseToTile()

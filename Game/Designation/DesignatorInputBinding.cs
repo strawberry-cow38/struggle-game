@@ -12,9 +12,20 @@ namespace StruggleGame.Game.Designation;
 // SetProcessUnhandledInput(false).
 internal static class DesignatorInputBinding
 {
-    public static void BindInputToMode(this Node node, ToolService tools, System.Func<ToolMode, bool> match)
+    public static void BindInputToMode(this Node node, ToolService tools, System.Func<ToolMode, bool> match, System.Action? onDeactivate = null)
     {
-        tools.ModeChanged += m => { if (GodotObject.IsInstanceValid(node)) node.SetProcessUnhandledInput(match(m)); };
-        node.SetProcessUnhandledInput(match(tools.Mode));
+        bool active = match(tools.Mode);
+        node.SetProcessUnhandledInput(active);
+        tools.ModeChanged += m =>
+        {
+            if (!GodotObject.IsInstanceValid(node)) return;
+            bool nowActive = match(m);
+            node.SetProcessUnhandledInput(nowActive);
+            // Preview state lives in the designator and ticks via input
+            // events. When the tool deselects, _UnhandledInput stops
+            // firing — so the last hover/drag preview gets stranded on
+            // screen. Give designators a hook to clear that state.
+            if (!nowActive) onDeactivate?.Invoke();
+        };
     }
 }

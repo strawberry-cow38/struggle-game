@@ -26,7 +26,7 @@ public partial class HarvestDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 52;
-        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.Harvest);
+        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.Harvest, ClearPreview);
     }
 
     public override void _UnhandledInput(InputEvent @event)
@@ -82,6 +82,13 @@ public partial class HarvestDesignator : Node2D
             (ymax - ymin + 1) * PixelsPerTile);
         DrawRect(rect, FillColor, filled: true);
         DrawRect(rect, BorderColor, filled: false, width: 2f);
+    }
+
+    private void ClearPreview()
+    {
+        if (!_dragging) return;
+        _dragging = false;
+        QueueRedraw();
     }
 
     private TilePos MouseToTile()

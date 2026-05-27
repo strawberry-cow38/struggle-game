@@ -24,7 +24,7 @@ public partial class LampDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 55;
-        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.Lamp);
+        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.Lamp, ClearPreview);
     }
 
     public override void _UnhandledInput(InputEvent @event)
@@ -60,6 +60,13 @@ public partial class LampDesignator : Node2D
         var rect = new Rect2(_hoverTile.X * PixelsPerTile, _hoverTile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
         DrawRect(rect, PreviewFill, filled: true);
         DrawRect(rect, PreviewBorder, filled: false, width: 2f);
+    }
+
+    private void ClearPreview()
+    {
+        if (!_hovering) return;
+        _hovering = false;
+        QueueRedraw();
     }
 
     private TilePos MouseToTile()

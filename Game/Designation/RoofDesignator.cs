@@ -36,7 +36,7 @@ public partial class RoofDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 53;
-        if (Tools is not null) this.BindInputToMode(Tools, IsRoofMode);
+        if (Tools is not null) this.BindInputToMode(Tools, IsRoofMode, ClearPreview);
     }
 
     private static bool IsRoofMode(ToolMode m) =>
@@ -123,6 +123,13 @@ public partial class RoofDesignator : Node2D
         }
         DrawRect(rect, fill, filled: true);
         DrawRect(rect, border, filled: false, width: 2f);
+    }
+
+    private void ClearPreview()
+    {
+        if (!_dragging) return;
+        _dragging = false;
+        QueueRedraw();
     }
 
     private TilePos MouseToTile()

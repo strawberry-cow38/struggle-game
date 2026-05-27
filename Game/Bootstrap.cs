@@ -198,6 +198,18 @@ public partial class Bootstrap : Node2D
     public override void _UnhandledInput(InputEvent @event)
     {
         if (_host is null) return;
+
+        // Right-click anywhere in world space deselects the active tool.
+        if (@event is InputEventMouseButton rmb
+            && rmb.ButtonIndex == MouseButton.Right
+            && rmb.Pressed
+            && _tools.Mode != ToolMode.None)
+        {
+            _tools.Mode = ToolMode.None;
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
         if (@event is not InputEventKey k || !k.Pressed || k.Echo) return;
 
         switch (k.Keycode)
