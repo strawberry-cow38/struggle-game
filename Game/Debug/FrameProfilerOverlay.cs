@@ -12,7 +12,7 @@ public partial class FrameProfilerOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     private Label _label = null!;
-    private bool _visible = true;
+    private bool _visible = false;
 
     private const double RefreshIntervalSec = 1.0 / 30.0;
     private double _refreshAccum;
@@ -39,6 +39,11 @@ public partial class FrameProfilerOverlay : CanvasLayer
             Visible = _visible,
         };
         AddChild(_label);
+        // Default off — skip the _Process tick entirely until F3 turns
+        // it on. Also keeps FrameProfiler.Enabled gated so render-loop
+        // BeginScope calls stay no-op.
+        SetProcess(_visible);
+        FrameProfiler.Instance.Enabled = _visible;
     }
 
     public override void _UnhandledInput(InputEvent @event)
@@ -47,13 +52,14 @@ public partial class FrameProfilerOverlay : CanvasLayer
         {
             _visible = !_visible;
             _label.Visible = _visible;
+            SetProcess(_visible);
+            FrameProfiler.Instance.Enabled = _visible;
             GetViewport().SetInputAsHandled();
         }
     }
 
     public override void _Process(double delta)
     {
-        if (!_visible) return;
         _refreshAccum += delta;
         if (_refreshAccum < RefreshIntervalSec) return;
         _refreshAccum = 0;

@@ -11,6 +11,11 @@ public sealed class FrameProfiler
 {
     public static FrameProfiler Instance { get; } = new();
 
+    // Gated by FrameProfilerOverlay's F3 toggle. Off by default so the
+    // BeginScope/EndFrame instrumentation in the hot render path is a
+    // no-op until the overlay actually wants the data.
+    public bool Enabled = false;
+
     private const int RingSize = 60;
     private readonly Dictionary<string, Section> _sections = new();
     private readonly List<Section> _ordered = new();
@@ -28,16 +33,17 @@ public sealed class FrameProfiler
         return s;
     }
 
-    public Scope BeginScope(string name) => new Scope(Get(name));
+    public Scope BeginScope(string name) => Enabled ? new Scope(Get(name)) : default;
 
     public void EndFrame()
     {
+        if (!Enabled) return;
         foreach (var s in _ordered) s.Commit();
     }
 
     public ref struct Scope
     {
-        private readonly Section _section;
+        private readonly Section? _section;
         private readonly long _startTicks;
         public Scope(Section section)
         {
@@ -46,6 +52,7 @@ public sealed class FrameProfiler
         }
         public void Dispose()
         {
+            if (_section is null) return;
             long delta = Stopwatch.GetTimestamp() - _startTicks;
             double ms = delta * 1000.0 / Stopwatch.Frequency;
             _section.Add(ms);
