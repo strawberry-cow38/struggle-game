@@ -12,11 +12,12 @@ namespace StruggleGame.Sim.World;
 // RoofVersion, and deletes the marker entity.
 public sealed class RoofSystem
 {
-    // Instant work: completion on the first tick the pawn is in range.
-    // Pawn still has to walk to the chunk, but once there the whole
-    // chunk flips in a single sim tick.
-    public const float RoofBuildTimeSec = 0f;
-    public const float RoofRemoveTimeSec = 0f;
+    // Per-tile construction time. Chunk total = perTile * Tiles.Length,
+    // so a 9-tile chunk takes ~1.8s to raise — long enough that the
+    // corrugated-sheet blueprint overlay reads as "being built" before
+    // the roof bit flips and the darkness layer takes over.
+    public const float RoofBuildTimeSec = 0.2f;
+    public const float RoofRemoveTimeSec = 0.1f;
 
     private readonly JobBoard _jobs;
     private readonly SimRuntime _sim;

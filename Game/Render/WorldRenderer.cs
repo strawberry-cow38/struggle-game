@@ -961,20 +961,45 @@ public partial class WorldRenderer : Node2D
         DrawLine(new Vector2(right - inset, top + inset), new Vector2(left + inset, bottom - inset), DoorForbidMark, width: 3f);
     }
 
-    private static readonly Color RoofBpFill = new(0.20f, 0.55f, 0.95f, 0.22f);
-    private static readonly Color RoofBpBorder = new(0.55f, 0.85f, 1.00f, 0.95f);
+    private static readonly Color RoofBpBorder = new(0.78f, 0.82f, 0.88f, 0.95f);
+    private static readonly Color RoofMetalBase = new(0.58f, 0.60f, 0.64f, 1.00f);
+    private static readonly Color RoofMetalRibDark = new(0.34f, 0.36f, 0.40f, 1.00f);
+    private static readonly Color RoofMetalRibLight = new(0.82f, 0.86f, 0.92f, 1.00f);
     private static readonly Color RoofRemoveFill = new(0.95f, 0.30f, 0.20f, 0.22f);
     private static readonly Color RoofRemoveBorder = new(1.00f, 0.55f, 0.45f, 0.95f);
+    private const int RoofMetalRibs = 5;
 
     private void DrawRoofBlueprint(TilePos tile, float progress, bool build)
     {
         var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        DrawRect(rect, build ? RoofBpFill : RoofRemoveFill, filled: true);
-        DrawRect(rect, build ? RoofBpBorder : RoofRemoveBorder, filled: false, width: 2f);
-        // Remove jobs paint a small X so a teardown reads differently
-        // from a build at a glance.
-        if (!build)
+        if (build)
         {
+            // Corrugated sheet-metal preview: vertical ribs alternating
+            // light/dark over a metallic base, ramping from translucent
+            // to nearly opaque as work completes so the sheet "settles"
+            // into place before the roof bit flips and darkness takes
+            // over post-completion.
+            float fadeAlpha = Mathf.Lerp(0.35f, 0.90f, Mathf.Clamp(progress, 0f, 1f));
+            var baseCol = RoofMetalBase; baseCol.A = fadeAlpha;
+            DrawRect(rect, baseCol, filled: true);
+            float ribW = PixelsPerTile / (float)RoofMetalRibs;
+            for (int i = 0; i < RoofMetalRibs; i++)
+            {
+                float rx = rect.Position.X + i * ribW;
+                float highlightW = ribW * 0.18f;
+                float shadowW = ribW * 0.22f;
+                var hi = RoofMetalRibLight; hi.A = fadeAlpha;
+                var lo = RoofMetalRibDark; lo.A = fadeAlpha;
+                DrawRect(new Rect2(rx, rect.Position.Y, highlightW, PixelsPerTile), hi, filled: true);
+                DrawRect(new Rect2(rx + ribW - shadowW, rect.Position.Y, shadowW, PixelsPerTile), lo, filled: true);
+            }
+            var borderCol = RoofBpBorder; borderCol.A = Mathf.Min(1f, fadeAlpha + 0.05f);
+            DrawRect(rect, borderCol, filled: false, width: 2f);
+        }
+        else
+        {
+            DrawRect(rect, RoofRemoveFill, filled: true);
+            DrawRect(rect, RoofRemoveBorder, filled: false, width: 2f);
             float inset = PixelsPerTile * 0.22f;
             var a = new Vector2(rect.Position.X + inset, rect.Position.Y + inset);
             var b = new Vector2(rect.Position.X + PixelsPerTile - inset, rect.Position.Y + PixelsPerTile - inset);

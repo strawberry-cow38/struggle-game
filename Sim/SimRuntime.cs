@@ -716,9 +716,34 @@ public sealed class SimRuntime
         }
         snap.FloorBlueprintsCount = fj;
 
-        // Roof jobs are invisible: pawns still walk + claim them, but
-        // the player never sees a blueprint outline or progress bar.
-        snap.RoofBlueprintsCount = 0;
+        int roofCap = 0;
+        foreach (var job in Jobs.All)
+        {
+            if (job.Kind != JobKind.RoofBuild && job.Kind != JobKind.RoofRemove) continue;
+            var bp = job.Entity.GetComponent<RoofBlueprint>();
+            roofCap += bp.Tiles?.Length ?? 0;
+        }
+        EnsureCap(ref snap.RoofBlueprintsBuf, roofCap);
+        var roofBuf = snap.RoofBlueprintsBuf;
+        int rj = 0;
+        foreach (var job in Jobs.All)
+        {
+            if (job.Kind != JobKind.RoofBuild && job.Kind != JobKind.RoofRemove) continue;
+            var bp = job.Entity.GetComponent<RoofBlueprint>();
+            var tiles = bp.Tiles;
+            if (tiles is null || tiles.Length == 0) continue;
+            float perTile = job.Kind == JobKind.RoofBuild
+                ? RoofSystem.RoofBuildTimeSec
+                : RoofSystem.RoofRemoveTimeSec;
+            float total = perTile * tiles.Length;
+            float progress = total > 0f ? bp.ProgressSec / total : 0f;
+            bool isBuild = job.Kind == JobKind.RoofBuild;
+            foreach (var t in tiles)
+            {
+                roofBuf[rj++] = new RoofBlueprintState(t, progress, isBuild, job.Forbidden);
+            }
+        }
+        snap.RoofBlueprintsCount = rj;
 
         EnsureCap(ref snap.TreesBuf, _trees.Count);
         var treesBuf = snap.TreesBuf;
