@@ -22,9 +22,11 @@ public sealed class DoorBuildSystem
         _jobs = jobs;
     }
 
+    private readonly List<JobId> _completed = new();
+
     public void Step(EntityStore store, float dt)
     {
-        var completed = new List<JobId>();
+        _completed.Clear();
         var workers = store.Query<WorldPos, BuildTarget, Wanderer>();
         workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
         {
@@ -38,10 +40,10 @@ public sealed class DoorBuildSystem
             bp.ProgressSec += dt;
             if (bp.ProgressSec >= DoorTimeSec)
             {
-                completed.Add(job.Id);
+                _completed.Add(job.Id);
             }
         });
 
-        foreach (var id in completed) _sim.CompleteJob(id);
+        foreach (var id in _completed) _sim.CompleteJob(id);
     }
 }

@@ -22,9 +22,11 @@ public sealed class CutPlantSystem
         _jobs = jobs;
     }
 
+    private readonly List<JobId> _completed = new();
+
     public void Step(EntityStore store, float dt)
     {
-        var completed = new List<JobId>();
+        _completed.Clear();
         var cutters = store.Query<WorldPos, BuildTarget, Wanderer>();
         cutters.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
         {
@@ -37,16 +39,16 @@ public sealed class CutPlantSystem
             {
                 ref var t = ref job.Entity.GetComponent<Tree>();
                 t.ChopProgressSec += dt;
-                if (t.ChopProgressSec >= CutTimeSec) completed.Add(job.Id);
+                if (t.ChopProgressSec >= CutTimeSec) _completed.Add(job.Id);
             }
             else if (job.Entity.HasComponent<Crop>())
             {
                 ref var c = ref job.Entity.GetComponent<Crop>();
                 c.WorkProgressSec += dt;
-                if (c.WorkProgressSec >= CutTimeSec) completed.Add(job.Id);
+                if (c.WorkProgressSec >= CutTimeSec) _completed.Add(job.Id);
             }
         });
 
-        foreach (var id in completed) _sim.CompleteJob(id);
+        foreach (var id in _completed) _sim.CompleteJob(id);
     }
 }

@@ -21,9 +21,11 @@ public sealed class LampSystem
         _jobs = jobs;
     }
 
+    private readonly List<JobId> _completed = new();
+
     public void Step(EntityStore store, float dt)
     {
-        var completed = new List<JobId>();
+        _completed.Clear();
         var workers = store.Query<WorldPos, BuildTarget, Wanderer>();
         workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
         {
@@ -37,15 +39,15 @@ public sealed class LampSystem
             {
                 ref var bp = ref job.Entity.GetComponent<LampBlueprint>();
                 bp.ProgressSec += dt;
-                if (bp.ProgressSec >= LampBuildTimeSec) completed.Add(job.Id);
+                if (bp.ProgressSec >= LampBuildTimeSec) _completed.Add(job.Id);
             }
             else
             {
                 ref var decon = ref job.Entity.GetComponent<Decon>();
                 decon.ProgressSec += dt;
-                if (decon.ProgressSec >= LampDeconTimeSec) completed.Add(job.Id);
+                if (decon.ProgressSec >= LampDeconTimeSec) _completed.Add(job.Id);
             }
         });
-        foreach (var id in completed) _sim.CompleteJob(id);
+        foreach (var id in _completed) _sim.CompleteJob(id);
     }
 }

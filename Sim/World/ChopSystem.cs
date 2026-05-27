@@ -19,6 +19,7 @@ public sealed class ChopSystem
 
     private readonly JobBoard _jobs;
     private readonly SimRuntime _sim;
+    private readonly List<JobId> _completed = new();
 
     public ChopSystem(SimRuntime sim, JobBoard jobs)
     {
@@ -28,7 +29,7 @@ public sealed class ChopSystem
 
     public void Step(EntityStore store, float dt)
     {
-        var completed = new List<JobId>();
+        _completed.Clear();
         var choppers = store.Query<WorldPos, BuildTarget, Wanderer>();
         choppers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
         {
@@ -42,10 +43,10 @@ public sealed class ChopSystem
             tree.ChopProgressSec += dt;
             if (tree.ChopProgressSec >= ChopTimeSec)
             {
-                completed.Add(job.Id);
+                _completed.Add(job.Id);
             }
         });
 
-        foreach (var id in completed) _sim.CompleteJob(id);
+        foreach (var id in _completed) _sim.CompleteJob(id);
     }
 }

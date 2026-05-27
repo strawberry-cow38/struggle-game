@@ -20,9 +20,11 @@ public sealed class SowSystem
         _jobs = jobs;
     }
 
+    private readonly List<JobId> _completed = new();
+
     public void Step(EntityStore store, float dt)
     {
-        var completed = new List<JobId>();
+        _completed.Clear();
         var sowers = store.Query<WorldPos, BuildTarget, Wanderer>();
         sowers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
         {
@@ -34,9 +36,9 @@ public sealed class SowSystem
 
             ref var s = ref job.Entity.GetComponent<SowSite>();
             s.ProgressSec += dt;
-            if (s.ProgressSec >= SowTimeSec) completed.Add(job.Id);
+            if (s.ProgressSec >= SowTimeSec) _completed.Add(job.Id);
         });
 
-        foreach (var id in completed) _sim.CompleteJob(id);
+        foreach (var id in _completed) _sim.CompleteJob(id);
     }
 }

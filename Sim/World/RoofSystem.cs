@@ -27,9 +27,11 @@ public sealed class RoofSystem
         _jobs = jobs;
     }
 
+    private readonly List<JobId> _completed = new();
+
     public void Step(EntityStore store, float dt)
     {
-        var completed = new List<JobId>();
+        _completed.Clear();
         var workers = store.Query<WorldPos, BuildTarget, Wanderer>();
         workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
         {
@@ -52,9 +54,9 @@ public sealed class RoofSystem
             float perTile = job.Kind == JobKind.RoofBuild ? RoofBuildTimeSec : RoofRemoveTimeSec;
             if (bp.ProgressSec >= perTile * n)
             {
-                completed.Add(job.Id);
+                _completed.Add(job.Id);
             }
         });
-        foreach (var id in completed) _sim.CompleteJob(id);
+        foreach (var id in _completed) _sim.CompleteJob(id);
     }
 }

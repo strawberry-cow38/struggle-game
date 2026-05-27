@@ -20,9 +20,11 @@ public sealed class HarvestSystem
         _jobs = jobs;
     }
 
+    private readonly List<JobId> _completed = new();
+
     public void Step(EntityStore store, float dt)
     {
-        var completed = new List<JobId>();
+        _completed.Clear();
         var harvesters = store.Query<WorldPos, BuildTarget, Wanderer>();
         harvesters.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
         {
@@ -34,9 +36,9 @@ public sealed class HarvestSystem
 
             ref var c = ref job.Entity.GetComponent<Crop>();
             c.WorkProgressSec += dt;
-            if (c.WorkProgressSec >= HarvestTimeSec) completed.Add(job.Id);
+            if (c.WorkProgressSec >= HarvestTimeSec) _completed.Add(job.Id);
         });
 
-        foreach (var id in completed) _sim.CompleteJob(id);
+        foreach (var id in _completed) _sim.CompleteJob(id);
     }
 }

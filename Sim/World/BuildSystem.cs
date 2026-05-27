@@ -21,6 +21,12 @@ public sealed class BuildSystem
     private readonly JobBoard _jobs;
     private readonly SimRuntime _sim;
 
+    // Reused per-tick scratch — cleared at top of Step rather than freshly
+    // allocated, so the per-tick path doesn't churn the GC.
+    private readonly HashSet<TilePos> _occupied = new();
+    private readonly List<JobId> _completed = new();
+    private readonly List<(JobId Id, int EntityId)> _releaseBlocked = new();
+
     public BuildSystem(SimRuntime sim, JobBoard jobs)
     {
         _sim = sim;
@@ -29,14 +35,13 @@ public sealed class BuildSystem
 
     public void Step(EntityStore store, float dt)
     {
-        var occupied = new HashSet<TilePos>();
+        _occupied.Clear();
+        _completed.Clear();
+        _releaseBlocked.Clear();
         store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
         {
-            occupied.Add(new TilePos((int)p.X, (int)p.Y));
+            _occupied.Add(new TilePos((int)p.X, (int)p.Y));
         });
-
-        var completed = new List<JobId>();
-        var releaseBlocked = new List<(JobId Id, int EntityId)>();
 
         var builders = store.Query<WorldPos, BuildTarget, Wanderer>();
         builders.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity ent) =>
@@ -51,21 +56,21 @@ public sealed class BuildSystem
             blueprint.ProgressSec += dt;
             if (blueprint.ProgressSec >= BuildTimeSec)
             {
-                if (occupied.Contains(job.Tile))
+                if (_occupied.Contains(job.Tile))
                 {
                     // Hold one tick under completion so as soon as the
                     // tile is free a single tick of work finishes it.
                     blueprint.ProgressSec = BuildTimeSec - dt;
-                    releaseBlocked.Add((job.Id, ent.Id));
+                    _releaseBlocked.Add((job.Id, ent.Id));
                 }
                 else
                 {
-                    completed.Add(job.Id);
+                    _completed.Add(job.Id);
                 }
             }
         });
 
-        foreach (var (id, entityId) in releaseBlocked)
+        foreach (var (id, entityId) in _releaseBlocked)
         {
             if (store.TryGetEntityById(entityId, out var builder) && builder.HasComponent<BuildTarget>())
             {
@@ -74,7 +79,7 @@ public sealed class BuildSystem
             _jobs.Release(id);
         }
 
-        foreach (var id in completed)
+        foreach (var id in _completed)
         {
             _sim.CompleteJob(id);
         }

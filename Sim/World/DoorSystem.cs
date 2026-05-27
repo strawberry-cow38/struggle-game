@@ -17,15 +17,20 @@ public sealed class DoorSystem
     public const float OpenTimeSec = 0.5f;
     public const float AutoCloseSec = 1.5f;
 
+    // Reused per-tick scratch — cleared at top of Step rather than freshly
+    // allocated, so the per-tick path doesn't churn the GC.
+    private readonly HashSet<TilePos> _blockedTiles = new();
+    private readonly HashSet<TilePos> _occupiedTiles = new();
+
     public void Step(EntityStore store, float dt)
     {
         // Items on a door tile physically wedge it open — collect the
         // occupied tiles once so the door loop below is a pure lookup.
-        var blockedTiles = new HashSet<TilePos>();
+        _blockedTiles.Clear();
         store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) =>
         {
             if (e.HasComponent<HaulReserved>()) return;
-            blockedTiles.Add(w.Tile);
+            _blockedTiles.Add(w.Tile);
         });
 
         // Colonists physically standing on a door tile keep it open too —
@@ -34,10 +39,10 @@ public sealed class DoorSystem
         // already resets IdleSec while a pawn is actively crossing, but
         // a pawn that has STOPPED on the tile (paused job, idle) wasn't
         // ticking that reset.
-        var occupiedTiles = new HashSet<TilePos>();
+        _occupiedTiles.Clear();
         store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
         {
-            occupiedTiles.Add(new TilePos((int)p.X, (int)p.Y));
+            _occupiedTiles.Add(new TilePos((int)p.X, (int)p.Y));
         });
 
         var q = store.Query<Door>();
@@ -58,7 +63,7 @@ public sealed class DoorSystem
                     door.ProgressSec = OpenTimeSec;
                 }
             }
-            bool blocked = blockedTiles.Contains(door.Tile) || occupiedTiles.Contains(door.Tile);
+            bool blocked = _blockedTiles.Contains(door.Tile) || _occupiedTiles.Contains(door.Tile);
             switch (door.State)
             {
                 case DoorState.Closed:

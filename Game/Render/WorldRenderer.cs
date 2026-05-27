@@ -113,6 +113,17 @@ public partial class WorldRenderer : Node2D
     private static readonly Color GrowZoneFill = new(0.35f, 0.85f, 0.30f, 0.14f);
     private static readonly Color GrowZoneBorder = new(0.45f, 0.95f, 0.40f, 0.85f);
     private static readonly Color GrowZoneSelectedBorder = new(0.65f, 1.00f, 0.55f, 1.00f);
+    private static readonly Color ProgressBarBg = new(0f, 0f, 0f, 0.6f);
+    private static readonly Color ProgressBarFg = new(1f, 0.9f, 0.2f, 1f);
+    private static readonly Color JobLabelColor = new(1f, 1f, 1f, 0.95f);
+
+    // Render hot-path scratch — reused across _Draw calls so the per-frame
+    // path doesn't allocate. _zoneScratch is shared between DrawStockpile
+    // and DrawGrowZone since the two never run nested.
+    private Font? _fallbackFont;
+    private readonly Dictionary<string, Vector2> _jobLabelSizes = new();
+    private readonly HashSet<TilePos> _zoneScratch = new();
+    private readonly Vector2[] _doorPts = new Vector2[4];
 
     public SimHost? Host { get; set; }
 
@@ -120,6 +131,7 @@ public partial class WorldRenderer : Node2D
     {
         TextureFilter = TextureFilterEnum.Nearest;
         TextureRepeat = TextureRepeatEnum.Enabled;
+        _fallbackFont = ThemeDB.FallbackFont;
 
         if (Host is null) return;
         _mapWidth = Host.Map.Width;
@@ -344,7 +356,7 @@ public partial class WorldRenderer : Node2D
             }
         }
 
-        var stackFont = ThemeDB.FallbackFont;
+        var stackFont = _fallbackFont;
         var mouseLocal = GetLocalMousePosition();
         int cursorTileX = Mathf.FloorToInt(mouseLocal.X / PixelsPerTile);
         int cursorTileY = Mathf.FloorToInt(mouseLocal.Y / PixelsPerTile);
@@ -433,7 +445,7 @@ public partial class WorldRenderer : Node2D
         }
 
         float radius = PixelsPerTile * 0.35f;
-        var labelFont = ThemeDB.FallbackFont;
+        var labelFont = _fallbackFont;
         const int labelFontSize = 14;
         var labelOffset = new Vector2(0f, -PixelsPerTile * 0.6f);
         _prevDummyByIdScratch ??= new Dictionary<int, DummyState>();
@@ -477,10 +489,19 @@ public partial class WorldRenderer : Node2D
                 }
                 if (labelFont is not null && !string.IsNullOrEmpty(d.Job))
                 {
-                    var textSize = labelFont.GetStringSize(d.Job, HorizontalAlignment.Center, -1f, labelFontSize);
+                    // Cache label width by string — set of distinct Job
+                    // strings is tiny (Idle/Drafted/Haul/WallBuild/etc.)
+                    // and GetStringSize is a non-trivial Godot text-shape
+                    // call. Without the cache it's invoked per visible
+                    // pawn per frame.
+                    if (!_jobLabelSizes.TryGetValue(d.Job, out var textSize))
+                    {
+                        textSize = labelFont.GetStringSize(d.Job, HorizontalAlignment.Center, -1f, labelFontSize);
+                        _jobLabelSizes[d.Job] = textSize;
+                    }
                     var anchor = center + labelOffset - new Vector2(textSize.X * 0.5f, 0f);
                     DrawString(labelFont, anchor, d.Job, HorizontalAlignment.Left, -1f, labelFontSize,
-                        new Color(1f, 1f, 1f, 0.95f));
+                        JobLabelColor);
                 }
             }
         }
@@ -609,9 +630,9 @@ public partial class WorldRenderer : Node2D
                 float bw = PixelsPerTile * 0.6f;
                 float bh = 3f;
                 var barBg = new Rect2(center.X - bw * 0.5f, center.Y - PixelsPerTile * 0.60f, bw, bh);
-                DrawRect(barBg, new Color(0f, 0f, 0f, 0.6f), filled: true);
+                DrawRect(barBg, ProgressBarBg, filled: true);
                 var barFg = new Rect2(barBg.Position, new Vector2(bw * Mathf.Clamp(t.ChopProgress, 0f, 1f), bh));
-                DrawRect(barFg, new Color(1f, 0.9f, 0.2f, 1f), filled: true);
+                DrawRect(barFg, ProgressBarFg, filled: true);
             }
         }
 
@@ -668,9 +689,9 @@ public partial class WorldRenderer : Node2D
                 float bw = PixelsPerTile * 0.6f;
                 float bh = 3f;
                 var barBg = new Rect2(center.X - bw * 0.5f, center.Y - PixelsPerTile * 0.55f, bw, bh);
-                DrawRect(barBg, new Color(0f, 0f, 0f, 0.6f), filled: true);
+                DrawRect(barBg, ProgressBarBg, filled: true);
                 var barFg = new Rect2(barBg.Position, new Vector2(bw * Mathf.Clamp(c.WorkProgress, 0f, 1f), bh));
-                DrawRect(barFg, new Color(1f, 0.9f, 0.2f, 1f), filled: true);
+                DrawRect(barFg, ProgressBarFg, filled: true);
             }
         }
     }
@@ -726,7 +747,7 @@ public partial class WorldRenderer : Node2D
             float bw = PixelsPerTile * 0.7f;
             float bh = 3f;
             var bg = new Rect2(cx - bw * 0.5f, cy - PixelsPerTile * 0.45f, bw, bh);
-            DrawRect(bg, new Color(0f, 0f, 0f, 0.6f), filled: true);
+            DrawRect(bg, ProgressBarBg, filled: true);
             var fg = new Rect2(bg.Position, new Vector2(bw * Mathf.Clamp(progress, 0f, 1f), bh));
             DrawRect(fg, DeconProgress, filled: true);
         }
@@ -808,8 +829,11 @@ public partial class WorldRenderer : Node2D
         var p1 = pivot + perpDir * (panelThick * 0.5f);
         var p2 = pivot + dir * panelLen + perpDir * (panelThick * 0.5f);
         var p3 = pivot + dir * panelLen - perpDir * (panelThick * 0.5f);
-        var pts = new Vector2[] { p0, p1, p2, p3 };
-        DrawColoredPolygon(pts, DoorPanelColor);
+        _doorPts[0] = p0;
+        _doorPts[1] = p1;
+        _doorPts[2] = p2;
+        _doorPts[3] = p3;
+        DrawColoredPolygon(_doorPts, DoorPanelColor);
         DrawLine(p0, p1, DoorPanelEdge, width: 2f);
         DrawLine(p1, p2, DoorPanelEdge, width: 2f);
         DrawLine(p2, p3, DoorPanelEdge, width: 2f);
@@ -836,7 +860,9 @@ public partial class WorldRenderer : Node2D
     // an extra polygon pass.
     private void DrawStockpile(StruggleGame.Sim.Snapshots.StockpileState sp, bool isSelected)
     {
-        var set = new HashSet<TilePos>(sp.Tiles);
+        var set = _zoneScratch;
+        set.Clear();
+        foreach (var t in sp.Tiles) set.Add(t);
         var border = isSelected ? StockpileSelectedBorder : StockpileBorder;
         float borderW = isSelected ? 3f : 2f;
         foreach (var t in sp.Tiles)
@@ -876,7 +902,9 @@ public partial class WorldRenderer : Node2D
 
     private void DrawGrowZone(StruggleGame.Sim.Snapshots.GrowZoneState gz, bool isSelected)
     {
-        var set = new HashSet<TilePos>(gz.Tiles);
+        var set = _zoneScratch;
+        set.Clear();
+        foreach (var t in gz.Tiles) set.Add(t);
         var border = isSelected ? GrowZoneSelectedBorder : GrowZoneBorder;
         float borderW = isSelected ? 3f : 2f;
         foreach (var t in gz.Tiles)
