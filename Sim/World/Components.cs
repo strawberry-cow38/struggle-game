@@ -349,6 +349,18 @@ public struct Bed : IComponent
     public BedOrientation Orientation;
 }
 
+// Pending bed construction. ProgressSec advances while a builder is
+// adjacent to either tile of the 2-tile footprint. On completion the
+// BedBlueprint component is replaced with Bed at the same orientation.
+// Footprint tiles are blocked (via _bedOccupied) from the moment the
+// blueprint is queued so a second designation can't overlap.
+public struct BedBlueprint : IComponent
+{
+    public TilePos Origin;
+    public BedOrientation Orientation;
+    public float ProgressSec;
+}
+
 // One item in a pawn's carry inventory. Each slot references an
 // existing item entity (Wood today, more later) kept alive across
 // the haul so completion is a re-anchor rather than delete/recreate.

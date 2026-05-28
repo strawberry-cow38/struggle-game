@@ -314,6 +314,17 @@ public partial class WorldRenderer : Node2D
                 DrawLampBlueprint(lbp.Tile, lbp.Progress);
                 if (lbp.Forbidden) DrawForbidX(lbp.Tile);
             }
+
+            foreach (var bbp in snap.BedBlueprints)
+            {
+                var foot = BedOrientations.Foot(bbp.Origin, bbp.Orientation);
+                int minX = Math.Min(bbp.Origin.X, foot.X), maxX = Math.Max(bbp.Origin.X, foot.X);
+                int minY = Math.Min(bbp.Origin.Y, foot.Y), maxY = Math.Max(bbp.Origin.Y, foot.Y);
+                if (maxX < viewMinTileX || minX > viewMaxTileX
+                    || maxY < viewMinTileY || minY > viewMaxTileY) continue;
+                DrawBedBlueprint(bbp.Origin, bbp.Orientation, bbp.Progress);
+                if (bbp.Forbidden) { DrawForbidX(bbp.Origin); DrawForbidX(foot); }
+            }
         }
 
         using (FrameProfiler.Instance.BeginScope("Beds"))
@@ -1108,6 +1119,36 @@ public partial class WorldRenderer : Node2D
 
         // Frame outline on top so it reads as crafted, not flat-painted.
         DrawRect(frame, BedFrame, filled: false, width: 2f);
+    }
+
+    private static readonly Color BedBpFill   = new(0.55f, 0.40f, 0.30f, 0.40f);
+    private static readonly Color BedBpBorder = new(0.85f, 0.65f, 0.45f, 0.85f);
+
+    private void DrawBedBlueprint(TilePos origin, BedOrientation orientation, float progress)
+    {
+        var foot = BedOrientations.Foot(origin, orientation);
+        var oRect = new Rect2(origin.X * PixelsPerTile, origin.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+        var fRect = new Rect2(foot.X * PixelsPerTile, foot.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+        DrawRect(oRect, BedBpFill, filled: true);
+        DrawRect(fRect, BedBpFill, filled: true);
+        DrawRect(oRect, BedBpBorder, filled: false, width: 2f);
+        DrawRect(fRect, BedBpBorder, filled: false, width: 2f);
+        if (progress > 0f)
+        {
+            float p = Mathf.Clamp(progress, 0f, 1f);
+            int minX = Math.Min(origin.X, foot.X);
+            int minY = Math.Min(origin.Y, foot.Y);
+            int maxX = Math.Max(origin.X, foot.X);
+            int maxY = Math.Max(origin.Y, foot.Y);
+            float x0 = minX * PixelsPerTile;
+            float y0 = minY * PixelsPerTile;
+            float w = (maxX - minX + 1) * PixelsPerTile;
+            float h = (maxY - minY + 1) * PixelsPerTile;
+            // Vertical fill from bottom of footprint bbox.
+            float fh = h * p;
+            var bar = new Rect2(x0, y0 + (h - fh), w, fh);
+            DrawRect(bar, BlueprintProgress, filled: true);
+        }
     }
 
     private void DrawLamp(TilePos tile, bool poweredOn, LightColor color)

@@ -31,12 +31,14 @@ public static class WorkTypes
             case JobKind.DoorBuild:
             case JobKind.RoofBuild:
             case JobKind.LampBuild:
+            case JobKind.BedBuild:
                 type = WorkType.Construct; return true;
             case JobKind.Deconstruct:
             case JobKind.FloorDeconstruct:
             case JobKind.DoorDeconstruct:
             case JobKind.RoofRemove:
             case JobKind.LampDeconstruct:
+            case JobKind.BedDeconstruct:
                 type = WorkType.Demolish; return true;
             case JobKind.ChopTree:
             case JobKind.CutPlants:

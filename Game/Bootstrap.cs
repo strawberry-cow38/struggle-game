@@ -128,6 +128,9 @@ public partial class Bootstrap : Node2D
         var lampInfoPanel = new LampInfoPanel { Host = _host, Name = "LampInfoPanel" };
         AddChild(lampInfoPanel);
 
+        var bedInfoPanel = new BedInfoPanel { Host = _host, Name = "BedInfoPanel" };
+        AddChild(bedInfoPanel);
+
         var blueprintInfoPanel = new BlueprintInfoPanel { Host = _host, Name = "BlueprintInfoPanel" };
         AddChild(blueprintInfoPanel);
 
@@ -349,6 +352,11 @@ public partial class Bootstrap : Node2D
                 foreach (var t in _host.SelectedLampTiles)
                 {
                     _host.QueueCommand(new Sim.Commands.PostLampDeconCommand(t));
+                    any = true;
+                }
+                foreach (var t in _host.SelectedBedTiles)
+                {
+                    _host.QueueCommand(new Sim.Commands.PostBedDeconCommand(t));
                     any = true;
                 }
                 if (any) GetViewport().SetInputAsHandled();

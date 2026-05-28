@@ -70,6 +70,7 @@ public sealed class SimHost : IDisposable
             Volatile.Write(ref _selectedDoorTiles, Array.Empty<TilePos>());
             Volatile.Write(ref _selectedBlueprintTiles, Array.Empty<TilePos>());
             Volatile.Write(ref _selectedLampTiles, Array.Empty<TilePos>());
+            Volatile.Write(ref _selectedBedTiles, Array.Empty<TilePos>());
             Volatile.Write(ref _latest, _sim.BuildSnapshot(null, null, null, null));
         }
     }
@@ -205,6 +206,13 @@ public sealed class SimHost : IDisposable
     {
         get => Volatile.Read(ref _selectedLampTiles);
         set => Volatile.Write(ref _selectedLampTiles, value ?? Array.Empty<TilePos>());
+    }
+
+    private TilePos[] _selectedBedTiles = Array.Empty<TilePos>();
+    public TilePos[] SelectedBedTiles
+    {
+        get => Volatile.Read(ref _selectedBedTiles);
+        set => Volatile.Write(ref _selectedBedTiles, value ?? Array.Empty<TilePos>());
     }
 
     // Read-only accessor for the WallInfoPanel: is the wall at this

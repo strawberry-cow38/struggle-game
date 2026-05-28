@@ -100,6 +100,7 @@ public sealed class SimRuntime
     private readonly FloorSystem _floors;
     private readonly RoofSystem _roofs;
     private readonly LampSystem _lamps;
+    private readonly BedSystem _beds;
     private readonly DoorBuildSystem _doorBuilds;
     private readonly DoorSystem _doors;
     private readonly HaulSystem _hauls;
@@ -240,6 +241,7 @@ public sealed class SimRuntime
         _floors = new FloorSystem(this, Jobs);
         _roofs = new RoofSystem(this, Jobs);
         _lamps = new LampSystem(this, Jobs);
+        _beds = new BedSystem(this, Jobs);
         _doorBuilds = new DoorBuildSystem(this, Jobs);
         _doors = new DoorSystem();
         _hauls = new HaulSystem(this, Jobs);
@@ -279,6 +281,7 @@ public sealed class SimRuntime
         _floors.Step(Store, dt);
         _roofs.Step(Store, dt);
         _lamps.Step(Store, dt);
+        _beds.Step(Store, dt);
         _doorBuilds.Step(Store, dt);
         _doors.Step(Store, dt);
         _hauls.Step(Store, dt);
@@ -829,11 +832,15 @@ public sealed class SimRuntime
         {
             if (job.Kind != JobKind.Deconstruct
                 && job.Kind != JobKind.DoorDeconstruct
-                && job.Kind != JobKind.LampDeconstruct) continue;
+                && job.Kind != JobKind.LampDeconstruct
+                && job.Kind != JobKind.BedDeconstruct) continue;
             var d = job.Entity.GetComponent<Decon>();
-            float denom = job.Kind == JobKind.LampDeconstruct
-                ? LampSystem.LampDeconTimeSec
-                : DeconSystem.DeconTimeSec;
+            float denom = job.Kind switch
+            {
+                JobKind.LampDeconstruct => LampSystem.LampDeconTimeSec,
+                JobKind.BedDeconstruct => BedSystem.BedDeconTimeSec,
+                _ => DeconSystem.DeconTimeSec,
+            };
             deconsBuf[dj++] = new DeconState(job.Tile, d.ProgressSec / denom, job.Forbidden);
         }
         snap.DeconsCount = dj;
@@ -920,6 +927,17 @@ public sealed class SimRuntime
         });
         snap.LampBlueprintsCount = lbi;
 
+        var bedBpQuery = Store.Query<BedBlueprint>();
+        EnsureCap(ref snap.BedBlueprintsBuf, bedBpQuery.Count);
+        var bedBpBuf = snap.BedBlueprintsBuf;
+        int bbi = 0;
+        bedBpQuery.ForEachEntity((ref BedBlueprint bp, Entity _) =>
+        {
+            bool forbidden = Jobs.GetByTile(bp.Origin)?.Forbidden ?? false;
+            bedBpBuf[bbi++] = new BedBlueprintState(bp.Origin, bp.Orientation, bp.ProgressSec / BedSystem.BedBuildTimeSec, forbidden);
+        });
+        snap.BedBlueprintsCount = bbi;
+
         return snap;
     }
 
@@ -985,34 +1003,49 @@ public sealed class SimRuntime
         return true;
     }
 
-    // Drop a 2-tile decorative bed at Origin with the given orientation.
-    // No construction job — the bed appears immediately. Both Origin and
-    // the foot tile (Origin + Orientation offset) must be free of walls,
-    // doors, trees, lamps, and other beds. Returns false on conflict.
-    public bool TryPlaceBed(TilePos origin, BedOrientation orientation)
+    // Post a 2-tile bed blueprint at Origin oriented in the given
+    // direction. Both footprint tiles (Origin + Foot) must be free of
+    // walls, doors, trees, lamps, other beds, and other jobs. Occupancy
+    // is reserved immediately so a second designation can't overlap.
+    // BedSystem advances ProgressSec while a builder is adjacent; on
+    // completion CompleteJob swaps BedBlueprint for Bed.
+    public bool TryPlaceBedBlueprint(TilePos origin, BedOrientation orientation)
     {
         var foot = BedOrientations.Foot(origin, orientation);
-        if (!IsBedTileFree(origin) || !IsBedTileFree(foot)) return false;
         if (origin == foot) return false;
+        if (!IsBedTileFree(origin) || !IsBedTileFree(foot)) return false;
+        if (Jobs.HasTile(origin) || Jobs.HasTile(foot)) return false;
+
         var e = Store.CreateEntity();
-        e.AddComponent(new Bed { Origin = origin, Orientation = orientation });
-        _bedMap[origin] = e;
+        e.AddComponent(new BedBlueprint { Origin = origin, Orientation = orientation, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.BedBuild, origin, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
         _bedOccupied.Add(origin);
         _bedOccupied.Add(foot);
         RebuildMapView();
         return true;
     }
 
-    public bool RemoveBed(TilePos origin)
+    // Post a BedDeconstruct job against a built bed. Job carries a fresh
+    // Decon marker that BedSystem ticks; the Bed entity stays in _bedMap
+    // until completion, so cancel leaves the bed standing.
+    public bool TryPostBedDeconstructJob(TilePos origin)
     {
-        if (!_bedMap.TryGetValue(origin, out var entity)) return false;
-        var bed = entity.GetComponent<Bed>();
-        var foot = BedOrientations.Foot(bed.Origin, bed.Orientation);
-        _bedMap.Remove(origin);
-        _bedOccupied.Remove(origin);
-        _bedOccupied.Remove(foot);
-        entity.DeleteEntity();
-        RebuildMapView();
+        if (!_bedMap.ContainsKey(origin)) return false;
+        if (Jobs.HasTile(origin)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new Decon { Tile = origin, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.BedDeconstruct, origin, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
         return true;
     }
 
@@ -1307,6 +1340,34 @@ public sealed class SimRuntime
                 RecomputeLampLight();
             }
         }
+        else if (kind == JobKind.BedBuild)
+        {
+            // Transmute the blueprint entity into the live bed at the
+            // same orientation. Occupancy was already reserved when the
+            // blueprint was posted, so the map view doesn't need a flip
+            // here — just promote the entity.
+            var bp = entity.GetComponent<BedBlueprint>();
+            entity.RemoveComponent<BedBlueprint>();
+            entity.AddComponent(new Bed { Origin = bp.Origin, Orientation = bp.Orientation });
+            _bedMap[bp.Origin] = entity;
+        }
+        else if (kind == JobKind.BedDeconstruct)
+        {
+            // Decon marker is single-purpose; throw it away with the job.
+            // The actual Bed entity lives in _bedMap; clear its footprint
+            // from _bedOccupied so pathing reclaims both tiles.
+            entity.DeleteEntity();
+            if (_bedMap.TryGetValue(tile, out var bedEnt))
+            {
+                var bed = bedEnt.GetComponent<Bed>();
+                var foot = BedOrientations.Foot(bed.Origin, bed.Orientation);
+                _bedMap.Remove(tile);
+                _bedOccupied.Remove(tile);
+                _bedOccupied.Remove(foot);
+                bedEnt.DeleteEntity();
+                RebuildMapView();
+            }
+        }
         else if (kind == JobKind.Deconstruct)
         {
             // Decon marker entity is single-purpose; throw it away.
@@ -1474,6 +1535,22 @@ public sealed class SimRuntime
         {
             // Lamp state unchanged; throw the marker away. For decon the
             // Lamp entity stayed in _lampMap so it's still functional.
+            entity.DeleteEntity();
+        }
+        else if (kind == JobKind.BedBuild)
+        {
+            // Bed blueprint cancelled — drop the blueprint entity and free
+            // both footprint tiles (no Bed exists yet, so _bedMap untouched).
+            var bp = entity.GetComponent<BedBlueprint>();
+            var foot = BedOrientations.Foot(bp.Origin, bp.Orientation);
+            _bedOccupied.Remove(bp.Origin);
+            _bedOccupied.Remove(foot);
+            entity.DeleteEntity();
+            RebuildMapView();
+        }
+        else if (kind == JobKind.BedDeconstruct)
+        {
+            // Decon cancelled — bed stays; throw the marker away.
             entity.DeleteEntity();
         }
         else if (kind == JobKind.DoorDeconstruct)

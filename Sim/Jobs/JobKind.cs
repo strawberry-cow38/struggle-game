@@ -19,4 +19,6 @@ public enum JobKind : byte
     RoofRemove = 13,
     LampBuild = 14,
     LampDeconstruct = 15,
+    BedBuild = 16,
+    BedDeconstruct = 17,
 }
