@@ -17,8 +17,12 @@ public sealed class HaulSystem
 
     // Reused per-tick scratch so HaulSystem.Step doesn't allocate a fresh
     // List/Dictionary every 1/60s. Cleared at the top of Step.
-    private readonly List<Entity> _candidates = new();
-    private readonly Dictionary<TilePos, int> _woodAt = new();
+    private readonly List<(Entity Ent, TilePos Tile, int Count, ItemDef Def)> _candidates = new();
+    // Per-item-path tile→count index. Built once per tick from both Wood
+    // entities (always Wood path) and ItemPile entities (whatever ItemPath
+    // they carry). TryFindBestHaulDest needs the per-item view so a
+    // carrot pile doesn't try to merge into a Wood stack.
+    private readonly Dictionary<string, Dictionary<TilePos, int>> _stackAt = new();
 
     public HaulSystem(SimRuntime sim, JobBoard jobs)
     {
@@ -28,32 +32,40 @@ public sealed class HaulSystem
 
     public void Step(EntityStore store, float dt)
     {
-        // Single pass over the Wood query: collect haul candidates AND
-        // build the tile→count index used to score dest tiles. Prior
-        // version paid an O(W) Query<Wood> scan per candidate inside
-        // TryFindBestHaulDest, making per-tick cost O(W²).
-        // MergeCoincidentWood guarantees at-most-one Wood entity per
-        // tile so direct assignment (not aggregation) is correct.
         _candidates.Clear();
-        _woodAt.Clear();
+        foreach (var kv in _stackAt) kv.Value.Clear();
+
+        string woodPath = ItemCatalog.Wood.FullPath;
+        var woodIndex = GetOrCreateIndex(woodPath);
         store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
         {
-            _woodAt[w.Tile] = w.Count;
+            woodIndex[w.Tile] = w.Count;
             if (ent.HasComponent<HaulReserved>()) return;
             if (ent.HasComponent<Forbidden>()) return;
-            _candidates.Add(ent);
+            _candidates.Add((ent, w.Tile, w.Count, ItemCatalog.Wood));
         });
 
-        foreach (var ent in _candidates)
+        store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity ent) =>
         {
-            var w = ent.GetComponent<Wood>();
-            var sourceTile = w.Tile;
-            int count = w.Count;
+            if (!ItemCatalog.ItemsByPath.TryGetValue(p.ItemPath, out var def)) return;
+            var idx = GetOrCreateIndex(p.ItemPath);
+            idx[p.Tile] = p.Count;
+            if (ent.HasComponent<HaulReserved>()) return;
+            if (ent.HasComponent<Forbidden>()) return;
+            _candidates.Add((ent, p.Tile, p.Count, def));
+        });
+
+        foreach (var cand in _candidates)
+        {
+            var sourceTile = cand.Tile;
+            int count = cand.Count;
+            var def = cand.Def;
+            var idx = _stackAt[def.FullPath];
 
             bool onAllowedStockpile = _sim.TryGetStockpileAt(sourceTile, out var pileHere)
-                && pileHere.Allows(ItemCatalog.Wood);
+                && pileHere.Allows(def);
 
-            if (!_sim.TryFindBestHaulDest(sourceTile, ItemCatalog.Wood, count, _woodAt,
+            if (!_sim.TryFindBestHaulDest(sourceTile, def, count, idx,
                 out var destTile, out var stockpileId)) continue;
 
             // Already on an allowed stockpile tile: only post a merge haul
@@ -63,7 +75,7 @@ public sealed class HaulSystem
             if (onAllowedStockpile)
             {
                 if (destTile == sourceTile) continue;
-                int existing = _woodAt.TryGetValue(destTile, out var ec) ? ec : 0;
+                int existing = idx.TryGetValue(destTile, out var ec) ? ec : 0;
                 if (existing < count) continue;
                 if (existing == count)
                 {
@@ -73,22 +85,32 @@ public sealed class HaulSystem
                 }
             }
 
-            ent.AddComponent(new HaulPayload
+            cand.Ent.AddComponent(new HaulPayload
             {
                 DestTile = destTile,
                 StockpileId = stockpileId,
-                ItemPath = ItemCatalog.Wood.FullPath,
+                ItemPath = def.FullPath,
                 Count = count,
             });
-            var id = _jobs.Post(JobKind.Haul, sourceTile, ent);
+            var id = _jobs.Post(JobKind.Haul, sourceTile, cand.Ent);
             if (id.IsNone)
             {
                 // Tile already had a job — back the component out.
-                ent.RemoveComponent<HaulPayload>();
+                cand.Ent.RemoveComponent<HaulPayload>();
                 continue;
             }
-            ent.AddComponent(new HaulReserved { JobId = id });
+            cand.Ent.AddComponent(new HaulReserved { JobId = id });
             _sim.ReserveHaulDest(destTile);
         }
+    }
+
+    private Dictionary<TilePos, int> GetOrCreateIndex(string path)
+    {
+        if (!_stackAt.TryGetValue(path, out var idx))
+        {
+            idx = new Dictionary<TilePos, int>();
+            _stackAt[path] = idx;
+        }
+        return idx;
     }
 }

@@ -574,8 +574,7 @@ public sealed class DummyController
             foreach (var pid in c.PendingPickupIds)
             {
                 if (!store.TryGetEntityById(pid, out var pe)) continue;
-                if (!pe.HasComponent<Wood>()) continue;
-                var ptile = pe.GetComponent<Wood>().Tile;
+                if (!TryGetSourceTile(pe, out var ptile)) continue;
                 int d = Math.Abs(ptile.X - here.X) + Math.Abs(ptile.Y - here.Y);
                 if (d < bestDist) { bestDist = d; pickupTile = ptile; pickupEntityId = pid; }
             }
@@ -592,7 +591,7 @@ public sealed class DummyController
             {
                 if (store.TryGetEntityById(pickupEntityId, out var pe)
                     && pe.HasComponent<HaulPayload>()
-                    && pe.HasComponent<Wood>())
+                    && (pe.HasComponent<Wood>() || pe.HasComponent<ItemPile>()))
                 {
                     var hp = pe.GetComponent<HaulPayload>();
                     ref var live = ref entity.GetComponent<Carrying>();
@@ -665,19 +664,41 @@ public sealed class DummyController
         float bRem = SimConstants.MaxCarryBulk - bUsed;
         if (wRem <= 0f || bRem <= 0f) return;
 
+        // Topoff with the same item path the primary slot carries — mixing
+        // kinds would route a carrot pile to a wood-only stockpile dest.
+        string primaryPath = slots.Count > 0 ? slots[0].ItemPath : string.Empty;
+        bool isWoodTopoff = primaryPath == ItemCatalog.Wood.FullPath;
+
         // Snapshot candidates first so the nested query can't see any
         // mutations we'd queue mid-iteration.
         var candidates = new List<(Entity Ent, int Count, string Path, int Dist)>();
-        store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) =>
+        if (isWoodTopoff)
         {
-            if (e.HasComponent<HaulReserved>()) return;
-            if (e.HasComponent<Forbidden>()) return;
-            if (_topoffReservedThisTick.Contains(e.Id)) return;
-            int md = Math.Abs(w.Tile.X - primarySource.X) + Math.Abs(w.Tile.Y - primarySource.Y);
-            if (md == 0) return; // primary already handled
-            if (md > SimConstants.HaulTopoffRadius) return;
-            candidates.Add((e, w.Count, ItemCatalog.Wood.FullPath, md));
-        });
+            store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) =>
+            {
+                if (e.HasComponent<HaulReserved>()) return;
+                if (e.HasComponent<Forbidden>()) return;
+                if (_topoffReservedThisTick.Contains(e.Id)) return;
+                int md = Math.Abs(w.Tile.X - primarySource.X) + Math.Abs(w.Tile.Y - primarySource.Y);
+                if (md == 0) return; // primary already handled
+                if (md > SimConstants.HaulTopoffRadius) return;
+                candidates.Add((e, w.Count, ItemCatalog.Wood.FullPath, md));
+            });
+        }
+        else if (!string.IsNullOrEmpty(primaryPath))
+        {
+            store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
+            {
+                if (p.ItemPath != primaryPath) return;
+                if (e.HasComponent<HaulReserved>()) return;
+                if (e.HasComponent<Forbidden>()) return;
+                if (_topoffReservedThisTick.Contains(e.Id)) return;
+                int md = Math.Abs(p.Tile.X - primarySource.X) + Math.Abs(p.Tile.Y - primarySource.Y);
+                if (md == 0) return;
+                if (md > SimConstants.HaulTopoffRadius) return;
+                candidates.Add((e, p.Count, p.ItemPath, md));
+            });
+        }
         candidates.Sort((a, b) => a.Dist - b.Dist);
 
         foreach (var cand in candidates)
@@ -700,6 +721,17 @@ public sealed class DummyController
             bRem -= b;
             if (wRem <= 0f || bRem <= 0f) break;
         }
+    }
+
+    // A pickup-pending item entity carries either Wood (legacy stack) or
+    // ItemPile (generic resource drop, e.g. harvested carrots). Both expose
+    // a Tile; pull whichever component is attached.
+    private static bool TryGetSourceTile(Entity e, out TilePos tile)
+    {
+        if (e.HasComponent<Wood>()) { tile = e.GetComponent<Wood>().Tile; return true; }
+        if (e.HasComponent<ItemPile>()) { tile = e.GetComponent<ItemPile>().Tile; return true; }
+        tile = default;
+        return false;
     }
 
     private const int WanderRadius = 10;

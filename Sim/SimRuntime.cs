@@ -298,6 +298,7 @@ public sealed class SimRuntime
         _hauls.Step(Store, dt);
         AgeRoofFlashes(dt);
         MergeCoincidentWood();
+        MergeCoincidentItemPiles();
         _safety.Step(Store, Tick);
         // Coalesced rebuild: one map clone + one room flood-fill per tick
         // even if N walls/doors mutated this tick.
@@ -2384,7 +2385,14 @@ public sealed class SimRuntime
                     continue;
                 }
                 if (e.HasComponent<HaulReserved>()) cb.RemoveComponent<HaulReserved>(e.Id);
-                cb.AddComponent(e.Id, new Wood { Tile = dropTile, Count = leftover });
+                if (slot.ItemPath == Items.ItemCatalog.Wood.FullPath)
+                {
+                    cb.AddComponent(e.Id, new Wood { Tile = dropTile, Count = leftover });
+                }
+                else
+                {
+                    cb.AddComponent(e.Id, new ItemPile { Tile = dropTile, Count = leftover, ItemPath = slot.ItemPath });
+                }
                 cb.AddComponent(e.Id, new WorldPos { X = dropTile.X + 0.5f, Y = dropTile.Y + 0.5f });
             }
         }
@@ -2465,6 +2473,7 @@ public sealed class SimRuntime
     public void OnHaulPickedUp(Entity carriedEntity, CommandBuffer cb)
     {
         if (carriedEntity.HasComponent<Wood>()) cb.RemoveComponent<Wood>(carriedEntity.Id);
+        if (carriedEntity.HasComponent<ItemPile>()) cb.RemoveComponent<ItemPile>(carriedEntity.Id);
         if (carriedEntity.HasComponent<HaulPayload>()) cb.RemoveComponent<HaulPayload>(carriedEntity.Id);
     }
 
@@ -2555,6 +2564,42 @@ public sealed class SimRuntime
             {
                 ref var dw = ref dest.GetComponent<Wood>();
                 dw.Count += amt;
+            }
+        }
+        foreach (var e in deletes) e.DeleteEntity();
+    }
+
+    // Same end-of-tick consolidator as MergeCoincidentWood, but for
+    // ItemPile drops. Keys on (Tile, ItemPath) so a carrot pile won't
+    // swallow a corn pile on the same tile. Uses WoodMaxStack as a
+    // generic cap until per-item stack sizes get pulled into ItemCatalog.
+    private void MergeCoincidentItemPiles()
+    {
+        var byKey = new Dictionary<(TilePos Tile, string Path), Entity>();
+        var mergeOps = new List<(int destId, int amt)>();
+        var deletes = new List<Entity>();
+        Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
+        {
+            if (e.HasComponent<HaulReserved>()) return;
+            var key = (p.Tile, p.ItemPath);
+            if (byKey.TryGetValue(key, out var existing))
+            {
+                int existingCount = existing.GetComponent<ItemPile>().Count;
+                if (existingCount + p.Count <= WoodMaxStack)
+                {
+                    mergeOps.Add((existing.Id, p.Count));
+                    deletes.Add(e);
+                }
+                return;
+            }
+            byKey[key] = e;
+        });
+        foreach (var (id, amt) in mergeOps)
+        {
+            if (Store.TryGetEntityById(id, out var dest))
+            {
+                ref var dp = ref dest.GetComponent<ItemPile>();
+                dp.Count += amt;
             }
         }
         foreach (var e in deletes) e.DeleteEntity();
