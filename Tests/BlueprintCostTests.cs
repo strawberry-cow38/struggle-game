@@ -1,6 +1,7 @@
 using Friflo.Engine.ECS;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
+using StruggleGame.Sim.Jobs;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.World;
 using Xunit;
@@ -48,6 +49,9 @@ public class BlueprintCostTests
         Assert.Equal(WallType.None, sim.Map.GetWall(bpTile));
         var job = sim.Jobs.GetByTile(bpTile);
         Assert.NotNull(job);
+        // No pawn should have claimed the build job — funding isn't there
+        // yet, so the claim filter must skip it.
+        Assert.Equal(JobState.Open, job!.State);
     }
 
     [Fact]

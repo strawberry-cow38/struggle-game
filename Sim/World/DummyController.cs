@@ -46,6 +46,11 @@ public sealed class DummyController
     // SimRuntime so the controller doesn't need to know about the world
     // clock or per-pawn Schedule components.
     private readonly Func<Entity, ScheduleCategory> _getScheduleSlot;
+    // Returns true if a blueprint entity has all its materials deposited
+    // (or god-mode free-build is on). Build-kind jobs whose blueprint is
+    // unfunded are filtered out of the claim list so pawns don't park
+    // adjacent to a wall they can't construct yet.
+    private readonly Func<Entity, bool> _isBlueprintFunded;
     // Optional callback for haul completion. Set by SimRuntime so we
     // don't need to plumb the runtime through the controller's surface.
     // Fires when a pawn physically picks up one item entity. Hooked by
@@ -71,7 +76,8 @@ public sealed class DummyController
         int seed,
         DoorLookup tryGetDoor,
         Func<Entity, WorkType, byte> getPriority,
-        Func<Entity, ScheduleCategory> getScheduleSlot)
+        Func<Entity, ScheduleCategory> getScheduleSlot,
+        Func<Entity, bool> isBlueprintFunded)
     {
         _paths = paths;
         _jobs = jobs;
@@ -81,6 +87,7 @@ public sealed class DummyController
         _rng = new Random(seed);
         _getPriority = getPriority;
         _getScheduleSlot = getScheduleSlot;
+        _isBlueprintFunded = isBlueprintFunded;
     }
 
     public void Step(EntityStore store, float dt)
@@ -419,6 +426,14 @@ public sealed class DummyController
             // haul — HandleHaul would treat the old Carrying as the active
             // job and walk to its stale DestTile.
             if (job.Kind == JobKind.Haul && entity.HasComponent<Carrying>()) continue;
+            // Build-kind jobs gated on funded blueprints. Pawns must not
+            // walk over and idle next to an unfunded wall — the haul
+            // pipeline needs to land materials first.
+            if ((job.Kind == JobKind.WallBuild
+                 || job.Kind == JobKind.FloorBuild
+                 || job.Kind == JobKind.DoorBuild
+                 || job.Kind == JobKind.BedBuild)
+                && !_isBlueprintFunded(job.Entity)) continue;
             int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
             if (d >= bestDist[pr]) continue;
             TilePos approach;
