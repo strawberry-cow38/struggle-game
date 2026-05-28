@@ -454,9 +454,9 @@ public partial class Selector : Node2D
         // Beats walls so a decon mark over a wall is reachable; gets
         // beaten by built doors. Wall blueprint tiles have no real wall
         // so there's no conflict to worry about.
-        if (TryPickBlueprint(snap, clickTile))
+        if (TryPickBlueprint(snap, clickTile, out var bpTile))
         {
-            Host.SelectedBlueprintTiles = ToggleTile(Host.SelectedBlueprintTiles, clickTile, shift);
+            Host.SelectedBlueprintTiles = ToggleTile(Host.SelectedBlueprintTiles, bpTile, shift);
             Host.SelectedDoorTiles = Array.Empty<TilePos>();
             Host.SelectedWallTiles = Array.Empty<TilePos>();
             Host.SelectedDummyId = null;
@@ -557,11 +557,20 @@ public partial class Selector : Node2D
         return false;
     }
 
-    private bool TryPickBlueprint(SimSnapshot snap, TilePos tile)
+    private bool TryPickBlueprint(SimSnapshot snap, TilePos tile, out TilePos resolved)
     {
+        resolved = tile;
         foreach (var b in snap.Blueprints)      { if (b.Tile == tile) return true; }
         foreach (var b in snap.FloorBlueprints) { if (b.Tile == tile) return true; }
         foreach (var b in snap.DoorBlueprints)  { if (b.Tile == tile) return true; }
+        foreach (var b in snap.RoofBlueprints)  { if (b.Tile == tile) return true; }
+        foreach (var b in snap.LampBlueprints)  { if (b.Tile == tile) return true; }
+        foreach (var b in snap.BedBlueprints)
+        {
+            if (b.Origin == tile) { resolved = b.Origin; return true; }
+            var foot = StruggleGame.Sim.World.BedOrientations.Foot(b.Origin, b.Orientation);
+            if (foot == tile) { resolved = b.Origin; return true; }
+        }
         foreach (var d in snap.Decons)          { if (d.Tile == tile) return true; }
         return false;
     }

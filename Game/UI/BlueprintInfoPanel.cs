@@ -180,6 +180,18 @@ public partial class BlueprintInfoPanel : CanvasLayer
         {
             if (b.Tile == tile) { kind = "Door Blueprint"; progress = b.Progress; forbidden = b.Forbidden; return true; }
         }
+        foreach (var b in snap.RoofBlueprints)
+        {
+            if (b.Tile == tile) { kind = b.Build ? "Roof Blueprint" : "Roof Remove"; progress = b.Progress; forbidden = b.Forbidden; return true; }
+        }
+        foreach (var b in snap.LampBlueprints)
+        {
+            if (b.Tile == tile) { kind = "Lamp Blueprint"; progress = b.Progress; forbidden = b.Forbidden; return true; }
+        }
+        foreach (var b in snap.BedBlueprints)
+        {
+            if (b.Origin == tile) { kind = "Bed Blueprint"; progress = b.Progress; forbidden = b.Forbidden; return true; }
+        }
         foreach (var d in snap.Decons)
         {
             if (d.Tile == tile) { kind = "Deconstruct"; progress = d.Progress; forbidden = d.Forbidden; return true; }
