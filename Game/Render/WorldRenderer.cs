@@ -381,6 +381,18 @@ public partial class WorldRenderer : Node2D
                 foreach (var t in Host.SelectedDoorTiles) DrawSelectionOutline(t);
                 foreach (var t in Host.SelectedBlueprintTiles) DrawSelectionOutline(t);
                 foreach (var t in Host.SelectedLampTiles) DrawSelectionOutline(t);
+                foreach (var t in Host.SelectedBedTiles)
+                {
+                    DrawSelectionOutline(t);
+                    foreach (var b in snap.Beds)
+                    {
+                        if (b.Origin == t)
+                        {
+                            DrawSelectionOutline(BedOrientations.Foot(b.Origin, b.Orientation));
+                            break;
+                        }
+                    }
+                }
             }
         }
 
