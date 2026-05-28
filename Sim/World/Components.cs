@@ -391,6 +391,10 @@ public struct Carrying : IComponent
     public TilePos DestTile;
     public int StockpileId;
     public Jobs.JobId PrimaryJobId;
+    // Non-zero when the dropoff is a blueprint deposit. DeliverCarrying
+    // routes per-slot Counts into BlueprintCostOps.Deposit instead of
+    // spawning Wood at DestTile. Leftover (if any) still spills as Wood.
+    public int BlueprintEntityId;
 }
 
 // Player-applied "do not haul" mark on a world item stack. HaulSystem
@@ -418,6 +422,11 @@ public struct HaulPayload : IComponent
     public int StockpileId;
     public string ItemPath;
     public int Count;
+    // Non-zero = haul targets a blueprint at DestTile. Set by
+    // BlueprintHaulSystem; copied onto Carrying at pickup so the
+    // deliver path can find the blueprint by entity id even if its
+    // tile has moved or its entity slot was reused.
+    public int BlueprintEntityId;
 }
 
 // Material requirement list attached to a blueprint entity. When present,
@@ -435,4 +444,9 @@ public struct ResourceReq
     public string ItemPath;
     public int Needed;
     public int Deposited;
+    // In-flight haul reservation. BlueprintHaulSystem bumps this when it
+    // dispatches a hauler; DeliverCarrying converts Reserved → Deposited
+    // on success, and the abort paths decrement Reserved without raising
+    // Deposited. (Needed - Deposited - Reserved) drives "still wanted".
+    public int Reserved;
 }

@@ -104,6 +104,7 @@ public sealed class SimRuntime
     private readonly DoorBuildSystem _doorBuilds;
     private readonly DoorSystem _doors;
     private readonly HaulSystem _hauls;
+    private readonly BlueprintHaulSystem _bpHauls;
     private readonly SafetySystem _safety;
     // Stockpile tiles currently promised to an in-flight haul job. Posting
     // a new haul avoids these so two carriers can't target the same cell.
@@ -250,6 +251,7 @@ public sealed class SimRuntime
         _doorBuilds = new DoorBuildSystem(this, Jobs);
         _doors = new DoorSystem();
         _hauls = new HaulSystem(this, Jobs);
+        _bpHauls = new BlueprintHaulSystem(this, Jobs);
         _safety = new SafetySystem(() => MapView, PathService, Watcher);
 
         // Trees go down before colonists so spawn can avoid landing on one.
@@ -289,6 +291,7 @@ public sealed class SimRuntime
         _beds.Step(Store, dt);
         _doorBuilds.Step(Store, dt);
         _doors.Step(Store, dt);
+        _bpHauls.Step(Store, dt);
         _hauls.Step(Store, dt);
         AgeRoofFlashes(dt);
         MergeCoincidentWood();
@@ -1616,11 +1619,21 @@ public sealed class SimRuntime
         else if (kind == JobKind.Haul)
         {
             // Wood entity survives the cancel — only the routing intent
-            // is dropped. Release the dest cell so another haul can use it.
+            // is dropped. Release the dest cell so another haul can use it,
+            // and undo any blueprint reservation this haul was holding so
+            // the blueprint can attract a fresh hauler next tick.
             if (entity.HasComponent<HaulPayload>())
             {
                 var hp = entity.GetComponent<HaulPayload>();
                 _reservedHaulDests.Remove(hp.DestTile);
+                if (hp.BlueprintEntityId != 0
+                    && Store.TryGetEntityById(hp.BlueprintEntityId, out var bpEnt)
+                    && bpEnt.HasComponent<BlueprintCost>())
+                {
+                    int amt = entity.HasComponent<Wood>() ? entity.GetComponent<Wood>().Count : hp.Count;
+                    int release = amt < hp.Count ? amt : hp.Count;
+                    BlueprintCostOps.ReleaseReservation(bpEnt, hp.ItemPath, release);
+                }
                 entity.RemoveComponent<HaulPayload>();
             }
             if (entity.HasComponent<HaulReserved>()) entity.RemoveComponent<HaulReserved>();
@@ -2324,6 +2337,17 @@ public sealed class SimRuntime
             var job = Jobs.Get(c.PrimaryJobId);
             if (job is not null) Jobs.Complete(c.PrimaryJobId);
         }
+        // Resolve blueprint dropoff (Carrying may name a blueprint that
+        // got cancelled / completed between pickup and delivery; in that
+        // case fall through to the normal Wood-spawn path).
+        Entity bpEnt = default;
+        bool depositingToBlueprint = false;
+        if (c.BlueprintEntityId != 0
+            && Store.TryGetEntityById(c.BlueprintEntityId, out bpEnt)
+            && bpEnt.HasComponent<BlueprintCost>())
+        {
+            depositingToBlueprint = true;
+        }
         List<CarriedSlot>? retained = null;
         if (c.Slots is not null)
         {
@@ -2336,8 +2360,22 @@ public sealed class SimRuntime
                     continue;
                 }
                 if (!Store.TryGetEntityById(slot.EntityId, out var e)) continue;
+
+                int leftover = slot.Count;
+                if (depositingToBlueprint && !string.IsNullOrEmpty(slot.ItemPath))
+                {
+                    leftover = BlueprintCostOps.Deposit(bpEnt, slot.ItemPath, slot.Count);
+                }
+                if (leftover <= 0)
+                {
+                    // Fully consumed by the deposit — drop the entity and
+                    // skip the HaulReserved removal so playback doesn't
+                    // touch a deleted entity.
+                    cb.DeleteEntity(e.Id);
+                    continue;
+                }
                 if (e.HasComponent<HaulReserved>()) cb.RemoveComponent<HaulReserved>(e.Id);
-                cb.AddComponent(e.Id, new Wood { Tile = dropTile, Count = slot.Count });
+                cb.AddComponent(e.Id, new Wood { Tile = dropTile, Count = leftover });
                 cb.AddComponent(e.Id, new WorldPos { X = dropTile.X + 0.5f, Y = dropTile.Y + 0.5f });
             }
         }
@@ -2444,6 +2482,14 @@ public sealed class SimRuntime
                     {
                         var hp = ent.GetComponent<HaulPayload>();
                         _reservedHaulDests.Remove(hp.DestTile);
+                        if (hp.BlueprintEntityId != 0
+                            && Store.TryGetEntityById(hp.BlueprintEntityId, out var bpEnt)
+                            && bpEnt.HasComponent<BlueprintCost>())
+                        {
+                            int amt = ent.HasComponent<Wood>() ? ent.GetComponent<Wood>().Count : hp.Count;
+                            int release = amt < hp.Count ? amt : hp.Count;
+                            BlueprintCostOps.ReleaseReservation(bpEnt, hp.ItemPath, release);
+                        }
                         ent.RemoveComponent<HaulPayload>();
                     }
                     ent.RemoveComponent<HaulReserved>();

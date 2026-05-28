@@ -497,7 +497,14 @@ public sealed class DummyController
                     new CarriedSlot { EntityId = job.Entity.Id, ItemPath = hp.ItemPath, Count = hp.Count },
                 };
                 var pending = new List<int>();
-                ScanTopoffs(store, cb, slots, pending, here, hp.DestTile);
+                // Blueprint hauls skip topoffs — extra material at the
+                // dropoff would dump as a Wood stack on top of the
+                // blueprint tile rather than deposit. Stockpile hauls
+                // keep the topoff sweep.
+                if (hp.BlueprintEntityId == 0)
+                {
+                    ScanTopoffs(store, cb, slots, pending, here, hp.DestTile);
+                }
                 cb.AddComponent(entity.Id, new Carrying
                 {
                     Slots = slots,
@@ -505,6 +512,7 @@ public sealed class DummyController
                     DestTile = hp.DestTile,
                     StockpileId = hp.StockpileId,
                     PrimaryJobId = job.Id,
+                    BlueprintEntityId = hp.BlueprintEntityId,
                 });
                 OnHaulPickup?.Invoke(job.Entity, cb);
                 return;
