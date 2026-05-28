@@ -52,6 +52,10 @@ public sealed class BuildSystem
 
             if (!BuildAdjacency.InRange(pos.X, pos.Y, job.Tile.X, job.Tile.Y)) return;
 
+            // Funded check is a no-op when no BlueprintCost is attached, so
+            // existing free-blueprint flows are unaffected.
+            if (!BlueprintCostOps.IsFunded(job.Entity)) return;
+
             ref var blueprint = ref job.Entity.GetComponent<Blueprint>();
             blueprint.ProgressSec += dt;
             if (blueprint.ProgressSec >= BuildTimeSec)

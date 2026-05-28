@@ -189,11 +189,11 @@ public sealed class SimRuntime
     private int _nextGrowZoneId = 1;
     public IReadOnlyList<GrowZone> GrowZones => _growZones;
     private readonly Random _spawnRng;
-    private const int InitialTreeCount = 50;
+    private const int InitialTreeCount = 100;
     // World engine restocks toward this count over time, biased away from
     // player structures. Same as InitialTreeCount for now — could diverge
     // later if biomes or weather thin trees out.
-    public const int TargetTreeCount = 50;
+    public const int TargetTreeCount = 100;
     // Scattered demo crops at world gen so the cut/harvest designators
     // have something to chew on before a grow-zone UI exists.
     private const int InitialCarrotCount = 25;

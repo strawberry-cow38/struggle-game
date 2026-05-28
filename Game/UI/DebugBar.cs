@@ -1,5 +1,4 @@
 using Godot;
-using StruggleGame.Game.Render;
 using StruggleGame.Game.Tools;
 using StruggleGame.Sim.Commands;
 
@@ -12,7 +11,6 @@ public partial class DebugBar : CanvasLayer
 {
     public ToolService? Tools { get; set; }
     public SimHost? Host { get; set; }
-    public WeatherFx? Weather { get; set; }
 
     private const int ButtonHeight = 36;
     private const int ButtonGap = 6;
@@ -40,13 +38,6 @@ public partial class DebugBar : CanvasLayer
         AddOneShotButton(_hbox, "Reroll Map", () => Host?.Reroll(System.Environment.TickCount));
         AddOneShotButton(_hbox, "-1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(-3600)));
         AddOneShotButton(_hbox, "+1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(3600)));
-
-        AddLabel(_hbox, "Weather");
-        AddOneShotButton(_hbox, "Rain-", () => { if (Weather is not null) Weather.Intensity = Mathf.Clamp(Weather.Intensity - 0.25f, 0f, 1f); });
-        AddOneShotButton(_hbox, "Rain+", () => { if (Weather is not null) Weather.Intensity = Mathf.Clamp(Weather.Intensity + 0.25f, 0f, 1f); });
-        AddOneShotButton(_hbox, "Wind<", () => { if (Weather is not null) Weather.WindX = Mathf.Clamp(Weather.WindX - 0.33f, -1f, 1f); });
-        AddOneShotButton(_hbox, "Wind 0", () => { if (Weather is not null) Weather.WindX = 0f; });
-        AddOneShotButton(_hbox, "Wind>", () => { if (Weather is not null) Weather.WindX = Mathf.Clamp(Weather.WindX + 0.33f, -1f, 1f); });
 
         _hbox.Resized += Reposition;
         GetTree().Root.SizeChanged += Reposition;

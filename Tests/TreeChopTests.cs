@@ -12,10 +12,10 @@ namespace StruggleGame.Tests;
 public class TreeChopTests
 {
     [Fact]
-    public void DefaultSim_HasFiftyTrees()
+    public void DefaultSim_HasHundredTrees()
     {
         var sim = new SimRuntime();
-        Assert.Equal(50, CountTrees(sim));
+        Assert.Equal(100, CountTrees(sim));
     }
 
     [Fact]

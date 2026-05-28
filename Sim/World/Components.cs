@@ -419,3 +419,20 @@ public struct HaulPayload : IComponent
     public string ItemPath;
     public int Count;
 }
+
+// Material requirement list attached to a blueprint entity. When present,
+// build-style systems must check IsBlueprintFunded before advancing
+// progress — unfunded blueprints idle until DepositToBlueprint fills
+// every entry. Absent component = legacy "free" blueprint (current
+// behavior for all built-in designators until they opt in).
+public struct BlueprintCost : IComponent
+{
+    public ResourceReq[] Entries;
+}
+
+public struct ResourceReq
+{
+    public string ItemPath;
+    public int Needed;
+    public int Deposited;
+}

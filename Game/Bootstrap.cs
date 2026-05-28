@@ -137,10 +137,7 @@ public partial class Bootstrap : Node2D
         var pawnInfoPanel = new PawnInfoPanel { Host = _host, Name = "PawnInfoPanel" };
         AddChild(pawnInfoPanel);
 
-        var weather = new WeatherFx { Host = _host, Name = "WeatherFx" };
-        AddChild(weather);
-
-        var debugBar = new DebugBar { Tools = _tools, Host = _host, Weather = weather, Name = "DebugBar" };
+        var debugBar = new DebugBar { Tools = _tools, Host = _host, Name = "DebugBar" };
         AddChild(debugBar);
 
         var profiler = new FrameProfilerOverlay { Host = _host, Name = "FrameProfiler" };
