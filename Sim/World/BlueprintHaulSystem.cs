@@ -70,17 +70,36 @@ public sealed class BlueprintHaulSystem
             int gotReserve = BlueprintCostOps.Reserve(d.Ent, woodPath, reserve);
             if (gotReserve <= 0) continue;
 
+            // Split the source stack down to exactly the reserved amount.
+            // Leftover stays on the source tile as an unreserved Wood entity
+            // — HaulSystem (or another blueprint next tick) can claim it.
+            // This is the guardrail that stops a pawn from carrying more
+            // than the blueprint can possibly absorb.
+            int leftoverAtSource = pick.Count - gotReserve;
+            int haulCount = gotReserve;
+            if (leftoverAtSource > 0)
+            {
+                ref var srcWood = ref pick.Ent.GetComponent<Wood>();
+                srcWood.Count = haulCount;
+                var leftover = _sim.Store.CreateEntity();
+                leftover.AddComponent(new Wood { Tile = pick.Tile, Count = leftoverAtSource });
+                leftover.AddComponent(new WorldPos { X = pick.Tile.X + 0.5f, Y = pick.Tile.Y + 0.5f });
+            }
+
             pick.Ent.AddComponent(new HaulPayload
             {
                 DestTile = d.Tile,
                 StockpileId = 0,
                 ItemPath = woodPath,
-                Count = pick.Count,
+                Count = haulCount,
                 BlueprintEntityId = d.Ent.Id,
             });
             var id = _jobs.Post(JobKind.Haul, pick.Tile, pick.Ent);
             if (id.IsNone)
             {
+                // Restore the source stack and refund the reservation.
+                // (Splitting created a sibling entity — leave it; the merge
+                // pass will fold it back next tick.)
                 pick.Ent.RemoveComponent<HaulPayload>();
                 BlueprintCostOps.ReleaseReservation(d.Ent, woodPath, gotReserve);
                 continue;

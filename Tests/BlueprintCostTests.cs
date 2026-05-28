@@ -51,6 +51,30 @@ public class BlueprintCostTests
     }
 
     [Fact]
+    public void GodModeOff_OversizedStack_OnlyConsumesNeededAmount()
+    {
+        var sim = new SimRuntime();
+        sim.SetGodModeFreeBuild(false);
+
+        int c = SimConstants.MapSize / 2;
+        var bpTile = new TilePos(c + 2, c);
+        var pileTile = new TilePos(c + 3, c);
+
+        var pile = sim.Store.CreateEntity();
+        pile.AddComponent(new Wood { Tile = pileTile, Count = SimRuntime.WallWoodCost + 15 });
+        pile.AddComponent(new WorldPos { X = pileTile.X + 0.5f, Y = pileTile.Y + 0.5f });
+
+        sim.QueueCommand(new PlaceWallBlueprintCommand(bpTile));
+        for (int i = 0; i < 1800; i++) sim.Step(SimConstants.TickSeconds);
+
+        Assert.Equal(WallType.Stone, sim.Map.GetWall(bpTile));
+
+        int totalWood = 0;
+        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) => totalWood += w.Count);
+        Assert.Equal(15, totalWood);
+    }
+
+    [Fact]
     public void GodModeOn_BlueprintBuildsWithoutWood()
     {
         var sim = new SimRuntime();
