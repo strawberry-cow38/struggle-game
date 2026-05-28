@@ -51,6 +51,15 @@ public sealed class DummyController
     // unfunded are filtered out of the claim list so pawns don't park
     // adjacent to a wall they can't construct yet.
     private readonly Func<Entity, bool> _isBlueprintFunded;
+    // For a job, return the entity id of the blueprint it targets (build
+    // jobs → blueprint entity, haul jobs → HaulPayload.BlueprintEntityId,
+    // else 0). Used together with _getBlueprintClaimant to filter jobs
+    // against player-pinned blueprint assignments.
+    private readonly Func<Jobs.Job, int> _getJobBlueprintId;
+    // For a blueprint entity id, return the pawn entity id pinned to it
+    // (or 0 = unpinned). Pinned blueprints: the pinned pawn boosts to a
+    // priority bucket above 1, everyone else skips the job entirely.
+    private readonly Func<int, int> _getBlueprintClaimant;
     // Optional callback for haul completion. Set by SimRuntime so we
     // don't need to plumb the runtime through the controller's surface.
     // Fires when a pawn physically picks up one item entity. Hooked by
@@ -82,7 +91,9 @@ public sealed class DummyController
         DoorLookup tryGetDoor,
         Func<Entity, WorkType, byte> getPriority,
         Func<Entity, ScheduleCategory> getScheduleSlot,
-        Func<Entity, bool> isBlueprintFunded)
+        Func<Entity, bool> isBlueprintFunded,
+        Func<Jobs.Job, int> getJobBlueprintId,
+        Func<int, int> getBlueprintClaimant)
     {
         _paths = paths;
         _jobs = jobs;
@@ -93,6 +104,8 @@ public sealed class DummyController
         _getPriority = getPriority;
         _getScheduleSlot = getScheduleSlot;
         _isBlueprintFunded = isBlueprintFunded;
+        _getJobBlueprintId = getJobBlueprintId;
+        _getBlueprintClaimant = getBlueprintClaimant;
     }
 
     public void Step(EntityStore store, float dt)
@@ -416,7 +429,9 @@ public sealed class DummyController
 
     private bool TryClaimJob(MapView view, TilePos from, Entity entity, CommandBuffer cb, ref PathFollower path)
     {
-        // Per-priority-bucket nearest job. Iterate priority 1..8 in order
+        // Per-priority-bucket nearest job. Bucket 0 = player-pinned to
+        // this pawn (RMB "Prioritize for X" beats every WorkType priority).
+        // Buckets 1..8 are the work-tab priorities. Iterate 0..8 in order
         // — within a bucket we still pick the closest, but we never spill
         // into a lower-priority bucket while a higher one has work.
         Span<JobId> bestId = stackalloc JobId[9];
@@ -431,6 +446,19 @@ public sealed class DummyController
             if (!WorkTypes.TryGet(job.Kind, out var wt)) continue;
             byte pr = _getPriority(entity, wt);
             if (pr == 0 || pr > 8) continue;
+            // Player-pinned blueprint filter: if this job targets a
+            // blueprint somebody else owns, skip it; if the owner is us,
+            // promote to bucket 0 so this beats every other priority.
+            int pinnedBpId = _getJobBlueprintId(job);
+            if (pinnedBpId != 0)
+            {
+                int owner = _getBlueprintClaimant(pinnedBpId);
+                if (owner != 0)
+                {
+                    if (owner != entity.Id) continue;
+                    pr = 0;
+                }
+            }
             // A pawn still hauling (forbidden cargo retained from a prior
             // delivery, mid-flight cargo, etc.) must not pick up another
             // haul — HandleHaul would treat the old Carrying as the active
@@ -479,7 +507,7 @@ public sealed class DummyController
             bestDist[pr] = d;
         }
 
-        for (int level = 1; level <= 8; level++)
+        for (int level = 0; level <= 8; level++)
         {
             if (bestId[level].IsNone) continue;
             if (!_jobs.TryClaim(bestId[level], entity)) continue;

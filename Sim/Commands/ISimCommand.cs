@@ -614,6 +614,29 @@ public sealed class CancelJobAtTileCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.CancelJobAtTile(Tile);
 }
 
+// Pin the blueprint at Tile to the colonist with PawnEntityId. The
+// blueprint's build job (or any haul targeting it) is then claimable
+// only by that pawn, jumping ahead of normal work-tab priorities.
+// Sourced from the RMB "Prioritize for X" menu on a blueprint tile.
+// Apply resolves the blueprint entity via Jobs.GetByTile(tile) — works
+// for wall / floor / door / bed / lamp blueprints since each posts a
+// build job whose Entity is the blueprint itself.
+public sealed class PrioritizeBlueprintForPawnCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public int PawnEntityId { get; }
+    public PrioritizeBlueprintForPawnCommand(TilePos tile, int pawnEntityId)
+    { Tile = tile; PawnEntityId = pawnEntityId; }
+    public void Apply(SimRuntime sim)
+    {
+        var job = sim.Jobs.GetByTile(Tile);
+        if (job is null) return;
+        int bpId = sim.GetJobBlueprintId(job);
+        if (bpId == 0) return;
+        sim.PrioritizeBlueprintForPawn(bpId, PawnEntityId);
+    }
+}
+
 // Pawn info panel: drop one inventory slot at the pawn's current
 // tile. Force-drop bypasses the per-slot Forbidden flag — this is the
 // explicit player escape hatch for items the AI has been told to keep.

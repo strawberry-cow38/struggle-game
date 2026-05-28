@@ -177,6 +177,12 @@ public sealed class SimRuntime
     // CompleteJob(Deconstruct) knows to chain a DoorBuild job.
     private readonly Dictionary<TilePos, Entity> _pendingDoorAfterDecon = new();
 
+    // Player-pinned blueprint claims. Blueprint entity id → pawn entity id
+    // (the only colonist allowed to claim build / haul / decon jobs that
+    // target that blueprint). Set via PrioritizeBlueprintForPawn from the
+    // RMB-on-blueprint menu. Cleared by CompleteJob + CancelJob.
+    private readonly Dictionary<int, int> _blueprintPriority = new();
+
     // Stockpile zones. Ordered list (player-creation order = display
     // order). Tile-claim is exclusive: a tile may only belong to one
     // zone so haul routing has no ambiguity.
@@ -233,7 +239,7 @@ public sealed class SimRuntime
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
         _spawnRng = new Random(seed + 7);
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
-        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority, CurrentScheduleSlot, IsBlueprintFunded);
+        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority, CurrentScheduleSlot, IsBlueprintFunded, GetJobBlueprintId, GetBlueprintClaimant);
         _dummies.OnHaulPickup = (carriedEnt, cb) => OnHaulPickedUp(carriedEnt, cb);
         _dummies.OnHaulDeliver = (carrierEntity, dropTile, cb) => DeliverCarrying(carrierEntity, dropTile, cb);
         _builds = new BuildSystem(this, Jobs);
@@ -592,6 +598,100 @@ public sealed class SimRuntime
         if (job is null) return false;
         CancelJob(job.Id);
         return true;
+    }
+
+    // For a given job, return the entity id of the blueprint it targets:
+    //   build-kind (Wall/Floor/Door/Bed) → job.Entity.Id (= blueprint)
+    //   Haul with HaulPayload.BlueprintEntityId set → that id
+    //   else 0
+    // Used by DummyController to filter jobs against _blueprintPriority.
+    public int GetJobBlueprintId(Job job)
+    {
+        switch (job.Kind)
+        {
+            case JobKind.WallBuild:
+            case JobKind.FloorBuild:
+            case JobKind.DoorBuild:
+            case JobKind.BedBuild:
+                return job.Entity.Id;
+            case JobKind.Haul:
+                if (job.Entity.HasComponent<HaulPayload>())
+                {
+                    var hp = job.Entity.GetComponent<HaulPayload>();
+                    if (hp.BlueprintEntityId != 0) return hp.BlueprintEntityId;
+                }
+                return 0;
+            default:
+                return 0;
+        }
+    }
+
+    // Returns the pawn entity id pinned to this blueprint, or 0 if none.
+    // DummyController calls this for every job during TryClaimJob.
+    public int GetBlueprintClaimant(int blueprintEntityId)
+    {
+        if (blueprintEntityId == 0) return 0;
+        return _blueprintPriority.TryGetValue(blueprintEntityId, out var pawnId) ? pawnId : 0;
+    }
+
+    // Pin a blueprint to a specific pawn (RMB → "Prioritize for X" menu).
+    // Walks every BuildTarget-carrying pawn: if they're working on a job
+    // that points at this blueprint AND they're not the new claimant,
+    // evict them. Carriers get DeliverCarrying at their current tile so
+    // any in-flight wood drops on the ground instead of vanishing; idle
+    // claimants just release the job. _blueprintPriority is set first so
+    // re-claim attempts during eviction respect the new owner.
+    public void PrioritizeBlueprintForPawn(int blueprintEntityId, int pawnEntityId)
+    {
+        if (blueprintEntityId == 0 || pawnEntityId == 0) return;
+        if (!Store.TryGetEntityById(blueprintEntityId, out _)) return;
+        if (!Store.TryGetEntityById(pawnEntityId, out _)) return;
+        _blueprintPriority[blueprintEntityId] = pawnEntityId;
+
+        var evictees = new List<Entity>();
+        var q = Store.Query<BuildTarget>();
+        q.ForEachEntity((ref BuildTarget bt, Entity ent) =>
+        {
+            if (ent.Id == pawnEntityId) return;
+            var job = Jobs.Get(bt.JobId);
+            if (job is null) return;
+            if (GetJobBlueprintId(job) != blueprintEntityId) return;
+            evictees.Add(ent);
+        });
+
+        foreach (var ent in evictees)
+        {
+            var bt = ent.GetComponent<BuildTarget>();
+            if (ent.HasComponent<Carrying>())
+            {
+                TilePos here;
+                if (ent.HasComponent<WorldPos>())
+                {
+                    var wp = ent.GetComponent<WorldPos>();
+                    here = new TilePos((int)wp.X, (int)wp.Y);
+                }
+                else
+                {
+                    here = ent.GetComponent<Carrying>().DestTile;
+                }
+                var cb = Store.GetCommandBuffer();
+                DeliverCarrying(ent, here, cb);
+                cb.Playback();
+            }
+            else
+            {
+                Jobs.Release(bt.JobId);
+            }
+            ent.RemoveComponent<BuildTarget>();
+            if (ent.HasComponent<PathFollower>())
+            {
+                ref var pf = ref ent.GetComponent<PathFollower>();
+                if (pf.PendingPathId != 0) PathService.Discard(pf.PendingPathId);
+                pf.PendingPathId = 0;
+                pf.Waypoints = null;
+                pf.Index = 0;
+            }
+        }
     }
 
     // Drain the pending command queue without running any systems.
@@ -1221,7 +1321,9 @@ public sealed class SimRuntime
         var tile = job.Tile;
         var entity = job.Entity;
         var kind = job.Kind;
+        int pinnedBpId = GetJobBlueprintId(job);
         Jobs.Complete(id);
+        if (pinnedBpId != 0) _blueprintPriority.Remove(pinnedBpId);
 
         if (kind == JobKind.WallBuild)
         {
@@ -1544,7 +1646,20 @@ public sealed class SimRuntime
         var tile = job.Tile;
         var entity = job.Entity;
         var kind = job.Kind;
+        int pinnedBpId = GetJobBlueprintId(job);
         Jobs.Cancel(id);
+        // Build-kind cancellation throws the blueprint entity away; clear
+        // the pin so a future blueprint reusing the same id (Friflo recycles)
+        // doesn't inherit an old pawn assignment. Haul cancellation leaves
+        // the blueprint alone, so don't touch the pin in that case.
+        if (pinnedBpId != 0
+            && (kind == JobKind.WallBuild
+                || kind == JobKind.FloorBuild
+                || kind == JobKind.DoorBuild
+                || kind == JobKind.BedBuild))
+        {
+            _blueprintPriority.Remove(pinnedBpId);
+        }
 
         if (kind == JobKind.WallBuild)
         {

@@ -39,9 +39,25 @@ public partial class Selector : Node2D
     private bool _rmbShift;
     private int[] _rmbDraftedIds = Array.Empty<int>();
 
+    private PopupMenu? _bpMenu;
+    private TilePos _bpMenuTile;
+    private int _bpMenuPawnId;
+
     public override void _Ready()
     {
         if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.None, ClearDrag);
+        _bpMenu = new PopupMenu();
+        AddChild(_bpMenu);
+        _bpMenu.IdPressed += OnBlueprintMenuPressed;
+    }
+
+    private void OnBlueprintMenuPressed(long id)
+    {
+        if (Host is null) return;
+        if (id == 0)
+        {
+            Host.QueueCommand(new PrioritizeBlueprintForPawnCommand(_bpMenuTile, _bpMenuPawnId));
+        }
     }
 
     private void ClearDrag()
@@ -88,7 +104,19 @@ public partial class Selector : Node2D
                 if (mb.Pressed)
                 {
                     var drafted = CollectDraftedSelected();
-                    if (drafted.Length == 0) return;
+                    if (drafted.Length == 0)
+                    {
+                        // Non-drafted pawn(s) selected: RMB on a blueprint
+                        // opens a "Prioritize for X" menu so the player can
+                        // pin that blueprint to a specific colonist. Falls
+                        // through silently if no single non-drafted pawn is
+                        // selected or the cursor isn't on a blueprint.
+                        if (TryShowBlueprintMenu(GetGlobalMousePosition()))
+                        {
+                            GetViewport().SetInputAsHandled();
+                        }
+                        return;
+                    }
                     _rmbDragging = true;
                     _rmbStartWorld = _rmbEndWorld = SnapToTileCenter(GetGlobalMousePosition());
                     _rmbShift = mb.ShiftPressed;
@@ -159,6 +187,50 @@ public partial class Selector : Node2D
                 DrawLine(_rmbStartWorld, _rmbEndWorld, new Color(1f, 0.85f, 0.3f, 0.6f), 1.5f, antialiased: true);
             }
         }
+    }
+
+    // Resolve (selected non-drafted pawn id, tile, pawn display name) from
+    // a screen click and pop the prioritize menu. Returns false if any
+    // precondition fails (no single non-drafted pawn, no blueprint at
+    // tile) so the caller can fall through to drafted-RMB logic.
+    private bool TryShowBlueprintMenu(Vector2 world)
+    {
+        if (Host is null || _bpMenu is null) return false;
+        var snap = Host.LatestSnapshot;
+        if (snap is null) return false;
+        var selected = Host.SelectedDummyIds;
+        if (selected.Length != 1) return false;
+
+        int pawnId = selected[0];
+        string pawnName = $"Colonist {pawnId}";
+        bool drafted = false;
+        foreach (var d in snap.Dummies)
+        {
+            if (d.EntityId != pawnId) continue;
+            drafted = d.Drafted;
+            break;
+        }
+        if (drafted) return false;
+        foreach (var pw in snap.PawnWork)
+        {
+            if (pw.EntityId == pawnId) { pawnName = pw.Name; break; }
+        }
+
+        var clickTile = new TilePos(
+            Mathf.FloorToInt(world.X / PixelsPerTile),
+            Mathf.FloorToInt(world.Y / PixelsPerTile));
+        if (!TryPickBlueprint(snap, clickTile, out var bpTile)) return false;
+
+        _bpMenuTile = bpTile;
+        _bpMenuPawnId = pawnId;
+        _bpMenu.Clear();
+        _bpMenu.AddItem($"Prioritize for {pawnName}", 0);
+        var vp = GetViewport().GetVisibleRect();
+        var canvasXform = GetCanvasTransform();
+        var screenPos = canvasXform * world;
+        _bpMenu.Position = new Vector2I((int)screenPos.X, (int)screenPos.Y);
+        _bpMenu.Popup();
+        return true;
     }
 
     private int[] CollectDraftedSelected()
