@@ -38,6 +38,11 @@ public partial class WeatherFx : Node2D
     private int _mapWidth;
     private int _mapHeight;
     private long _lastRoofVersion = -1;
+    // Per-chunk "any roof present?" flag. Chunks with zero roofed tiles
+    // skip the per-drop tile lookup — most chunks are blanket-unroofed,
+    // so this is the common case.
+    private bool[]? _chunkAnyRoof;
+    private int _chunksAcross;
 
     public override void _Ready()
     {
@@ -56,6 +61,7 @@ public partial class WeatherFx : Node2D
             _mapWidth = Host.Map.Width;
             _mapHeight = Host.Map.Height;
             _lastRoofVersion = snap.RoofVersion;
+            RebuildChunkRoofMask();
         }
         float dt = (float)delta;
         AgeDrops(dt);
@@ -124,15 +130,48 @@ public partial class WeatherFx : Node2D
         var col = new Color(0.72f, 0.85f, 1f, 0.82f);
         int w = _mapWidth, h = _mapHeight;
         var roof = _roofTiles;
+        var chunkAny = _chunkAnyRoof;
+        int ca = _chunksAcross;
         for (int i = 0; i < _count; i++)
         {
             var d = _drops[i];
             int tx = Mathf.FloorToInt(d.Pos.X / SimConstants.PixelsPerTile);
             int ty = Mathf.FloorToInt(d.Pos.Y / SimConstants.PixelsPerTile);
-            if (roof is not null && (uint)tx < (uint)w && (uint)ty < (uint)h && roof[ty * w + tx] != 0) continue;
+            if (roof is not null && (uint)tx < (uint)w && (uint)ty < (uint)h)
+            {
+                int cx = tx / MapChunks.ChunkSize;
+                int cy = ty / MapChunks.ChunkSize;
+                // Skip the per-tile lookup when the entire chunk is unroofed.
+                if (chunkAny is not null && chunkAny[cy * ca + cx])
+                {
+                    if (roof[ty * w + tx] != 0) continue;
+                }
+            }
             var dir = d.Vel.Normalized();
             var tail = d.Pos - dir * DropLength;
             DrawLine(tail, d.Pos, col, DropWidth, antialiased: true);
+        }
+    }
+
+    private void RebuildChunkRoofMask()
+    {
+        if (_roofTiles is null) { _chunkAnyRoof = null; return; }
+        int w = _mapWidth, h = _mapHeight;
+        int ca = MapChunks.ChunksAcross(w);
+        int cd = MapChunks.ChunksDown(h);
+        if (_chunkAnyRoof is null || _chunkAnyRoof.Length != ca * cd)
+            _chunkAnyRoof = new bool[ca * cd];
+        else System.Array.Clear(_chunkAnyRoof);
+        _chunksAcross = ca;
+        for (int y = 0; y < h; y++)
+        {
+            int rowBase = y * w;
+            int cyBase = (y / MapChunks.ChunkSize) * ca;
+            for (int x = 0; x < w; x++)
+            {
+                if (_roofTiles[rowBase + x] == 0) continue;
+                _chunkAnyRoof[cyBase + (x / MapChunks.ChunkSize)] = true;
+            }
         }
     }
 }
