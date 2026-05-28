@@ -27,33 +27,47 @@ public sealed class JobBoard
     public Job? Get(JobId id) => _byId.TryGetValue(id, out var j) ? j : null;
 
     public JobId Post(JobKind kind, TilePos tile, Entity entity)
-        => Post(kind, tile, entity, null);
+        => Post(kind, tile, entity, null, skipTileIndex: false);
 
     // Multi-tile post: anchor `tile` is the tile pawns approach; extras
     // are additional tiles covered by the same job (e.g. a 3x3 roof
     // chunk). All tiles are indexed in _byTile so HasTile / GetByTile
     // see every covered tile, but the job ticks/completes as one unit.
     public JobId Post(JobKind kind, TilePos tile, Entity entity, TilePos[]? extraTiles)
+        => Post(kind, tile, entity, extraTiles, skipTileIndex: false);
+
+    // Skip-index variant: used by BlueprintClearanceSystem to post a
+    // Haul on a tile that already hosts a build job. The clearance
+    // haul doesn't need GetByTile / HasTile to find it (its lifecycle
+    // is owned by the wood entity's HaulReserved JobId), so we just
+    // omit it from the tile index entirely.
+    public JobId Post(JobKind kind, TilePos tile, Entity entity, TilePos[]? extraTiles, bool skipTileIndex)
     {
-        if (_byTile.ContainsKey(tile)) return JobId.None;
-        if (extraTiles is not null)
+        if (!skipTileIndex)
         {
-            foreach (var t in extraTiles)
+            if (_byTile.ContainsKey(tile)) return JobId.None;
+            if (extraTiles is not null)
             {
-                if (t == tile) continue;
-                if (_byTile.ContainsKey(t)) return JobId.None;
+                foreach (var t in extraTiles)
+                {
+                    if (t == tile) continue;
+                    if (_byTile.ContainsKey(t)) return JobId.None;
+                }
             }
         }
         var id = new JobId(++_nextId);
         var job = new Job(id, kind, tile, entity, extraTiles);
         _byId[id] = job;
-        _byTile[tile] = id;
-        if (extraTiles is not null)
+        if (!skipTileIndex)
         {
-            foreach (var t in extraTiles)
+            _byTile[tile] = id;
+            if (extraTiles is not null)
             {
-                if (t == tile) continue;
-                _byTile[t] = id;
+                foreach (var t in extraTiles)
+                {
+                    if (t == tile) continue;
+                    _byTile[t] = id;
+                }
             }
         }
         Version++;
@@ -106,9 +120,9 @@ public sealed class JobBoard
     {
         if (!_byId.TryGetValue(id, out var job)) return;
         job.State = JobState.Completed;
-        _byTile.Remove(job.Tile);
+        RemoveTileIndexIfOwned(job.Tile, id);
         if (job.ExtraTiles is not null)
-            foreach (var t in job.ExtraTiles) if (t != job.Tile) _byTile.Remove(t);
+            foreach (var t in job.ExtraTiles) if (t != job.Tile) RemoveTileIndexIfOwned(t, id);
         _byId.Remove(id);
         Version++;
     }
@@ -117,11 +131,20 @@ public sealed class JobBoard
     {
         if (!_byId.TryGetValue(id, out var job)) return;
         job.State = JobState.Cancelled;
-        _byTile.Remove(job.Tile);
+        RemoveTileIndexIfOwned(job.Tile, id);
         if (job.ExtraTiles is not null)
-            foreach (var t in job.ExtraTiles) if (t != job.Tile) _byTile.Remove(t);
+            foreach (var t in job.ExtraTiles) if (t != job.Tile) RemoveTileIndexIfOwned(t, id);
         _byId.Remove(id);
         Version++;
+    }
+
+    // Only clears the tile index if it actually points at the job being
+    // retired — otherwise a skipTileIndex job (clearance haul, etc.)
+    // would accidentally evict the unrelated build job sharing its tile.
+    private void RemoveTileIndexIfOwned(TilePos tile, JobId id)
+    {
+        if (_byTile.TryGetValue(tile, out var owner) && owner == id)
+            _byTile.Remove(tile);
     }
 
     public bool CancelByTile(TilePos tile)

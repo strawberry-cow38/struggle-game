@@ -67,6 +67,11 @@ public sealed class DummyController
     // Scratch set populated each Step() so a single tick of topoff scans
     // doesn't reserve the same item for two different carriers.
     private readonly HashSet<int> _topoffReservedThisTick = new();
+    // Tiles holding a Wood entity this tick. Build-kind jobs whose target
+    // tile is in this set are filtered out of the claim list so a pawn
+    // doesn't park next to a wall blueprint with wood sitting on it —
+    // BlueprintClearanceSystem handles relocating the wood first.
+    private readonly HashSet<TilePos> _itemBlockedThisTick = new();
 
     public DummyController(
         PathService paths,
@@ -95,6 +100,11 @@ public sealed class DummyController
         var view = _viewProvider();
         var cb = store.GetCommandBuffer();
         _topoffReservedThisTick.Clear();
+        _itemBlockedThisTick.Clear();
+        store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) =>
+        {
+            _itemBlockedThisTick.Add(w.Tile);
+        });
         var query = store.Query<WorldPos, PathFollower, Wanderer>();
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer w, Entity entity) =>
         {
@@ -434,6 +444,13 @@ public sealed class DummyController
                  || job.Kind == JobKind.DoorBuild
                  || job.Kind == JobKind.BedBuild)
                 && !_isBlueprintFunded(job.Entity)) continue;
+            // Don't try to build over a wood pile — clearance system
+            // posts a haul to relocate it; pawn should pick the haul up
+            // (or take a different job) rather than spin on the wall.
+            if ((job.Kind == JobKind.WallBuild
+                 || job.Kind == JobKind.DoorBuild
+                 || job.Kind == JobKind.BedBuild)
+                && _itemBlockedThisTick.Contains(job.Tile)) continue;
             int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
             if (d >= bestDist[pr]) continue;
             TilePos approach;

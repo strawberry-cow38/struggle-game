@@ -105,6 +105,7 @@ public sealed class SimRuntime
     private readonly DoorSystem _doors;
     private readonly HaulSystem _hauls;
     private readonly BlueprintHaulSystem _bpHauls;
+    private readonly BlueprintClearanceSystem _bpClearance;
     private readonly SafetySystem _safety;
     // Stockpile tiles currently promised to an in-flight haul job. Posting
     // a new haul avoids these so two carriers can't target the same cell.
@@ -252,6 +253,7 @@ public sealed class SimRuntime
         _doors = new DoorSystem();
         _hauls = new HaulSystem(this, Jobs);
         _bpHauls = new BlueprintHaulSystem(this, Jobs);
+        _bpClearance = new BlueprintClearanceSystem(this, Jobs);
         _safety = new SafetySystem(() => MapView, PathService, Watcher);
 
         // Trees go down before colonists so spawn can avoid landing on one.
@@ -291,6 +293,7 @@ public sealed class SimRuntime
         _beds.Step(Store, dt);
         _doorBuilds.Step(Store, dt);
         _doors.Step(Store, dt);
+        _bpClearance.Step(Store, dt);
         _bpHauls.Step(Store, dt);
         _hauls.Step(Store, dt);
         AgeRoofFlashes(dt);

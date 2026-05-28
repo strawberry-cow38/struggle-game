@@ -36,6 +36,11 @@ public sealed class BlueprintHaulSystem
         _wood.Clear();
         _demand.Clear();
 
+        // God mode bypasses the BuildSystem funding gate, so any haul we
+        // schedule here just incinerates wood into a cost ledger nobody
+        // reads. Skip the whole pass so relocated stacks survive.
+        if (_sim.GodModeFreeBuild) return;
+
         store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
         {
             if (ent.HasComponent<HaulReserved>()) return;

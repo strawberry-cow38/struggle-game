@@ -110,6 +110,36 @@ public class BlueprintCostTests
     }
 
     [Fact]
+    public void WoodOnWallBlueprintTile_GetsRelocatedBeforeBuild()
+    {
+        var sim = new SimRuntime();
+        // God-mode on so the blueprint doesn't try to consume the
+        // blocking wood for its own funding — we want to observe pure
+        // relocation behavior.
+        Assert.True(sim.GodModeFreeBuild);
+
+        int c = SimConstants.MapSize / 2;
+        var bpTile = new TilePos(c + 2, c);
+        sim.QueueCommand(new PlaceWallBlueprintCommand(bpTile));
+        sim.Step(SimConstants.TickSeconds);
+
+        sim.SpawnWoodPile(bpTile, 4);
+
+        for (int i = 0; i < 3000; i++) sim.Step(SimConstants.TickSeconds);
+
+        int onBlueprintTile = 0;
+        int elsewhere = 0;
+        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) =>
+        {
+            if (w.Tile == bpTile) onBlueprintTile += w.Count;
+            else elsewhere += w.Count;
+        });
+        Assert.Equal(WallType.Stone, sim.Map.GetWall(bpTile));
+        Assert.Equal(0, onBlueprintTile);
+        Assert.Equal(4, elsewhere);
+    }
+
+    [Fact]
     public void GodModeOn_BlueprintBuildsWithoutWood()
     {
         var sim = new SimRuntime();
