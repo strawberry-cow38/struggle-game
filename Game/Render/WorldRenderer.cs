@@ -279,7 +279,7 @@ public partial class WorldRenderer : Node2D
             {
                 if (bp.Tile.X < viewMinTileX || bp.Tile.X > viewMaxTileX
                     || bp.Tile.Y < viewMinTileY || bp.Tile.Y > viewMaxTileY) continue;
-                DrawBlueprint(bp.Tile, bp.Progress);
+                DrawBlueprint(bp.Tile, bp.Progress, bp.Funding);
                 if (bp.Forbidden) DrawForbidX(bp.Tile);
             }
 
@@ -287,7 +287,7 @@ public partial class WorldRenderer : Node2D
             {
                 if (fbp.Tile.X < viewMinTileX || fbp.Tile.X > viewMaxTileX
                     || fbp.Tile.Y < viewMinTileY || fbp.Tile.Y > viewMaxTileY) continue;
-                DrawFloorBlueprint(fbp.Tile, fbp.Progress);
+                DrawFloorBlueprint(fbp.Tile, fbp.Progress, fbp.Funding);
                 if (fbp.Forbidden) DrawForbidX(fbp.Tile);
             }
 
@@ -295,7 +295,7 @@ public partial class WorldRenderer : Node2D
             {
                 if (dbp.Tile.X < viewMinTileX || dbp.Tile.X > viewMaxTileX
                     || dbp.Tile.Y < viewMinTileY || dbp.Tile.Y > viewMaxTileY) continue;
-                DrawDoorBlueprint(dbp.Tile, dbp.Progress);
+                DrawDoorBlueprint(dbp.Tile, dbp.Progress, dbp.Funding);
                 if (dbp.Forbidden) DrawForbidX(dbp.Tile);
             }
 
@@ -310,7 +310,7 @@ public partial class WorldRenderer : Node2D
             {
                 if (lbp.Tile.X < viewMinTileX || lbp.Tile.X > viewMaxTileX
                     || lbp.Tile.Y < viewMinTileY || lbp.Tile.Y > viewMaxTileY) continue;
-                DrawLampBlueprint(lbp.Tile, lbp.Progress);
+                DrawLampBlueprint(lbp.Tile, lbp.Progress, lbp.Funding);
                 if (lbp.Forbidden) DrawForbidX(lbp.Tile);
             }
 
@@ -321,7 +321,7 @@ public partial class WorldRenderer : Node2D
                 int minY = Math.Min(bbp.Origin.Y, foot.Y), maxY = Math.Max(bbp.Origin.Y, foot.Y);
                 if (maxX < viewMinTileX || minX > viewMaxTileX
                     || maxY < viewMinTileY || minY > viewMaxTileY) continue;
-                DrawBedBlueprint(bbp.Origin, bbp.Orientation, bbp.Progress);
+                DrawBedBlueprint(bbp.Origin, bbp.Orientation, bbp.Progress, bbp.Funding);
                 if (bbp.Forbidden) { DrawForbidX(bbp.Origin); DrawForbidX(foot); }
             }
         }
@@ -806,10 +806,21 @@ public partial class WorldRenderer : Node2D
         }
     }
 
-    private void DrawBlueprint(TilePos tile, float progress)
+    // Dims the blueprint fill toward transparent when funding is low so
+    // the player can spot unfunded blueprints at a glance. At funding=1
+    // we return the base color unchanged; at funding=0 the alpha drops
+    // to a quarter of its original value (still visible, but clearly
+    // pending). RGB is left alone — the hue still identifies the kind.
+    private static Color FundedFill(Color baseFill, float funding)
+    {
+        float f = Mathf.Clamp(funding, 0f, 1f);
+        return new Color(baseFill.R, baseFill.G, baseFill.B, baseFill.A * (0.25f + 0.75f * f));
+    }
+
+    private void DrawBlueprint(TilePos tile, float progress, float funding)
     {
         var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        DrawRect(rect, BlueprintFill, filled: true);
+        DrawRect(rect, FundedFill(BlueprintFill, funding), filled: true);
         DrawRect(rect, BlueprintBorder, filled: false, width: 2f);
         if (progress > 0f)
         {
@@ -833,10 +844,10 @@ public partial class WorldRenderer : Node2D
         return ImageTexture.CreateFromImage(img);
     }
 
-    private void DrawDoorBlueprint(TilePos tile, float progress)
+    private void DrawDoorBlueprint(TilePos tile, float progress, float funding)
     {
         var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        DrawRect(rect, DoorBlueprintFill, filled: true);
+        DrawRect(rect, FundedFill(DoorBlueprintFill, funding), filled: true);
         DrawRect(rect, DoorBlueprintBorder, filled: false, width: 2f);
         if (progress > 0f)
         {
@@ -1117,13 +1128,14 @@ public partial class WorldRenderer : Node2D
     private static readonly Color BedBpFill   = new(0.55f, 0.40f, 0.30f, 0.40f);
     private static readonly Color BedBpBorder = new(0.85f, 0.65f, 0.45f, 0.85f);
 
-    private void DrawBedBlueprint(TilePos origin, BedOrientation orientation, float progress)
+    private void DrawBedBlueprint(TilePos origin, BedOrientation orientation, float progress, float funding)
     {
         var foot = BedOrientations.Foot(origin, orientation);
         var oRect = new Rect2(origin.X * PixelsPerTile, origin.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
         var fRect = new Rect2(foot.X * PixelsPerTile, foot.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        DrawRect(oRect, BedBpFill, filled: true);
-        DrawRect(fRect, BedBpFill, filled: true);
+        var bedFill = FundedFill(BedBpFill, funding);
+        DrawRect(oRect, bedFill, filled: true);
+        DrawRect(fRect, bedFill, filled: true);
         DrawRect(oRect, BedBpBorder, filled: false, width: 2f);
         DrawRect(fRect, BedBpBorder, filled: false, width: 2f);
         if (progress > 0f)
@@ -1174,10 +1186,10 @@ public partial class WorldRenderer : Node2D
         }
     }
 
-    private void DrawLampBlueprint(TilePos tile, float progress)
+    private void DrawLampBlueprint(TilePos tile, float progress, float funding)
     {
         var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        DrawRect(rect, LampBpFill, filled: true);
+        DrawRect(rect, FundedFill(LampBpFill, funding), filled: true);
         DrawRect(rect, LampBpBorder, filled: false, width: 2f);
         if (progress > 0f)
         {
@@ -1191,10 +1203,10 @@ public partial class WorldRenderer : Node2D
         }
     }
 
-    private void DrawFloorBlueprint(TilePos tile, float progress)
+    private void DrawFloorBlueprint(TilePos tile, float progress, float funding)
     {
         var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        DrawRect(rect, FloorBlueprintFill, filled: true);
+        DrawRect(rect, FundedFill(FloorBlueprintFill, funding), filled: true);
         DrawRect(rect, FloorBlueprintBorder, filled: false, width: 2f);
         if (progress > 0f)
         {

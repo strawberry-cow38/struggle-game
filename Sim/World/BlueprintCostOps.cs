@@ -32,6 +32,28 @@ public static class BlueprintCostOps
         e.AddComponent(new BlueprintCost { Entries = entries });
     }
 
+    // Fraction Deposited / Needed across all entries (0..1). Entities
+    // without a BlueprintCost (god-mode free-build, lamp, roof) report
+    // 1f. Used by the snapshot to drive blueprint tint dimming.
+    public static float FundingFraction(Entity e)
+    {
+        if (!e.HasComponent<BlueprintCost>()) return 1f;
+        ref var cost = ref e.GetComponent<BlueprintCost>();
+        var entries = cost.Entries;
+        if (entries is null || entries.Length == 0) return 1f;
+        int needed = 0;
+        int deposited = 0;
+        for (int i = 0; i < entries.Length; i++)
+        {
+            needed += entries[i].Needed;
+            int dep = entries[i].Deposited;
+            if (dep > entries[i].Needed) dep = entries[i].Needed;
+            deposited += dep;
+        }
+        if (needed <= 0) return 1f;
+        return (float)deposited / needed;
+    }
+
     public static bool IsFunded(Entity e)
     {
         if (!e.HasComponent<BlueprintCost>()) return true;

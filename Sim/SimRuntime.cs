@@ -756,7 +756,7 @@ public sealed class SimRuntime
         {
             if (job.Kind != JobKind.WallBuild) continue;
             var bp = job.Entity.GetComponent<Blueprint>();
-            bpsBuf[j++] = new BlueprintState(job.Tile, bp.ProgressSec / BuildSystem.BuildTimeSec, job.Forbidden);
+            bpsBuf[j++] = new BlueprintState(job.Tile, bp.ProgressSec / BuildSystem.BuildTimeSec, job.Forbidden, BlueprintCostOps.FundingFraction(job.Entity));
         }
         snap.BlueprintsCount = j;
 
@@ -767,7 +767,7 @@ public sealed class SimRuntime
         {
             if (job.Kind != JobKind.FloorBuild) continue;
             var bp = job.Entity.GetComponent<FloorBlueprint>();
-            floorBuf[fj++] = new BlueprintState(job.Tile, bp.ProgressSec / FloorSystem.FloorTimeSec, job.Forbidden);
+            floorBuf[fj++] = new BlueprintState(job.Tile, bp.ProgressSec / FloorSystem.FloorTimeSec, job.Forbidden, BlueprintCostOps.FundingFraction(job.Entity));
         }
         snap.FloorBlueprintsCount = fj;
 
@@ -907,10 +907,10 @@ public sealed class SimRuntime
         EnsureCap(ref snap.DoorBlueprintsBuf, doorBpQuery.Count);
         var doorBpBuf = snap.DoorBlueprintsBuf;
         int dbi = 0;
-        doorBpQuery.ForEachEntity((ref DoorBlueprint bp, Entity _) =>
+        doorBpQuery.ForEachEntity((ref DoorBlueprint bp, Entity ent) =>
         {
             bool forbidden = Jobs.GetByTile(bp.Tile)?.Forbidden ?? false;
-            doorBpBuf[dbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / DoorBuildSystem.DoorTimeSec, forbidden);
+            doorBpBuf[dbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / DoorBuildSystem.DoorTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent));
         });
         snap.DoorBlueprintsCount = dbi;
 
@@ -976,10 +976,10 @@ public sealed class SimRuntime
         EnsureCap(ref snap.LampBlueprintsBuf, lampBpQuery.Count);
         var lampBpBuf = snap.LampBlueprintsBuf;
         int lbi = 0;
-        lampBpQuery.ForEachEntity((ref LampBlueprint bp, Entity _) =>
+        lampBpQuery.ForEachEntity((ref LampBlueprint bp, Entity ent) =>
         {
             bool forbidden = Jobs.GetByTile(bp.Tile)?.Forbidden ?? false;
-            lampBpBuf[lbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / LampSystem.LampBuildTimeSec, forbidden);
+            lampBpBuf[lbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / LampSystem.LampBuildTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent));
         });
         snap.LampBlueprintsCount = lbi;
 
@@ -987,10 +987,10 @@ public sealed class SimRuntime
         EnsureCap(ref snap.BedBlueprintsBuf, bedBpQuery.Count);
         var bedBpBuf = snap.BedBlueprintsBuf;
         int bbi = 0;
-        bedBpQuery.ForEachEntity((ref BedBlueprint bp, Entity _) =>
+        bedBpQuery.ForEachEntity((ref BedBlueprint bp, Entity ent) =>
         {
             bool forbidden = Jobs.GetByTile(bp.Origin)?.Forbidden ?? false;
-            bedBpBuf[bbi++] = new BedBlueprintState(bp.Origin, bp.Orientation, bp.ProgressSec / BedSystem.BedBuildTimeSec, forbidden);
+            bedBpBuf[bbi++] = new BedBlueprintState(bp.Origin, bp.Orientation, bp.ProgressSec / BedSystem.BedBuildTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent));
         });
         snap.BedBlueprintsCount = bbi;
 

@@ -127,7 +127,11 @@ public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath
 // shallow copies so the UI can read across ticks without locks.
 public readonly record struct PawnWorkState(int EntityId, string Name, byte[] Priorities, bool[] Allowed, byte[] Schedule);
 
-public readonly record struct BlueprintState(TilePos Tile, float Progress, bool Forbidden);
+// Funding is Deposited / Needed across all ResourceReq entries (0..1).
+// Roof/lamp are always free → snapshot reports 1f. Renderer dims the
+// fill tint when Funding < 1 so the player can see which blueprints
+// still need wood deliveries.
+public readonly record struct BlueprintState(TilePos Tile, float Progress, bool Forbidden, float Funding);
 
 public readonly record struct TreeState(int EntityId, TilePos Tile, float ChopProgress, bool HasJob, float GrowthStage);
 
@@ -167,7 +171,7 @@ public readonly record struct LampState(TilePos Tile, bool PoweredOn, LightColor
 
 public readonly record struct BedState(TilePos Origin, BedOrientation Orientation);
 
-public readonly record struct BedBlueprintState(TilePos Origin, BedOrientation Orientation, float Progress, bool Forbidden);
+public readonly record struct BedBlueprintState(TilePos Origin, BedOrientation Orientation, float Progress, bool Forbidden, float Funding);
 
 public readonly record struct GrowZoneState(
     int Id,
