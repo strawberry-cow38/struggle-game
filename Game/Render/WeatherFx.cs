@@ -1,22 +1,26 @@
 using Godot;
+using StruggleGame.Sim;
+using StruggleGame.Sim.Map;
 
 namespace StruggleGame.Game.Render;
 
-// Cosmetic rain overlay. Spawns fat raindrop particles in screen space,
-// independent of camera + sim. Intensity in [0,1] controls spawn rate;
-// WindX in [-1,1] tilts horizontal velocity.
-public partial class WeatherFx : CanvasLayer
+// Cosmetic rain overlay drawn in WORLD space. Particles spawn above the
+// camera's visible rect, fall in world coords, and are clipped per tile
+// against the roof map — drops over roofed tiles disappear.
+public partial class WeatherFx : Node2D
 {
+    public SimHost? Host { get; set; }
     public float Intensity { get; set; }
     public float WindX { get; set; }
 
-    private const int MaxParticles = 2048;
-    private const float SpawnPerSecAtFullIntensity = 1400f;
+    private const int MaxParticles = 6000;
+    private const float SpawnPerSecPerTileAtFull = 0.35f;
     private const float DropFallSpeed = 1400f;
-    private const float WindSpeed = 900f;
-    private const float DropLifeSec = 0.55f;
-    private const float DropLength = 14f;
-    private const float DropWidth = 4.5f;
+    private const float WindSpeed = 1100f;
+    private const float DropLifeSec = 1.2f;
+    private const float DropLength = 18f;
+    private const float DropWidth = 5f;
+    private const float SpawnAboveCameraPx = 200f;
 
     private struct Drop
     {
@@ -28,29 +32,35 @@ public partial class WeatherFx : CanvasLayer
     private readonly Drop[] _drops = new Drop[MaxParticles];
     private int _count;
     private float _spawnAccum;
-    private Control _canvas = null!;
     private readonly RandomNumberGenerator _rng = new();
+
+    private byte[]? _roofTiles;
+    private int _mapWidth;
+    private int _mapHeight;
+    private long _lastRoofVersion = -1;
 
     public override void _Ready()
     {
-        Layer = 80;
         _rng.Randomize();
-        _canvas = new Control
-        {
-            Name = "RainCanvas",
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-        };
-        _canvas.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        _canvas.Draw += DrawDrops;
-        AddChild(_canvas);
+        ZIndex = 50;
     }
 
     public override void _Process(double delta)
     {
+        if (Host is null) return;
+        var snap = Host.LatestSnapshot;
+        if (snap is null) return;
+        if (snap.RoofVersion != _lastRoofVersion || _roofTiles is null)
+        {
+            _roofTiles = Host.CopyRoofTilesForRender();
+            _mapWidth = Host.Map.Width;
+            _mapHeight = Host.Map.Height;
+            _lastRoofVersion = snap.RoofVersion;
+        }
         float dt = (float)delta;
         AgeDrops(dt);
         SpawnDrops(dt);
-        _canvas.QueueRedraw();
+        QueueRedraw();
     }
 
     private void AgeDrops(float dt)
@@ -68,19 +78,35 @@ public partial class WeatherFx : CanvasLayer
         _count = write;
     }
 
+    private (Vector2 min, Vector2 max) GetVisibleWorldRect()
+    {
+        var vp = GetViewport().GetVisibleRect();
+        var xform = GetCanvasTransform().AffineInverse();
+        var a = xform * vp.Position;
+        var b = xform * (vp.Position + vp.Size);
+        return (new Vector2(Mathf.Min(a.X, b.X), Mathf.Min(a.Y, b.Y)),
+                new Vector2(Mathf.Max(a.X, b.X), Mathf.Max(a.Y, b.Y)));
+    }
+
     private void SpawnDrops(float dt)
     {
         if (Intensity <= 0f) return;
-        _spawnAccum += dt * SpawnPerSecAtFullIntensity * Mathf.Clamp(Intensity, 0f, 1f);
-        var vp = GetViewport().GetVisibleRect().Size;
+        var (min, max) = GetVisibleWorldRect();
+        float areaTiles = ((max.X - min.X) / SimConstants.PixelsPerTile)
+                        * ((max.Y - min.Y) / SimConstants.PixelsPerTile);
+        if (areaTiles <= 0f) return;
+        float rate = areaTiles * SpawnPerSecPerTileAtFull * Mathf.Clamp(Intensity, 0f, 1f);
+        _spawnAccum += dt * rate;
         float horizVel = WindX * WindSpeed;
-        float spawnLeftMargin = horizVel < 0f ? 200f : 0f;
-        float spawnRightMargin = horizVel > 0f ? 200f : 0f;
+        // Widen the spawn band against wind so drops blowing across the
+        // viewport still cover the downwind edge.
+        float padLeft = horizVel < 0f ? -horizVel * DropLifeSec : 0f;
+        float padRight = horizVel > 0f ? horizVel * DropLifeSec : 0f;
         while (_spawnAccum >= 1f && _count < MaxParticles)
         {
             _spawnAccum -= 1f;
-            float x = _rng.RandfRange(-spawnLeftMargin, vp.X + spawnRightMargin);
-            float y = _rng.RandfRange(-80f, 0f);
+            float x = _rng.RandfRange(min.X - padLeft, max.X + padRight);
+            float y = _rng.RandfRange(min.Y - SpawnAboveCameraPx, min.Y);
             float speedJitter = _rng.RandfRange(0.85f, 1.15f);
             _drops[_count++] = new Drop
             {
@@ -89,19 +115,24 @@ public partial class WeatherFx : CanvasLayer
                 Life = DropLifeSec,
             };
         }
-        if (_spawnAccum > 2f) _spawnAccum = 2f;
+        if (_spawnAccum > 4f) _spawnAccum = 4f;
     }
 
-    private void DrawDrops()
+    public override void _Draw()
     {
         if (_count == 0) return;
-        var col = new Color(0.72f, 0.85f, 1f, 0.78f);
+        var col = new Color(0.72f, 0.85f, 1f, 0.82f);
+        int w = _mapWidth, h = _mapHeight;
+        var roof = _roofTiles;
         for (int i = 0; i < _count; i++)
         {
             var d = _drops[i];
+            int tx = Mathf.FloorToInt(d.Pos.X / SimConstants.PixelsPerTile);
+            int ty = Mathf.FloorToInt(d.Pos.Y / SimConstants.PixelsPerTile);
+            if (roof is not null && (uint)tx < (uint)w && (uint)ty < (uint)h && roof[ty * w + tx] != 0) continue;
             var dir = d.Vel.Normalized();
             var tail = d.Pos - dir * DropLength;
-            _canvas.DrawLine(tail, d.Pos, col, DropWidth, antialiased: true);
+            DrawLine(tail, d.Pos, col, DropWidth, antialiased: true);
         }
     }
 }
