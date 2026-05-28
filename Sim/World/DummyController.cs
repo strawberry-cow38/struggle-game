@@ -250,10 +250,39 @@ public sealed class DummyController
             return;
         }
 
-        if (!entity.HasComponent<BuildTarget>()
-            && !entity.HasComponent<Carrying>()
-            && entity.HasComponent<SleepNeed>()
-            && entity.GetComponent<SleepNeed>().Level < SleepStartThreshold)
+        bool tired = entity.HasComponent<SleepNeed>()
+            && entity.GetComponent<SleepNeed>().Level < SleepStartThreshold;
+        bool passedOut = entity.HasComponent<SleepNeed>()
+            && entity.GetComponent<SleepNeed>().Level <= 0f;
+
+        // Passed out: 0% sleep forces the pawn to drop in-flight work
+        // so others (or themselves after waking) can pick it up. Voluntary
+        // sleep (<30% but >0%) doesn't preempt — finish the current job
+        // first.
+        if (passedOut && entity.HasComponent<BuildTarget>())
+        {
+            var bt = entity.GetComponent<BuildTarget>();
+            if (entity.HasComponent<Carrying>())
+            {
+                OnHaulDeliver?.Invoke(entity, here, cb);
+            }
+            else
+            {
+                _jobs.Release(bt.JobId);
+            }
+            cb.RemoveComponent<BuildTarget>(entity.Id);
+            if (path.PendingPathId != 0)
+            {
+                _paths.Discard(path.PendingPathId);
+                path.PendingPathId = 0;
+            }
+            path.Waypoints = null;
+            path.Index = 0;
+        }
+
+        if (tired
+            && (passedOut || !entity.HasComponent<BuildTarget>())
+            && (passedOut || !entity.HasComponent<Carrying>()))
         {
             // Pick / re-pick a bed each plan tick until arrival. The
             // runtime's TryReserveBed checks BedReservedBy atomically so
