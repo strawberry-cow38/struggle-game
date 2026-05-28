@@ -126,27 +126,28 @@ public partial class Toolbar : CanvasLayer
         _buildToggle.Position = new Vector2(
             vp.X - _buildToggle.Size.X - MarginRight,
             vp.Y - _buildToggle.Size.Y - MarginBottom);
+        // Sched + Work sit on the row ABOVE Build so the building bar
+        // (which expands leftward on the Build row) can't run under them.
+        float upperRowY = vp.Y - _buildToggle.Size.Y - MarginBottom - ButtonSize - ButtonGap;
         if (_workToggle is not null)
         {
             _workToggle.Position = new Vector2(
-                _buildToggle.Position.X - _workToggle.Size.X - ButtonGap,
-                vp.Y - _workToggle.Size.Y - MarginBottom);
+                vp.X - _workToggle.Size.X - MarginRight,
+                upperRowY);
         }
         if (_scheduleToggle is not null)
         {
-            float anchorX = _workToggle is not null ? _workToggle.Position.X : _buildToggle.Position.X;
+            float anchorX = _workToggle is not null
+                ? _workToggle.Position.X
+                : vp.X - _scheduleToggle.Size.X - MarginRight;
             _scheduleToggle.Position = new Vector2(
                 anchorX - _scheduleToggle.Size.X - ButtonGap,
-                vp.Y - _scheduleToggle.Size.Y - MarginBottom);
+                upperRowY);
         }
         if (_hbox.Visible)
         {
-            float rightEdge;
-            if (_scheduleToggle is not null) rightEdge = _scheduleToggle.Position.X - ButtonGap;
-            else if (_workToggle is not null) rightEdge = _workToggle.Position.X - ButtonGap;
-            else rightEdge = _buildToggle.Position.X - ButtonGap;
             _hbox.Position = new Vector2(
-                rightEdge - _hbox.Size.X,
+                _buildToggle.Position.X - ButtonGap - _hbox.Size.X,
                 vp.Y - _hbox.Size.Y - MarginBottom);
         }
     }
