@@ -439,7 +439,6 @@ public partial class Selector : Node2D
         {
             Host.SelectedBedTiles = ToggleTile(Host.SelectedBedTiles, bedOrigin, shift);
             Host.SelectedLampTiles = Array.Empty<TilePos>();
-            Host.SelectedBedTiles = Array.Empty<TilePos>();
             Host.SelectedDoorTiles = Array.Empty<TilePos>();
             Host.SelectedWallTiles = Array.Empty<TilePos>();
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
