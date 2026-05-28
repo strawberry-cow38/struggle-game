@@ -902,6 +902,10 @@ public sealed class DummyController
             int gy = anchor.Y + _rng.Next(-WanderRadius, WanderRadius + 1);
             var goal = new TilePos(gx, gy);
             if (!view.Walkable(goal) || goal == from) continue;
+            // Skip furniture footprints (beds) — they're walkable for
+            // sleepers but a terrible wander destination since the
+            // pawn would camp on the mattress.
+            if (view.HasFurniture(goal)) continue;
             path.PendingPathId = _paths.Request(from, goal);
             return;
         }
