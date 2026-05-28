@@ -66,6 +66,10 @@ public sealed class DummyController
     public delegate bool TryReserveBedDelegate(Entity pawn, out int bedEntityId, out Map.TilePos bedOrigin, out Map.TilePos bedFoot);
     private readonly TryReserveBedDelegate _tryReserveBed;
     private readonly Action<int, int> _releaseBedReservation;
+    // Auto-claim list: pawn → bed pairs to assign after Step() so the
+    // structural change happens outside the query loop. SimRuntime drains
+    // it once cb.Playback returns.
+    public readonly List<(int BedEntityId, int PawnEntityId)> PendingAutoBedClaims = new();
 
     // Sleep need triggers. Below SleepStartThreshold the pawn walks to a
     // bed (or floor-sleeps); they keep sleeping until Level >= 1.0.
@@ -289,30 +293,27 @@ public sealed class DummyController
             // two tired pawns the same tick can't grab one bed.
             if (_tryReserveBed(entity, out int bedId, out var bedOrigin, out var bedFoot))
             {
-                // Arrived next to the bed → start sleeping.
-                if (BuildAdjacency.InRange(pos.X, pos.Y, bedOrigin.X, bedOrigin.Y)
-                    || BuildAdjacency.InRange(pos.X, pos.Y, bedFoot.X, bedFoot.Y))
+                // Standing on the head tile → climb in. If the bed has no
+                // owner yet, auto-assign it to this sleeper (queued for
+                // after Step so the structural change is safe).
+                if (here == bedOrigin)
                 {
                     path.Waypoints = null;
                     path.Index = 0;
                     cb.AddComponent(entity.Id, new Sleeping { BedEntityId = bedId });
+                    if (!entity.HasComponent<AssignedBed>())
+                    {
+                        PendingAutoBedClaims.Add((bedId, entity.Id));
+                    }
                     return;
                 }
-                // Walk toward the bed. Path target is whichever footprint
-                // tile has a reachable neighbor.
+                // Walk toward the bed head. Beds are walkable, so the
+                // origin tile is itself the path target.
                 if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
                 {
-                    if (TryPickNeighbor(view, here, bedOrigin, out var nbr)
-                        || TryPickNeighbor(view, here, bedFoot, out nbr))
+                    if (view.Walkable(bedOrigin))
                     {
-                        if (nbr == here)
-                        {
-                            cb.AddComponent(entity.Id, new Sleeping { BedEntityId = bedId });
-                        }
-                        else
-                        {
-                            path.PendingPathId = _paths.Request(here, nbr);
-                        }
+                        path.PendingPathId = _paths.Request(here, bedOrigin);
                     }
                     else
                     {

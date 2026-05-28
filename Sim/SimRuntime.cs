@@ -290,6 +290,16 @@ public sealed class SimRuntime
         ComputeSun(_worldTimeSec, out var sR, out var sG, out var sB);
         if (sR != _lastSunR || sG != _lastSunG || sB != _lastSunB) _sunDirty = true;
         _dummies.Step(Store, dt);
+        // Drain auto-bed-claim requests posted by Plan(). Safe to do
+        // structural changes here — outside the controller's query loop.
+        if (_dummies.PendingAutoBedClaims.Count > 0)
+        {
+            foreach (var (bedId, pawnId) in _dummies.PendingAutoBedClaims)
+            {
+                AssignBedToPawn(bedId, pawnId);
+            }
+            _dummies.PendingAutoBedClaims.Clear();
+        }
         _builds.Step(Store, dt);
         _chops.Step(Store, dt);
         _growth.Step(Store, dt);
@@ -3242,14 +3252,10 @@ public sealed class SimRuntime
                     di++;
                 }
             }
-            TilePos[]? furnitureTiles = null;
-            if (_bedOccupied.Count > 0)
-            {
-                furnitureTiles = new TilePos[_bedOccupied.Count];
-                int bi = 0;
-                foreach (var t in _bedOccupied) furnitureTiles[bi++] = t;
-            }
-            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden, doorTiles, doorCosts, furnitureTiles);
+            // Beds are walkable so sleepers can stand on the head tile.
+            // _bedOccupied is still used by placement rules (no two beds
+            // overlap, no wall on bed, etc.) — it just doesn't block A*.
+            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden, doorTiles, doorCosts, null);
         }
         Volatile.Write(ref _mapView, newView);
     }
