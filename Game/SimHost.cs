@@ -211,6 +211,14 @@ public sealed class SimHost : IDisposable
     // tile player-built (deconstructable)?
     public bool IsPlayerWall(TilePos tile) => _sim.PlayerWalls.Contains(tile);
 
+    // Bed placement legality check for the designator's preview overlay.
+    // Synchronizes against the sim loop so the dict/set reads can't race
+    // mid-Step(). Only called while the bed tool is active.
+    public bool CanPlaceBed(TilePos origin, StruggleGame.Sim.World.BedOrientation orientation)
+    {
+        lock (_swapLock) { return _sim.CanPlaceBed(origin, orientation); }
+    }
+
     // Game→Sim command submission. Drained at the start of every tick.
     public void QueueCommand(ISimCommand cmd) => _sim.QueueCommand(cmd);
 

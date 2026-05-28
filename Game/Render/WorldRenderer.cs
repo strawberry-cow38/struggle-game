@@ -316,6 +316,20 @@ public partial class WorldRenderer : Node2D
             }
         }
 
+        using (FrameProfiler.Instance.BeginScope("Beds"))
+        {
+            foreach (var bed in snap.Beds)
+            {
+                var origin = bed.Origin;
+                var foot = BedOrientations.Foot(origin, bed.Orientation);
+                int minX = Math.Min(origin.X, foot.X), maxX = Math.Max(origin.X, foot.X);
+                int minY = Math.Min(origin.Y, foot.Y), maxY = Math.Max(origin.Y, foot.Y);
+                if (maxX < viewMinTileX || minX > viewMaxTileX
+                    || maxY < viewMinTileY || minY > viewMaxTileY) continue;
+                DrawBed(origin, bed.Orientation);
+            }
+        }
+
         using (FrameProfiler.Instance.BeginScope("Doors"))
         {
             _prevDoorByTileScratch ??= new Dictionary<TilePos, DoorRenderState>();
@@ -1026,6 +1040,75 @@ public partial class WorldRenderer : Node2D
     private static readonly Color LampLitColor = new(1.00f, 0.95f, 0.55f, 1f);
     private static readonly Color LampLitHalo = new(1.00f, 0.90f, 0.45f, 0.45f);
     private static readonly Color LampOffColor = new(0.45f, 0.42f, 0.32f, 1f);
+
+    private static readonly Color BedFrame   = new(0.42f, 0.28f, 0.18f, 1f);
+    private static readonly Color BedSheet   = new(0.75f, 0.55f, 0.45f, 1f);
+    private static readonly Color BedPillow  = new(0.96f, 0.94f, 0.90f, 1f);
+    private static readonly Color BedShadow  = new(0.0f, 0.0f, 0.0f, 0.20f);
+
+    private void DrawBed(TilePos origin, BedOrientation orientation)
+    {
+        var foot = BedOrientations.Foot(origin, orientation);
+        int minX = Math.Min(origin.X, foot.X);
+        int minY = Math.Min(origin.Y, foot.Y);
+        int maxX = Math.Max(origin.X, foot.X);
+        int maxY = Math.Max(origin.Y, foot.Y);
+        float x0 = minX * PixelsPerTile;
+        float y0 = minY * PixelsPerTile;
+        float w = (maxX - minX + 1) * PixelsPerTile;
+        float h = (maxY - minY + 1) * PixelsPerTile;
+
+        float inset = PixelsPerTile * 0.08f;
+        var frame = new Rect2(x0 + inset, y0 + inset, w - 2 * inset, h - 2 * inset);
+        // Soft drop shadow under the frame.
+        var shadow = new Rect2(frame.Position.X + 2, frame.Position.Y + 3, frame.Size.X, frame.Size.Y);
+        DrawRect(shadow, BedShadow, filled: true);
+
+        DrawRect(frame, BedFrame, filled: true);
+
+        // Sheet/mattress is the inner panel — slightly inset from frame.
+        float sheetInset = PixelsPerTile * 0.06f;
+        var sheet = new Rect2(
+            frame.Position.X + sheetInset,
+            frame.Position.Y + sheetInset,
+            frame.Size.X - 2 * sheetInset,
+            frame.Size.Y - 2 * sheetInset);
+        DrawRect(sheet, BedSheet, filled: true);
+
+        // Pillow on the head/origin tile end. Direction is given by
+        // orientation: foot points away from head, so pillow sits on the
+        // *opposite* side of the sheet from the foot offset.
+        var (dx, dy) = BedOrientations.Offset(orientation);
+        float pillowSpan = 0.45f;     // fraction of the sheet length to cover
+        float pillowThick = 0.85f;    // fraction of the cross-axis to cover
+        Rect2 pillowRect;
+        if (dx != 0)
+        {
+            // Horizontal bed: pillow is a thin vertical band at the head end.
+            float thickPx = sheet.Size.Y * pillowThick;
+            float spanPx = sheet.Size.X * pillowSpan;
+            float py = sheet.Position.Y + (sheet.Size.Y - thickPx) * 0.5f;
+            float px = dx > 0
+                ? sheet.Position.X
+                : sheet.Position.X + sheet.Size.X - spanPx;
+            pillowRect = new Rect2(px, py, spanPx, thickPx);
+        }
+        else
+        {
+            // Vertical bed: pillow is a thin horizontal band at the head end.
+            float thickPx = sheet.Size.X * pillowThick;
+            float spanPx = sheet.Size.Y * pillowSpan;
+            float px = sheet.Position.X + (sheet.Size.X - thickPx) * 0.5f;
+            float py = dy > 0
+                ? sheet.Position.Y
+                : sheet.Position.Y + sheet.Size.Y - spanPx;
+            pillowRect = new Rect2(px, py, thickPx, spanPx);
+        }
+        DrawRect(pillowRect, BedPillow, filled: true);
+
+        // Frame outline on top so it reads as crafted, not flat-painted.
+        DrawRect(frame, BedFrame, filled: false, width: 2f);
+    }
 
     private void DrawLamp(TilePos tile, bool poweredOn, LightColor color)
     {

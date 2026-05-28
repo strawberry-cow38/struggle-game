@@ -75,6 +75,10 @@ public sealed class SimSnapshot
     internal int LampsCount;
     public SnapshotList<LampState> Lamps => new(LampsBuf, LampsCount);
 
+    internal BedState[] BedsBuf = System.Array.Empty<BedState>();
+    internal int BedsCount;
+    public SnapshotList<BedState> Beds => new(BedsBuf, BedsCount);
+
     internal BlueprintState[] LampBlueprintsBuf = System.Array.Empty<BlueprintState>();
     internal int LampBlueprintsCount;
     public SnapshotList<BlueprintState> LampBlueprints => new(LampBlueprintsBuf, LampBlueprintsCount);
@@ -151,6 +155,8 @@ public readonly record struct StockpileState(
 public readonly record struct RoofBlueprintState(TilePos Tile, float Progress, bool Build, bool Forbidden);
 
 public readonly record struct LampState(TilePos Tile, bool PoweredOn, LightColor Color);
+
+public readonly record struct BedState(TilePos Origin, BedOrientation Orientation);
 
 public readonly record struct GrowZoneState(
     int Id,

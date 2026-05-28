@@ -74,6 +74,9 @@ public partial class Bootstrap : Node2D
         var lampDesignator = new LampDesignator { Host = _host, Tools = _tools, Name = "LampDesignator" };
         AddChild(lampDesignator);
 
+        var bedDesignator = new BedDesignator { Host = _host, Tools = _tools, Name = "BedDesignator" };
+        AddChild(bedDesignator);
+
         var spawnDesignator = new SpawnPawnDesignator { Host = _host, Tools = _tools, Name = "SpawnPawnDesignator" };
         AddChild(spawnDesignator);
 

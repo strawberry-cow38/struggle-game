@@ -117,6 +117,11 @@ public sealed class SimRuntime
     // the map keeps them addressable for selection / power toggle /
     // decon and lets the light recompute iterate every powered lamp.
     private readonly Dictionary<TilePos, Entity> _lampMap = new();
+    // Placed beds. Key = head/origin tile. Both head + foot tile are
+    // entered into _bedOccupied so MapView treats the whole footprint
+    // as blocked.
+    private readonly Dictionary<TilePos, Entity> _bedMap = new();
+    private readonly HashSet<TilePos> _bedOccupied = new();
     // Cached per-lamp disc bake. Each entry is the lamp's static
     // contribution pattern (relative to its tile) baked against the
     // current wall/door layout. Color and power state are NOT baked —
@@ -894,6 +899,16 @@ public sealed class SimRuntime
         }
         snap.LampsCount = li;
 
+        EnsureCap(ref snap.BedsBuf, _bedMap.Count);
+        var bedBuf = snap.BedsBuf;
+        int bi2 = 0;
+        foreach (var (origin, bEnt) in _bedMap)
+        {
+            var bc = bEnt.GetComponent<Bed>();
+            bedBuf[bi2++] = new BedState(origin, bc.Orientation);
+        }
+        snap.BedsCount = bi2;
+
         var lampBpQuery = Store.Query<LampBlueprint>();
         EnsureCap(ref snap.LampBlueprintsBuf, lampBpQuery.Count);
         var lampBpBuf = snap.LampBlueprintsBuf;
@@ -969,6 +984,63 @@ public sealed class SimRuntime
         RecomputeLampLight();
         return true;
     }
+
+    // Drop a 2-tile decorative bed at Origin with the given orientation.
+    // No construction job — the bed appears immediately. Both Origin and
+    // the foot tile (Origin + Orientation offset) must be free of walls,
+    // doors, trees, lamps, and other beds. Returns false on conflict.
+    public bool TryPlaceBed(TilePos origin, BedOrientation orientation)
+    {
+        var foot = BedOrientations.Foot(origin, orientation);
+        if (!IsBedTileFree(origin) || !IsBedTileFree(foot)) return false;
+        if (origin == foot) return false;
+        var e = Store.CreateEntity();
+        e.AddComponent(new Bed { Origin = origin, Orientation = orientation });
+        _bedMap[origin] = e;
+        _bedOccupied.Add(origin);
+        _bedOccupied.Add(foot);
+        RebuildMapView();
+        return true;
+    }
+
+    public bool RemoveBed(TilePos origin)
+    {
+        if (!_bedMap.TryGetValue(origin, out var entity)) return false;
+        var bed = entity.GetComponent<Bed>();
+        var foot = BedOrientations.Foot(bed.Origin, bed.Orientation);
+        _bedMap.Remove(origin);
+        _bedOccupied.Remove(origin);
+        _bedOccupied.Remove(foot);
+        entity.DeleteEntity();
+        RebuildMapView();
+        return true;
+    }
+
+    private bool IsBedTileFree(TilePos t)
+    {
+        if (!Map.InBounds(t)) return false;
+        if (Map.IsBorder(t.X, t.Y)) return false;
+        if (Map.GetWall(t) != WallType.None) return false;
+        if (_doorMap.ContainsKey(t)) return false;
+        if (_lampMap.ContainsKey(t)) return false;
+        if (_trees.ContainsKey(t)) return false;
+        if (_bedOccupied.Contains(t)) return false;
+        return true;
+    }
+
+    // Exposed so the BedDesignator preview can ask the sim whether a
+    // candidate (origin, orientation) is legal without round-tripping a
+    // command. Cheap — just dictionary/set lookups on the sim thread's
+    // current state; the renderer reads it from the snapshot path which
+    // already takes a stable view.
+    public bool CanPlaceBed(TilePos origin, BedOrientation orientation)
+    {
+        var foot = BedOrientations.Foot(origin, orientation);
+        if (origin == foot) return false;
+        return IsBedTileFree(origin) && IsBedTileFree(foot);
+    }
+
+    public IReadOnlyDictionary<TilePos, Entity> BedMap => _bedMap;
 
     // Harness shortcut: stamp roof bytes directly across a rect. Skips
     // the chunked build-job pipeline used by PaintRoofRect.
@@ -2601,7 +2673,14 @@ public sealed class SimRuntime
                     di++;
                 }
             }
-            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden, doorTiles, doorCosts);
+            TilePos[]? furnitureTiles = null;
+            if (_bedOccupied.Count > 0)
+            {
+                furnitureTiles = new TilePos[_bedOccupied.Count];
+                int bi = 0;
+                foreach (var t in _bedOccupied) furnitureTiles[bi++] = t;
+            }
+            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden, doorTiles, doorCosts, furnitureTiles);
         }
         Volatile.Write(ref _mapView, newView);
     }

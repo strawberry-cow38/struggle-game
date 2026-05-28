@@ -45,6 +45,10 @@ public sealed class MapView
     // some consumers want to enumerate door tiles directly.
     public IReadOnlyList<TilePos> DoorTiles { get; }
 
+    // Tiles occupied by furniture footprints (currently just beds).
+    // Pathing treats them as walls. Mirrors the tree handling pattern.
+    public IReadOnlyList<TilePos> FurnitureTiles { get; }
+
     // Exposed for TileMap.Snapshot to share unchanged chunk byte[]s into
     // the next MapView. Outside callers should go through GetWall/etc.
     internal byte[][] TerrainChunks { get; }
@@ -54,6 +58,7 @@ public sealed class MapView
 
     private readonly HashSet<TilePos> _treeSet;
     private readonly HashSet<TilePos> _forbiddenDoorSet;
+    private readonly HashSet<TilePos> _furnitureSet;
     private readonly Dictionary<TilePos, float> _doorCostByTile;
 
     public MapView(
@@ -70,7 +75,8 @@ public sealed class MapView
         IReadOnlyList<TilePos>? trees = null,
         IReadOnlyList<TilePos>? forbiddenDoors = null,
         IReadOnlyList<TilePos>? doorTiles = null,
-        IReadOnlyList<float>? doorCosts = null)
+        IReadOnlyList<float>? doorCosts = null,
+        IReadOnlyList<TilePos>? furnitureTiles = null)
     {
         Version = version;
         Width = width;
@@ -87,6 +93,8 @@ public sealed class MapView
         ForbiddenDoors = forbiddenDoors ?? Array.Empty<TilePos>();
         _forbiddenDoorSet = new HashSet<TilePos>(ForbiddenDoors);
         DoorTiles = doorTiles ?? Array.Empty<TilePos>();
+        FurnitureTiles = furnitureTiles ?? Array.Empty<TilePos>();
+        _furnitureSet = new HashSet<TilePos>(FurnitureTiles);
         _doorCostByTile = new Dictionary<TilePos, float>(DoorTiles.Count);
         if (doorCosts is not null && doorCosts.Count == DoorTiles.Count)
         {
@@ -157,8 +165,12 @@ public sealed class MapView
         var p = new TilePos(x, y);
         if (_treeSet.Contains(p)) return false;
         if (_forbiddenDoorSet.Contains(p)) return false;
+        if (_furnitureSet.Contains(p)) return false;
         return true;
     }
+
+    public bool HasFurniture(TilePos p) => _furnitureSet.Contains(p);
+    public bool HasFurniture(int x, int y) => _furnitureSet.Contains(new TilePos(x, y));
     public bool Walkable(TilePos p) => Walkable(p.X, p.Y);
 
     private byte RawTerrainByte(int x, int y) => TerrainChunks[MapChunks.ChunkIndex(x, y, ChunksAcross)][MapChunks.LocalIndex(x, y)];

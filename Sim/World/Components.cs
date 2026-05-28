@@ -310,6 +310,45 @@ public struct LampBlueprint : IComponent
     public LightColor Color;
 }
 
+// Bed orientation = direction the foot of the bed points from the head
+// (anchor) tile. North = foot is one tile north of head, etc. The 2-tile
+// footprint is Origin + (Origin shifted by orientation vector).
+public enum BedOrientation : byte
+{
+    North = 0,
+    East  = 1,
+    South = 2,
+    West  = 3,
+}
+
+public static class BedOrientations
+{
+    // (dx, dy) for the foot-tile offset from the head/origin tile.
+    public static (int Dx, int Dy) Offset(BedOrientation o) => o switch
+    {
+        BedOrientation.North => (0, -1),
+        BedOrientation.East  => (1, 0),
+        BedOrientation.South => (0, 1),
+        BedOrientation.West  => (-1, 0),
+        _                    => (1, 0),
+    };
+
+    public static TilePos Foot(TilePos origin, BedOrientation o)
+    {
+        var (dx, dy) = Offset(o);
+        return new TilePos(origin.X + dx, origin.Y + dy);
+    }
+}
+
+// A placed bed. Origin = "head" tile; Foot tile is derived from
+// Orientation. Pure decoration for now — no sleep behavior, but the
+// 2-tile footprint blocks pathing the same way trees do.
+public struct Bed : IComponent
+{
+    public TilePos Origin;
+    public BedOrientation Orientation;
+}
+
 // One item in a pawn's carry inventory. Each slot references an
 // existing item entity (Wood today, more later) kept alive across
 // the haul so completion is a re-anchor rather than delete/recreate.

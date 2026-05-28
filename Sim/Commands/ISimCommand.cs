@@ -745,6 +745,26 @@ public sealed class PaintScheduleCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.PaintSchedule(EntityId, HourStart, HourEnd, Category);
 }
 
+// Place a 2x1 bed at Origin oriented in the given direction. No
+// construction job — pure decoration for now. Silently no-ops if either
+// tile (Origin or the foot tile derived from Orientation) is occupied.
+public sealed class PlaceBedCommand : ISimCommand
+{
+    public TilePos Origin { get; }
+    public BedOrientation Orientation { get; }
+    public PlaceBedCommand(TilePos origin, BedOrientation orientation)
+    { Origin = origin; Orientation = orientation; }
+    public void Apply(SimRuntime sim) => sim.TryPlaceBed(Origin, Orientation);
+}
+
+// Delete a placed bed whose Origin tile equals this command's tile.
+public sealed class RemoveBedCommand : ISimCommand
+{
+    public TilePos Origin { get; }
+    public RemoveBedCommand(TilePos origin) { Origin = origin; }
+    public void Apply(SimRuntime sim) => sim.RemoveBed(Origin);
+}
+
 // Debug bar action: delete a wanderer by entity id (point-and-click).
 public sealed class RemoveDummyCommand : ISimCommand
 {
