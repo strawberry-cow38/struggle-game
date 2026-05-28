@@ -246,6 +246,7 @@ public sealed class IssueMoveOrderCommand : ISimCommand
         if (!sim.Store.TryGetEntityById(EntityId, out var ent)) return;
         if (!ent.HasComponent<Drafted>()) return;
         if (!sim.MapView.Walkable(Tile)) return;
+        if (sim.MapView.HasFurniture(Tile)) return;
 
         if (!ent.HasComponent<OrderQueue>())
         {

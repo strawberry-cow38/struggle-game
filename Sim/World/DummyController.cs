@@ -295,11 +295,15 @@ public sealed class DummyController
             {
                 // Standing on the head tile → climb in. If the bed has no
                 // owner yet, auto-assign it to this sleeper (queued for
-                // after Step so the structural change is safe).
+                // after Step so the structural change is safe). Snap pos
+                // to tile center so the sprite is exactly on the pillow,
+                // not floating an inch off it.
                 if (here == bedOrigin)
                 {
                     path.Waypoints = null;
                     path.Index = 0;
+                    pos.X = bedOrigin.X + 0.5f;
+                    pos.Y = bedOrigin.Y + 0.5f;
                     cb.AddComponent(entity.Id, new Sleeping { BedEntityId = bedId });
                     if (!entity.HasComponent<AssignedBed>())
                     {
