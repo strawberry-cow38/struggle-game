@@ -73,7 +73,7 @@ public sealed class DummyController
 
     // Sleep need triggers. Below SleepStartThreshold the pawn walks to a
     // bed (or floor-sleeps); they keep sleeping until Level >= 1.0.
-    public const float SleepStartThreshold = 0.30f;
+    public const float SleepStartThreshold = 0.15f;
     // Optional callback for haul completion. Set by SimRuntime so we
     // don't need to plumb the runtime through the controller's surface.
     // Fires when a pawn physically picks up one item entity. Hooked by
