@@ -576,7 +576,7 @@ public partial class WorldRenderer : Node2D
     // head. Cycle = SleepZCycleMs; the three glyphs are 1/3 of a cycle
     // apart so a fresh Z spawns about every half-second. Alpha fades
     // linearly so the older Zs dissolve as they drift.
-    private const int SleepZFontSize = 13;
+    private const int SleepZFontSize = 26;
     private const float SleepZCycleMs = 1500f;
     private static readonly Color SleepZColor = new(0.85f, 0.95f, 1f, 1f);
 

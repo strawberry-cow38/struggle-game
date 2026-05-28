@@ -27,7 +27,7 @@ public partial class BedDesignator : Node2D
 
     private TilePos _hoverTile;
     private bool _hovering;
-    private BedOrientation _orientation = BedOrientation.East;
+    private BedOrientation _orientation = BedOrientation.South;
 
     public override void _Ready()
     {
