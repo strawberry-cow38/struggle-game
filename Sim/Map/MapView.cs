@@ -46,8 +46,12 @@ public sealed class MapView
     public IReadOnlyList<TilePos> DoorTiles { get; }
 
     // Tiles occupied by furniture footprints (currently just beds).
-    // Pathing treats them as walls. Mirrors the tree handling pattern.
+    // Pathing keeps them WALKABLE but heavily weighted so A* routes
+    // around them unless they're the actual destination. Sleepers can
+    // still occupy the head tile and players can shove a colonist
+    // across one if they really need to.
     public IReadOnlyList<TilePos> FurnitureTiles { get; }
+    public const float FurnitureCost = 8.0f;
 
     // Exposed for TileMap.Snapshot to share unchanged chunk byte[]s into
     // the next MapView. Outside callers should go through GetWall/etc.
@@ -152,6 +156,7 @@ public sealed class MapView
     {
         var p = new TilePos(x, y);
         if (_doorCostByTile.TryGetValue(p, out var dc)) return dc;
+        if (_furnitureSet.Contains(p)) return FurnitureCost;
         if ((FlooringType)RawFlooringByte(x, y) == FlooringType.Wood) return 0.80f;
         return 1.00f;
     }
@@ -165,7 +170,7 @@ public sealed class MapView
         var p = new TilePos(x, y);
         if (_treeSet.Contains(p)) return false;
         if (_forbiddenDoorSet.Contains(p)) return false;
-        if (_furnitureSet.Contains(p)) return false;
+        // Furniture (beds) intentionally walkable — see CostAt.
         return true;
     }
 

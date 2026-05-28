@@ -3252,10 +3252,17 @@ public sealed class SimRuntime
                     di++;
                 }
             }
-            // Beds are walkable so sleepers can stand on the head tile.
-            // _bedOccupied is still used by placement rules (no two beds
-            // overlap, no wall on bed, etc.) — it just doesn't block A*.
-            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden, doorTiles, doorCosts, null);
+            // Beds remain walkable (sleepers stand on the head tile) but
+            // are marked as furniture so A* applies a steep cost weight
+            // and routes around them when there's another way through.
+            TilePos[]? furnitureTiles = null;
+            if (_bedOccupied.Count > 0)
+            {
+                furnitureTiles = new TilePos[_bedOccupied.Count];
+                int bi = 0;
+                foreach (var t in _bedOccupied) furnitureTiles[bi++] = t;
+            }
+            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden, doorTiles, doorCosts, furnitureTiles);
         }
         Volatile.Write(ref _mapView, newView);
     }
