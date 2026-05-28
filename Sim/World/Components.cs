@@ -358,15 +358,6 @@ public struct BedAssignee : IComponent
     public int PawnEntityId;
 }
 
-// In-flight bed reservation. Held by a pawn from the moment they
-// pick a bed as a sleep target through the entire Sleeping phase.
-// Prevents kitty-piling on one bed when multiple pawns get tired the
-// same tick. Cleared when the pawn wakes up or abandons the walk.
-public struct BedReservedBy : IComponent
-{
-    public int PawnEntityId;
-}
-
 // Sleep need: 0 = passed out tired, 1 = fully rested. Decays linearly
 // over 16 sim-hours while awake; refills linearly over 8 sim-hours
 // while the Sleeping component is present. Threshold + behavior live

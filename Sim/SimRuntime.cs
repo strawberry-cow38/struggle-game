@@ -126,6 +126,10 @@ public sealed class SimRuntime
     // as blocked.
     private readonly Dictionary<TilePos, Entity> _bedMap = new();
     private readonly HashSet<TilePos> _bedOccupied = new();
+    // In-flight sleep reservation: bed entity id → pawn entity id. Kept
+    // out of ECS so Plan() can reserve from inside a query loop without
+    // triggering Friflo's StructuralChangeException.
+    private readonly Dictionary<int, int> _bedReservations = new();
     // Per-tile seconds remaining on a "roof just completed" flash. Render
     // side reads this via snapshot to fade the corrugated texture briefly
     // after RoofBuild completes; ticks down each Step.
@@ -678,6 +682,7 @@ public sealed class SimRuntime
         // Sleeping component (SleepSystem stops gaining), and clear the
         // bed-side reservation. Walks abort on the next plan tick.
         int bedId = bedEnt.Id;
+        _bedReservations.Remove(bedId);
         var sleepers = new List<Entity>();
         Store.Query<Sleeping>().ForEachEntity((ref Sleeping s, Entity ent) =>
         {
@@ -725,7 +730,7 @@ public sealed class SimRuntime
         {
             var bedEnt = kv.Value;
             if (bedEnt.HasComponent<BedAssignee>()) continue;
-            if (bedEnt.HasComponent<BedReservedBy>()) continue;
+            if (_bedReservations.ContainsKey(bedEnt.Id)) continue;
             var origin = kv.Key;
             int d = Math.Abs(origin.X - here.X) + Math.Abs(origin.Y - here.Y);
             if (d < bestDist) { bestDist = d; bestBed = bedEnt; }
@@ -736,26 +741,17 @@ public sealed class SimRuntime
         return true;
     }
 
-    private static void ReserveBed(Entity bed, int pawnId)
+    private void ReserveBed(Entity bed, int pawnId)
     {
-        if (bed.HasComponent<BedReservedBy>())
-        {
-            ref var r = ref bed.GetComponent<BedReservedBy>();
-            r.PawnEntityId = pawnId;
-        }
-        else
-        {
-            bed.AddComponent(new BedReservedBy { PawnEntityId = pawnId });
-        }
+        _bedReservations[bed.Id] = pawnId;
     }
 
     public void ReleaseBedReservation(int bedEntityId, int pawnEntityId)
     {
         if (bedEntityId == 0) return;
-        if (!Store.TryGetEntityById(bedEntityId, out var bed)) return;
-        if (!bed.HasComponent<BedReservedBy>()) return;
-        if (bed.GetComponent<BedReservedBy>().PawnEntityId != pawnEntityId) return;
-        bed.RemoveComponent<BedReservedBy>();
+        if (!_bedReservations.TryGetValue(bedEntityId, out var owner)) return;
+        if (owner != pawnEntityId) return;
+        _bedReservations.Remove(bedEntityId);
     }
 
     // Expose for DummyController. Returns the head tile a sleeper should
