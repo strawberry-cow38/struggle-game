@@ -1544,7 +1544,9 @@ public sealed class SimRuntime
 
         if (kind == JobKind.WallBuild)
         {
-            // Blueprint entity is single-purpose; throw it away with the job.
+            // Refund whatever wood already sits in the blueprint cost,
+            // then throw the marker away.
+            RefundDeposits(entity, tile);
             entity.DeleteEntity();
         }
         else if (kind == JobKind.ChopTree)
@@ -1573,10 +1575,12 @@ public sealed class SimRuntime
         }
         else if (kind == JobKind.FloorBuild)
         {
+            RefundDeposits(entity, tile);
             entity.DeleteEntity();
         }
         else if (kind == JobKind.DoorBuild)
         {
+            RefundDeposits(entity, tile);
             entity.DeleteEntity();
         }
         else if (kind == JobKind.FloorDeconstruct)
@@ -1597,10 +1601,12 @@ public sealed class SimRuntime
         }
         else if (kind == JobKind.BedBuild)
         {
-            // Bed blueprint cancelled — drop the blueprint entity and free
-            // both footprint tiles (no Bed exists yet, so _bedMap untouched).
+            // Bed blueprint cancelled — refund deposited wood at the head
+            // tile, drop the blueprint entity, free both footprint tiles
+            // (no Bed exists yet, so _bedMap untouched).
             var bp = entity.GetComponent<BedBlueprint>();
             var foot = BedOrientations.Foot(bp.Origin, bp.Orientation);
+            RefundDeposits(entity, bp.Origin);
             _bedOccupied.Remove(bp.Origin);
             _bedOccupied.Remove(foot);
             entity.DeleteEntity();
@@ -2598,6 +2604,30 @@ public sealed class SimRuntime
 
     // Spawn a free wood pile at the given tile. Used by haul tests and
     // future debug tooling — gameplay drops wood via chop/decon.
+    // Drops every deposited unit on a blueprint back onto the world at
+    // `tile` as the matching item entity, then zeroes Deposited so the
+    // caller can safely delete the blueprint without double-refunding.
+    // Reserved is left intact — cancelled in-flight hauls are handled by
+    // their own cancel path which calls ReleaseReservation.
+    private void RefundDeposits(Entity blueprint, TilePos tile)
+    {
+        if (!blueprint.HasComponent<BlueprintCost>()) return;
+        ref var cost = ref blueprint.GetComponent<BlueprintCost>();
+        var entries = cost.Entries;
+        if (entries is null) return;
+        string woodPath = Items.ItemCatalog.Wood.FullPath;
+        for (int i = 0; i < entries.Length; i++)
+        {
+            int dep = entries[i].Deposited;
+            if (dep <= 0) continue;
+            if (entries[i].ItemPath == woodPath)
+            {
+                SpawnWoodPile(tile, dep);
+            }
+            entries[i].Deposited = 0;
+        }
+    }
+
     public Entity SpawnWoodPile(TilePos tile, int count = 1)
     {
         var w = Store.CreateEntity();

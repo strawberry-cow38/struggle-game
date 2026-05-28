@@ -79,6 +79,37 @@ public class BlueprintCostTests
     }
 
     [Fact]
+    public void GodModeOff_CancelFundedBlueprint_RefundsDepositedWoodOnTile()
+    {
+        var sim = new SimRuntime();
+        sim.SetGodModeFreeBuild(false);
+
+        int c = SimConstants.MapSize / 2;
+        var bpTile = new TilePos(c + 2, c);
+        sim.QueueCommand(new PlaceWallBlueprintCommand(bpTile));
+        // Drain the queue so the blueprint entity exists.
+        sim.Step(SimConstants.TickSeconds);
+
+        // Deposit straight into the blueprint to skip the haul timeline.
+        var job = sim.Jobs.GetByTile(bpTile);
+        Assert.NotNull(job);
+        string woodPath = StruggleGame.Sim.Items.ItemCatalog.Wood.FullPath;
+        int leftover = BlueprintCostOps.Deposit(job!.Entity, woodPath, SimRuntime.WallWoodCost);
+        Assert.Equal(0, leftover);
+
+        sim.CancelJobAtTile(bpTile);
+        sim.Step(SimConstants.TickSeconds);
+
+        int onTile = 0;
+        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) =>
+        {
+            if (w.Tile == bpTile) onTile += w.Count;
+        });
+        Assert.Equal(SimRuntime.WallWoodCost, onTile);
+        Assert.Equal(WallType.None, sim.Map.GetWall(bpTile));
+    }
+
+    [Fact]
     public void GodModeOn_BlueprintBuildsWithoutWood()
     {
         var sim = new SimRuntime();
