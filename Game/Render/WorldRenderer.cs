@@ -540,21 +540,26 @@ public partial class WorldRenderer : Node2D
                 {
                     DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
                 }
-                if (labelFont is not null && !string.IsNullOrEmpty(d.Job))
+                string? labelText = d.Sleeping ? "Sleeping" : (string.IsNullOrEmpty(d.Job) ? null : d.Job);
+                if (labelFont is not null && labelText is not null)
                 {
-                    // Cache label width by string — set of distinct Job
-                    // strings is tiny (Idle/Drafted/Haul/WallBuild/etc.)
+                    // Cache label width by string — set of distinct labels
+                    // is tiny (Idle/Drafted/Haul/WallBuild/Sleeping/etc.)
                     // and GetStringSize is a non-trivial Godot text-shape
                     // call. Without the cache it's invoked per visible
                     // pawn per frame.
-                    if (!_jobLabelSizes.TryGetValue(d.Job, out var textSize))
+                    if (!_jobLabelSizes.TryGetValue(labelText, out var textSize))
                     {
-                        textSize = labelFont.GetStringSize(d.Job, HorizontalAlignment.Center, -1f, labelFontSize);
-                        _jobLabelSizes[d.Job] = textSize;
+                        textSize = labelFont.GetStringSize(labelText, HorizontalAlignment.Center, -1f, labelFontSize);
+                        _jobLabelSizes[labelText] = textSize;
                     }
                     var anchor = center + labelOffset - new Vector2(textSize.X * 0.5f, 0f);
-                    DrawString(labelFont, anchor, d.Job, HorizontalAlignment.Left, -1f, labelFontSize,
+                    DrawString(labelFont, anchor, labelText, HorizontalAlignment.Left, -1f, labelFontSize,
                         JobLabelColor);
+                }
+                if (d.Sleeping && labelFont is not null)
+                {
+                    DrawSleepZs(labelFont, center, radius);
                 }
             }
         }
@@ -565,6 +570,29 @@ public partial class WorldRenderer : Node2D
         }
 
         FrameProfiler.Instance.EndFrame();
+    }
+
+    // Three "Z" glyphs streaming up + slightly right from the sleeper's
+    // head. Cycle = SleepZCycleMs; the three glyphs are 1/3 of a cycle
+    // apart so a fresh Z spawns about every half-second. Alpha fades
+    // linearly so the older Zs dissolve as they drift.
+    private const int SleepZFontSize = 13;
+    private const float SleepZCycleMs = 1500f;
+    private static readonly Color SleepZColor = new(0.85f, 0.95f, 1f, 1f);
+
+    private void DrawSleepZs(Font font, Vector2 center, float radius)
+    {
+        float now = Time.GetTicksMsec();
+        var head = new Vector2(center.X, center.Y - radius);
+        for (int i = 0; i < 3; i++)
+        {
+            float phase = ((now + i * (SleepZCycleMs / 3f)) % SleepZCycleMs) / SleepZCycleMs;
+            float drift = PixelsPerTile * 0.55f;
+            var p = head + new Vector2(phase * PixelsPerTile * 0.25f, -phase * drift - 2f);
+            var col = SleepZColor;
+            col.A = 1f - phase;
+            DrawString(font, p, "Z", HorizontalAlignment.Left, -1f, SleepZFontSize, col);
+        }
     }
 
     // Stack label rendered just below a dropped item: white "Name xCount"
