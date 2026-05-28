@@ -713,8 +713,9 @@ public sealed class SimRuntime
                 return true;
             }
             // Stale pointer: bed was destroyed without firing ForgetBed
-            // (shouldn't happen but defensive). Strip the dangling ref.
-            pawn.RemoveComponent<AssignedBed>();
+            // (shouldn't happen — ForgetBed runs on decon). Fall through
+            // to nearest-bed search; the dangling AssignedBed will be
+            // overwritten or cleaned up on next ForgetBed.
         }
 
         // Look for the nearest unowned, unreserved bed.
@@ -730,7 +731,11 @@ public sealed class SimRuntime
         {
             var bedEnt = kv.Value;
             if (bedEnt.HasComponent<BedAssignee>()) continue;
-            if (_bedReservations.ContainsKey(bedEnt.Id)) continue;
+            // Skip beds reserved by *other* pawns. The current pawn may
+            // already own this reservation from a prior tick — that's
+            // fine, re-use it instead of falling through to floor sleep.
+            if (_bedReservations.TryGetValue(bedEnt.Id, out var resOwner)
+                && resOwner != pawn.Id) continue;
             var origin = kv.Key;
             int d = Math.Abs(origin.X - here.X) + Math.Abs(origin.Y - here.Y);
             if (d < bestDist) { bestDist = d; bestBed = bedEnt; }

@@ -179,6 +179,15 @@ public sealed class ToggleDraftCommand : ISimCommand
         }
 
         ent.AddComponent(new Drafted());
+        // Drafting a sleeper wakes them: release the in-flight bed
+        // reservation, drop the Sleeping marker so SleepSystem stops
+        // refilling. The pawn is now under player control.
+        if (ent.HasComponent<Sleeping>())
+        {
+            var s = ent.GetComponent<Sleeping>();
+            if (s.BedEntityId != 0) sim.ReleaseBedReservation(s.BedEntityId, ent.Id);
+            ent.RemoveComponent<Sleeping>();
+        }
         if (ent.HasComponent<BuildTarget>())
         {
             var bt = ent.GetComponent<BuildTarget>();
