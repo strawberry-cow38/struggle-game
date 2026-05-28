@@ -123,6 +123,11 @@ public sealed class SimRuntime
     // as blocked.
     private readonly Dictionary<TilePos, Entity> _bedMap = new();
     private readonly HashSet<TilePos> _bedOccupied = new();
+    // Per-tile seconds remaining on a "roof just completed" flash. Render
+    // side reads this via snapshot to fade the corrugated texture briefly
+    // after RoofBuild completes; ticks down each Step.
+    private const float RoofFlashSec = 0.6f;
+    private readonly Dictionary<TilePos, float> _roofFlashes = new();
     // Cached per-lamp disc bake. Each entry is the lamp's static
     // contribution pattern (relative to its tile) baked against the
     // current wall/door layout. Color and power state are NOT baked —
@@ -285,6 +290,7 @@ public sealed class SimRuntime
         _doorBuilds.Step(Store, dt);
         _doors.Step(Store, dt);
         _hauls.Step(Store, dt);
+        AgeRoofFlashes(dt);
         MergeCoincidentWood();
         _safety.Step(Store, Tick);
         // Coalesced rebuild: one map clone + one room flood-fill per tick
@@ -532,6 +538,25 @@ public sealed class SimRuntime
     public bool SetJobForbidden(TilePos tile, bool forbidden)
         => Jobs.SetForbiddenByTile(tile, forbidden);
 
+    private void AgeRoofFlashes(float dt)
+    {
+        if (_roofFlashes.Count == 0) return;
+        List<TilePos>? dead = null;
+        var keys = new TilePos[_roofFlashes.Count];
+        int i = 0;
+        foreach (var k in _roofFlashes.Keys) keys[i++] = k;
+        foreach (var t in keys)
+        {
+            float v = _roofFlashes[t] - dt;
+            if (v <= 0f) { (dead ??= new()).Add(t); }
+            else _roofFlashes[t] = v;
+        }
+        if (dead is not null) foreach (var t in dead) _roofFlashes.Remove(t);
+    }
+
+    internal IReadOnlyDictionary<TilePos, float> RoofFlashes => _roofFlashes;
+    internal const float RoofFlashDurationSec = RoofFlashSec;
+
     // Cancel a blueprint / job by tile. Drops the backing entity for
     // build-style jobs so it doesn't leak. Mirrors the rect-cancel path
     // but single-tile — sourced from the blueprint info panel button.
@@ -752,6 +777,15 @@ public sealed class SimRuntime
             }
         }
         snap.RoofBlueprintsCount = rj;
+
+        EnsureCap(ref snap.RoofFlashesBuf, _roofFlashes.Count);
+        var flashBuf = snap.RoofFlashesBuf;
+        int fi = 0;
+        foreach (var (t, sec) in _roofFlashes)
+        {
+            flashBuf[fi++] = new RoofFlashState(t, sec / RoofFlashSec);
+        }
+        snap.RoofFlashesCount = fi;
 
         EnsureCap(ref snap.TreesBuf, _trees.Count);
         var treesBuf = snap.TreesBuf;
@@ -1268,7 +1302,7 @@ public sealed class SimRuntime
             if (tiles is null || tiles.Length == 0)
             {
                 int idx = tile.Y * Map.Width + tile.X;
-                if (_roofTiles[idx] == 0) { _roofTiles[idx] = 1; any = true; }
+                if (_roofTiles[idx] == 0) { _roofTiles[idx] = 1; any = true; _roofFlashes[tile] = RoofFlashSec; }
             }
             else
             {
@@ -1276,7 +1310,7 @@ public sealed class SimRuntime
                 {
                     if (!Map.InBounds(t)) continue;
                     int idx = t.Y * Map.Width + t.X;
-                    if (_roofTiles[idx] == 0) { _roofTiles[idx] = 1; any = true; }
+                    if (_roofTiles[idx] == 0) { _roofTiles[idx] = 1; any = true; _roofFlashes[t] = RoofFlashSec; }
                 }
             }
             // Roof toggle is composition-only — sun gating happens at

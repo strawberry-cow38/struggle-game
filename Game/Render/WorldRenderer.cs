@@ -299,12 +299,11 @@ public partial class WorldRenderer : Node2D
                 if (dbp.Forbidden) DrawForbidX(dbp.Tile);
             }
 
-            foreach (var rbp in snap.RoofBlueprints)
+            foreach (var rf in snap.RoofFlashes)
             {
-                if (rbp.Tile.X < viewMinTileX || rbp.Tile.X > viewMaxTileX
-                    || rbp.Tile.Y < viewMinTileY || rbp.Tile.Y > viewMaxTileY) continue;
-                DrawRoofBlueprint(rbp.Tile, rbp.Progress, rbp.Build);
-                if (rbp.Forbidden) DrawForbidX(rbp.Tile);
+                if (rf.Tile.X < viewMinTileX || rf.Tile.X > viewMaxTileX
+                    || rf.Tile.Y < viewMinTileY || rf.Tile.Y > viewMaxTileY) continue;
+                DrawRoofFlash(rf.Tile, rf.Alpha);
             }
 
             foreach (var lbp in snap.LampBlueprints)
@@ -1017,54 +1016,25 @@ public partial class WorldRenderer : Node2D
     private static readonly Color RoofRemoveBorder = new(1.00f, 0.55f, 0.45f, 0.95f);
     private const int RoofMetalRibs = 5;
 
-    private void DrawRoofBlueprint(TilePos tile, float progress, bool build)
+    private void DrawRoofFlash(TilePos tile, float alpha)
     {
+        // Brief corrugated sheet-metal flash on RoofBuild completion. Alpha
+        // ticks down from 1 to 0 over RoofFlashSec; the roof bit is already
+        // set so darkness layers under the flash.
+        if (alpha <= 0f) return;
         var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        if (build)
+        var baseCol = RoofMetalBase; baseCol.A *= alpha;
+        DrawRect(rect, baseCol, filled: true);
+        float ribW = PixelsPerTile / (float)RoofMetalRibs;
+        for (int i = 0; i < RoofMetalRibs; i++)
         {
-            // Corrugated sheet-metal preview: vertical ribs alternating
-            // light/dark over a metallic base, ramping from translucent
-            // to nearly opaque as work completes so the sheet "settles"
-            // into place before the roof bit flips and darkness takes
-            // over post-completion.
-            float fadeAlpha = Mathf.Lerp(0.35f, 0.90f, Mathf.Clamp(progress, 0f, 1f));
-            var baseCol = RoofMetalBase; baseCol.A = fadeAlpha;
-            DrawRect(rect, baseCol, filled: true);
-            float ribW = PixelsPerTile / (float)RoofMetalRibs;
-            for (int i = 0; i < RoofMetalRibs; i++)
-            {
-                float rx = rect.Position.X + i * ribW;
-                float highlightW = ribW * 0.18f;
-                float shadowW = ribW * 0.22f;
-                var hi = RoofMetalRibLight; hi.A = fadeAlpha;
-                var lo = RoofMetalRibDark; lo.A = fadeAlpha;
-                DrawRect(new Rect2(rx, rect.Position.Y, highlightW, PixelsPerTile), hi, filled: true);
-                DrawRect(new Rect2(rx + ribW - shadowW, rect.Position.Y, shadowW, PixelsPerTile), lo, filled: true);
-            }
-            var borderCol = RoofBpBorder; borderCol.A = Mathf.Min(1f, fadeAlpha + 0.05f);
-            DrawRect(rect, borderCol, filled: false, width: 2f);
-        }
-        else
-        {
-            DrawRect(rect, RoofRemoveFill, filled: true);
-            DrawRect(rect, RoofRemoveBorder, filled: false, width: 2f);
-            float inset = PixelsPerTile * 0.22f;
-            var a = new Vector2(rect.Position.X + inset, rect.Position.Y + inset);
-            var b = new Vector2(rect.Position.X + PixelsPerTile - inset, rect.Position.Y + PixelsPerTile - inset);
-            var c = new Vector2(rect.Position.X + PixelsPerTile - inset, rect.Position.Y + inset);
-            var d = new Vector2(rect.Position.X + inset, rect.Position.Y + PixelsPerTile - inset);
-            DrawLine(a, b, RoofRemoveBorder, width: 2f);
-            DrawLine(c, d, RoofRemoveBorder, width: 2f);
-        }
-        if (progress > 0f)
-        {
-            float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
-            var bar = new Rect2(
-                rect.Position.X,
-                rect.Position.Y + (PixelsPerTile - h),
-                PixelsPerTile,
-                h);
-            DrawRect(bar, BlueprintProgress, filled: true);
+            float rx = rect.Position.X + i * ribW;
+            float highlightW = ribW * 0.18f;
+            float shadowW = ribW * 0.22f;
+            var hi = RoofMetalRibLight; hi.A *= alpha;
+            var lo = RoofMetalRibDark; lo.A *= alpha;
+            DrawRect(new Rect2(rx, rect.Position.Y, highlightW, PixelsPerTile), hi, filled: true);
+            DrawRect(new Rect2(rx + ribW - shadowW, rect.Position.Y, shadowW, PixelsPerTile), lo, filled: true);
         }
     }
 

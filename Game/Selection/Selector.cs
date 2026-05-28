@@ -563,7 +563,6 @@ public partial class Selector : Node2D
         foreach (var b in snap.Blueprints)      { if (b.Tile == tile) return true; }
         foreach (var b in snap.FloorBlueprints) { if (b.Tile == tile) return true; }
         foreach (var b in snap.DoorBlueprints)  { if (b.Tile == tile) return true; }
-        foreach (var b in snap.RoofBlueprints)  { if (b.Tile == tile) return true; }
         foreach (var b in snap.LampBlueprints)  { if (b.Tile == tile) return true; }
         foreach (var b in snap.BedBlueprints)
         {

@@ -87,6 +87,10 @@ public sealed class SimSnapshot
     internal int BedBlueprintsCount;
     public SnapshotList<BedBlueprintState> BedBlueprints => new(BedBlueprintsBuf, BedBlueprintsCount);
 
+    internal RoofFlashState[] RoofFlashesBuf = System.Array.Empty<RoofFlashState>();
+    internal int RoofFlashesCount;
+    public SnapshotList<RoofFlashState> RoofFlashes => new(RoofFlashesBuf, RoofFlashesCount);
+
     // Sim-global work-tab mode flag. true = checkmark, false = priority 1..8.
     public bool CheckmarkMode { get; internal set; } = true;
 
@@ -157,6 +161,7 @@ public readonly record struct StockpileState(
     string[] AllowedItemPaths);
 
 public readonly record struct RoofBlueprintState(TilePos Tile, float Progress, bool Build, bool Forbidden);
+public readonly record struct RoofFlashState(TilePos Tile, float Alpha);
 
 public readonly record struct LampState(TilePos Tile, bool PoweredOn, LightColor Color);
 
