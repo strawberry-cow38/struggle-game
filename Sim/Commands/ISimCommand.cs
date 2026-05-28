@@ -774,3 +774,13 @@ public sealed class RemoveDummyCommand : ISimCommand
     public RemoveDummyCommand(int entityId) { EntityId = entityId; }
     public void Apply(SimRuntime sim) => sim.RemoveDummy(EntityId);
 }
+
+// Debug bar toggle: when true, blueprints skip BlueprintCost gating and
+// build for free. When false, build systems wait for materials to be
+// deposited before advancing progress.
+public sealed class SetGodModeFreeBuildCommand : ISimCommand
+{
+    public bool Enabled { get; }
+    public SetGodModeFreeBuildCommand(bool enabled) { Enabled = enabled; }
+    public void Apply(SimRuntime sim) => sim.SetGodModeFreeBuild(Enabled);
+}

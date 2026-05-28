@@ -312,6 +312,25 @@ public sealed class SimRuntime
     // pre-work-tab build until the player customises.
     public bool CheckmarkMode { get; private set; } = true;
 
+    // Debug bar toggle. When true, build systems skip BlueprintCost gating
+    // entirely — useful while the haul-to-blueprint pipeline is still being
+    // wired up. Defaults to true so existing playtests keep building.
+    public bool GodModeFreeBuild { get; private set; } = true;
+
+    public void SetGodModeFreeBuild(bool enabled) => GodModeFreeBuild = enabled;
+
+    // Per-blueprint wood costs. Roof + lamp blueprints get no cost — we
+    // don't yet have raw resources for steel/wire, so they ship free.
+    public const int WallWoodCost = 5;
+    public const int FloorWoodCost = 3;
+    public const int DoorWoodCost = 20;
+    public const int BedWoodCost = 45;
+
+    // Build-system funding check. Free pass when GodModeFreeBuild is on;
+    // otherwise defer to per-blueprint BlueprintCost deposits.
+    public bool IsBlueprintFunded(Entity blueprintEntity)
+        => GodModeFreeBuild || World.BlueprintCostOps.IsFunded(blueprintEntity);
+
     // Apply a work-priority change from the work tab. Cancels any active
     // job of that work type if the new priority is "disabled" (0 in
     // priority mode, false in checkmark mode) so the pawn doesn't keep
@@ -1052,6 +1071,7 @@ public sealed class SimRuntime
 
         var e = Store.CreateEntity();
         e.AddComponent(new BedBlueprint { Origin = origin, Orientation = orientation, ProgressSec = 0f });
+        World.BlueprintCostOps.AttachCost(e, (Items.ItemCatalog.Wood.FullPath, BedWoodCost));
         var id = Jobs.Post(JobKind.BedBuild, origin, e);
         if (id.IsNone)
         {
@@ -1177,6 +1197,7 @@ public sealed class SimRuntime
 
         var e = Store.CreateEntity();
         e.AddComponent(new Blueprint { Tile = tile, ProgressSec = 0f });
+        World.BlueprintCostOps.AttachCost(e, (Items.ItemCatalog.Wood.FullPath, WallWoodCost));
         var id = Jobs.Post(JobKind.WallBuild, tile, e);
         if (id.IsNone)
         {
@@ -1801,6 +1822,7 @@ public sealed class SimRuntime
 
         var e = Store.CreateEntity();
         e.AddComponent(new FloorBlueprint { Tile = tile, ProgressSec = 0f });
+        World.BlueprintCostOps.AttachCost(e, (Items.ItemCatalog.Wood.FullPath, FloorWoodCost));
         var id = Jobs.Post(JobKind.FloorBuild, tile, e);
         if (id.IsNone)
         {
@@ -1847,6 +1869,7 @@ public sealed class SimRuntime
 
             var bp = Store.CreateEntity();
             bp.AddComponent(new DoorBlueprint { Tile = tile, Orientation = orientation, ProgressSec = 0f });
+            World.BlueprintCostOps.AttachCost(bp, (Items.ItemCatalog.Wood.FullPath, DoorWoodCost));
 
             var decon = Store.CreateEntity();
             decon.AddComponent(new Decon { Tile = tile, ProgressSec = 0f });
@@ -1863,6 +1886,7 @@ public sealed class SimRuntime
 
         var e = Store.CreateEntity();
         e.AddComponent(new DoorBlueprint { Tile = tile, Orientation = orientation, ProgressSec = 0f });
+        World.BlueprintCostOps.AttachCost(e, (Items.ItemCatalog.Wood.FullPath, DoorWoodCost));
         var id = Jobs.Post(JobKind.DoorBuild, tile, e);
         if (id.IsNone)
         {

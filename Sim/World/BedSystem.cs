@@ -54,6 +54,7 @@ public sealed class BedSystem
 
             if (job.Kind == JobKind.BedBuild)
             {
+                if (!_sim.IsBlueprintFunded(job.Entity)) return;
                 ref var bp = ref job.Entity.GetComponent<BedBlueprint>();
                 bp.ProgressSec += dt;
                 if (bp.ProgressSec >= BedBuildTimeSec) _completed.Add(job.Id);

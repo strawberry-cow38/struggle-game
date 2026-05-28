@@ -39,6 +39,7 @@ public sealed class FloorSystem
             if (job.State != JobState.Open && job.State != JobState.Claimed) return;
 
             if (!BuildAdjacency.InRangeOrOnTile(pos.X, pos.Y, job.Tile.X, job.Tile.Y)) return;
+            if (!_sim.IsBlueprintFunded(job.Entity)) return;
 
             ref var bp = ref job.Entity.GetComponent<FloorBlueprint>();
             bp.ProgressSec += dt;

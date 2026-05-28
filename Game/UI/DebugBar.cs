@@ -38,6 +38,7 @@ public partial class DebugBar : CanvasLayer
         AddOneShotButton(_hbox, "Reroll Map", () => Host?.Reroll(System.Environment.TickCount));
         AddOneShotButton(_hbox, "-1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(-3600)));
         AddOneShotButton(_hbox, "+1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(3600)));
+        AddGodModeButton(_hbox);
 
         _hbox.Resized += Reposition;
         GetTree().Root.SizeChanged += Reposition;
@@ -90,6 +91,31 @@ public partial class DebugBar : CanvasLayer
         parent.AddChild(btn);
         _buttons[mode] = btn;
     }
+
+    // Toggle for SimRuntime.GodModeFreeBuild. Local _godMode mirrors the
+    // sim flag — we initialise it to true (matches SimRuntime default) and
+    // flip on every press. Label reflects current state.
+    private bool _godMode = true;
+    private void AddGodModeButton(HBoxContainer parent)
+    {
+        var btn = new Button
+        {
+            Text = GodModeLabel(_godMode),
+            ToggleMode = true,
+            ButtonPressed = _godMode,
+            CustomMinimumSize = new Vector2(0, ButtonHeight),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        btn.Pressed += () =>
+        {
+            _godMode = btn.ButtonPressed;
+            btn.Text = GodModeLabel(_godMode);
+            Host?.QueueCommand(new SetGodModeFreeBuildCommand(_godMode));
+        };
+        parent.AddChild(btn);
+    }
+
+    private static string GodModeLabel(bool on) => on ? "God Mode: ON" : "God Mode: OFF";
 
     // Non-toggle button — fires its action once on click and doesn't sit
     // in the _buttons map (no ToolMode to track).

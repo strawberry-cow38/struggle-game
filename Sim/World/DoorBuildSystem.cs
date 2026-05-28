@@ -35,6 +35,7 @@ public sealed class DoorBuildSystem
             if (job.State != JobState.Open && job.State != JobState.Claimed) return;
 
             if (!BuildAdjacency.InRange(pos.X, pos.Y, job.Tile.X, job.Tile.Y)) return;
+            if (!_sim.IsBlueprintFunded(job.Entity)) return;
 
             ref var bp = ref job.Entity.GetComponent<DoorBlueprint>();
             bp.ProgressSec += dt;
