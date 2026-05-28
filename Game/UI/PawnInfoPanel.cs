@@ -28,6 +28,8 @@ public partial class PawnInfoPanel : CanvasLayer
     private Label _stateLabel = null!;
     private Label _bioLabel = null!;
     private Label _capLabel = null!;
+    private Label _sleepLabel = null!;
+    private ProgressBar _sleepBar = null!;
     private VBoxContainer _invList = null!;
     private Label _invEmptyLabel = null!;
 
@@ -78,6 +80,24 @@ public partial class PawnInfoPanel : CanvasLayer
         };
         _bioLabel.AddThemeFontSizeOverride("font_size", 11);
         vbox.AddChild(_bioLabel);
+
+        vbox.AddChild(new HSeparator());
+
+        var needsHeader = new Label { Text = "Needs" };
+        needsHeader.AddThemeFontSizeOverride("font_size", 14);
+        vbox.AddChild(needsHeader);
+
+        _sleepLabel = new Label { Text = "Sleep" };
+        _sleepLabel.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(_sleepLabel);
+        _sleepBar = new ProgressBar
+        {
+            MinValue = 0,
+            MaxValue = 1,
+            Step = 0.0001,
+            CustomMinimumSize = new Vector2(0, 18),
+        };
+        vbox.AddChild(_sleepBar);
 
         vbox.AddChild(new HSeparator());
 
@@ -148,8 +168,12 @@ public partial class PawnInfoPanel : CanvasLayer
         var p = found.Value;
         _nameLabel.Text = $"Colonist #{p.EntityId}";
         string draftTag = p.Drafted ? "  [DRAFTED]" : "";
-        _stateLabel.Text = $"State: {p.Job}{draftTag}";
+        string sleepTag = p.Sleeping ? "  [SLEEPING]" : "";
+        _stateLabel.Text = $"State: {p.Job}{draftTag}{sleepTag}";
         _bioLabel.Text = "Stub bio. Name, traits, mood, skills go here later.";
+
+        _sleepBar.Value = p.SleepLevel;
+        _sleepLabel.Text = $"Sleep: {p.SleepLevel * 100f:0}%" + (p.Sleeping ? "  (asleep)" : "");
 
         _capLabel.Text = $"Carry: {p.CarryWeight:0.#} / {p.MaxCarryWeight:0.#} wt    {p.CarryBulk:0.#} / {p.MaxCarryBulk:0.#} bulk";
 
