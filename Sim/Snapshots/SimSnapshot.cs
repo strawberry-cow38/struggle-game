@@ -130,8 +130,11 @@ public readonly record struct PawnWorkState(int EntityId, string Name, byte[] Pr
 // Funding is Deposited / Needed across all ResourceReq entries (0..1).
 // Roof/lamp are always free → snapshot reports 1f. Renderer dims the
 // fill tint when Funding < 1 so the player can see which blueprints
-// still need wood deliveries.
-public readonly record struct BlueprintState(TilePos Tile, float Progress, bool Forbidden, float Funding);
+// still need wood deliveries. Costs is the per-resource breakdown used
+// by the info panel; empty array when there's no cost ledger.
+public readonly record struct BlueprintState(TilePos Tile, float Progress, bool Forbidden, float Funding, ResourceCostState[] Costs);
+
+public readonly record struct ResourceCostState(string ItemPath, int Needed, int Deposited);
 
 public readonly record struct TreeState(int EntityId, TilePos Tile, float ChopProgress, bool HasJob, float GrowthStage);
 
@@ -171,7 +174,7 @@ public readonly record struct LampState(TilePos Tile, bool PoweredOn, LightColor
 
 public readonly record struct BedState(TilePos Origin, BedOrientation Orientation);
 
-public readonly record struct BedBlueprintState(TilePos Origin, BedOrientation Orientation, float Progress, bool Forbidden, float Funding);
+public readonly record struct BedBlueprintState(TilePos Origin, BedOrientation Orientation, float Progress, bool Forbidden, float Funding, ResourceCostState[] Costs);
 
 public readonly record struct GrowZoneState(
     int Id,

@@ -150,6 +150,26 @@ public static class BlueprintCostOps
         }
     }
 
+    // Full snapshot of (ItemPath, Needed, Deposited) per entry — used by
+    // the renderer/info-panel layer. Empty array when no cost is attached
+    // (god-mode free build, lamp, roof) or entries is null.
+    public static StruggleGame.Sim.Snapshots.ResourceCostState[] SnapshotEntries(Entity e)
+    {
+        if (!e.HasComponent<BlueprintCost>()) return System.Array.Empty<StruggleGame.Sim.Snapshots.ResourceCostState>();
+        ref var cost = ref e.GetComponent<BlueprintCost>();
+        var entries = cost.Entries;
+        if (entries is null || entries.Length == 0) return System.Array.Empty<StruggleGame.Sim.Snapshots.ResourceCostState>();
+        var outArr = new StruggleGame.Sim.Snapshots.ResourceCostState[entries.Length];
+        for (int i = 0; i < entries.Length; i++)
+        {
+            outArr[i] = new StruggleGame.Sim.Snapshots.ResourceCostState(
+                entries[i].ItemPath,
+                entries[i].Needed,
+                entries[i].Deposited);
+        }
+        return outArr;
+    }
+
     // Per-path "still needed" map view — what a haul planner should
     // try to bring next. Returns 0-length array when fully funded.
     public static ResourceReq[] Outstanding(Entity e)

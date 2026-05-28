@@ -1,6 +1,7 @@
 using Godot;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
+using StruggleGame.Sim.Items;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
 
@@ -21,6 +22,8 @@ public partial class BlueprintInfoPanel : CanvasLayer
     private Label _nameLabel = null!;
     private Label _tileLabel = null!;
     private Label _progressLabel = null!;
+    private Label _resourcesHeader = null!;
+    private VBoxContainer _resourcesBox = null!;
     private CheckBox _forbidChk = null!;
     private Button _cancelBtn = null!;
 
@@ -35,7 +38,7 @@ public partial class BlueprintInfoPanel : CanvasLayer
         _root = new Panel
         {
             Name = "Root",
-            CustomMinimumSize = new Vector2(PanelWidth, 200),
+            CustomMinimumSize = new Vector2(PanelWidth, 260),
             MouseFilter = Control.MouseFilterEnum.Stop,
             Visible = false,
         };
@@ -67,6 +70,14 @@ public partial class BlueprintInfoPanel : CanvasLayer
 
         _progressLabel = new Label { Text = "" };
         vbox.AddChild(_progressLabel);
+
+        _resourcesHeader = new Label { Text = "Resources" };
+        _resourcesHeader.AddThemeFontSizeOverride("font_size", 14);
+        vbox.AddChild(_resourcesHeader);
+
+        _resourcesBox = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        _resourcesBox.AddThemeConstantOverride("separation", 2);
+        vbox.AddChild(_resourcesBox);
 
         _forbidChk = new CheckBox { Text = "Forbidden (no one builds)" };
         _forbidChk.Toggled += OnForbidToggled;
@@ -122,14 +133,16 @@ public partial class BlueprintInfoPanel : CanvasLayer
     {
         var liveTiles = new List<TilePos>(tiles.Length);
         var liveKinds = new List<string>(tiles.Length);
+        var liveCosts = new List<ResourceCostState[]>(tiles.Length);
         float progSum = 0f;
         int forbidCount = 0;
         foreach (var t in tiles)
         {
-            if (TryFind(snap, t, out var kind, out var progress, out var forbidden))
+            if (TryFind(snap, t, out var kind, out var progress, out var forbidden, out var costs))
             {
                 liveTiles.Add(t);
                 liveKinds.Add(kind);
+                liveCosts.Add(costs);
                 progSum += progress;
                 if (forbidden) forbidCount++;
             }
@@ -149,6 +162,7 @@ public partial class BlueprintInfoPanel : CanvasLayer
             _nameLabel.Text = liveKinds[0];
             _tileLabel.Text = $"Tile: ({liveTiles[0].X}, {liveTiles[0].Y})";
             _progressLabel.Text = $"Progress: {progSum * 100f:0}%";
+            RenderResourceLines(liveCosts[0]);
         }
         else
         {
@@ -159,6 +173,7 @@ public partial class BlueprintInfoPanel : CanvasLayer
             _nameLabel.Text = uniform ? $"{headKind}s ({liveTiles.Count})" : $"Jobs ({liveTiles.Count})";
             _tileLabel.Text = $"First: ({liveTiles[0].X}, {liveTiles[0].Y})";
             _progressLabel.Text = $"Avg progress: {(progSum / liveTiles.Count) * 100f:0}%  Forbid {forbidCount}/{liveTiles.Count}";
+            RenderResourceLines(SumCosts(liveCosts));
         }
 
         _suppressToggle = true;
@@ -166,33 +181,73 @@ public partial class BlueprintInfoPanel : CanvasLayer
         _suppressToggle = false;
     }
 
-    private static bool TryFind(SimSnapshot snap, TilePos tile, out string kind, out float progress, out bool forbidden)
+    private void RenderResourceLines(ResourceCostState[] costs)
+    {
+        foreach (var child in _resourcesBox.GetChildren()) child.QueueFree();
+        if (costs.Length == 0)
+        {
+            _resourcesHeader.Visible = false;
+            _resourcesBox.Visible = false;
+            return;
+        }
+        _resourcesHeader.Visible = true;
+        _resourcesBox.Visible = true;
+        foreach (var c in costs)
+        {
+            string name = ItemCatalog.ItemsByPath.TryGetValue(c.ItemPath, out var def) ? def.DisplayName : c.ItemPath;
+            int dep = Math.Min(c.Deposited, c.Needed);
+            var row = new Label { Text = $"  {name}: {dep}/{c.Needed}" };
+            if (dep >= c.Needed) row.AddThemeColorOverride("font_color", new Color(0.55f, 0.85f, 0.55f));
+            else row.AddThemeColorOverride("font_color", new Color(0.95f, 0.85f, 0.45f));
+            _resourcesBox.AddChild(row);
+        }
+    }
+
+    private static ResourceCostState[] SumCosts(List<ResourceCostState[]> all)
+    {
+        var totals = new Dictionary<string, (int Need, int Dep)>();
+        foreach (var arr in all)
+        {
+            foreach (var c in arr)
+            {
+                totals.TryGetValue(c.ItemPath, out var cur);
+                totals[c.ItemPath] = (cur.Need + c.Needed, cur.Dep + c.Deposited);
+            }
+        }
+        if (totals.Count == 0) return Array.Empty<ResourceCostState>();
+        var outArr = new ResourceCostState[totals.Count];
+        int i = 0;
+        foreach (var (path, sums) in totals) outArr[i++] = new ResourceCostState(path, sums.Need, sums.Dep);
+        return outArr;
+    }
+
+    private static bool TryFind(SimSnapshot snap, TilePos tile, out string kind, out float progress, out bool forbidden, out ResourceCostState[] costs)
     {
         foreach (var b in snap.Blueprints)
         {
-            if (b.Tile == tile) { kind = "Wall Blueprint"; progress = b.Progress; forbidden = b.Forbidden; return true; }
+            if (b.Tile == tile) { kind = "Wall Blueprint"; progress = b.Progress; forbidden = b.Forbidden; costs = b.Costs; return true; }
         }
         foreach (var b in snap.FloorBlueprints)
         {
-            if (b.Tile == tile) { kind = "Floor Blueprint"; progress = b.Progress; forbidden = b.Forbidden; return true; }
+            if (b.Tile == tile) { kind = "Floor Blueprint"; progress = b.Progress; forbidden = b.Forbidden; costs = b.Costs; return true; }
         }
         foreach (var b in snap.DoorBlueprints)
         {
-            if (b.Tile == tile) { kind = "Door Blueprint"; progress = b.Progress; forbidden = b.Forbidden; return true; }
+            if (b.Tile == tile) { kind = "Door Blueprint"; progress = b.Progress; forbidden = b.Forbidden; costs = b.Costs; return true; }
         }
         foreach (var b in snap.LampBlueprints)
         {
-            if (b.Tile == tile) { kind = "Lamp Blueprint"; progress = b.Progress; forbidden = b.Forbidden; return true; }
+            if (b.Tile == tile) { kind = "Lamp Blueprint"; progress = b.Progress; forbidden = b.Forbidden; costs = b.Costs; return true; }
         }
         foreach (var b in snap.BedBlueprints)
         {
-            if (b.Origin == tile) { kind = "Bed Blueprint"; progress = b.Progress; forbidden = b.Forbidden; return true; }
+            if (b.Origin == tile) { kind = "Bed Blueprint"; progress = b.Progress; forbidden = b.Forbidden; costs = b.Costs; return true; }
         }
         foreach (var d in snap.Decons)
         {
-            if (d.Tile == tile) { kind = "Deconstruct"; progress = d.Progress; forbidden = d.Forbidden; return true; }
+            if (d.Tile == tile) { kind = "Deconstruct"; progress = d.Progress; forbidden = d.Forbidden; costs = Array.Empty<ResourceCostState>(); return true; }
         }
-        kind = ""; progress = 0f; forbidden = false;
+        kind = ""; progress = 0f; forbidden = false; costs = Array.Empty<ResourceCostState>();
         return false;
     }
 
