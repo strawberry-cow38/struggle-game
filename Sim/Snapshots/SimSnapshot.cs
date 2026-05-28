@@ -117,7 +117,10 @@ public readonly record struct DummyState(
     float CarryWeight,
     float CarryBulk,
     float MaxCarryWeight,
-    float MaxCarryBulk);
+    float MaxCarryBulk,
+    float SleepLevel,
+    bool Sleeping,
+    int AssignedBedEntityId);
 
 public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath, int Count, bool Forbidden);
 
@@ -172,7 +175,7 @@ public readonly record struct RoofFlashState(TilePos Tile, float Alpha);
 
 public readonly record struct LampState(TilePos Tile, bool PoweredOn, LightColor Color);
 
-public readonly record struct BedState(TilePos Origin, BedOrientation Orientation);
+public readonly record struct BedState(TilePos Origin, BedOrientation Orientation, int AssignedPawnEntityId);
 
 public readonly record struct BedBlueprintState(TilePos Origin, BedOrientation Orientation, float Progress, bool Forbidden, float Funding, ResourceCostState[] Costs);
 

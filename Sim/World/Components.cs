@@ -349,6 +349,49 @@ public struct Bed : IComponent
     public BedOrientation Orientation;
 }
 
+// Tracks which colonist owns this bed (0 = unassigned). Set by the
+// bed info panel's Assign dropdown, or auto-claimed by an unassigned
+// pawn that sleeps in it. AssignedBed on the pawn is the inverse view
+// kept in sync by SimRuntime.AssignBedToPawn.
+public struct BedAssignee : IComponent
+{
+    public int PawnEntityId;
+}
+
+// In-flight bed reservation. Held by a pawn from the moment they
+// pick a bed as a sleep target through the entire Sleeping phase.
+// Prevents kitty-piling on one bed when multiple pawns get tired the
+// same tick. Cleared when the pawn wakes up or abandons the walk.
+public struct BedReservedBy : IComponent
+{
+    public int PawnEntityId;
+}
+
+// Sleep need: 0 = passed out tired, 1 = fully rested. Decays linearly
+// over 16 sim-hours while awake; refills linearly over 8 sim-hours
+// while the Sleeping component is present. Threshold + behavior live
+// in DummyController + SleepSystem.
+public struct SleepNeed : IComponent
+{
+    public float Level;
+}
+
+// Per-pawn "this bed is mine" pointer. BedEntityId references the bed
+// entity (NOT the blueprint). Cleared when the bed is destroyed or
+// reassigned to someone else.
+public struct AssignedBed : IComponent
+{
+    public int BedEntityId;
+}
+
+// On a pawn currently sleeping. BedEntityId = the bed they're in (or 0
+// for floor sleep). SleepSystem advances SleepNeed; DummyController
+// wakes them when need is full or their schedule slot leaves Sleep.
+public struct Sleeping : IComponent
+{
+    public int BedEntityId;
+}
+
 // Pending bed construction. ProgressSec advances while a builder is
 // adjacent to either tile of the 2-tile footprint. On completion the
 // BedBlueprint component is replaced with Bed at the same orientation.

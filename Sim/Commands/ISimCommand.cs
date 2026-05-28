@@ -790,6 +790,39 @@ public sealed class PostBedDeconCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.TryPostBedDeconstructJob(Origin);
 }
 
+// Bed info panel: set or clear the bed's assigned colonist. PawnEntityId
+// == 0 → unassign. Setting a new pawn auto-evicts whoever currently owns
+// the bed AND any other bed the new pawn was previously assigned to —
+// one bed per colonist per map.
+public sealed class AssignBedToColonistCommand : ISimCommand
+{
+    public TilePos BedOrigin { get; }
+    public int PawnEntityId { get; }
+    public AssignBedToColonistCommand(TilePos bedOrigin, int pawnEntityId)
+    { BedOrigin = bedOrigin; PawnEntityId = pawnEntityId; }
+    public void Apply(SimRuntime sim)
+    {
+        if (!sim.BedMap.TryGetValue(BedOrigin, out var bed)) return;
+        if (PawnEntityId == 0)
+        {
+            if (bed.HasComponent<BedAssignee>())
+            {
+                int oldPawn = bed.GetComponent<BedAssignee>().PawnEntityId;
+                if (sim.Store.TryGetEntityById(oldPawn, out var pawn))
+                {
+                    sim.UnassignPawnBed(pawn);
+                }
+                else
+                {
+                    bed.RemoveComponent<BedAssignee>();
+                }
+            }
+            return;
+        }
+        sim.AssignBedToPawn(bed.Id, PawnEntityId);
+    }
+}
+
 // Debug bar action: delete a wanderer by entity id (point-and-click).
 public sealed class RemoveDummyCommand : ISimCommand
 {

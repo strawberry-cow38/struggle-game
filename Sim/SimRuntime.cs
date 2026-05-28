@@ -107,6 +107,7 @@ public sealed class SimRuntime
     private readonly BlueprintHaulSystem _bpHauls;
     private readonly BlueprintClearanceSystem _bpClearance;
     private readonly SafetySystem _safety;
+    private readonly SleepSystem _sleep;
     // Stockpile tiles currently promised to an in-flight haul job. Posting
     // a new haul avoids these so two carriers can't target the same cell.
     private readonly HashSet<TilePos> _reservedHaulDests = new();
@@ -239,7 +240,7 @@ public sealed class SimRuntime
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
         _spawnRng = new Random(seed + 7);
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
-        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority, CurrentScheduleSlot, IsBlueprintFunded, GetJobBlueprintId, GetBlueprintClaimant);
+        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority, CurrentScheduleSlot, IsBlueprintFunded, GetJobBlueprintId, GetBlueprintClaimant, TryReserveBedAdapter, ReleaseBedReservation);
         _dummies.OnHaulPickup = (carriedEnt, cb) => OnHaulPickedUp(carriedEnt, cb);
         _dummies.OnHaulDeliver = (carrierEntity, dropTile, cb) => DeliverCarrying(carrierEntity, dropTile, cb);
         _builds = new BuildSystem(this, Jobs);
@@ -261,6 +262,7 @@ public sealed class SimRuntime
         _bpHauls = new BlueprintHaulSystem(this, Jobs);
         _bpClearance = new BlueprintClearanceSystem(this, Jobs);
         _safety = new SafetySystem(() => MapView, PathService, Watcher);
+        _sleep = new SleepSystem();
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
@@ -302,6 +304,7 @@ public sealed class SimRuntime
         _bpClearance.Step(Store, dt);
         _bpHauls.Step(Store, dt);
         _hauls.Step(Store, dt);
+        _sleep.Step(Store, dt);
         AgeRoofFlashes(dt);
         MergeCoincidentWood();
         MergeCoincidentItemPiles();
@@ -499,6 +502,15 @@ public sealed class SimRuntime
         ScheduleCategory.Sleep, ScheduleCategory.Sleep,                                      // 22-23
     };
 
+    // Every colonist needs a SleepNeed. Idempotent — sets the initial
+    // level to 1.0 (well-rested) so freshly-spawned pawns aren't already
+    // tired and the test/visual harness doesn't bias toward sleeping.
+    public static void EnsureSleepNeed(Entity ent)
+    {
+        if (ent.HasComponent<SleepNeed>()) return;
+        ent.AddComponent(new SleepNeed { Level = 1f });
+    }
+
     public static void EnsureSchedule(Entity ent)
     {
         if (ent.HasComponent<Schedule>())
@@ -545,6 +557,7 @@ public sealed class SimRuntime
         if (!Store.TryGetEntityById(entityId, out var ent)) return;
         if (!ent.HasComponent<Wanderer>()) return;
         EnsureSchedule(ent);
+        EnsureSleepNeed(ent);
         ref var sched = ref ent.GetComponent<Schedule>();
         if (hourStart < 0 || hourStart >= 24 || hourEnd < 0 || hourEnd >= 24) return;
         int h = hourStart;
@@ -597,6 +610,180 @@ public sealed class SimRuntime
         var job = Jobs.GetByTile(tile);
         if (job is null) return false;
         CancelJob(job.Id);
+        return true;
+    }
+
+    // === Bed assignment ===
+    //
+    // Each colonist may own at most one bed (AssignedBed on the pawn,
+    // BedAssignee on the bed — kept as parallel mirrors). Assigning a
+    // colonist to a new bed clears their old assignment first.
+    // BedReservedBy is a separate in-flight marker used while walking
+    // to or sleeping in a bed; it's NOT a long-term ownership pointer.
+    public void AssignBedToPawn(int bedEntityId, int pawnEntityId)
+    {
+        if (pawnEntityId == 0) return;
+        if (!Store.TryGetEntityById(pawnEntityId, out var pawn)) return;
+        if (!Store.TryGetEntityById(bedEntityId, out var bed)) return;
+        if (!bed.HasComponent<Bed>()) return;
+
+        // Wipe pawn's old assignment first (clears mirror on the old bed
+        // too). Then wipe whatever pawn currently owns this bed.
+        UnassignPawnBed(pawn);
+        if (bed.HasComponent<BedAssignee>())
+        {
+            var old = bed.GetComponent<BedAssignee>();
+            if (old.PawnEntityId != 0
+                && old.PawnEntityId != pawnEntityId
+                && Store.TryGetEntityById(old.PawnEntityId, out var oldPawn))
+            {
+                UnassignPawnBed(oldPawn);
+            }
+        }
+
+        pawn.AddComponent(new AssignedBed { BedEntityId = bedEntityId });
+        bed.AddComponent(new BedAssignee { PawnEntityId = pawnEntityId });
+    }
+
+    public void UnassignPawnBed(Entity pawn)
+    {
+        if (!pawn.HasComponent<AssignedBed>()) return;
+        var ab = pawn.GetComponent<AssignedBed>();
+        if (Store.TryGetEntityById(ab.BedEntityId, out var bedEnt)
+            && bedEnt.HasComponent<BedAssignee>())
+        {
+            bedEnt.RemoveComponent<BedAssignee>();
+        }
+        pawn.RemoveComponent<AssignedBed>();
+    }
+
+    // Called when a bed disappears (decon, future destruction).
+    // Forgets the assignment from whichever pawn owned it AND clears
+    // any in-flight reservation so the reserving pawn falls back to
+    // floor sleep on the next plan tick.
+    private void ForgetBed(Entity bedEnt)
+    {
+        int pawnId = 0;
+        if (bedEnt.HasComponent<BedAssignee>())
+        {
+            pawnId = bedEnt.GetComponent<BedAssignee>().PawnEntityId;
+        }
+        if (pawnId != 0
+            && Store.TryGetEntityById(pawnId, out var pawn)
+            && pawn.HasComponent<AssignedBed>())
+        {
+            pawn.RemoveComponent<AssignedBed>();
+        }
+        // Any sleeper / walker on this bed has to be evicted: strip their
+        // Sleeping component (SleepSystem stops gaining), and clear the
+        // bed-side reservation. Walks abort on the next plan tick.
+        int bedId = bedEnt.Id;
+        var sleepers = new List<Entity>();
+        Store.Query<Sleeping>().ForEachEntity((ref Sleeping s, Entity ent) =>
+        {
+            if (s.BedEntityId == bedId) sleepers.Add(ent);
+        });
+        foreach (var s in sleepers) s.RemoveComponent<Sleeping>();
+    }
+
+    // Atomic "pick a bed for this pawn to sleep in" call. Returns the
+    // bed entity reserved to the pawn, or default if none is available.
+    // Rules:
+    //   1. If pawn has AssignedBed → that one (no need to check
+    //      BedReservedBy; assignment beats reservation).
+    //   2. Else nearest bed with no BedAssignee AND no BedReservedBy.
+    //      "Don't steal" = beds owned by someone else are skipped.
+    // Sets BedReservedBy = pawn on the returned bed.
+    public bool TryReserveBedForSleep(Entity pawn, out Entity bed)
+    {
+        bed = default;
+        if (pawn.HasComponent<AssignedBed>())
+        {
+            var ab = pawn.GetComponent<AssignedBed>();
+            if (Store.TryGetEntityById(ab.BedEntityId, out var ownBed)
+                && ownBed.HasComponent<Bed>())
+            {
+                ReserveBed(ownBed, pawn.Id);
+                bed = ownBed;
+                return true;
+            }
+            // Stale pointer: bed was destroyed without firing ForgetBed
+            // (shouldn't happen but defensive). Strip the dangling ref.
+            pawn.RemoveComponent<AssignedBed>();
+        }
+
+        // Look for the nearest unowned, unreserved bed.
+        TilePos here = default;
+        if (pawn.HasComponent<WorldPos>())
+        {
+            var wp = pawn.GetComponent<WorldPos>();
+            here = new TilePos((int)wp.X, (int)wp.Y);
+        }
+        Entity bestBed = default;
+        int bestDist = int.MaxValue;
+        foreach (var kv in _bedMap)
+        {
+            var bedEnt = kv.Value;
+            if (bedEnt.HasComponent<BedAssignee>()) continue;
+            if (bedEnt.HasComponent<BedReservedBy>()) continue;
+            var origin = kv.Key;
+            int d = Math.Abs(origin.X - here.X) + Math.Abs(origin.Y - here.Y);
+            if (d < bestDist) { bestDist = d; bestBed = bedEnt; }
+        }
+        if (bestDist == int.MaxValue) return false;
+        ReserveBed(bestBed, pawn.Id);
+        bed = bestBed;
+        return true;
+    }
+
+    private static void ReserveBed(Entity bed, int pawnId)
+    {
+        if (bed.HasComponent<BedReservedBy>())
+        {
+            ref var r = ref bed.GetComponent<BedReservedBy>();
+            r.PawnEntityId = pawnId;
+        }
+        else
+        {
+            bed.AddComponent(new BedReservedBy { PawnEntityId = pawnId });
+        }
+    }
+
+    public void ReleaseBedReservation(int bedEntityId, int pawnEntityId)
+    {
+        if (bedEntityId == 0) return;
+        if (!Store.TryGetEntityById(bedEntityId, out var bed)) return;
+        if (!bed.HasComponent<BedReservedBy>()) return;
+        if (bed.GetComponent<BedReservedBy>().PawnEntityId != pawnEntityId) return;
+        bed.RemoveComponent<BedReservedBy>();
+    }
+
+    // Expose for DummyController. Returns the head tile a sleeper should
+    // path to (= bed origin). Foot tile is also occupied by the bed but
+    // pathing into the bed is allowed because the sleeper IS the body.
+    // For simplicity walk to origin.
+    // Adapter so DummyController.TryReserveBedDelegate can wrap
+    // TryReserveBedForSleep + return both footprint tiles.
+    private bool TryReserveBedAdapter(Entity pawn, out int bedEntityId, out TilePos bedOrigin, out TilePos bedFoot)
+    {
+        bedEntityId = 0;
+        bedOrigin = default;
+        bedFoot = default;
+        if (!TryReserveBedForSleep(pawn, out var bed)) return false;
+        if (!bed.HasComponent<Bed>()) return false;
+        var b = bed.GetComponent<Bed>();
+        bedEntityId = bed.Id;
+        bedOrigin = b.Origin;
+        bedFoot = BedOrientations.Foot(b.Origin, b.Orientation);
+        return true;
+    }
+
+    public bool TryGetBedOriginTile(int bedEntityId, out TilePos origin)
+    {
+        origin = default;
+        if (!Store.TryGetEntityById(bedEntityId, out var bed)) return false;
+        if (!bed.HasComponent<Bed>()) return false;
+        origin = bed.GetComponent<Bed>().Origin;
         return true;
     }
 
@@ -800,10 +987,14 @@ public sealed class SimRuntime
                     }
                 }
             }
+            float sleepLevel = ent.HasComponent<SleepNeed>() ? ent.GetComponent<SleepNeed>().Level : 1f;
+            bool isSleeping = ent.HasComponent<Sleeping>();
+            int assignedBedId = ent.HasComponent<AssignedBed>() ? ent.GetComponent<AssignedBed>().BedEntityId : 0;
             dummiesBuf[i++] = new DummyState(
                 ent.Id, p.X, p.Y, label, drafted, carrying,
                 inventory, carryW, carryB,
-                SimConstants.MaxCarryWeight, SimConstants.MaxCarryBulk);
+                SimConstants.MaxCarryWeight, SimConstants.MaxCarryBulk,
+                sleepLevel, isSleeping, assignedBedId);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {
@@ -841,6 +1032,7 @@ public sealed class SimRuntime
         {
             EnsureWorkPriorities(ent);
             EnsureSchedule(ent);
+            EnsureSleepNeed(ent);
             var wp = ent.GetComponent<WorkPriorities>();
             var sched = ent.GetComponent<Schedule>();
             var pr = new byte[WorkTypes.Count];
@@ -1072,7 +1264,8 @@ public sealed class SimRuntime
         foreach (var (origin, bEnt) in _bedMap)
         {
             var bc = bEnt.GetComponent<Bed>();
-            bedBuf[bi2++] = new BedState(origin, bc.Orientation);
+            int assignedPawnId = bEnt.HasComponent<BedAssignee>() ? bEnt.GetComponent<BedAssignee>().PawnEntityId : 0;
+            bedBuf[bi2++] = new BedState(origin, bc.Orientation, assignedPawnId);
         }
         snap.BedsCount = bi2;
 
@@ -1525,6 +1718,7 @@ public sealed class SimRuntime
             {
                 var bed = bedEnt.GetComponent<Bed>();
                 var foot = BedOrientations.Foot(bed.Origin, bed.Orientation);
+                ForgetBed(bedEnt);
                 _bedMap.Remove(tile);
                 _bedOccupied.Remove(tile);
                 _bedOccupied.Remove(foot);
@@ -4005,6 +4199,7 @@ public sealed class SimRuntime
             e.AddComponent(new Wanderer());
             EnsureWorkPriorities(e);
             EnsureSchedule(e);
+            EnsureSleepNeed(e);
             return true;
         }
         return false;
@@ -4050,7 +4245,8 @@ public sealed class SimRuntime
                     e.AddComponent(new PathFollower());
                     e.AddComponent(new Wanderer());
                     EnsureWorkPriorities(e);
-            EnsureSchedule(e);
+                    EnsureSchedule(e);
+                    EnsureSleepNeed(e);
                     return;
                 }
             }

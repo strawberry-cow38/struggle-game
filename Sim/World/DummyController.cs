@@ -60,6 +60,16 @@ public sealed class DummyController
     // (or 0 = unpinned). Pinned blueprints: the pinned pawn boosts to a
     // priority bucket above 1, everyone else skips the job entirely.
     private readonly Func<int, int> _getBlueprintClaimant;
+    // (Entity pawn, out int bedEntityId, out TilePos bedOrigin, out TilePos bedFoot)
+    // → true if a bed was reserved. Picks assigned bed if present, else
+    // nearest unowned + unreserved bed. Sets BedReservedBy on the bed.
+    public delegate bool TryReserveBedDelegate(Entity pawn, out int bedEntityId, out Map.TilePos bedOrigin, out Map.TilePos bedFoot);
+    private readonly TryReserveBedDelegate _tryReserveBed;
+    private readonly Action<int, int> _releaseBedReservation;
+
+    // Sleep need triggers. Below SleepStartThreshold the pawn walks to a
+    // bed (or floor-sleeps); they keep sleeping until Level >= 1.0.
+    public const float SleepStartThreshold = 0.30f;
     // Optional callback for haul completion. Set by SimRuntime so we
     // don't need to plumb the runtime through the controller's surface.
     // Fires when a pawn physically picks up one item entity. Hooked by
@@ -93,7 +103,9 @@ public sealed class DummyController
         Func<Entity, ScheduleCategory> getScheduleSlot,
         Func<Entity, bool> isBlueprintFunded,
         Func<Jobs.Job, int> getJobBlueprintId,
-        Func<int, int> getBlueprintClaimant)
+        Func<int, int> getBlueprintClaimant,
+        TryReserveBedDelegate tryReserveBed,
+        Action<int, int> releaseBedReservation)
     {
         _paths = paths;
         _jobs = jobs;
@@ -106,6 +118,8 @@ public sealed class DummyController
         _isBlueprintFunded = isBlueprintFunded;
         _getJobBlueprintId = getJobBlueprintId;
         _getBlueprintClaimant = getBlueprintClaimant;
+        _tryReserveBed = tryReserveBed;
+        _releaseBedReservation = releaseBedReservation;
     }
 
     public void Step(EntityStore store, float dt)
@@ -218,7 +232,77 @@ public sealed class DummyController
             return; // standing watch
         }
 
-        // 2. Existing build target.
+        // 2. Sleep behavior. Pawn already Sleeping keeps sleeping until
+        //    the SleepNeed hits 1.0; otherwise tired pawns (Level < 0.30)
+        //    with no active build/haul walk to a bed (or floor-sleep on
+        //    the spot if no bed is free).
+        if (entity.HasComponent<Sleeping>())
+        {
+            float lvl = entity.HasComponent<SleepNeed>()
+                ? entity.GetComponent<SleepNeed>().Level
+                : 1f;
+            if (lvl >= 1f)
+            {
+                var s = entity.GetComponent<Sleeping>();
+                if (s.BedEntityId != 0) _releaseBedReservation(s.BedEntityId, entity.Id);
+                cb.RemoveComponent<Sleeping>(entity.Id);
+            }
+            return;
+        }
+
+        if (!entity.HasComponent<BuildTarget>()
+            && !entity.HasComponent<Carrying>()
+            && entity.HasComponent<SleepNeed>()
+            && entity.GetComponent<SleepNeed>().Level < SleepStartThreshold)
+        {
+            // Pick / re-pick a bed each plan tick until arrival. The
+            // runtime's TryReserveBed checks BedReservedBy atomically so
+            // two tired pawns the same tick can't grab one bed.
+            if (_tryReserveBed(entity, out int bedId, out var bedOrigin, out var bedFoot))
+            {
+                // Arrived next to the bed → start sleeping.
+                if (BuildAdjacency.InRange(pos.X, pos.Y, bedOrigin.X, bedOrigin.Y)
+                    || BuildAdjacency.InRange(pos.X, pos.Y, bedFoot.X, bedFoot.Y))
+                {
+                    path.Waypoints = null;
+                    path.Index = 0;
+                    cb.AddComponent(entity.Id, new Sleeping { BedEntityId = bedId });
+                    return;
+                }
+                // Walk toward the bed. Path target is whichever footprint
+                // tile has a reachable neighbor.
+                if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
+                {
+                    if (TryPickNeighbor(view, here, bedOrigin, out var nbr)
+                        || TryPickNeighbor(view, here, bedFoot, out nbr))
+                    {
+                        if (nbr == here)
+                        {
+                            cb.AddComponent(entity.Id, new Sleeping { BedEntityId = bedId });
+                        }
+                        else
+                        {
+                            path.PendingPathId = _paths.Request(here, nbr);
+                        }
+                    }
+                    else
+                    {
+                        // Bed unreachable — drop the reservation and
+                        // floor-sleep on the spot rather than spin.
+                        _releaseBedReservation(bedId, entity.Id);
+                        cb.AddComponent(entity.Id, new Sleeping { BedEntityId = 0 });
+                    }
+                }
+                return;
+            }
+            // No bed found → floor-sleep at current tile.
+            path.Waypoints = null;
+            path.Index = 0;
+            cb.AddComponent(entity.Id, new Sleeping { BedEntityId = 0 });
+            return;
+        }
+
+        // 3. Existing build target.
         if (entity.HasComponent<BuildTarget>())
         {
             var bt = entity.GetComponent<BuildTarget>();
@@ -346,7 +430,7 @@ public sealed class DummyController
             }
         }
 
-        // 3. Claim a new job — gated by the pawn's current schedule slot.
+        // 4. Claim a new job — gated by the pawn's current schedule slot.
         // Sleep / Recreation pawns leave open jobs alone and fall through
         // to wander (placeholder for future tired/rec behavior). Work +
         // Any slots claim normally. Mid-job pawns reach this branch only
@@ -359,7 +443,7 @@ public sealed class DummyController
             return;
         }
 
-        // 4. Wander.
+        // 5. Wander.
         if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
         {
             // Rest timer only ticks while parked (no waypoints). On
