@@ -201,6 +201,63 @@ public sealed class DummyController
             }
         }
 
+        // Player equip order. Beats the job auction: the chosen colonist
+        // walks to the dropped pile, pulls one unit into an equipped slot,
+        // and clears the order. Bails if the pile vanished or is walled off.
+        if (entity.HasComponent<EquipOrder>())
+        {
+            var eo = entity.GetComponent<EquipOrder>();
+            bool stillThere = store.TryGetEntityById(eo.ItemEntityId, out var itemEnt)
+                && itemEnt.HasComponent<ItemPile>()
+                && itemEnt.GetComponent<ItemPile>().Tile == eo.ItemTile
+                && itemEnt.GetComponent<ItemPile>().Count > 0;
+            if (!stillThere)
+            {
+                cb.RemoveComponent<EquipOrder>(entity.Id);
+                path.Waypoints = null;
+                path.Index = 0;
+                return;
+            }
+            if (here == eo.ItemTile)
+            {
+                path.Waypoints = null;
+                path.Index = 0;
+                int got = CookConsumePile?.Invoke(eo.ItemTile, eo.ItemPath, 1) ?? 0;
+                if (got > 0)
+                {
+                    var equipSlot = new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = eo.ItemPath, Count = got };
+                    if (entity.HasComponent<Inventory>())
+                    {
+                        ref var inv = ref entity.GetComponent<Inventory>();
+                        inv.Equipped ??= new List<EquippedItemSlot>();
+                        inv.Equipped.Add(equipSlot);
+                    }
+                    else
+                    {
+                        cb.AddComponent(entity.Id, new Inventory
+                        {
+                            Equipped = new List<EquippedItemSlot> { equipSlot },
+                            Items = new List<InventoryStack>(),
+                        });
+                    }
+                }
+                cb.RemoveComponent<EquipOrder>(entity.Id);
+                return;
+            }
+            if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
+            {
+                if (view.Walkable(eo.ItemTile))
+                {
+                    path.PendingPathId = _paths.Request(here, eo.ItemTile);
+                }
+                else
+                {
+                    cb.RemoveComponent<EquipOrder>(entity.Id);
+                }
+            }
+            return;
+        }
+
         // Drafted colonists ignore jobs/wander. Walk the active player
         // order if there is one; otherwise dequeue the next move order;
         // otherwise hold position and watch.
@@ -1027,7 +1084,7 @@ public sealed class DummyController
                 // keep the topoff sweep.
                 if (hp.BlueprintEntityId == 0)
                 {
-                    ScanTopoffs(store, cb, slots, pending, here, hp.DestTile);
+                    ScanTopoffs(store, cb, entity, slots, pending, here, hp.DestTile);
                 }
                 cb.AddComponent(entity.Id, new Carrying
                 {
@@ -1137,9 +1194,26 @@ public sealed class DummyController
     // capacity. Each reserved entity gets HaulReserved (JobId.None — it's
     // a piggyback pickup, not a posted job) + a HaulPayload pointing at
     // the primary's DestTile, plus its id appended to pendingIds.
+    // Sum the weight/bulk of a pawn's persistent inventory (equipped +
+    // general held). Shares the carry budget with haul cargo, so the
+    // topoff scan must subtract it before deciding what else fits.
+    private static void InventoryLoad(Entity carrier, out float w, out float b)
+    {
+        w = 0f; b = 0f;
+        if (!carrier.HasComponent<Inventory>()) return;
+        var inv = carrier.GetComponent<Inventory>();
+        if (inv.Equipped is not null)
+            foreach (var e in inv.Equipped)
+                if (ItemCatalog.ItemsByPath.TryGetValue(e.ItemPath, out var d)) { w += d.Weight * e.Count; b += d.Bulk * e.Count; }
+        if (inv.Items is not null)
+            foreach (var it in inv.Items)
+                if (ItemCatalog.ItemsByPath.TryGetValue(it.ItemPath, out var d)) { w += d.Weight * it.Count; b += d.Bulk * it.Count; }
+    }
+
     private void ScanTopoffs(
         EntityStore store,
         CommandBuffer cb,
+        Entity carrier,
         List<CarriedSlot> slots,
         List<int> pendingIds,
         TilePos primarySource,
@@ -1152,6 +1226,10 @@ public sealed class DummyController
             wUsed += d.Weight * s.Count;
             bUsed += d.Bulk * s.Count;
         }
+        // Equipped + general inventory eat into the same budget.
+        InventoryLoad(carrier, out float invW, out float invB);
+        wUsed += invW;
+        bUsed += invB;
         float wRem = SimConstants.MaxCarryWeight - wUsed;
         float bRem = SimConstants.MaxCarryBulk - bUsed;
         if (wRem <= 0f || bRem <= 0f) return;

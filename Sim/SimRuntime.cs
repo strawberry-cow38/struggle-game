@@ -1077,6 +1077,43 @@ public sealed class SimRuntime
                     }
                 }
             }
+            // Persistent inventory (equipped + general held) rides the same
+            // carry budget as haul cargo, so its weight/bulk adds into the
+            // same carryW/carryB totals shown by the pawn panel.
+            EquippedSlotState[] equipped = Array.Empty<EquippedSlotState>();
+            HeldStackState[] held = Array.Empty<HeldStackState>();
+            if (ent.HasComponent<Inventory>())
+            {
+                var inv = ent.GetComponent<Inventory>();
+                if (inv.Equipped is { Count: > 0 })
+                {
+                    equipped = new EquippedSlotState[inv.Equipped.Count];
+                    for (int ei = 0; ei < inv.Equipped.Count; ei++)
+                    {
+                        var es = inv.Equipped[ei];
+                        equipped[ei] = new EquippedSlotState(ei, es.ItemPath, es.Count, es.Slot);
+                        if (ItemCatalog.ItemsByPath.TryGetValue(es.ItemPath, out var def))
+                        {
+                            carryW += def.Weight * es.Count;
+                            carryB += def.Bulk * es.Count;
+                        }
+                    }
+                }
+                if (inv.Items is { Count: > 0 })
+                {
+                    held = new HeldStackState[inv.Items.Count];
+                    for (int hi = 0; hi < inv.Items.Count; hi++)
+                    {
+                        var hs = inv.Items[hi];
+                        held[hi] = new HeldStackState(hi, hs.ItemPath, hs.Count);
+                        if (ItemCatalog.ItemsByPath.TryGetValue(hs.ItemPath, out var def))
+                        {
+                            carryW += def.Weight * hs.Count;
+                            carryB += def.Bulk * hs.Count;
+                        }
+                    }
+                }
+            }
             float sleepLevel = ent.HasComponent<SleepNeed>() ? ent.GetComponent<SleepNeed>().Level : 1f;
             bool isSleeping = ent.HasComponent<Sleeping>();
             int assignedBedId = ent.HasComponent<AssignedBed>() ? ent.GetComponent<AssignedBed>().BedEntityId : 0;
@@ -1087,7 +1124,7 @@ public sealed class SimRuntime
                 inventory, carryW, carryB,
                 SimConstants.MaxCarryWeight, SimConstants.MaxCarryBulk,
                 sleepLevel, isSleeping, assignedBedId,
-                recLevel, atRecKind);
+                recLevel, atRecKind, equipped, held);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {
@@ -3427,6 +3464,80 @@ public sealed class SimRuntime
         if (slot.Forbidden == forbidden) return;
         slot.Forbidden = forbidden;
         c.Slots[idx] = slot;
+    }
+
+    // ─── Equipment / persistent inventory ────────────────────────────────
+
+    // Order a specific colonist to walk to a dropped equippable pile and
+    // equip one unit of it. Validates the target is a real, equippable
+    // ItemPile; the actual pickup + slot insertion happens in
+    // DummyController when the pawn arrives.
+    public void SetEquipOrder(int pawnId, int itemEntityId)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var pawn)) return;
+        if (!pawn.HasComponent<Wanderer>()) return;
+        if (!Store.TryGetEntityById(itemEntityId, out var item)) return;
+        if (!item.HasComponent<ItemPile>()) return;
+        var pile = item.GetComponent<ItemPile>();
+        if (pile.Count <= 0) return;
+        if (!ItemCatalog.ItemsByPath.TryGetValue(pile.ItemPath, out var def) || !def.Equippable) return;
+        pawn.AddComponent(new EquipOrder
+        {
+            ItemTile = pile.Tile,
+            ItemPath = pile.ItemPath,
+            ItemEntityId = itemEntityId,
+        });
+    }
+
+    // Move an equipped item into the pawn's general inventory. Both share
+    // the carry budget, so this is a pure reclassification — no weight
+    // changes, the item just stops being "worn".
+    public void ForceUnequip(int pawnId, int equipIndex)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var pawn)) return;
+        if (!pawn.HasComponent<Inventory>()) return;
+        ref var inv = ref pawn.GetComponent<Inventory>();
+        if (inv.Equipped is null || equipIndex < 0 || equipIndex >= inv.Equipped.Count) return;
+        var slot = inv.Equipped[equipIndex];
+        inv.Equipped.RemoveAt(equipIndex);
+        inv.Items ??= new List<InventoryStack>();
+        int existing = inv.Items.FindIndex(s => s.ItemPath == slot.ItemPath);
+        if (existing >= 0)
+        {
+            var s = inv.Items[existing];
+            s.Count += slot.Count;
+            inv.Items[existing] = s;
+        }
+        else
+        {
+            inv.Items.Add(new InventoryStack { ItemPath = slot.ItemPath, Count = slot.Count });
+        }
+    }
+
+    // Drop an equipped item on the ground at the pawn's feet.
+    public void DropEquipped(int pawnId, int equipIndex)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var pawn)) return;
+        if (!pawn.HasComponent<Inventory>() || !pawn.HasComponent<WorldPos>()) return;
+        ref var inv = ref pawn.GetComponent<Inventory>();
+        if (inv.Equipped is null || equipIndex < 0 || equipIndex >= inv.Equipped.Count) return;
+        var slot = inv.Equipped[equipIndex];
+        inv.Equipped.RemoveAt(equipIndex);
+        var wp = pawn.GetComponent<WorldPos>();
+        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), slot.ItemPath, slot.Count);
+    }
+
+    // Drop a general-inventory stack on the ground at the pawn's feet.
+    public void DropHeldItem(int pawnId, int heldIndex)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var pawn)) return;
+        if (!pawn.HasComponent<Inventory>() || !pawn.HasComponent<WorldPos>()) return;
+        ref var inv = ref pawn.GetComponent<Inventory>();
+        if (inv.Items is null || heldIndex < 0 || heldIndex >= inv.Items.Count) return;
+        var stack = inv.Items[heldIndex];
+        inv.Items.RemoveAt(heldIndex);
+        var wp = pawn.GetComponent<WorldPos>();
+        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), stack.ItemPath, stack.Count);
     }
 
     // Called by DummyController when it actually picks up an item from

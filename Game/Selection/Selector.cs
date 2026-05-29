@@ -3,6 +3,7 @@ using StruggleGame.Game.Designation;
 using StruggleGame.Game.Tools;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
+using StruggleGame.Sim.Items;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
 
@@ -42,6 +43,9 @@ public partial class Selector : Node2D
     private PopupMenu? _bpMenu;
     private TilePos _bpMenuTile;
     private int _bpMenuPawnId;
+    // Set when the context menu carries an "Equip" entry (id 1); names the
+    // dropped pile entity the selected colonist would go fetch.
+    private int _equipItemEntityId;
 
     public override void _Ready()
     {
@@ -57,6 +61,10 @@ public partial class Selector : Node2D
         if (id == 0)
         {
             Host.QueueCommand(new PrioritizeBlueprintForPawnCommand(_bpMenuTile, _bpMenuPawnId));
+        }
+        else if (id == 1)
+        {
+            Host.QueueCommand(new EquipItemCommand(_bpMenuPawnId, _equipItemEntityId));
         }
     }
 
@@ -219,18 +227,46 @@ public partial class Selector : Node2D
         var clickTile = new TilePos(
             Mathf.FloorToInt(world.X / PixelsPerTile),
             Mathf.FloorToInt(world.Y / PixelsPerTile));
-        if (!TryPickBlueprint(snap, clickTile, out var bpTile)) return false;
 
-        _bpMenuTile = bpTile;
         _bpMenuPawnId = pawnId;
         _bpMenu.Clear();
-        _bpMenu.AddItem($"Prioritize for {pawnName}", 0);
-        var vp = GetViewport().GetVisibleRect();
+        // Prioritize-blueprint entry (id 0) when a blueprint is under the cursor.
+        if (TryPickBlueprint(snap, clickTile, out var bpTile))
+        {
+            _bpMenuTile = bpTile;
+            _bpMenu.AddItem($"Prioritize for {pawnName}", 0);
+        }
+        // Equip entry (id 1) when an equippable dropped pile is under the cursor.
+        if (TryPickEquippablePile(snap, clickTile, out int itemId, out string itemName))
+        {
+            _equipItemEntityId = itemId;
+            _bpMenu.AddItem($"Equip {itemName}", 1);
+        }
+        if (_bpMenu.ItemCount == 0) return false;
+
         var canvasXform = GetCanvasTransform();
         var screenPos = canvasXform * world;
         _bpMenu.Position = new Vector2I((int)screenPos.X, (int)screenPos.Y);
         _bpMenu.Popup();
         return true;
+    }
+
+    // Find an equippable ItemPile on the clicked tile. Returns its entity
+    // id + display name so the context menu can offer an "Equip" entry.
+    private static bool TryPickEquippablePile(SimSnapshot snap, TilePos tile, out int entityId, out string name)
+    {
+        entityId = 0;
+        name = "";
+        foreach (var pile in snap.ItemPiles)
+        {
+            if (pile.Tile != tile) continue;
+            if (!ItemCatalog.ItemsByPath.TryGetValue(pile.ItemPath, out var def)) continue;
+            if (!def.Equippable) continue;
+            entityId = pile.EntityId;
+            name = def.DisplayName;
+            return true;
+        }
+        return false;
     }
 
     private int[] CollectDraftedSelected()

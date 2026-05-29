@@ -35,6 +35,8 @@ public partial class PawnInfoPanel : CanvasLayer
     private ProgressBar _recBar = null!;
     private VBoxContainer _invList = null!;
     private Label _invEmptyLabel = null!;
+    private VBoxContainer _equipList = null!;
+    private Label _equipEmptyLabel = null!;
 
     private int _shownPawnId = -1;
     private long _lastSnapshotTick = -1;
@@ -113,6 +115,20 @@ public partial class PawnInfoPanel : CanvasLayer
             CustomMinimumSize = new Vector2(0, 18),
         };
         vbox.AddChild(_recBar);
+
+        vbox.AddChild(new HSeparator());
+
+        var equipHeader = new Label { Text = "Equipped" };
+        equipHeader.AddThemeFontSizeOverride("font_size", 14);
+        vbox.AddChild(equipHeader);
+
+        _equipList = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        _equipList.AddThemeConstantOverride("separation", 4);
+        vbox.AddChild(_equipList);
+
+        _equipEmptyLabel = new Label { Text = "(nothing equipped)" };
+        _equipEmptyLabel.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(_equipEmptyLabel);
 
         vbox.AddChild(new HSeparator());
 
@@ -196,18 +212,108 @@ public partial class PawnInfoPanel : CanvasLayer
 
         _capLabel.Text = $"Carry: {p.CarryWeight:0.#} / {p.MaxCarryWeight:0.#} wt    {p.CarryBulk:0.#} / {p.MaxCarryBulk:0.#} bulk";
 
-        foreach (var child in _invList.GetChildren()) child.QueueFree();
-        if (p.Inventory.Length == 0)
+        // Equipped section.
+        foreach (var child in _equipList.GetChildren()) child.QueueFree();
+        _equipEmptyLabel.Visible = p.Equipped.Length == 0;
+        foreach (var eq in p.Equipped)
         {
-            _invEmptyLabel.Visible = true;
-            return;
+            BuildEquippedRow(p.EntityId, eq);
         }
-        _invEmptyLabel.Visible = false;
 
+        // Inventory section: general held stacks + in-transit haul cargo.
+        foreach (var child in _invList.GetChildren()) child.QueueFree();
+        _invEmptyLabel.Visible = p.Held.Length == 0 && p.Inventory.Length == 0;
+        foreach (var stack in p.Held)
+        {
+            BuildHeldRow(p.EntityId, stack);
+        }
         foreach (var slot in p.Inventory)
         {
             BuildSlotRow(p.EntityId, slot);
         }
+    }
+
+    private void BuildEquippedRow(int pawnId, EquippedSlotState eq)
+    {
+        string itemName = ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var def)
+            ? def.DisplayName : eq.ItemPath;
+        float w = def?.Weight ?? 0f;
+        float b = def?.Bulk ?? 0f;
+
+        var row = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        row.AddThemeConstantOverride("separation", 2);
+
+        var line = new Label
+        {
+            Text = $"[{eq.Slot}] {itemName} x{eq.Count}    {w * eq.Count:0.#} wt  {b * eq.Count:0.#} bulk",
+        };
+        line.AddThemeColorOverride("font_color", new Color(0.7f, 0.9f, 1.0f));
+        row.AddChild(line);
+
+        var btns = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        btns.AddThemeConstantOverride("separation", 4);
+
+        int index = eq.Index;
+        var unequipBtn = new Button
+        {
+            Text = "Unequip",
+            CustomMinimumSize = new Vector2(0, 24),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        unequipBtn.Pressed += () =>
+        {
+            if (Host is null) return;
+            Host.QueueCommand(new ForceUnequipCommand(pawnId, index));
+        };
+        btns.AddChild(unequipBtn);
+
+        var dropBtn = new Button
+        {
+            Text = "Drop",
+            CustomMinimumSize = new Vector2(0, 24),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        dropBtn.Pressed += () =>
+        {
+            if (Host is null) return;
+            Host.QueueCommand(new DropEquippedCommand(pawnId, index));
+        };
+        btns.AddChild(dropBtn);
+
+        row.AddChild(btns);
+        _equipList.AddChild(row);
+    }
+
+    private void BuildHeldRow(int pawnId, HeldStackState stack)
+    {
+        string itemName = ItemCatalog.ItemsByPath.TryGetValue(stack.ItemPath, out var def)
+            ? def.DisplayName : stack.ItemPath;
+        float w = def?.Weight ?? 0f;
+        float b = def?.Bulk ?? 0f;
+
+        var row = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        row.AddThemeConstantOverride("separation", 2);
+
+        var line = new Label
+        {
+            Text = $"{itemName} x{stack.Count}    {w * stack.Count:0.#} wt  {b * stack.Count:0.#} bulk",
+        };
+        row.AddChild(line);
+
+        int index = stack.Index;
+        var dropBtn = new Button
+        {
+            Text = "Force Drop",
+            CustomMinimumSize = new Vector2(0, 24),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        dropBtn.Pressed += () =>
+        {
+            if (Host is null) return;
+            Host.QueueCommand(new DropHeldItemCommand(pawnId, index));
+        };
+        row.AddChild(dropBtn);
+        _invList.AddChild(row);
     }
 
     private void BuildSlotRow(int pawnId, CarriedItemState slot)

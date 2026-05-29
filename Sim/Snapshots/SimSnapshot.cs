@@ -139,9 +139,17 @@ public readonly record struct DummyState(
     bool Sleeping,
     int AssignedBedEntityId,
     float RecreationLevel,
-    RecreationKind? AtRecreationKind);
+    RecreationKind? AtRecreationKind,
+    EquippedSlotState[] Equipped,
+    HeldStackState[] Held);
 
 public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath, int Count, bool Forbidden);
+
+// Persistent inventory rows for the pawn info panel. Equipped slots and
+// general (held) stacks are indexed by position in their respective
+// component lists; the unequip / force-drop commands take that index.
+public readonly record struct EquippedSlotState(int Index, string ItemPath, int Count, EquipSlot Slot);
+public readonly record struct HeldStackState(int Index, string ItemPath, int Count);
 
 // Per-pawn work-tab row data. Priorities[i] is 0..8 (0 = disabled);
 // Allowed[i] is the parallel checkmark-mode state. Both arrays are

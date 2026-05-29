@@ -518,6 +518,58 @@ public struct Forbidden : IComponent
 {
 }
 
+// Equipment slot kind. Today everything goes into Generic (one blanket
+// slot); the enum exists so head/body/weapon/etc. can be added later
+// without reshaping the Inventory component or its consumers.
+public enum EquipSlot : byte
+{
+    Generic = 0,
+}
+
+// One equipped item. Count is almost always 1 today (equip pulls a
+// single unit off a pile) but stays an int so stackable equipment is
+// possible later.
+public struct EquippedItemSlot
+{
+    public EquipSlot Slot;
+    public string ItemPath;
+    public int Count;
+}
+
+// One general-inventory stack. Unequipping an item drops it here; the
+// haul system never touches these, so a colonist won't auto-cart its
+// own pocketed items off to a stockpile.
+public struct InventoryStack
+{
+    public string ItemPath;
+    public int Count;
+}
+
+// Persistent per-pawn inventory: general carried stacks plus equipped
+// items. Distinct from Carrying (which is transient haul cargo bound to
+// a haul job). Both Items and Equipped count against the SAME carry
+// weight/bulk budget as Carrying — capacity is shared — but neither is
+// auto-dropped or auto-hauled; they only move on explicit player order
+// (equip / unequip / force-drop).
+public struct Inventory : IComponent
+{
+    public List<InventoryStack>? Items;
+    public List<EquippedItemSlot>? Equipped;
+}
+
+// Player order: walk to ItemTile, pick up one unit of ItemPath from the
+// pile sitting there, and move it into an equipped slot. ItemEntityId is
+// the targeted pile entity (used to detect the pile vanishing mid-walk).
+// Handled in DummyController.Plan ahead of the job auction so the chosen
+// colonist actually performs it; removed on completion or if the pile
+// is gone / unreachable.
+public struct EquipOrder : IComponent
+{
+    public TilePos ItemTile;
+    public string ItemPath;
+    public int ItemEntityId;
+}
+
 // Marks an item entity as already promised to a haul job. Posted by
 // HaulSystem when a Job is created; the same component is removed when
 // the job completes/cancels. Prevents the poster from re-posting a haul

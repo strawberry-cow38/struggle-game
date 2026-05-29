@@ -43,14 +43,19 @@ public sealed class ItemDef
     // Tuned in concert with SimConstants.MaxCarryWeight / MaxCarryBulk.
     public float Weight { get; }
     public float Bulk { get; }
+    // True if a colonist can equip this into an equipment slot (and the
+    // RMB "Equip" order shows up on a dropped pile of it). Equipping
+    // moves one unit into the pawn's equipped slots, which never auto-drop.
+    public bool Equippable { get; }
 
-    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk)
+    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable)
     {
         Id = id;
         DisplayName = displayName;
         Category = category;
         Weight = weight;
         Bulk = bulk;
+        Equippable = equippable;
     }
 
     public string FullPath => $"{Category.FullPath}/{Id}";
@@ -77,6 +82,10 @@ public static class ItemCatalog
     public static readonly ItemCategory ResourcesFood;
     public static readonly ItemDef Carrot;
     public static readonly ItemDef SimpleMeal;
+    public static readonly ItemCategory Equipment;
+    // Dummy equippable. Placeholder until real apparel/weapons exist —
+    // it does nothing but sit in an equipped slot and draw on the pawn.
+    public static readonly ItemDef WoodenTrinket;
 
     static ItemCatalog()
     {
@@ -86,6 +95,8 @@ public static class ItemCatalog
         ResourcesFood = RegisterCategory("Food", "Food", Resources);
         Carrot = RegisterItem("Carrot", "Carrot", ResourcesFood, weight: 0.05f, bulk: 0.05f);
         SimpleMeal = RegisterItem("SimpleMeal", "Simple Meal", ResourcesFood, weight: 0.4f, bulk: 0.4f);
+        Equipment = RegisterCategory("Equipment", "Equipment");
+        WoodenTrinket = RegisterItem("WoodenTrinket", "Wooden Trinket", Equipment, weight: 2f, bulk: 1f, equippable: true);
     }
 
     public static ItemCategory RegisterCategory(string id, string displayName, ItemCategory? parent = null)
@@ -100,9 +111,9 @@ public static class ItemCatalog
         return cat;
     }
 
-    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f)
+    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false)
     {
-        var item = new ItemDef(id, displayName, category, weight, bulk);
+        var item = new ItemDef(id, displayName, category, weight, bulk, equippable);
         if (!_itemsByPath.TryAdd(item.FullPath, item))
         {
             throw new InvalidOperationException($"Item already registered at path '{item.FullPath}'.");

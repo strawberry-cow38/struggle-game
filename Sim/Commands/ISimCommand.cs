@@ -722,6 +722,61 @@ public sealed class SetInventorySlotForbiddenCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetInventorySlotForbidden(CarrierEntityId, SlotEntityId, Forbidden);
 }
 
+// === Equipment commands ===
+
+// RMB "Equip" on a dropped equippable pile: order PawnEntityId to fetch
+// the pile (ItemEntityId) and equip one unit of it.
+public sealed class EquipItemCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public int ItemEntityId { get; }
+    public EquipItemCommand(int pawnId, int itemEntityId)
+    {
+        PawnEntityId = pawnId;
+        ItemEntityId = itemEntityId;
+    }
+    public void Apply(SimRuntime sim) => sim.SetEquipOrder(PawnEntityId, ItemEntityId);
+}
+
+// Pawn info panel: move equipped slot [EquipIndex] into general inventory.
+public sealed class ForceUnequipCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public int EquipIndex { get; }
+    public ForceUnequipCommand(int pawnId, int equipIndex)
+    {
+        PawnEntityId = pawnId;
+        EquipIndex = equipIndex;
+    }
+    public void Apply(SimRuntime sim) => sim.ForceUnequip(PawnEntityId, EquipIndex);
+}
+
+// Pawn info panel: drop equipped slot [EquipIndex] on the ground.
+public sealed class DropEquippedCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public int EquipIndex { get; }
+    public DropEquippedCommand(int pawnId, int equipIndex)
+    {
+        PawnEntityId = pawnId;
+        EquipIndex = equipIndex;
+    }
+    public void Apply(SimRuntime sim) => sim.DropEquipped(PawnEntityId, EquipIndex);
+}
+
+// Pawn info panel: drop general-inventory stack [HeldIndex] on the ground.
+public sealed class DropHeldItemCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public int HeldIndex { get; }
+    public DropHeldItemCommand(int pawnId, int heldIndex)
+    {
+        PawnEntityId = pawnId;
+        HeldIndex = heldIndex;
+    }
+    public void Apply(SimRuntime sim) => sim.DropHeldItem(PawnEntityId, HeldIndex);
+}
+
 // === Roof commands ===
 // Drag-rect "build roof" — sets every tile in [A..B] to roofed (unless
 // the tile is marked no-roof). Instant for now; build jobs ship later.

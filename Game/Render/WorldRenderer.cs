@@ -90,6 +90,7 @@ public partial class WorldRenderer : Node2D
     private static readonly Color PathLineColor = new(1.0f, 0.92f, 0.10f, 0.85f);
     private static readonly Color PathTargetColor = new(1.0f, 0.92f, 0.10f, 1.0f);
     private static readonly Color DraftedRing = new(1.0f, 0.25f, 0.20f, 1.0f);
+    private static readonly Color EquippedMarkerColor = new(0.30f, 0.85f, 1.0f, 1.0f);
     private static readonly Color OrderMarker = new(1.0f, 0.40f, 0.20f, 0.95f);
     private static readonly Color TrunkColor = new(0.32f, 0.20f, 0.10f);
     private static readonly Color CanopyColor = new(0.20f, 0.50f, 0.18f);
@@ -584,6 +585,22 @@ public partial class WorldRenderer : Node2D
                     var carry = new Rect2(center.X - logW * 0.5f, center.Y - radius - logH - 1f, logW, logH);
                     DrawRect(carry, WoodColor, filled: true);
                     DrawRect(new Rect2(carry.Position + new Vector2(0, 1f), new Vector2(carry.Size.X, 2f)), WoodHighlight, filled: true);
+                }
+                if (d.Equipped.Length > 0)
+                {
+                    // Equipped-gear marker: a small cyan diamond pinned to
+                    // the pawn's lower-right. Dummy stand-in until real
+                    // per-item apparel sprites exist.
+                    float s = PixelsPerTile * 0.16f;
+                    var ec = new Vector2(center.X + radius * 0.6f, center.Y + radius * 0.6f);
+                    var diamond = new Vector2[4]
+                    {
+                        new Vector2(ec.X, ec.Y - s),
+                        new Vector2(ec.X + s, ec.Y),
+                        new Vector2(ec.X, ec.Y + s),
+                        new Vector2(ec.X - s, ec.Y),
+                    };
+                    DrawColoredPolygon(diamond, EquippedMarkerColor);
                 }
                 if (_selectedDummyIdsScratch.Contains(d.EntityId))
                 {
