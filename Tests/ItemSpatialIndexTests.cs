@@ -102,6 +102,32 @@ public class ItemSpatialIndexTests
     }
 
     [Fact]
+    public void OverCapPiles_SpillToSeparateTiles()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var t = NearbyWalkable(sim, new TilePos(50, 50));
+        // 70 + 50 = 120 > 75 cap, so they can't merge — the extra must spill.
+        sim.SpawnItemPile(t, ItemCatalog.Carrot.FullPath, 70);
+        sim.SpawnItemPile(t, ItemCatalog.Carrot.FullPath, 50);
+
+        for (int i = 0; i < 5; i++) sim.Step(SimConstants.TickSeconds);
+
+        var tiles = new List<TilePos>();
+        int total = 0;
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity _) =>
+        {
+            if (p.ItemPath != ItemCatalog.Carrot.FullPath) return;
+            tiles.Add(p.Tile);
+            total += p.Count;
+        });
+        Assert.Equal(2, tiles.Count);                 // still two piles
+        Assert.NotEqual(tiles[0], tiles[1]);          // but on different tiles now
+        Assert.Equal(120, total);                     // nothing lost
+        sim.ItemIndex.ValidateAgainst(sim.Store);
+    }
+
+    [Fact]
     public void ReservedWood_DoesNotCountAsUnreserved()
     {
         var sim = new SimRuntime();

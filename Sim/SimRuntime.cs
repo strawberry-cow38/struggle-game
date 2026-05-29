@@ -378,6 +378,7 @@ public sealed class SimRuntime
         // of which is an add — so it could leave two coincident stacks.)
         MergeCoincidentWood();
         MergeCoincidentItemPiles();
+        SpillCoincidentPiles();
         _safety.Step(Store, Tick);
         // Coalesced rebuild: one map clone + one room flood-fill per tick
         // even if N walls/doors mutated this tick.
@@ -3733,6 +3734,69 @@ public sealed class SimRuntime
         }
         foreach (var e in deletes) { _itemIndex.OnEntityGone(e.Id); e.DeleteEntity(); }
     }
+
+    // Reused scratch for the spill pass.
+    private readonly Dictionary<TilePos, int> _spillPileCount = new();
+    private readonly List<Entity> _spillExtras = new();
+    private readonly HashSet<TilePos> _spillOccupied = new();
+
+    // One stack per tile: when two piles can't fuse (combined > the stack
+    // cap, so MergeCoincidentItemPiles left them), relocate the extra to
+    // the nearest free walkable tile. Reserved piles (mid-haul) are left
+    // alone. A relocate is delete + respawn so the item index's component
+    // events keep it in sync.
+    private void SpillCoincidentPiles()
+    {
+        _spillPileCount.Clear();
+        _spillExtras.Clear();
+        Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
+        {
+            if (e.HasComponent<HaulReserved>()) return; // in flight, don't move
+            int c = _spillPileCount.GetValueOrDefault(p.Tile);
+            _spillPileCount[p.Tile] = c + 1;
+            if (c >= 1) _spillExtras.Add(e); // 2nd+ unreserved pile on this tile
+        });
+        if (_spillExtras.Count == 0) return;
+
+        _spillOccupied.Clear();
+        foreach (var t in _spillPileCount.Keys) _spillOccupied.Add(t);
+
+        foreach (var e in _spillExtras)
+        {
+            if (!e.HasComponent<ItemPile>()) continue;
+            var p = e.GetComponent<ItemPile>();
+            if (!TryFindSpillTile(p.Tile, _spillOccupied, out var target)) continue; // nowhere safe; leave it
+            _spillOccupied.Add(target);
+            int count = p.Count;
+            string path = p.ItemPath;
+            _itemIndex.OnEntityGone(e.Id);
+            e.DeleteEntity();
+            SpawnItemPile(target, path, count);
+        }
+    }
+
+    // Nearest walkable tile (spiral out) that isn't already holding a pile.
+    private bool TryFindSpillTile(TilePos from, HashSet<TilePos> occupied, out TilePos result)
+    {
+        result = default;
+        var view = MapView;
+        for (int r = 1; r <= SpillSearchRadius; r++)
+        {
+            for (int dy = -r; dy <= r; dy++)
+                for (int dx = -r; dx <= r; dx++)
+                {
+                    if (Math.Abs(dx) != r && Math.Abs(dy) != r) continue; // ring shell only
+                    var t = new TilePos(from.X + dx, from.Y + dy);
+                    if (occupied.Contains(t)) continue;
+                    if (!view.Walkable(t)) continue;
+                    result = t;
+                    return true;
+                }
+        }
+        return false;
+    }
+
+    private const int SpillSearchRadius = 8;
 
     private bool HasWallAt(int x, int y)
     {
