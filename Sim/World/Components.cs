@@ -30,6 +30,9 @@ public struct PathFollower : IComponent
 public struct Wanderer : IComponent
 {
     public float IdleSec;
+    // Heading in radians (atan2 of last movement). Updated while walking;
+    // holds its last value when idle so the facing arrow doesn't snap back.
+    public float Facing;
 }
 
 // Pending construction job on a tile. ProgressSec advances while a

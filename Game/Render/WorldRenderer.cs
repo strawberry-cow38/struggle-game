@@ -91,6 +91,8 @@ public partial class WorldRenderer : Node2D
     private static readonly Color PathTargetColor = new(1.0f, 0.92f, 0.10f, 1.0f);
     private static readonly Color DraftedRing = new(1.0f, 0.25f, 0.20f, 1.0f);
     private static readonly Color EquippedMarkerColor = new(0.30f, 0.85f, 1.0f, 1.0f);
+    private static readonly Color FacingArrowColor = new(0.15f, 0.10f, 0.05f, 0.9f);
+    private readonly Vector2[] _facingTri = new Vector2[3];
     // Reused polygon scratch so the per-pawn / per-crop draw loops don't
     // heap-allocate a fresh Vector2[] every frame. DrawColoredPolygon
     // copies the points immediately, so a shared buffer is safe.
@@ -578,6 +580,16 @@ public partial class WorldRenderer : Node2D
                 }
                 var center = new Vector2(drawX * PixelsPerTile, drawY * PixelsPerTile);
                 DrawCircle(center, radius, DummyColor);
+                // Facing arrow: a small triangle on the rim pointing the
+                // way the colonist last moved.
+                {
+                    var dir = new Vector2(Mathf.Cos(d.Facing), Mathf.Sin(d.Facing));
+                    var perp = new Vector2(-dir.Y, dir.X);
+                    _facingTri[0] = center + dir * (radius * 1.15f);
+                    _facingTri[1] = center + dir * (radius * 0.35f) + perp * (radius * 0.5f);
+                    _facingTri[2] = center + dir * (radius * 0.35f) - perp * (radius * 0.5f);
+                    DrawColoredPolygon(_facingTri, FacingArrowColor);
+                }
                 if (d.Drafted)
                 {
                     DrawArc(center, radius + 2f, 0f, Mathf.Tau, 32, DraftedRing, 2f, antialiased: true);

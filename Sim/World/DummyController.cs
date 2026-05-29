@@ -166,7 +166,10 @@ public sealed class DummyController
             Plan(ref pos, ref path, ref w, dt, entity, cb, view, store);
             // Injured legs slow the walk (Moving capacity), floored so a
             // hurt-but-conscious pawn can still crawl.
+            float bx = pos.X, by = pos.Y;
             AdvanceAlongPath(ref pos, ref path, dt, view, HealthMods.MoveSpeed(entity));
+            float mdx = pos.X - bx, mdy = pos.Y - by;
+            if (mdx * mdx + mdy * mdy > 1e-9f) w.Facing = MathF.Atan2(mdy, mdx);
         });
         cb.Playback();
     }

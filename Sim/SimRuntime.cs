@@ -1073,7 +1073,7 @@ public sealed class SimRuntime
         EnsureCap(ref snap.DummiesBuf, dq.Count);
         var dummiesBuf = snap.DummiesBuf;
         int i = 0;
-        dq.ForEachEntity((ref WorldPos p, ref Wanderer _, Entity ent) =>
+        dq.ForEachEntity((ref WorldPos p, ref Wanderer wr, Entity ent) =>
         {
             bool drafted = ent.HasComponent<Drafted>();
             string label;
@@ -1199,7 +1199,7 @@ public sealed class SimRuntime
                 inventory, carryW, carryB,
                 SimConstants.MaxCarryWeight, SimConstants.MaxCarryBulk,
                 sleepLevel, isSleeping, assignedBedId,
-                recLevel, atRecKind, equipped, held, healthState);
+                recLevel, atRecKind, equipped, held, healthState, wr.Facing);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {
