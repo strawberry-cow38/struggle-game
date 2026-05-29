@@ -259,7 +259,7 @@ public partial class PawnInfoPanel : CanvasLayer
             _lastInjurySig = injSig;
             foreach (var child in _injuryList.GetChildren()) child.QueueFree();
             _injuryEmptyLabel.Visible = hs.Injuries.Length == 0;
-            foreach (var inj in hs.Injuries) BuildInjuryRow(inj);
+            foreach (var g in GroupInjuries(hs.Injuries)) BuildInjuryRow(g);
         }
 
         // Only rebuild the clickable rows when their contents actually
@@ -289,31 +289,53 @@ public partial class PawnInfoPanel : CanvasLayer
         }
     }
 
+    // One panel row = all conditions of the same kind on the same part,
+    // collapsed with a count + the worst severity.
+    private readonly record struct InjuryGroup(
+        string PartId, StruggleGame.Sim.Bodies.ConditionKind Kind, int Count, float MaxSeverity);
+
+    private static List<InjuryGroup> GroupInjuries(InjuryState[] injuries)
+    {
+        var map = new Dictionary<(string, StruggleGame.Sim.Bodies.ConditionKind), (int n, float maxSev)>();
+        var order = new List<(string, StruggleGame.Sim.Bodies.ConditionKind)>();
+        foreach (var inj in injuries)
+        {
+            var key = (inj.PartId, inj.Kind);
+            if (map.TryGetValue(key, out var cur))
+                map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity));
+            else { map[key] = (1, inj.Severity); order.Add(key); }
+        }
+        var list = new List<InjuryGroup>(order.Count);
+        foreach (var key in order) { var v = map[key]; list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev)); }
+        return list;
+    }
+
     private static string BuildInjurySignature(InjuryState[] injuries)
     {
         var sb = new System.Text.StringBuilder();
-        foreach (var inj in injuries)
-            sb.Append(inj.PartId).Append((int)inj.Kind).Append((int)(inj.Severity * 100)).Append(';');
+        foreach (var g in GroupInjuries(injuries))
+            sb.Append(g.PartId).Append((int)g.Kind).Append('x').Append(g.Count).Append((int)(g.MaxSeverity * 100)).Append(';');
         return sb.ToString();
     }
 
-    private void BuildInjuryRow(InjuryState inj)
+    private void BuildInjuryRow(InjuryGroup g)
     {
-        string part = StruggleGame.Sim.Bodies.BodyTree.TryGet(inj.PartId, out var def)
-            ? def.DisplayName : inj.PartId;
-        string kind = inj.Kind.ToString();
-        string detail = inj.Kind switch
+        string part = StruggleGame.Sim.Bodies.BodyTree.TryGet(g.PartId, out var def)
+            ? def.DisplayName : g.PartId;
+        string kind = g.Kind.ToString();
+        string detail = g.Kind switch
         {
             StruggleGame.Sim.Bodies.ConditionKind.Missing => "missing",
             StruggleGame.Sim.Bodies.ConditionKind.Scar => "scar",
-            _ => $"{kind.ToLower()} {inj.Severity * 100f:0}%",
+            _ => $"{kind.ToLower()} {g.MaxSeverity * 100f:0}%",
         };
-        var line = new Label { Text = $"{part}: {detail}" };
+        string countTag = g.Count > 1 ? $" x{g.Count}" : "";
+        var line = new Label { Text = $"{part}: {detail}{countTag}" };
         line.AddThemeFontSizeOverride("font_size", 11);
         // Tint by how nasty it is.
-        Color c = inj.Kind == StruggleGame.Sim.Bodies.ConditionKind.Missing
+        Color c = g.Kind == StruggleGame.Sim.Bodies.ConditionKind.Missing
             ? new Color(1f, 0.4f, 0.4f)
-            : inj.Severity >= 0.6f ? new Color(1f, 0.6f, 0.3f) : new Color(0.9f, 0.85f, 0.6f);
+            : g.MaxSeverity >= 0.6f ? new Color(1f, 0.6f, 0.3f) : new Color(0.9f, 0.85f, 0.6f);
         line.AddThemeColorOverride("font_color", c);
         _injuryList.AddChild(line);
     }
