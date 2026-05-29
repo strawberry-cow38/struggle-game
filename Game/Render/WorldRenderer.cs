@@ -488,6 +488,16 @@ public partial class WorldRenderer : Node2D
             }
         }
 
+        using (FrameProfiler.Instance.BeginScope("Blood"))
+        {
+            foreach (var bp in snap.BloodPuddles)
+            {
+                if (bp.Tile.X < viewMinTileX || bp.Tile.X > viewMaxTileX
+                    || bp.Tile.Y < viewMinTileY || bp.Tile.Y > viewMaxTileY) continue;
+                DrawBloodPuddle(bp);
+            }
+        }
+
         using (FrameProfiler.Instance.BeginScope("ItemPiles"))
         {
             // Item piles share the SelectedWoodIds selection set (cached, so
@@ -860,6 +870,17 @@ public partial class WorldRenderer : Node2D
                 DrawRect(barFg, ProgressBarFg, filled: true);
             }
         }
+    }
+
+    private static readonly Color BloodColor = new(0.45f, 0.03f, 0.03f);
+
+    private void DrawBloodPuddle(Sim.Snapshots.BloodPuddleState bp)
+    {
+        var center = new Vector2((bp.Tile.X + 0.5f) * PixelsPerTile, (bp.Tile.Y + 0.5f) * PixelsPerTile);
+        float r = PixelsPerTile * (0.18f + 0.27f * Mathf.Clamp(bp.Amount, 0f, 1f));
+        var col = BloodColor;
+        col.A = 0.45f + 0.4f * Mathf.Clamp(bp.Amount, 0f, 1f);
+        DrawCircle(center, r, col);
     }
 
     private void DrawItemPile(Sim.Snapshots.ItemPileState p)

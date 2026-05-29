@@ -312,6 +312,7 @@ public sealed class SimRuntime
         _safety = new SafetySystem(() => MapView, PathService, Watcher);
         _sleep = new SleepSystem();
         _health = new HealthSystem(this);
+        _health.SpawnBloodPuddle = SpawnBloodPuddle;
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
@@ -1350,6 +1351,16 @@ public sealed class SimRuntime
             pilesBuf[pi++] = new ItemPileState(e.Id, p.Tile, p.Count, p.ItemPath, e.HasComponent<Forbidden>());
         });
         snap.ItemPilesCount = pi;
+
+        var puddleQuery = Store.Query<BloodPuddle>();
+        EnsureCap(ref snap.BloodPuddlesBuf, puddleQuery.Count);
+        var puddlesBuf = snap.BloodPuddlesBuf;
+        int bpi = 0;
+        puddleQuery.ForEachEntity((ref BloodPuddle bp, Entity _) =>
+        {
+            puddlesBuf[bpi++] = new BloodPuddleState(bp.Tile, bp.Amount);
+        });
+        snap.BloodPuddlesCount = bpi;
 
         int[] selTreeArr = Array.Empty<int>();
         if (selectedTreeIds is { Count: > 0 })
@@ -3588,6 +3599,26 @@ public sealed class SimRuntime
             ItemEntityId = itemEntityId,
             RequestedCount = requestedCount,
         });
+    }
+
+    // Drip blood on a tile — grows an existing puddle there or starts a
+    // new one. Cosmetic; persists (no cleaning yet).
+    public void SpawnBloodPuddle(TilePos tile)
+    {
+        Entity? found = null;
+        Store.Query<BloodPuddle>().ForEachEntity((ref BloodPuddle bp, Entity e) =>
+        {
+            if (found is null && bp.Tile == tile) found = e;
+        });
+        if (found is Entity fe)
+        {
+            ref var bp = ref fe.GetComponent<BloodPuddle>();
+            bp.Amount = Math.Min(1f, bp.Amount + 0.25f);
+            return;
+        }
+        var ne = Store.CreateEntity();
+        ne.AddComponent(new BloodPuddle { Tile = tile, Amount = 0.4f });
+        ne.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
     }
 
     // Debug/gameplay: add a condition to one of a colonist's body parts

@@ -185,6 +185,9 @@ public sealed class ToggleDraftCommand : ISimCommand
             return;
         }
 
+        // Can't draft a downed colonist — they're unconscious.
+        if (ent.HasComponent<Health>() && ent.GetComponent<Health>().Unconscious) return;
+
         ent.AddComponent(new Drafted());
         // Drafting a sleeper wakes them: release the in-flight bed
         // reservation, drop the Sleeping marker so SleepSystem stops

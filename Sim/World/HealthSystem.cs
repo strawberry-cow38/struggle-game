@@ -18,12 +18,18 @@ public sealed class HealthSystem
     public const float HealPerSec = 0.0002f;       // severity/sim-sec for small wounds
     public const float WorsenPerSec = 0.0001f;
     public const float BloodRegenPerSec = 0.0001f;
+    // Blood (0..1 units) that must pool before a puddle is dripped.
+    public const float PuddlePerDrip = 0.04f;
 
     // Health doesn't need 60 Hz; ~1s cadence keeps bleeding responsive.
     public const long TickInterval = 60;
 
     private readonly SimRuntime _sim;
     private float _accumDt;
+    private readonly List<Map.TilePos> _dripScratch = new();
+
+    // Wired by SimRuntime: drop/grow a blood puddle on a tile.
+    public Action<Map.TilePos>? SpawnBloodPuddle;
 
     public HealthSystem(SimRuntime sim) { _sim = sim; }
 
@@ -34,11 +40,35 @@ public sealed class HealthSystem
         float step = _accumDt;
         _accumDt = 0f;
 
-        store.Query<Health>().ForEachEntity((ref Health h, Entity _) =>
+        _dripScratch.Clear();
+        store.Query<Health, WorldPos>().ForEachEntity((ref Health h, ref WorldPos pos, Entity _) =>
         {
+            float bleed = TotalBleed(h);
             Advance(ref h, step);
             Recompute(ref h);
+            // Drip a puddle (at most one per tick) when enough blood pools.
+            if (bleed > 0f)
+            {
+                h.BleedAccum += bleed * step;
+                if (h.BleedAccum >= PuddlePerDrip)
+                {
+                    h.BleedAccum -= PuddlePerDrip;
+                    _dripScratch.Add(new Map.TilePos((int)pos.X, (int)pos.Y));
+                }
+            }
         });
+        // Spawn outside the query — structural change.
+        if (SpawnBloodPuddle is not null)
+            foreach (var t in _dripScratch) SpawnBloodPuddle(t);
+    }
+
+    private static float TotalBleed(in Health h)
+    {
+        float bleed = 0f;
+        if (h.Injuries is not null)
+            foreach (var inj in h.Injuries)
+                bleed += BodyTree.BleedRate(inj.Kind, inj.Severity);
+        return bleed;
     }
 
     // Bleed/regen blood and evolve non-permanent conditions over `dt`

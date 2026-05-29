@@ -131,6 +131,40 @@ public class HealthTests
     }
 
     [Fact]
+    public void BleedingPawn_DripsBloodPuddles()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        int pawnId = 0;
+        sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity e) =>
+        { if (pawnId == 0) pawnId = e.Id; });
+        sim.ApplyInjury(pawnId, "Torso", ConditionKind.Cut, 0.8f);
+
+        for (int i = 0; i < 400; i++) sim.Step(SimConstants.TickSeconds);
+
+        int puddles = 0;
+        sim.Store.Query<BloodPuddle>().ForEachEntity((ref BloodPuddle _, Entity _) => puddles++);
+        Assert.True(puddles > 0, "a bleeding colonist should leave blood puddles");
+    }
+
+    [Fact]
+    public void DownedColonist_CannotBeDrafted()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        int pawnId = 0;
+        sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity e) =>
+        { if (pawnId == 0) pawnId = e.Id; });
+        sim.ApplyInjury(pawnId, "Brain", ConditionKind.Missing, 1f); // unconscious now
+
+        sim.QueueCommand(new StruggleGame.Sim.Commands.ToggleDraftCommand(pawnId));
+        sim.Step(SimConstants.TickSeconds);
+
+        Assert.True(sim.Store.TryGetEntityById(pawnId, out var pawn));
+        Assert.False(pawn.HasComponent<Drafted>());
+    }
+
+    [Fact]
     public void ApplyInjury_OnSpawnedPawn_Recomputes()
     {
         var sim = new SimRuntime();

@@ -43,6 +43,10 @@ public sealed class SimSnapshot
     internal int ItemPilesCount;
     public SnapshotList<ItemPileState> ItemPiles => new(ItemPilesBuf, ItemPilesCount);
 
+    internal BloodPuddleState[] BloodPuddlesBuf = System.Array.Empty<BloodPuddleState>();
+    internal int BloodPuddlesCount;
+    public SnapshotList<BloodPuddleState> BloodPuddles => new(BloodPuddlesBuf, BloodPuddlesCount);
+
     internal DeconState[] DeconsBuf = System.Array.Empty<DeconState>();
     internal int DeconsCount;
     public SnapshotList<DeconState> Decons => new(DeconsBuf, DeconsCount);
@@ -188,6 +192,8 @@ public readonly record struct CropState(
     Jobs.JobKind? ActiveJob);
 
 public readonly record struct ItemPileState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden);
+
+public readonly record struct BloodPuddleState(TilePos Tile, float Amount);
 
 public readonly record struct DeconState(TilePos Tile, float Progress, bool Forbidden);
 

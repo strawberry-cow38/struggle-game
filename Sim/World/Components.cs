@@ -601,6 +601,17 @@ public struct Health : IComponent
     public float BloodPumping;
     public float Breathing;
     public bool Unconscious;
+    // Blood spilled but not yet dropped as a puddle. HealthSystem drips a
+    // puddle each time this crosses a threshold.
+    public float BleedAccum;
+}
+
+// A pool of spilled blood on a tile. Amount 0..1 = how dark/large. Purely
+// cosmetic for now; persists (no cleaning yet).
+public struct BloodPuddle : IComponent
+{
+    public TilePos Tile;
+    public float Amount;
 }
 
 // Marks an item entity as already promised to a haul job. Posted by
