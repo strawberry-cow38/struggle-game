@@ -313,7 +313,7 @@ public sealed class SimRuntime
         _sleep = new SleepSystem();
         _health = new HealthSystem(this);
         _health.SpawnBloodPuddle = SpawnBloodPuddle;
-        _dummies.MeleeHit = MeleePunch;
+        _dummies.MeleeHit = MeleeStrike;
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
@@ -3627,13 +3627,31 @@ public sealed class SimRuntime
         a.AddComponent(new MeleeTarget { TargetEntityId = targetId, LastHitTick = 0 });
     }
 
-    // Land one melee hit: a bruise on a random outer (punchable) body part.
-    public void MeleePunch(int targetId)
+    // Land one melee hit on a random outer (punchable) part. If the
+    // attacker has a weapon equipped, the strike uses one of that weapon's
+    // attacks (e.g. the trinket's Cut/Stab); otherwise it's a bare-fist
+    // bruise.
+    public void MeleeStrike(int attackerId, int targetId)
     {
         var parts = StruggleGame.Sim.Bodies.BodyTree.PunchableParts;
         if (parts.Count == 0) return;
         var part = parts[_spawnRng.Next(parts.Count)];
-        ApplyInjury(targetId, part, StruggleGame.Sim.Bodies.ConditionKind.Bruise, MeleeBruiseSeverity);
+
+        var kind = StruggleGame.Sim.Bodies.ConditionKind.Bruise;
+        float sev = MeleeBruiseSeverity;
+        if (Store.TryGetEntityById(attackerId, out var a) && a.HasComponent<Inventory>())
+        {
+            var inv = a.GetComponent<Inventory>();
+            if (inv.Equipped is not null)
+                foreach (var eq in inv.Equipped)
+                    if (Items.ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var def) && def.IsWeapon)
+                    {
+                        var atk = def.MeleeAttacks[_spawnRng.Next(def.MeleeAttacks.Length)];
+                        kind = atk.Kind; sev = atk.Severity;
+                        break;
+                    }
+        }
+        ApplyInjury(targetId, part, kind, sev);
     }
 
     // Drip blood on a tile — grows an existing puddle there or starts a

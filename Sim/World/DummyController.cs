@@ -125,8 +125,9 @@ public sealed class DummyController
     private const long MeleeStunTicks = 30;       // ~0.5s frozen on a stun
     private const double MeleeStunChance = 0.25;
     private const float EngagedSlowFactor = 0.5f;
-    // Wired by SimRuntime: land a melee hit on a target entity.
-    public Action<int>? MeleeHit;
+    // Wired by SimRuntime: land a melee hit (attacker, target). Attacker's
+    // equipped weapon decides the damage.
+    public Action<int, int>? MeleeHit;
 
     public DummyController(
         PathService paths,
@@ -508,7 +509,7 @@ public sealed class DummyController
 
                         if (_rng.NextDouble() >= MeleeMissChance)
                         {
-                            MeleeHit?.Invoke(mt.TargetEntityId);
+                            MeleeHit?.Invoke(entity.Id, mt.TargetEntityId);
                             if (tgt.HasComponent<Combat>())
                             {
                                 ref var tc = ref tgt.GetComponent<Combat>();

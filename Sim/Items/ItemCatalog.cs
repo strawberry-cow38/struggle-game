@@ -1,3 +1,5 @@
+using StruggleGame.Sim.Bodies;
+
 namespace StruggleGame.Sim.Items;
 
 // Tree node in the item taxonomy. A category can hold both
@@ -47,8 +49,12 @@ public sealed class ItemDef
     // RMB "Equip" order shows up on a dropped pile of it). Equipping
     // moves one unit into the pawn's equipped slots, which never auto-drop.
     public bool Equippable { get; }
+    // Melee attacks this item grants when equipped + used as a weapon. A
+    // swing picks one at random. Empty = not a weapon (bare-fist bruise).
+    public (ConditionKind Kind, float Severity)[] MeleeAttacks { get; }
+    public bool IsWeapon => MeleeAttacks.Length > 0;
 
-    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable)
+    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable, (ConditionKind, float)[]? meleeAttacks)
     {
         Id = id;
         DisplayName = displayName;
@@ -56,6 +62,7 @@ public sealed class ItemDef
         Weight = weight;
         Bulk = bulk;
         Equippable = equippable;
+        MeleeAttacks = meleeAttacks ?? System.Array.Empty<(ConditionKind, float)>();
     }
 
     public string FullPath => $"{Category.FullPath}/{Id}";
@@ -96,7 +103,8 @@ public static class ItemCatalog
         Carrot = RegisterItem("Carrot", "Carrot", ResourcesFood, weight: 0.05f, bulk: 0.05f);
         SimpleMeal = RegisterItem("SimpleMeal", "Simple Meal", ResourcesFood, weight: 0.4f, bulk: 0.4f);
         Equipment = RegisterCategory("Equipment", "Equipment");
-        WoodenTrinket = RegisterItem("WoodenTrinket", "Wooden Trinket", Equipment, weight: 2f, bulk: 1f, equippable: true);
+        WoodenTrinket = RegisterItem("WoodenTrinket", "Wooden Trinket", Equipment, weight: 2f, bulk: 1f, equippable: true,
+            meleeAttacks: new (ConditionKind, float)[] { (ConditionKind.Cut, 0.25f), (ConditionKind.Stab, 0.22f) });
     }
 
     public static ItemCategory RegisterCategory(string id, string displayName, ItemCategory? parent = null)
@@ -111,9 +119,9 @@ public static class ItemCatalog
         return cat;
     }
 
-    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false)
+    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false, (ConditionKind, float)[]? meleeAttacks = null)
     {
-        var item = new ItemDef(id, displayName, category, weight, bulk, equippable);
+        var item = new ItemDef(id, displayName, category, weight, bulk, equippable, meleeAttacks);
         if (!_itemsByPath.TryAdd(item.FullPath, item))
         {
             throw new InvalidOperationException($"Item already registered at path '{item.FullPath}'.");

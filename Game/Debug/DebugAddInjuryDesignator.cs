@@ -24,7 +24,7 @@ public partial class DebugAddInjuryDesignator : Node2D
     private string _partId = "";
 
     private static readonly ConditionKind[] _kinds =
-        { ConditionKind.Cut, ConditionKind.Burn, ConditionKind.Bruise, ConditionKind.Scar, ConditionKind.Missing };
+        { ConditionKind.Cut, ConditionKind.Stab, ConditionKind.Burn, ConditionKind.Bruise, ConditionKind.Scar, ConditionKind.Missing };
 
     public override void _Ready()
     {

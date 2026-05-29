@@ -70,6 +70,39 @@ public class MeleeTests
     }
 
     [Fact]
+    public void ArmedMelee_DealsWeaponAttacks_NotBruises()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (attacker, target) = TwoPawns(sim);
+        Assert.True(sim.Store.TryGetEntityById(attacker, out var atk));
+        atk.AddComponent(new Drafted());
+        // Equip the trinket weapon on the attacker.
+        atk.AddComponent(new Inventory
+        {
+            Items = new List<InventoryStack>(),
+            Equipped = new List<EquippedItemSlot>
+            {
+                new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = StruggleGame.Sim.Items.ItemCatalog.WoodenTrinket.FullPath, Count = 1 },
+            },
+        });
+        sim.SetMeleeTarget(attacker, target);
+
+        for (int i = 0; i < 6000; i++)
+        {
+            sim.Step(SimConstants.TickSeconds);
+            if (sim.Store.GetEntityById(target).GetComponent<Health>().Unconscious) break;
+        }
+
+        var th = sim.Store.GetEntityById(target).GetComponent<Health>();
+        Assert.NotEmpty(th.Injuries!);
+        // Every wound is a weapon attack (Cut or Stab), never a fist bruise.
+        foreach (var inj in th.Injuries!)
+            Assert.True(inj.Kind == ConditionKind.Cut || inj.Kind == ConditionKind.Stab,
+                $"unexpected armed-hit kind: {inj.Kind}");
+    }
+
+    [Fact]
     public void MeleeStops_WhenTargetDowned()
     {
         var sim = new SimRuntime();
