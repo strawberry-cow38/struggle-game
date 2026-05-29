@@ -25,7 +25,8 @@ public partial class CropInfoPanel : CanvasLayer
     private Label _nameLabel = null!;
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
-    private Button _actionBtn = null!;
+    private Button _harvestBtn = null!;
+    private Button _cutBtn = null!;
     private Button _cancelBtn = null!;
 
     private int _shownCount = -1;
@@ -74,9 +75,12 @@ public partial class CropInfoPanel : CanvasLayer
 
         var btnRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         btnRow.AddThemeConstantOverride("separation", 6);
-        _actionBtn = new Button { Text = "Harvest", CustomMinimumSize = new Vector2(0, 28), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        _actionBtn.Pressed += OnActionPressed;
-        btnRow.AddChild(_actionBtn);
+        _harvestBtn = new Button { Text = "Harvest", CustomMinimumSize = new Vector2(0, 28), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        _harvestBtn.Pressed += OnHarvestPressed;
+        btnRow.AddChild(_harvestBtn);
+        _cutBtn = new Button { Text = "Cut", CustomMinimumSize = new Vector2(0, 28), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        _cutBtn.Pressed += OnCutPressed;
+        btnRow.AddChild(_cutBtn);
         _cancelBtn = new Button { Text = "Cancel", CustomMinimumSize = new Vector2(0, 28), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _cancelBtn.Pressed += OnCancelPressed;
         btnRow.AddChild(_cancelBtn);
@@ -123,7 +127,7 @@ public partial class CropInfoPanel : CanvasLayer
     {
         var idSet = new HashSet<int>(ids);
         int withJob = 0, growing = 0;
-        int growingMature = 0;
+        int growingMature = 0, growingImmature = 0;
         CropState? first = null;
         foreach (var c in snap.Crops)
         {
@@ -134,6 +138,7 @@ public partial class CropInfoPanel : CanvasLayer
             {
                 growing++;
                 if (c.GrowthStage >= HarvestMinGrowth) growingMature++;
+                else growingImmature++;
             }
             idSet.Remove(c.EntityId);
         }
@@ -169,13 +174,16 @@ public partial class CropInfoPanel : CanvasLayer
                 : "";
             _stateLabel.Text = $"{withJob} queued · {growing} growing";
         }
-        bool anyMature = growingMature > 0;
-        _actionBtn.Text = anyMature ? "Harvest" : "Cut";
-        _actionBtn.Disabled = growing == 0;
+        // Harvest = mature only; Cut = immature only. Mixed selections
+        // show both buttons so the player picks which job to post.
+        _harvestBtn.Visible = growingMature > 0;
+        _cutBtn.Visible = growingImmature > 0;
+        _harvestBtn.Disabled = growingMature == 0;
+        _cutBtn.Disabled = growingImmature == 0;
         _cancelBtn.Disabled = withJob == 0;
     }
 
-    private void OnActionPressed()
+    private void OnHarvestPressed()
     {
         if (Host is null) return;
         var ids = Host.SelectedCropIds;
@@ -187,12 +195,25 @@ public partial class CropInfoPanel : CanvasLayer
         {
             if (!idSet.Contains(c.EntityId)) continue;
             if (c.ActiveJob is not null) continue;
-            // Mature → harvest (yields crop). Immature → cut (clears
-            // the tile with no yield, for reclaiming ground).
-            if (c.GrowthStage >= HarvestMinGrowth)
-                Host.QueueCommand(new HarvestInRectCommand(c.Tile, c.Tile));
-            else
-                Host.QueueCommand(new CutPlantsInRectCommand(c.Tile, c.Tile));
+            if (c.GrowthStage < HarvestMinGrowth) continue;
+            Host.QueueCommand(new HarvestInRectCommand(c.Tile, c.Tile));
+        }
+    }
+
+    private void OnCutPressed()
+    {
+        if (Host is null) return;
+        var ids = Host.SelectedCropIds;
+        if (ids.Length == 0) return;
+        var snap = Host.LatestSnapshot;
+        if (snap is null) return;
+        var idSet = new HashSet<int>(ids);
+        foreach (var c in snap.Crops)
+        {
+            if (!idSet.Contains(c.EntityId)) continue;
+            if (c.ActiveJob is not null) continue;
+            if (c.GrowthStage >= HarvestMinGrowth) continue;
+            Host.QueueCommand(new CutPlantsInRectCommand(c.Tile, c.Tile));
         }
     }
 

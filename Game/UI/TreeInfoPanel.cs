@@ -22,6 +22,7 @@ public partial class TreeInfoPanel : CanvasLayer
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
     private Button _chopBtn = null!;
+    private Button _cutBtn = null!;
     private Button _cancelBtn = null!;
 
     private int _shownCount = -1;
@@ -78,6 +79,9 @@ public partial class TreeInfoPanel : CanvasLayer
         _chopBtn = new Button { Text = "Chop", CustomMinimumSize = new Vector2(0, 28), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _chopBtn.Pressed += OnChopPressed;
         btnRow.AddChild(_chopBtn);
+        _cutBtn = new Button { Text = "Cut", CustomMinimumSize = new Vector2(0, 28), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        _cutBtn.Pressed += OnCutPressed;
+        btnRow.AddChild(_cutBtn);
         _cancelBtn = new Button { Text = "Cancel", CustomMinimumSize = new Vector2(0, 28), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _cancelBtn.Pressed += OnCancelPressed;
         btnRow.AddChild(_cancelBtn);
@@ -171,10 +175,15 @@ public partial class TreeInfoPanel : CanvasLayer
                 : "";
             _stateLabel.Text = $"{withJob} queued · {standing} standing";
         }
-        // Mature → Chop; if zero mature but immature exist → Cut.
-        bool anyMature = standingMature > 0;
-        _chopBtn.Text = anyMature ? "Chop" : "Cut";
-        _chopBtn.Disabled = standing == 0;
+        // Chop is enabled when any mature tree is in the selection; Cut
+        // is enabled when any immature tree is. Mixed selections show
+        // both buttons live so the player can pick which job to post.
+        // A button with nothing to act on stays hidden so the row
+        // doesn't carry phantom controls.
+        _chopBtn.Visible = standingMature > 0;
+        _cutBtn.Visible = standingImmature > 0;
+        _chopBtn.Disabled = standingMature == 0;
+        _cutBtn.Disabled = standingImmature == 0;
         _cancelBtn.Disabled = withJob == 0;
     }
 
@@ -190,12 +199,25 @@ public partial class TreeInfoPanel : CanvasLayer
         {
             if (!idSet.Contains(t.EntityId)) continue;
             if (t.HasJob) continue;
-            // Mature → chop (yields full wood). Immature → cut (yields a
-            // ramp from 0..WoodPerTreeFull based on stage).
-            if (t.GrowthStage >= ChopMinGrowth)
-                Host.QueueCommand(new ChopTreesInRectCommand(t.Tile, t.Tile));
-            else
-                Host.QueueCommand(new CutPlantsInRectCommand(t.Tile, t.Tile));
+            if (t.GrowthStage < ChopMinGrowth) continue;
+            Host.QueueCommand(new ChopTreesInRectCommand(t.Tile, t.Tile));
+        }
+    }
+
+    private void OnCutPressed()
+    {
+        if (Host is null) return;
+        var ids = Host.SelectedTreeIds;
+        if (ids.Length == 0) return;
+        var snap = Host.LatestSnapshot;
+        if (snap is null) return;
+        var idSet = new HashSet<int>(ids);
+        foreach (var t in snap.Trees)
+        {
+            if (!idSet.Contains(t.EntityId)) continue;
+            if (t.HasJob) continue;
+            if (t.GrowthStage >= ChopMinGrowth) continue;
+            Host.QueueCommand(new CutPlantsInRectCommand(t.Tile, t.Tile));
         }
     }
 
