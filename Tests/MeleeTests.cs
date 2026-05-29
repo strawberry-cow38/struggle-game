@@ -50,6 +50,26 @@ public class MeleeTests
     }
 
     [Fact]
+    public void DownedColonist_LosesQueuedOrders_KeepsDraft()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (attacker, target) = TwoPawns(sim);
+        Assert.True(sim.Store.TryGetEntityById(attacker, out var atk));
+        atk.AddComponent(new Drafted());
+        sim.SetMeleeTarget(attacker, target);
+
+        // Knock the attacker out.
+        sim.ApplyInjury(attacker, "Brain", ConditionKind.Missing, 1f);
+        for (int i = 0; i < 120; i++) sim.Step(SimConstants.TickSeconds);
+
+        Assert.True(sim.Store.TryGetEntityById(attacker, out var a2));
+        Assert.True(a2.GetComponent<Health>().Unconscious);
+        Assert.False(a2.HasComponent<MeleeTarget>()); // order killed
+        Assert.True(a2.HasComponent<Drafted>());       // draft kept
+    }
+
+    [Fact]
     public void MeleeStops_WhenTargetDowned()
     {
         var sim = new SimRuntime();

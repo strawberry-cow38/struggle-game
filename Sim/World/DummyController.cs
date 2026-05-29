@@ -229,7 +229,9 @@ public sealed class DummyController
 
         // Unconscious (passed out from blood loss / brain damage): the
         // colonist collapses where they are. Drop any job so others can
-        // take it, stop moving, and do nothing until they come to.
+        // take it, kill EVERY queued order (drafted move queue, melee,
+        // equip, pick-up), stop moving — but keep draft status. Nothing
+        // resumes when they come to.
         if (entity.HasComponent<Health>() && entity.GetComponent<Health>().Unconscious)
         {
             if (entity.HasComponent<BuildTarget>())
@@ -239,6 +241,10 @@ public sealed class DummyController
                 else _jobs.Release(bt.JobId);
                 cb.RemoveComponent<BuildTarget>(entity.Id);
             }
+            if (entity.HasComponent<OrderQueue>()) cb.RemoveComponent<OrderQueue>(entity.Id);
+            if (entity.HasComponent<MeleeTarget>()) cb.RemoveComponent<MeleeTarget>(entity.Id);
+            if (entity.HasComponent<EquipOrder>()) cb.RemoveComponent<EquipOrder>(entity.Id);
+            if (entity.HasComponent<PickupOrder>()) cb.RemoveComponent<PickupOrder>(entity.Id);
             if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
             path.Waypoints = null;
             path.Index = 0;
