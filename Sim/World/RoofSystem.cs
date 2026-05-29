@@ -34,7 +34,7 @@ public sealed class RoofSystem
     {
         _completed.Clear();
         var workers = store.Query<WorldPos, BuildTarget, Wanderer>();
-        workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
+        workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);
             if (job is null) return;
@@ -50,7 +50,7 @@ public sealed class RoofSystem
             // gates progress as before.
             if (!BuildAdjacency.InRangeOrOnTile(pos.X, pos.Y, job.Tile.X, job.Tile.Y)) return;
 
-            bp.ProgressSec += dt;
+            bp.ProgressSec += dt * HealthMods.WorkSpeed(worker);
             int n = bp.Tiles?.Length ?? 1;
             float perTile = job.Kind == JobKind.RoofBuild ? RoofBuildTimeSec : RoofRemoveTimeSec;
             if (bp.ProgressSec >= perTile * n)

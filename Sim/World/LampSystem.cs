@@ -27,7 +27,7 @@ public sealed class LampSystem
     {
         _completed.Clear();
         var workers = store.Query<WorldPos, BuildTarget, Wanderer>();
-        workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
+        workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);
             if (job is null) return;
@@ -38,13 +38,13 @@ public sealed class LampSystem
             if (job.Kind == JobKind.LampBuild)
             {
                 ref var bp = ref job.Entity.GetComponent<LampBlueprint>();
-                bp.ProgressSec += dt;
+                bp.ProgressSec += dt * HealthMods.WorkSpeed(worker);
                 if (bp.ProgressSec >= LampBuildTimeSec) _completed.Add(job.Id);
             }
             else
             {
                 ref var decon = ref job.Entity.GetComponent<Decon>();
-                decon.ProgressSec += dt;
+                decon.ProgressSec += dt * HealthMods.WorkSpeed(worker);
                 if (decon.ProgressSec >= LampDeconTimeSec) _completed.Add(job.Id);
             }
         });

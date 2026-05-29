@@ -28,7 +28,7 @@ public sealed class CutPlantSystem
     {
         _completed.Clear();
         var cutters = store.Query<WorldPos, BuildTarget, Wanderer>();
-        cutters.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
+        cutters.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);
             if (job is null || job.Kind != JobKind.CutPlants) return;
@@ -38,13 +38,13 @@ public sealed class CutPlantSystem
             if (job.Entity.HasComponent<Tree>())
             {
                 ref var t = ref job.Entity.GetComponent<Tree>();
-                t.ChopProgressSec += dt;
+                t.ChopProgressSec += dt * HealthMods.WorkSpeed(worker);
                 if (t.ChopProgressSec >= CutTimeSec) _completed.Add(job.Id);
             }
             else if (job.Entity.HasComponent<Crop>())
             {
                 ref var c = ref job.Entity.GetComponent<Crop>();
-                c.WorkProgressSec += dt;
+                c.WorkProgressSec += dt * HealthMods.WorkSpeed(worker);
                 if (c.WorkProgressSec >= CutTimeSec) _completed.Add(job.Id);
             }
         });

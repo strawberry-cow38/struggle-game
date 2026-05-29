@@ -31,7 +31,7 @@ public sealed class ChopSystem
     {
         _completed.Clear();
         var choppers = store.Query<WorldPos, BuildTarget, Wanderer>();
-        choppers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
+        choppers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);
             if (job is null || job.Kind != JobKind.ChopTree) return;
@@ -40,7 +40,7 @@ public sealed class ChopSystem
             if (!BuildAdjacency.InRange(pos.X, pos.Y, job.Tile.X, job.Tile.Y)) return;
 
             ref var tree = ref job.Entity.GetComponent<Tree>();
-            tree.ChopProgressSec += dt;
+            tree.ChopProgressSec += dt * HealthMods.WorkSpeed(worker);
             if (tree.ChopProgressSec >= ChopTimeSec)
             {
                 _completed.Add(job.Id);

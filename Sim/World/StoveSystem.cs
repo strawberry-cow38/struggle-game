@@ -27,7 +27,7 @@ public sealed class StoveSystem
     {
         _completed.Clear();
         var workers = store.Query<WorldPos, BuildTarget, Wanderer>();
-        workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
+        workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);
             if (job is null) return;
@@ -66,13 +66,13 @@ public sealed class StoveSystem
             {
                 if (!_sim.IsBlueprintFunded(job.Entity)) return;
                 ref var bp = ref job.Entity.GetComponent<StoveBlueprint>();
-                bp.ProgressSec += dt;
+                bp.ProgressSec += dt * HealthMods.WorkSpeed(worker);
                 if (bp.ProgressSec >= StoveBuildTimeSec) _completed.Add(job.Id);
             }
             else
             {
                 ref var decon = ref job.Entity.GetComponent<Decon>();
-                decon.ProgressSec += dt;
+                decon.ProgressSec += dt * HealthMods.WorkSpeed(worker);
                 if (decon.ProgressSec >= StoveDeconTimeSec) _completed.Add(job.Id);
             }
         });

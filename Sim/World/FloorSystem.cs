@@ -32,7 +32,7 @@ public sealed class FloorSystem
     {
         _completed.Clear();
         var workers = store.Query<WorldPos, BuildTarget, Wanderer>();
-        workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
+        workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);
             if (job is null || job.Kind != JobKind.FloorBuild) return;
@@ -42,7 +42,7 @@ public sealed class FloorSystem
             if (!_sim.IsBlueprintFunded(job.Entity)) return;
 
             ref var bp = ref job.Entity.GetComponent<FloorBlueprint>();
-            bp.ProgressSec += dt;
+            bp.ProgressSec += dt * HealthMods.WorkSpeed(worker);
             if (bp.ProgressSec >= FloorTimeSec)
             {
                 _completed.Add(job.Id);

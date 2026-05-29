@@ -26,7 +26,7 @@ public sealed class SowSystem
     {
         _completed.Clear();
         var sowers = store.Query<WorldPos, BuildTarget, Wanderer>();
-        sowers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
+        sowers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);
             if (job is null || job.Kind != JobKind.Sow) return;
@@ -35,7 +35,7 @@ public sealed class SowSystem
             if (!job.Entity.HasComponent<SowSite>()) return;
 
             ref var s = ref job.Entity.GetComponent<SowSite>();
-            s.ProgressSec += dt;
+            s.ProgressSec += dt * HealthMods.WorkSpeed(worker);
             if (s.ProgressSec >= SowTimeSec) _completed.Add(job.Id);
         });
 

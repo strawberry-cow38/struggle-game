@@ -63,7 +63,7 @@ public sealed class BuildSystem
             if (!_sim.IsBlueprintFunded(job.Entity)) return;
 
             ref var blueprint = ref job.Entity.GetComponent<Blueprint>();
-            blueprint.ProgressSec += dt;
+            blueprint.ProgressSec += dt * HealthMods.WorkSpeed(ent);
             if (blueprint.ProgressSec >= BuildTimeSec)
             {
                 if (_occupied.Contains(job.Tile) || _sim.ItemIndex.AnyItemAt(job.Tile))

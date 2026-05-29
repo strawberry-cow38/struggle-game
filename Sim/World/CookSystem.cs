@@ -98,7 +98,7 @@ public sealed class CookSystem
             var bill = board.Bills[stove.CurrentBillIndex];
             var recipe = Recipes.Get(bill.Recipe);
 
-            stove.CookProgressTicks += dt * TicksPerSecond;
+            stove.CookProgressTicks += dt * TicksPerSecond * HealthMods.WorkSpeed(pawn);
             if (stove.CookProgressTicks < recipe.WorkTicks) return;
 
             // Defer all structural changes (entity spawn, component removal,

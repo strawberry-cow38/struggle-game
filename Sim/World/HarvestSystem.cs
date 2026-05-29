@@ -26,7 +26,7 @@ public sealed class HarvestSystem
     {
         _completed.Clear();
         var harvesters = store.Query<WorldPos, BuildTarget, Wanderer>();
-        harvesters.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity _) =>
+        harvesters.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);
             if (job is null || job.Kind != JobKind.Harvest) return;
@@ -35,7 +35,7 @@ public sealed class HarvestSystem
             if (!job.Entity.HasComponent<Crop>()) return;
 
             ref var c = ref job.Entity.GetComponent<Crop>();
-            c.WorkProgressSec += dt;
+            c.WorkProgressSec += dt * HealthMods.WorkSpeed(worker);
             if (c.WorkProgressSec >= HarvestTimeSec) _completed.Add(job.Id);
         });
 
