@@ -12,6 +12,12 @@ namespace StruggleGame.Sim.World;
 // DummyController so the haul shares the existing path / claim plumbing.
 public sealed class HaulSystem
 {
+    // Haul posting doesn't need 60 Hz — a freshly dropped stack getting a
+    // haul job a few ticks late is invisible. Re-evaluate every N ticks
+    // instead of every tick. (Pawns still claim the posted job the next
+    // tick via the JobBoard version bump.)
+    public const int ScanIntervalTicks = 6;
+
     private readonly JobBoard _jobs;
     private readonly SimRuntime _sim;
 
@@ -32,6 +38,7 @@ public sealed class HaulSystem
 
     public void Step(EntityStore store, float dt)
     {
+        if (_sim.Tick % ScanIntervalTicks != 0) return;
         _candidates.Clear();
         foreach (var kv in _stackAt) kv.Value.Clear();
 

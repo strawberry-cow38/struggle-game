@@ -41,6 +41,10 @@ public sealed class ItemSpatialIndex
     private readonly Dictionary<int, Entry> _byEntity = new();
     private readonly Dictionary<TilePos, int> _woodTileCount = new();
     private readonly Dictionary<(int, int), List<int>> _chunks = new();
+    // Set whenever an item is added; lets the merge passes skip entirely on
+    // ticks where nothing new dropped (a coincident stack can only appear
+    // when an item is added to an already-occupied tile).
+    private bool _addedSinceMergeDrain;
 
     private static (int, int) ChunkOf(TilePos t) => (t.X >> ChunkShift, t.Y >> ChunkShift);
 
@@ -49,6 +53,7 @@ public sealed class ItemSpatialIndex
     public void OnItemAdded(int entityId, TilePos tile, bool isWood, string path)
     {
         if (_byEntity.ContainsKey(entityId)) return; // idempotent
+        _addedSinceMergeDrain = true;
         _byEntity[entityId] = new Entry(tile, isWood, path);
         if (isWood)
             _woodTileCount[tile] = _woodTileCount.GetValueOrDefault(tile) + 1;
@@ -72,6 +77,15 @@ public sealed class ItemSpatialIndex
             list.Remove(entityId);
             if (list.Count == 0) _chunks.Remove(key);
         }
+    }
+
+    // True (once) if any item was added since the last call. Lets the
+    // merge passes run only on ticks where a new stack actually landed.
+    public bool ConsumeMergeFlag()
+    {
+        if (!_addedSinceMergeDrain) return false;
+        _addedSinceMergeDrain = false;
+        return true;
     }
 
     // ── queries ──────────────────────────────────────────────────────────

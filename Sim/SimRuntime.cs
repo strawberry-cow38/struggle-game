@@ -361,8 +361,14 @@ public sealed class SimRuntime
         _hauls.Step(Store, dt);
         _sleep.Step(Store, dt);
         AgeRoofFlashes(dt);
-        MergeCoincidentWood();
-        MergeCoincidentItemPiles();
+        // A coincident stack can only form when an item was added this tick
+        // (spawn / haul deliver / cook output). Skip the merge scans
+        // entirely on the common no-add tick.
+        if (_itemIndex.ConsumeMergeFlag())
+        {
+            MergeCoincidentWood();
+            MergeCoincidentItemPiles();
+        }
         _safety.Step(Store, Tick);
         // Coalesced rebuild: one map clone + one room flood-fill per tick
         // even if N walls/doors mutated this tick.
