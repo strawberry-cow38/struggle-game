@@ -87,6 +87,22 @@ public sealed class SimSnapshot
     internal int BedBlueprintsCount;
     public SnapshotList<BedBlueprintState> BedBlueprints => new(BedBlueprintsBuf, BedBlueprintsCount);
 
+    internal UrBoardState[] UrBoardsBuf = System.Array.Empty<UrBoardState>();
+    internal int UrBoardsCount;
+    public SnapshotList<UrBoardState> UrBoards => new(UrBoardsBuf, UrBoardsCount);
+
+    internal BlueprintState[] UrBoardBlueprintsBuf = System.Array.Empty<BlueprintState>();
+    internal int UrBoardBlueprintsCount;
+    public SnapshotList<BlueprintState> UrBoardBlueprints => new(UrBoardBlueprintsBuf, UrBoardBlueprintsCount);
+
+    internal StoveState[] StovesBuf = System.Array.Empty<StoveState>();
+    internal int StovesCount;
+    public SnapshotList<StoveState> Stoves => new(StovesBuf, StovesCount);
+
+    internal StoveBlueprintState[] StoveBlueprintsBuf = System.Array.Empty<StoveBlueprintState>();
+    internal int StoveBlueprintsCount;
+    public SnapshotList<StoveBlueprintState> StoveBlueprints => new(StoveBlueprintsBuf, StoveBlueprintsCount);
+
     internal RoofFlashState[] RoofFlashesBuf = System.Array.Empty<RoofFlashState>();
     internal int RoofFlashesCount;
     public SnapshotList<RoofFlashState> RoofFlashes => new(RoofFlashesBuf, RoofFlashesCount);
@@ -121,7 +137,9 @@ public readonly record struct DummyState(
     float MaxCarryBulk,
     float SleepLevel,
     bool Sleeping,
-    int AssignedBedEntityId);
+    int AssignedBedEntityId,
+    float RecreationLevel,
+    RecreationKind? AtRecreationKind);
 
 public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath, int Count, bool Forbidden);
 
@@ -179,6 +197,33 @@ public readonly record struct LampState(TilePos Tile, bool PoweredOn, LightColor
 public readonly record struct BedState(TilePos Origin, BedOrientation Orientation, int AssignedPawnEntityId);
 
 public readonly record struct BedBlueprintState(TilePos Origin, BedOrientation Orientation, float Progress, bool Forbidden, float Funding, ResourceCostState[] Costs);
+
+public readonly record struct UrBoardState(int EntityId, TilePos Tile, int PlayerCount, int SpectatorCount);
+
+public readonly record struct StoveState(
+    int EntityId,
+    TilePos Origin,
+    StoveOrientation Orientation,
+    int CurrentBillIndex,
+    float CookProgress,
+    int ActiveCookEntityId,
+    BillState[] Bills);
+
+public readonly record struct StoveBlueprintState(
+    TilePos Origin,
+    StoveOrientation Orientation,
+    float Progress,
+    bool Forbidden,
+    float Funding,
+    ResourceCostState[] Costs);
+
+public readonly record struct BillState(
+    RecipeId Recipe,
+    BillRepeatMode RepeatMode,
+    int TargetCount,
+    int RemainingCount,
+    BillOutputDest OutputDest,
+    int StockpileEntityId);
 
 public readonly record struct GrowZoneState(
     int Id,

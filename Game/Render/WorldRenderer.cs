@@ -326,6 +326,28 @@ public partial class WorldRenderer : Node2D
                 DrawBedBlueprint(bbp.Origin, bbp.Orientation, bbp.Progress, bbp.Funding);
                 if (bbp.Forbidden) { DrawForbidX(bbp.Origin); DrawForbidX(foot); }
             }
+
+            foreach (var ubp in snap.UrBoardBlueprints)
+            {
+                if (ubp.Tile.X < viewMinTileX || ubp.Tile.X > viewMaxTileX
+                    || ubp.Tile.Y < viewMinTileY || ubp.Tile.Y > viewMaxTileY) continue;
+                DrawUrBoardBlueprint(ubp.Tile, ubp.Progress, ubp.Funding);
+                if (ubp.Forbidden) DrawForbidX(ubp.Tile);
+            }
+
+            foreach (var sbp in snap.StoveBlueprints)
+            {
+                DrawStoveBlueprint(sbp.Origin, sbp.Orientation, sbp.Progress, sbp.Funding);
+                if (sbp.Forbidden) DrawForbidX(sbp.Origin);
+            }
+        }
+
+        using (FrameProfiler.Instance.BeginScope("Stoves"))
+        {
+            foreach (var s in snap.Stoves)
+            {
+                DrawStove(s.Origin, s.Orientation, s.CookProgress, s.CurrentBillIndex >= 0);
+            }
         }
 
         using (FrameProfiler.Instance.BeginScope("Beds"))
@@ -339,6 +361,16 @@ public partial class WorldRenderer : Node2D
                 if (maxX < viewMinTileX || minX > viewMaxTileX
                     || maxY < viewMinTileY || minY > viewMaxTileY) continue;
                 DrawBed(origin, bed.Orientation);
+            }
+        }
+
+        using (FrameProfiler.Instance.BeginScope("UrBoards"))
+        {
+            foreach (var ub in snap.UrBoards)
+            {
+                if (ub.Tile.X < viewMinTileX || ub.Tile.X > viewMaxTileX
+                    || ub.Tile.Y < viewMinTileY || ub.Tile.Y > viewMaxTileY) continue;
+                DrawUrBoard(ub.Tile);
             }
         }
 
@@ -393,6 +425,7 @@ public partial class WorldRenderer : Node2D
                     }
                 }
                 foreach (var t in Host.SelectedLampTiles) DrawSelectionOutline(t);
+                foreach (var t in Host.SelectedUrBoardTiles) DrawSelectionOutline(t);
                 foreach (var t in Host.SelectedBedTiles)
                 {
                     DrawSelectionOutline(t);
@@ -403,6 +436,17 @@ public partial class WorldRenderer : Node2D
                             DrawSelectionOutline(BedOrientations.Foot(b.Origin, b.Orientation));
                             break;
                         }
+                    }
+                }
+                foreach (var t in Host.SelectedStoveTiles)
+                {
+                    foreach (var s in snap.Stoves)
+                    {
+                        if (s.Origin != t) continue;
+                        foreach (var bt in StoveOrientations.BodyTiles(s.Origin, s.Orientation))
+                            DrawSelectionOutline(bt);
+                        DrawSelectionOutline(StoveOrientations.StandingTile(s.Origin, s.Orientation));
+                        break;
                     }
                 }
             }
@@ -1185,6 +1229,127 @@ public partial class WorldRenderer : Node2D
             // Vertical fill from bottom of footprint bbox.
             float fh = h * p;
             var bar = new Rect2(x0, y0 + (h - fh), w, fh);
+            DrawRect(bar, BlueprintProgress, filled: true);
+        }
+    }
+
+    private static readonly Color StoveBody    = new(0.32f, 0.32f, 0.36f, 1f);
+    private static readonly Color StoveBorder  = new(0.10f, 0.10f, 0.12f, 1f);
+    private static readonly Color StoveBurner  = new(0.18f, 0.18f, 0.20f, 1f);
+    private static readonly Color StoveBurnerLit = new(1.00f, 0.55f, 0.15f, 1f);
+    private static readonly Color StoveStandFill = new(0.95f, 0.80f, 0.30f, 0.18f);
+    private static readonly Color StoveBpFill   = new(0.40f, 0.40f, 0.44f, 0.40f);
+    private static readonly Color StoveBpBorder = new(0.85f, 0.85f, 0.92f, 0.85f);
+
+    private void DrawStove(TilePos origin, StoveOrientation orientation, float cookProgress, bool active)
+    {
+        // Standing tile: subtle yellow tint so it reads as the cook spot.
+        var stand = StoveOrientations.StandingTile(origin, orientation);
+        var standR = new Rect2(stand.X * PixelsPerTile, stand.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+        DrawRect(standR, StoveStandFill, filled: true);
+
+        // Body: 3 tile row. Bake a rounded-ish look with insets.
+        int idx = 0;
+        foreach (var t in StoveOrientations.BodyTiles(origin, orientation))
+        {
+            float x0 = t.X * PixelsPerTile;
+            float y0 = t.Y * PixelsPerTile;
+            float inset = PixelsPerTile * 0.08f;
+            var body = new Rect2(x0 + inset, y0 + inset, PixelsPerTile - 2 * inset, PixelsPerTile - 2 * inset);
+            DrawRect(body, StoveBody, filled: true);
+            DrawRect(body, StoveBorder, filled: false, width: 2f);
+
+            // Burner circle on each body tile.
+            var burnerCenter = new Vector2(x0 + PixelsPerTile * 0.5f, y0 + PixelsPerTile * 0.5f);
+            float r = PixelsPerTile * 0.22f;
+            DrawCircle(burnerCenter, r, StoveBurner);
+            if (active)
+            {
+                var litR = r * (0.55f + 0.45f * cookProgress);
+                DrawCircle(burnerCenter, litR, StoveBurnerLit);
+            }
+            idx++;
+        }
+    }
+
+    private void DrawStoveBlueprint(TilePos origin, StoveOrientation orientation, float progress, float funding)
+    {
+        var fill = FundedFill(StoveBpFill, funding);
+        // Body footprint outline.
+        int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+        foreach (var t in StoveOrientations.BodyTiles(origin, orientation))
+        {
+            var r = new Rect2(t.X * PixelsPerTile, t.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+            DrawRect(r, fill, filled: true);
+            DrawRect(r, StoveBpBorder, filled: false, width: 2f);
+            if (t.X < minX) minX = t.X; if (t.Y < minY) minY = t.Y;
+            if (t.X > maxX) maxX = t.X; if (t.Y > maxY) maxY = t.Y;
+        }
+        // Standing tile tint.
+        var stand = StoveOrientations.StandingTile(origin, orientation);
+        var sr = new Rect2(stand.X * PixelsPerTile, stand.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+        DrawRect(sr, StoveStandFill, filled: true);
+        DrawRect(sr, StoveBpBorder, filled: false, width: 2f);
+
+        if (progress > 0f)
+        {
+            float p = Mathf.Clamp(progress, 0f, 1f);
+            float x0 = minX * PixelsPerTile;
+            float y0 = minY * PixelsPerTile;
+            float w = (maxX - minX + 1) * PixelsPerTile;
+            float h = (maxY - minY + 1) * PixelsPerTile;
+            float fh = h * p;
+            var bar = new Rect2(x0, y0 + (h - fh), w, fh);
+            DrawRect(bar, BlueprintProgress, filled: true);
+        }
+    }
+
+    private static readonly Color UrBoardWood   = new(0.55f, 0.35f, 0.18f, 1f);
+    private static readonly Color UrBoardInlay  = new(0.95f, 0.82f, 0.42f, 1f);
+    private static readonly Color UrBoardShadow = new(0f, 0f, 0f, 0.22f);
+    private static readonly Color UrBoardBpFill   = new(0.65f, 0.45f, 0.20f, 0.40f);
+    private static readonly Color UrBoardBpBorder = new(0.95f, 0.75f, 0.40f, 0.85f);
+
+    private void DrawUrBoard(TilePos tile)
+    {
+        float x0 = tile.X * PixelsPerTile;
+        float y0 = tile.Y * PixelsPerTile;
+        var shadow = new Rect2(x0 + 2, y0 + 3, PixelsPerTile, PixelsPerTile);
+        DrawRect(shadow, UrBoardShadow, filled: true);
+        float inset = PixelsPerTile * 0.10f;
+        var board = new Rect2(x0 + inset, y0 + inset, PixelsPerTile - 2 * inset, PixelsPerTile - 2 * inset);
+        DrawRect(board, UrBoardWood, filled: true);
+
+        // 3x2 rosette grid inlays (small game of ur motif).
+        float gridInset = PixelsPerTile * 0.20f;
+        float gx = x0 + gridInset;
+        float gy = y0 + gridInset;
+        float gw = PixelsPerTile - 2 * gridInset;
+        float gh = PixelsPerTile - 2 * gridInset;
+        float cellW = gw / 3f;
+        float cellH = gh / 2f;
+        float dotR = Mathf.Min(cellW, cellH) * 0.22f;
+        for (int cy = 0; cy < 2; cy++)
+        {
+            for (int cx = 0; cx < 3; cx++)
+            {
+                float px = gx + (cx + 0.5f) * cellW;
+                float py = gy + (cy + 0.5f) * cellH;
+                DrawCircle(new Vector2(px, py), dotR, UrBoardInlay);
+            }
+        }
+        DrawRect(board, UrBoardInlay, filled: false, width: 2f);
+    }
+
+    private void DrawUrBoardBlueprint(TilePos tile, float progress, float funding)
+    {
+        var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+        DrawRect(rect, FundedFill(UrBoardBpFill, funding), filled: true);
+        DrawRect(rect, UrBoardBpBorder, filled: false, width: 2f);
+        if (progress > 0f)
+        {
+            float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
+            var bar = new Rect2(rect.Position.X, rect.Position.Y + (PixelsPerTile - h), PixelsPerTile, h);
             DrawRect(bar, BlueprintProgress, filled: true);
         }
     }

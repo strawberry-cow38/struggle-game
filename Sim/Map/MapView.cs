@@ -53,6 +53,12 @@ public sealed class MapView
     public IReadOnlyList<TilePos> FurnitureTiles { get; }
     public const float FurnitureCost = 8.0f;
 
+    // Tiles occupied by blocking furniture (currently Ur boards) — same
+    // FurnitureTiles semantics for cost weighting but pathing treats
+    // them like trees: Walkable returns false. Beds remain walkable so
+    // sleepers can climb in; boards don't, since you stand adjacent.
+    public IReadOnlyList<TilePos> BlockingFurniture { get; }
+
     // Exposed for TileMap.Snapshot to share unchanged chunk byte[]s into
     // the next MapView. Outside callers should go through GetWall/etc.
     internal byte[][] TerrainChunks { get; }
@@ -63,6 +69,7 @@ public sealed class MapView
     private readonly HashSet<TilePos> _treeSet;
     private readonly HashSet<TilePos> _forbiddenDoorSet;
     private readonly HashSet<TilePos> _furnitureSet;
+    private readonly HashSet<TilePos> _blockingFurnitureSet;
     private readonly Dictionary<TilePos, float> _doorCostByTile;
 
     public MapView(
@@ -80,7 +87,8 @@ public sealed class MapView
         IReadOnlyList<TilePos>? forbiddenDoors = null,
         IReadOnlyList<TilePos>? doorTiles = null,
         IReadOnlyList<float>? doorCosts = null,
-        IReadOnlyList<TilePos>? furnitureTiles = null)
+        IReadOnlyList<TilePos>? furnitureTiles = null,
+        IReadOnlyList<TilePos>? blockingFurniture = null)
     {
         Version = version;
         Width = width;
@@ -99,6 +107,8 @@ public sealed class MapView
         DoorTiles = doorTiles ?? Array.Empty<TilePos>();
         FurnitureTiles = furnitureTiles ?? Array.Empty<TilePos>();
         _furnitureSet = new HashSet<TilePos>(FurnitureTiles);
+        BlockingFurniture = blockingFurniture ?? Array.Empty<TilePos>();
+        _blockingFurnitureSet = new HashSet<TilePos>(BlockingFurniture);
         _doorCostByTile = new Dictionary<TilePos, float>(DoorTiles.Count);
         if (doorCosts is not null && doorCosts.Count == DoorTiles.Count)
         {
@@ -170,12 +180,13 @@ public sealed class MapView
         var p = new TilePos(x, y);
         if (_treeSet.Contains(p)) return false;
         if (_forbiddenDoorSet.Contains(p)) return false;
+        if (_blockingFurnitureSet.Contains(p)) return false;
         // Furniture (beds) intentionally walkable — see CostAt.
         return true;
     }
 
-    public bool HasFurniture(TilePos p) => _furnitureSet.Contains(p);
-    public bool HasFurniture(int x, int y) => _furnitureSet.Contains(new TilePos(x, y));
+    public bool HasFurniture(TilePos p) => _furnitureSet.Contains(p) || _blockingFurnitureSet.Contains(p);
+    public bool HasFurniture(int x, int y) { var p = new TilePos(x, y); return _furnitureSet.Contains(p) || _blockingFurnitureSet.Contains(p); }
     public bool Walkable(TilePos p) => Walkable(p.X, p.Y);
 
     private byte RawTerrainByte(int x, int y) => TerrainChunks[MapChunks.ChunkIndex(x, y, ChunksAcross)][MapChunks.LocalIndex(x, y)];

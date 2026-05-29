@@ -66,6 +66,12 @@ public sealed class DummyController
     public delegate bool TryReserveBedDelegate(Entity pawn, out int bedEntityId, out Map.TilePos bedOrigin, out Map.TilePos bedFoot);
     private readonly TryReserveBedDelegate _tryReserveBed;
     private readonly Action<int, int> _releaseBedReservation;
+    // Recreation seat picker. Returns true on reservation; out fields name
+    // the board, the board's tile (for proximity bookkeeping), the seat
+    // tile the pawn walks to, and the role (player vs spectator).
+    public delegate bool TryReserveRecreationDelegate(Entity pawn, RecreationKind preferred, out int boardEntityId, out TilePos boardTile, out TilePos seatTile, out RecreationRole role);
+    private readonly TryReserveRecreationDelegate _tryReserveRecreation;
+    private readonly Action<int, TilePos, RecreationRole> _releaseUrSeat;
     // Auto-claim list: pawn → bed pairs to assign after Step() so the
     // structural change happens outside the query loop. SimRuntime drains
     // it once cb.Playback returns.
@@ -87,6 +93,12 @@ public sealed class DummyController
     // owns the Carrying component lifecycle — callers must NOT remove
     // Carrying themselves (forbidden slots may be retained on the pawn).
     public Action<Entity, TilePos, CommandBuffer>? OnHaulDeliver;
+    // Cook hooks wired by SimRuntime so DummyController can talk to the
+    // item layer without a hard ref. Find nearest matching pile, consume
+    // from a pile at a tile, spawn a drop at a tile.
+    public Func<TilePos, string, TilePos?>? CookFindNearestPile;
+    public Func<TilePos, string, int, int>? CookConsumePile;
+    public Action<TilePos, string, int>? CookSpawnPile;
     // Scratch set populated each Step() so a single tick of topoff scans
     // doesn't reserve the same item for two different carriers.
     private readonly HashSet<int> _topoffReservedThisTick = new();
@@ -109,7 +121,9 @@ public sealed class DummyController
         Func<Jobs.Job, int> getJobBlueprintId,
         Func<int, int> getBlueprintClaimant,
         TryReserveBedDelegate tryReserveBed,
-        Action<int, int> releaseBedReservation)
+        Action<int, int> releaseBedReservation,
+        TryReserveRecreationDelegate tryReserveRecreation,
+        Action<int, TilePos, RecreationRole> releaseUrSeat)
     {
         _paths = paths;
         _jobs = jobs;
@@ -124,6 +138,8 @@ public sealed class DummyController
         _getBlueprintClaimant = getBlueprintClaimant;
         _tryReserveBed = tryReserveBed;
         _releaseBedReservation = releaseBedReservation;
+        _tryReserveRecreation = tryReserveRecreation;
+        _releaseUrSeat = releaseUrSeat;
     }
 
     public void Step(EntityStore store, float dt)
@@ -190,6 +206,20 @@ public sealed class DummyController
         // otherwise hold position and watch.
         if (drafted)
         {
+            // Drafted pawn drops any held rec seat — the player took
+            // direct control, recreation is on hold.
+            if (entity.HasComponent<RecreationReservation>())
+            {
+                var rr = entity.GetComponent<RecreationReservation>();
+                _releaseUrSeat(rr.BoardEntityId, rr.SeatTile, rr.Role);
+                cb.RemoveComponent<RecreationReservation>(entity.Id);
+            }
+            if (entity.HasComponent<AtRecreation>())
+            {
+                var ar = entity.GetComponent<AtRecreation>();
+                _releaseUrSeat(ar.BoardEntityId, ar.SeatTile, ar.Role);
+                cb.RemoveComponent<AtRecreation>(entity.Id);
+            }
             // Belt-and-braces: if a BuildTarget survived the draft toggle
             // for any reason, drop it now and clear whatever path was
             // pointing at it. ToggleDraftCommand already does this on the
@@ -207,6 +237,32 @@ public sealed class DummyController
                 else
                 {
                     _jobs.Release(bt.JobId);
+                }
+                // Drafted mid-cook: drop staged carrots at our feet, kill
+                // the Cooking binding, reset the stove's progress. Per
+                // master spec, drafted is the only interrupt that drops
+                // cook progress.
+                if (entity.HasComponent<Cooking>())
+                {
+                    var cooking = entity.GetComponent<Cooking>();
+                    if (store.TryGetEntityById(cooking.StoveEntityId, out var stoveEnt)
+                        && stoveEnt.HasComponent<Stove>())
+                    {
+                        ref var stove = ref stoveEnt.GetComponent<Stove>();
+                        stove.CookProgressTicks = 0f;
+                        stove.CurrentBillIndex = -1;
+                        stove.ActiveCookEntityId = 0;
+                    }
+                    cb.RemoveComponent<Cooking>(entity.Id);
+                }
+                if (entity.HasComponent<CookHaul>())
+                {
+                    var ch = entity.GetComponent<CookHaul>();
+                    if (ch.CarrotsCarried > 0)
+                    {
+                        CookSpawnPile?.Invoke(here, Items.ItemCatalog.Carrot.FullPath, ch.CarrotsCarried);
+                    }
+                    cb.RemoveComponent<CookHaul>(entity.Id);
                 }
                 cb.RemoveComponent<BuildTarget>(entity.Id);
                 if (path.PendingPathId != 0)
@@ -288,6 +344,22 @@ public sealed class DummyController
             && (passedOut || !entity.HasComponent<BuildTarget>())
             && (passedOut || !entity.HasComponent<Carrying>()))
         {
+            // Sleep overpowers recreation: a tired pawn parked at a board
+            // releases the seat and heads for bed. Without this they'd
+            // sit at the seat forever (the AtRecreation branch returns
+            // early before this check).
+            if (entity.HasComponent<AtRecreation>())
+            {
+                var ar = entity.GetComponent<AtRecreation>();
+                _releaseUrSeat(ar.BoardEntityId, ar.SeatTile, ar.Role);
+                cb.RemoveComponent<AtRecreation>(entity.Id);
+            }
+            if (entity.HasComponent<RecreationReservation>())
+            {
+                var rr = entity.GetComponent<RecreationReservation>();
+                _releaseUrSeat(rr.BoardEntityId, rr.SeatTile, rr.Role);
+                cb.RemoveComponent<RecreationReservation>(entity.Id);
+            }
             // Pick / re-pick a bed each plan tick until arrival. The
             // runtime's TryReserveBed checks BedReservedBy atomically so
             // two tired pawns the same tick can't grab one bed.
@@ -336,6 +408,128 @@ public sealed class DummyController
             return;
         }
 
+        // 2b. Recreation behavior. Pawn already AtRecreation stays put
+        //     until the RecreationNeed hits 1.0; otherwise pawns below
+        //     the seek threshold with no active build/haul walk to an
+        //     Ur board seat picked from their RecreationPreference.
+        if (entity.HasComponent<AtRecreation>())
+        {
+            float rLvl = entity.HasComponent<RecreationNeed>()
+                ? entity.GetComponent<RecreationNeed>().Level
+                : 1f;
+            if (rLvl >= 1f)
+            {
+                var ar = entity.GetComponent<AtRecreation>();
+                _releaseUrSeat(ar.BoardEntityId, ar.SeatTile, ar.Role);
+                cb.RemoveComponent<AtRecreation>(entity.Id);
+            }
+            return;
+        }
+
+        // Schedule gating: pawn idle-seeks in Recreation/Any slot (any
+        // level), or urgent-seeks (need below 15%) outside Sleep slot.
+        // Sleep slot always wins over recreation — pawns about to sleep
+        // shouldn't go play.
+        var recSlot = _getScheduleSlot(entity);
+        bool recSlotAllowsIdle = recSlot == ScheduleCategory.Recreation || recSlot == ScheduleCategory.Any;
+        bool recBlocked = recSlot == ScheduleCategory.Sleep;
+        bool hasRec = entity.HasComponent<RecreationNeed>() && entity.HasComponent<RecreationPreference>();
+        bool urgentRec = hasRec && !recBlocked && entity.GetComponent<RecreationNeed>().Level < RecreationSystem.SeekThreshold;
+        bool idleRec = hasRec && recSlotAllowsIdle && entity.GetComponent<RecreationNeed>().Level < 1f;
+        bool seekingRec = (urgentRec || idleRec)
+            && !entity.HasComponent<BuildTarget>()
+            && !entity.HasComponent<Carrying>();
+        // Existing reservation: pawn already holds a seat. Walk to it,
+        // or sit if we're already on the tile. Skips a re-call into
+        // TryReserveRecreation (which would leak seats by handing out
+        // a fresh tile every tick with no per-pawn tracking).
+        if (entity.HasComponent<RecreationReservation>())
+        {
+            var rr = entity.GetComponent<RecreationReservation>();
+            if (recBlocked || !hasRec)
+            {
+                _releaseUrSeat(rr.BoardEntityId, rr.SeatTile, rr.Role);
+                cb.RemoveComponent<RecreationReservation>(entity.Id);
+            }
+            else if (here == rr.SeatTile)
+            {
+                path.Waypoints = null;
+                path.Index = 0;
+                cb.AddComponent(entity.Id, new AtRecreation
+                {
+                    BoardEntityId = rr.BoardEntityId,
+                    Kind = rr.Kind,
+                    Role = rr.Role,
+                    SeatTile = rr.SeatTile,
+                });
+                cb.RemoveComponent<RecreationReservation>(entity.Id);
+                return;
+            }
+            else
+            {
+                // Re-path each plan tick the pawn has nothing in flight.
+                // Wander paths get overridden immediately so the rec pull
+                // beats the random stroll.
+                if (path.Waypoints is null || path.Index >= path.Waypoints.Count
+                    || (path.Waypoints.Count > 0 && path.Waypoints[path.Waypoints.Count - 1] != rr.SeatTile))
+                {
+                    if (view.Walkable(rr.SeatTile))
+                    {
+                        path.PendingPathId = _paths.Request(here, rr.SeatTile);
+                    }
+                    else
+                    {
+                        _releaseUrSeat(rr.BoardEntityId, rr.SeatTile, rr.Role);
+                        cb.RemoveComponent<RecreationReservation>(entity.Id);
+                    }
+                }
+                return;
+            }
+        }
+
+        if (seekingRec)
+        {
+            var pref = entity.GetComponent<RecreationPreference>();
+            // Kind sentinel 255 = "never rolled yet" — RecreationSystem
+            // will pick one on its next tick; defer.
+            if ((byte)pref.Kind <= 1
+                && _tryReserveRecreation(entity, pref.Kind, out int boardId, out var bTile, out var seatTile, out var role))
+            {
+                cb.AddComponent(entity.Id, new RecreationReservation
+                {
+                    BoardEntityId = boardId,
+                    Kind = pref.Kind,
+                    Role = role,
+                    SeatTile = seatTile,
+                });
+                if (here == seatTile)
+                {
+                    path.Waypoints = null;
+                    path.Index = 0;
+                    cb.AddComponent(entity.Id, new AtRecreation
+                    {
+                        BoardEntityId = boardId,
+                        Kind = pref.Kind,
+                        Role = role,
+                        SeatTile = seatTile,
+                    });
+                    cb.RemoveComponent<RecreationReservation>(entity.Id);
+                    return;
+                }
+                if (view.Walkable(seatTile))
+                {
+                    path.PendingPathId = _paths.Request(here, seatTile);
+                }
+                else
+                {
+                    // Seat unreachable — release reservation immediately.
+                    _releaseUrSeat(boardId, seatTile, role);
+                    cb.RemoveComponent<RecreationReservation>(entity.Id);
+                }
+                return;
+            }
+        }
+
         // 3. Existing build target.
         if (entity.HasComponent<BuildTarget>())
         {
@@ -356,6 +550,11 @@ public sealed class DummyController
             else if (job.Kind == JobKind.Haul)
             {
                 HandleHaul(ref pos, ref path, entity, cb, view, job, here, store);
+                return;
+            }
+            else if (job.Kind == JobKind.Cook)
+            {
+                HandleCook(ref pos, ref path, entity, cb, view, job, here, store);
                 return;
             }
             else if (job.Kind == JobKind.FloorBuild
@@ -604,7 +803,8 @@ public sealed class DummyController
             bool isFloor = job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct;
             bool isRoof = job.Kind == JobKind.RoofBuild || job.Kind == JobKind.RoofRemove;
             bool isLamp = job.Kind == JobKind.LampBuild || job.Kind == JobKind.LampDeconstruct;
-            if (isHaul || isFloor || isLamp)
+            bool isCook = job.Kind == JobKind.Cook;
+            if (isHaul || isFloor || isLamp || isCook)
             {
                 if (!view.Walkable(job.Tile)) continue;
                 approach = job.Tile;
@@ -637,6 +837,152 @@ public sealed class DummyController
             return true;
         }
         return false;
+    }
+
+    // Cook flow. job.Entity = the stove. job.Tile = standing tile.
+    // Phases:
+    //   0 (no Cooking on pawn): gather carrots. If pawn already holds
+    //      enough in CookHaul, walk to standing tile. Else find nearest
+    //      reachable carrot pile, walk to it, consume what's needed.
+    //   1 (Cooking on pawn): stand on the standing tile while CookSystem
+    //      ticks progress. CookSystem clears the pawn's Cooking +
+    //      BuildTarget on completion.
+    private void HandleCook(
+        ref WorldPos pos,
+        ref PathFollower path,
+        Entity entity,
+        CommandBuffer cb,
+        MapView view,
+        Job job,
+        TilePos here,
+        EntityStore store)
+    {
+        var stoveEnt = job.Entity;
+        if (!stoveEnt.HasComponent<Stove>() || !stoveEnt.HasComponent<BillsBoard>())
+        {
+            _cancelJob(job.Id);
+            cb.RemoveComponent<BuildTarget>(entity.Id);
+            return;
+        }
+        ref var stove = ref stoveEnt.GetComponent<Stove>();
+        var board = stoveEnt.GetComponent<BillsBoard>();
+        if (board.Bills is null || stove.CurrentBillIndex < 0
+            || stove.CurrentBillIndex >= board.Bills.Count)
+        {
+            _cancelJob(job.Id);
+            cb.RemoveComponent<BuildTarget>(entity.Id);
+            return;
+        }
+        var bill = board.Bills[stove.CurrentBillIndex];
+        var recipe = Recipes.Get(bill.Recipe);
+        // V1: single input (carrots). Multi-input would loop here.
+        var input = recipe.Inputs[0];
+        int needed = input.Count;
+        var standing = StoveOrientations.StandingTile(stove.Origin, stove.Orientation);
+
+        // Phase 1: already cooking — stand still on the standing tile.
+        if (entity.HasComponent<Cooking>())
+        {
+            var cooking = entity.GetComponent<Cooking>();
+            if (cooking.Phase != 1) return;
+            if (here != standing)
+            {
+                // Got bumped off. Walk back.
+                if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
+                {
+                    path.PendingPathId = _paths.Request(here, standing);
+                }
+                return;
+            }
+            path.Waypoints = null;
+            path.Index = 0;
+            return;
+        }
+
+        // Phase 0: gather. Check pawn's current haul.
+        int haveOnPawn = entity.HasComponent<CookHaul>()
+            ? entity.GetComponent<CookHaul>().CarrotsCarried
+            : 0;
+
+        if (haveOnPawn >= needed)
+        {
+            // Walk to standing tile, deposit, and start cooking.
+            if (here == standing)
+            {
+                path.Waypoints = null;
+                path.Index = 0;
+                cb.RemoveComponent<CookHaul>(entity.Id);
+                cb.AddComponent(entity.Id, new Cooking
+                {
+                    StoveEntityId = stoveEnt.Id,
+                    BillIndex = stove.CurrentBillIndex,
+                    Phase = 1,
+                });
+                stove.ActiveCookEntityId = entity.Id;
+                return;
+            }
+            if (path.Waypoints is null || path.Index >= path.Waypoints.Count
+                || (path.Waypoints.Count > 0 && path.Waypoints[path.Waypoints.Count - 1] != standing))
+            {
+                if (!view.Walkable(standing))
+                {
+                    _cancelJob(job.Id);
+                    cb.RemoveComponent<BuildTarget>(entity.Id);
+                    return;
+                }
+                path.PendingPathId = _paths.Request(here, standing);
+            }
+            return;
+        }
+
+        // Need more carrots: find nearest pile and walk to it.
+        var pile = CookFindNearestPile?.Invoke(here, input.ItemPath);
+        if (pile is null)
+        {
+            // Ingredient gone — drop what we have at our feet and bail.
+            if (haveOnPawn > 0)
+            {
+                CookSpawnPile?.Invoke(here, input.ItemPath, haveOnPawn);
+                cb.RemoveComponent<CookHaul>(entity.Id);
+            }
+            _cancelJob(job.Id);
+            cb.RemoveComponent<BuildTarget>(entity.Id);
+            return;
+        }
+
+        var pileTile = pile.Value;
+        if (here == pileTile)
+        {
+            path.Waypoints = null;
+            path.Index = 0;
+            int wanted = needed - haveOnPawn;
+            int taken = CookConsumePile?.Invoke(pileTile, input.ItemPath, wanted) ?? 0;
+            if (taken > 0)
+            {
+                if (!entity.HasComponent<CookHaul>())
+                {
+                    cb.AddComponent(entity.Id, new CookHaul { CarrotsCarried = haveOnPawn + taken });
+                }
+                else
+                {
+                    ref var ch = ref entity.GetComponent<CookHaul>();
+                    ch.CarrotsCarried += taken;
+                }
+            }
+            return;
+        }
+
+        if (path.Waypoints is null || path.Index >= path.Waypoints.Count
+            || (path.Waypoints.Count > 0 && path.Waypoints[path.Waypoints.Count - 1] != pileTile))
+        {
+            if (!view.Walkable(pileTile))
+            {
+                // Pile sitting on unwalkable tile (shouldn't happen for
+                // ground items, but defensive): re-try next tick.
+                return;
+            }
+            path.PendingPathId = _paths.Request(here, pileTile);
+        }
     }
 
     // Multi-pickup haul: walk to primary pickup tile (job.Tile) → pickup

@@ -14,13 +14,14 @@ public enum WorkType : byte
     Plants = 2,
     Farm = 3,
     Haul = 4,
+    Cook = 5,
 }
 
 public static class WorkTypes
 {
-    public const int Count = 5;
+    public const int Count = 6;
 
-    public static readonly string[] Names = { "Construct", "Demolish", "Plants", "Farm", "Haul" };
+    public static readonly string[] Names = { "Construct", "Demolish", "Plants", "Farm", "Haul", "Cook" };
 
     public static bool TryGet(JobKind kind, out WorkType type)
     {
@@ -32,6 +33,8 @@ public static class WorkTypes
             case JobKind.RoofBuild:
             case JobKind.LampBuild:
             case JobKind.BedBuild:
+            case JobKind.UrBoardBuild:
+            case JobKind.StoveBuild:
                 type = WorkType.Construct; return true;
             case JobKind.Deconstruct:
             case JobKind.FloorDeconstruct:
@@ -39,7 +42,11 @@ public static class WorkTypes
             case JobKind.RoofRemove:
             case JobKind.LampDeconstruct:
             case JobKind.BedDeconstruct:
+            case JobKind.UrBoardDeconstruct:
+            case JobKind.StoveDeconstruct:
                 type = WorkType.Demolish; return true;
+            case JobKind.Cook:
+                type = WorkType.Cook; return true;
             case JobKind.ChopTree:
             case JobKind.CutPlants:
                 type = WorkType.Plants; return true;

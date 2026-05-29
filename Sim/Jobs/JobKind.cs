@@ -21,4 +21,9 @@ public enum JobKind : byte
     LampDeconstruct = 15,
     BedBuild = 16,
     BedDeconstruct = 17,
+    UrBoardBuild = 18,
+    UrBoardDeconstruct = 19,
+    StoveBuild = 20,
+    StoveDeconstruct = 21,
+    Cook = 22,
 }

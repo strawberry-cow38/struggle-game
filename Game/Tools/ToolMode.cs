@@ -26,4 +26,6 @@ public enum ToolMode
     ClearNoRoof = 21,
     Lamp = 22,
     Bed = 23,
+    UrBoard = 24,
+    Stove = 25,
 }

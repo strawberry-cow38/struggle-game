@@ -413,6 +413,118 @@ public partial class HarnessController : Node2D
                     _screenshotEverySec = double.PositiveInfinity;
                 }
                 break;
+            case "ur-board":
+                // 2 players + 8 spectators at an Ur board inside a lit
+                // room. World time pinned to 18:00 (Recreation slot) so
+                // pawns idle-seek the board even at full need.
+                if (MovieMode)
+                {
+                    _screenshotEverySec = double.PositiveInfinity;
+                }
+                else
+                {
+                    _screenshotEverySec = 1.0 / 60.0;
+                    _screenshotScale = 0.5f;
+                }
+                _warmupSec = 2.0;
+                _manualSim = true;
+                {
+                    // 9x9 outer wall, 7x7 interior — fits radius-3 spectator
+                    // halo around a center board. Door south, lamp NW
+                    // interior corner.
+                    int half = 4;
+                    int x0 = c - half, x1 = c + half;
+                    int y0 = c - half, y1 = c + half;
+                    _schedule.Add((0.05, h => h.SetWorldTimeAt(18, 0), "recreation 18:00"));
+                    _schedule.Add((0.1, h => h.SetCameraZoom(2.0f), "zoom"));
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        int xc = x;
+                        _schedule.Add((0.2, h => h.InstantWall(xc, y0), $"wall N {xc}"));
+                        if (xc != c) _schedule.Add((0.2, h => h.InstantWall(xc, y1), $"wall S {xc}"));
+                    }
+                    for (int y = y0 + 1; y <= y1 - 1; y++)
+                    {
+                        int yc = y;
+                        _schedule.Add((0.2, h => h.InstantWall(x0, yc), $"wall W {yc}"));
+                        _schedule.Add((0.2, h => h.InstantWall(x1, yc), $"wall E {yc}"));
+                    }
+                    _schedule.Add((0.3, h => h.InstantDoor(c, y1), "south door"));
+                    _schedule.Add((0.4, h => h.InstantRoofRect(x0 + 1, y0 + 1, x1 - 1, y1 - 1), "roof interior"));
+                    int lampX = x0 + 1, lampY = y0 + 1;
+                    _schedule.Add((0.5, h => h.InstantLamp(lampX, lampY), "lamp NW corner"));
+                    _schedule.Add((0.6, h => h.InstantUrBoard(c, c), "ur board center"));
+                    // Spawn pawns INSIDE the room near the board so the
+                    // walk to a seat is short — random map-wide spawn was
+                    // dropping them too far to converge in scenario time.
+                    int[] spawnDx = { -1, 1, 0, 0, -2, 2, 0, 0, -1, 1 };
+                    int[] spawnDy = { 0, 0, -1, 1, 0, 0, -2, 2, -1, 1 };
+                    for (int i = 0; i < 10; i++)
+                    {
+                        int sx = c + spawnDx[i];
+                        int sy = c + spawnDy[i];
+                        _schedule.Add((1.0 + i * 0.1, h => h.SpawnPawnAt(sx, sy), $"spawn pawn {i}"));
+                    }
+                    _schedule.Add((2.5, h => h.DrainAllRecreation(), "drain all rec to 0"));
+                    for (int t = 8; t < 60; t += 5)
+                    {
+                        _schedule.Add(((double)t, h => h.DrainAllRecreation(), $"drain all rec @ t={t}"));
+                    }
+                    _schedule.Add((60.0, h => h.Finish("ur-board complete"), "finish"));
+                }
+                break;
+            case "stove-cook":
+                // Stove cook demo: lit room with a stove, a pile of carrots,
+                // a single pawn. Pawn hauls 5 carrots → cooks meal → drops
+                // meal on standing tile. Loops forever.
+                if (MovieMode)
+                {
+                    _screenshotEverySec = double.PositiveInfinity;
+                }
+                else
+                {
+                    _screenshotEverySec = 1.0 / 60.0;
+                    _screenshotScale = 0.5f;
+                }
+                _warmupSec = 2.0;
+                _manualSim = true;
+                {
+                    int half = 5;
+                    int x0 = c - half, x1 = c + half;
+                    int y0 = c - half, y1 = c + half;
+                    _schedule.Add((0.05, h => h.SetWorldTimeAt(10, 0), "work 10:00"));
+                    _schedule.Add((0.1, h => h.SetCameraZoom(2.0f), "zoom"));
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        int xc = x;
+                        _schedule.Add((0.2, h => h.InstantWall(xc, y0), $"wall N {xc}"));
+                        if (xc != c) _schedule.Add((0.2, h => h.InstantWall(xc, y1), $"wall S {xc}"));
+                    }
+                    for (int y = y0 + 1; y <= y1 - 1; y++)
+                    {
+                        int yc = y;
+                        _schedule.Add((0.2, h => h.InstantWall(x0, yc), $"wall W {yc}"));
+                        _schedule.Add((0.2, h => h.InstantWall(x1, yc), $"wall E {yc}"));
+                    }
+                    _schedule.Add((0.3, h => h.InstantDoor(c, y1), "south door"));
+                    _schedule.Add((0.4, h => h.InstantRoofRect(x0 + 1, y0 + 1, x1 - 1, y1 - 1), "roof interior"));
+                    int lampX = x0 + 1, lampY = y0 + 1;
+                    _schedule.Add((0.5, h => h.InstantLamp(lampX, lampY), "lamp NW"));
+                    // Stove: origin = (c, c-1). Body runs c-1..c+1 east-west,
+                    // standing tile north of center: (c, c-2). Use North orientation.
+                    int sox = c, soy = c - 1;
+                    _schedule.Add((0.6, h => h.InstantStove(sox, soy, StoveOrientation.North), "stove"));
+                    // Carrot pile dropped at SE corner.
+                    int carrotX = c + 2, carrotY = c + 2;
+                    _schedule.Add((0.7, h => h.DropCarrotsAt(carrotX, carrotY, 25), "carrot pile"));
+                    // Add a Forever bill so the pawn never stops cooking.
+                    _schedule.Add((0.8, h => h.AddBillToFirstStove(RecipeId.CookSimpleMeal, BillRepeatMode.Forever, 0, 0), "bill"));
+                    // Spawn the pawn near the door.
+                    int spawnX = c, spawnY = c + 2;
+                    _schedule.Add((1.0, h => h.SpawnPawnAt(spawnX, spawnY), "spawn cook"));
+                    _schedule.Add((60.0, h => h.Finish("stove-cook complete"), "finish"));
+                }
+                break;
             case "wall-grid":
                 // Visual harness: lay out all 16 neighbor-mask wall
                 // variants in a 4x4 grid of clusters. Each cluster is
@@ -586,6 +698,36 @@ public partial class HarnessController : Node2D
     private void InstantRoofRect(int x0, int y0, int x1, int y1)
     {
         Host.QueueCommand(new InstantPaintRoofRectCommand(new TilePos(x0, y0), new TilePos(x1, y1)));
+    }
+
+    private void InstantUrBoard(int x, int y)
+    {
+        Host.QueueCommand(new InstantPlaceUrBoardCommand(new TilePos(x, y)));
+    }
+
+    private void SpawnPawnAt(int x, int y)
+    {
+        Host.QueueCommand(new SpawnDummyAtCommand(new TilePos(x, y)));
+    }
+
+    private void DrainAllRecreation()
+    {
+        Host.QueueCommand(new SetAllRecreationLevelCommand(0f));
+    }
+
+    private void InstantStove(int x, int y, StoveOrientation o)
+    {
+        Host.QueueCommand(new InstantPlaceStoveCommand(new TilePos(x, y), o));
+    }
+
+    private void DropCarrotsAt(int x, int y, int count)
+    {
+        Host.QueueCommand(new SpawnItemPileCommand(new TilePos(x, y), StruggleGame.Sim.Items.ItemCatalog.Carrot.FullPath, count));
+    }
+
+    private void AddBillToFirstStove(RecipeId recipe, BillRepeatMode mode, int target, int remaining)
+    {
+        Host.QueueCommand(new AddBillToFirstStoveCommand(recipe, mode, target, remaining));
     }
 
     private void SetWorldTimeAt(int hour, int minute)

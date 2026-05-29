@@ -71,6 +71,7 @@ public sealed class SimHost : IDisposable
             Volatile.Write(ref _selectedBlueprintTiles, Array.Empty<TilePos>());
             Volatile.Write(ref _selectedLampTiles, Array.Empty<TilePos>());
             Volatile.Write(ref _selectedBedTiles, Array.Empty<TilePos>());
+            Volatile.Write(ref _selectedStoveTiles, Array.Empty<TilePos>());
             Volatile.Write(ref _latest, _sim.BuildSnapshot(null, null, null, null));
         }
     }
@@ -222,6 +223,20 @@ public sealed class SimHost : IDisposable
         set => Volatile.Write(ref _selectedBedTiles, value ?? Array.Empty<TilePos>());
     }
 
+    private TilePos[] _selectedUrBoardTiles = Array.Empty<TilePos>();
+    public TilePos[] SelectedUrBoardTiles
+    {
+        get => Volatile.Read(ref _selectedUrBoardTiles);
+        set => Volatile.Write(ref _selectedUrBoardTiles, value ?? Array.Empty<TilePos>());
+    }
+
+    private TilePos[] _selectedStoveTiles = Array.Empty<TilePos>();
+    public TilePos[] SelectedStoveTiles
+    {
+        get => Volatile.Read(ref _selectedStoveTiles);
+        set => Volatile.Write(ref _selectedStoveTiles, value ?? Array.Empty<TilePos>());
+    }
+
     // Read-only accessor for the WallInfoPanel: is the wall at this
     // tile player-built (deconstructable)?
     public bool IsPlayerWall(TilePos tile) => _sim.PlayerWalls.Contains(tile);
@@ -232,6 +247,16 @@ public sealed class SimHost : IDisposable
     public bool CanPlaceBed(TilePos origin, StruggleGame.Sim.World.BedOrientation orientation)
     {
         lock (_swapLock) { return _sim.CanPlaceBed(origin, orientation); }
+    }
+
+    public bool CanPlaceUrBoard(TilePos tile)
+    {
+        lock (_swapLock) { return _sim.CanPlaceUrBoard(tile); }
+    }
+
+    public bool CanPlaceStove(TilePos origin, StruggleGame.Sim.World.StoveOrientation orientation)
+    {
+        lock (_swapLock) { return _sim.CanPlaceStove(origin, orientation); }
     }
 
     // Game→Sim command submission. Drained at the start of every tick.

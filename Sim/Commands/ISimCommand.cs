@@ -47,6 +47,13 @@ public sealed class InstantPlaceLampCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.InstantPlaceLamp(Tile, Color);
 }
 
+public sealed class InstantPlaceUrBoardCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public InstantPlaceUrBoardCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.InstantPlaceUrBoard(Tile);
+}
+
 public sealed class InstantPaintRoofRectCommand : ISimCommand
 {
     public TilePos A { get; }
@@ -719,6 +726,20 @@ public sealed class SpawnDummyCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SpawnRandomDummy();
 }
 
+public sealed class SpawnDummyAtCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public SpawnDummyAtCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.SpawnDummyAt(Tile.X, Tile.Y);
+}
+
+public sealed class SetAllRecreationLevelCommand : ISimCommand
+{
+    public float Level { get; }
+    public SetAllRecreationLevelCommand(float level) { Level = level; }
+    public void Apply(SimRuntime sim) => sim.SetAllRecreationLevel(Level);
+}
+
 // Debug bar action: shift world time by N in-sim seconds. Negative
 // rewinds. Buttons hand in ±3600 for the ±1hr controls.
 public sealed class AdvanceWorldTimeCommand : ISimCommand
@@ -790,6 +811,25 @@ public sealed class PlaceBedCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.TryPlaceBedBlueprint(Origin, Orientation);
 }
 
+// Post an Ur-board blueprint at Tile. 1x1 footprint; the tile must be
+// free of walls / doors / trees / other furniture / jobs. Silently
+// no-ops on conflict. Build cost = SimRuntime.UrBoardWoodCost.
+public sealed class PlaceUrBoardCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public PlaceUrBoardCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.TryPlaceUrBoardBlueprint(Tile);
+}
+
+// Post an UrBoardDeconstruct job on a built Ur board. Sourced from
+// the board info panel's Deconstruct button.
+public sealed class PostUrBoardDeconCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public PostUrBoardDeconCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.TryPostUrBoardDeconstructJob(Tile);
+}
+
 // Post a BedDeconstruct job on a built bed identified by its Origin
 // tile. Sourced from the bed info panel's Deconstruct button or the
 // X-key shortcut on selected beds.
@@ -849,4 +889,190 @@ public sealed class SetGodModeFreeBuildCommand : ISimCommand
     public bool Enabled { get; }
     public SetGodModeFreeBuildCommand(bool enabled) { Enabled = enabled; }
     public void Apply(SimRuntime sim) => sim.SetGodModeFreeBuild(Enabled);
+}
+
+// ─── Stove / workbench / bills ───────────────────────────────────────
+public sealed class PlaceStoveBlueprintCommand : ISimCommand
+{
+    public TilePos Origin { get; }
+    public StoveOrientation Orientation { get; }
+    public PlaceStoveBlueprintCommand(TilePos origin, StoveOrientation orientation)
+    { Origin = origin; Orientation = orientation; }
+    public void Apply(SimRuntime sim) => sim.TryPlaceStoveBlueprint(Origin, Orientation);
+}
+
+public sealed class DeconstructStoveCommand : ISimCommand
+{
+    public TilePos Origin { get; }
+    public DeconstructStoveCommand(TilePos origin) { Origin = origin; }
+    public void Apply(SimRuntime sim) => sim.TryPostStoveDeconstructJob(Origin);
+}
+
+public sealed class InstantPlaceStoveCommand : ISimCommand
+{
+    public TilePos Origin { get; }
+    public StoveOrientation Orientation { get; }
+    public InstantPlaceStoveCommand(TilePos origin, StoveOrientation orientation)
+    { Origin = origin; Orientation = orientation; }
+    public void Apply(SimRuntime sim) => sim.InstantPlaceStove(Origin, Orientation);
+}
+
+public sealed class AddBillCommand : ISimCommand
+{
+    public int StoveEntityId { get; }
+    public RecipeId Recipe { get; }
+    public BillRepeatMode RepeatMode { get; }
+    public int TargetCount { get; }
+    public int RemainingCount { get; }
+    public BillOutputDest OutputDest { get; }
+    public int StockpileEntityId { get; }
+    public AddBillCommand(int stoveId, RecipeId recipe, BillRepeatMode mode, int target, int remaining, BillOutputDest dest, int stockpileId)
+    {
+        StoveEntityId = stoveId; Recipe = recipe; RepeatMode = mode;
+        TargetCount = target; RemainingCount = remaining;
+        OutputDest = dest; StockpileEntityId = stockpileId;
+    }
+    public void Apply(SimRuntime sim)
+    {
+        if (!sim.Store.TryGetEntityById(StoveEntityId, out var stoveEnt)) return;
+        if (!stoveEnt.HasComponent<BillsBoard>()) return;
+        ref var board = ref stoveEnt.GetComponent<BillsBoard>();
+        board.Bills ??= new List<Bill>();
+        board.Bills.Add(new Bill
+        {
+            Recipe = Recipe,
+            RepeatMode = RepeatMode,
+            TargetCount = TargetCount,
+            RemainingCount = RemainingCount,
+            OutputDest = OutputDest,
+            StockpileEntityId = StockpileEntityId,
+        });
+    }
+}
+
+public sealed class RemoveBillCommand : ISimCommand
+{
+    public int StoveEntityId { get; }
+    public int BillIndex { get; }
+    public RemoveBillCommand(int stoveId, int idx) { StoveEntityId = stoveId; BillIndex = idx; }
+    public void Apply(SimRuntime sim)
+    {
+        if (!sim.Store.TryGetEntityById(StoveEntityId, out var stoveEnt)) return;
+        if (!stoveEnt.HasComponent<BillsBoard>()) return;
+        ref var board = ref stoveEnt.GetComponent<BillsBoard>();
+        if (board.Bills is null) return;
+        if (BillIndex < 0 || BillIndex >= board.Bills.Count) return;
+        board.Bills.RemoveAt(BillIndex);
+        // If active bill was removed, reset progress.
+        if (stoveEnt.HasComponent<Stove>())
+        {
+            ref var stove = ref stoveEnt.GetComponent<Stove>();
+            if (stove.CurrentBillIndex == BillIndex)
+            {
+                stove.CurrentBillIndex = -1;
+                stove.CookProgressTicks = 0f;
+                stove.ActiveCookEntityId = 0;
+            }
+            else if (stove.CurrentBillIndex > BillIndex)
+            {
+                stove.CurrentBillIndex--;
+            }
+        }
+    }
+}
+
+public sealed class UpdateBillCommand : ISimCommand
+{
+    public int StoveEntityId { get; }
+    public int BillIndex { get; }
+    public BillRepeatMode RepeatMode { get; }
+    public int TargetCount { get; }
+    public int RemainingCount { get; }
+    public BillOutputDest OutputDest { get; }
+    public int StockpileEntityId { get; }
+    public UpdateBillCommand(int stoveId, int idx, BillRepeatMode mode, int target, int remaining, BillOutputDest dest, int stockpileId)
+    {
+        StoveEntityId = stoveId; BillIndex = idx; RepeatMode = mode;
+        TargetCount = target; RemainingCount = remaining;
+        OutputDest = dest; StockpileEntityId = stockpileId;
+    }
+    public void Apply(SimRuntime sim)
+    {
+        if (!sim.Store.TryGetEntityById(StoveEntityId, out var stoveEnt)) return;
+        if (!stoveEnt.HasComponent<BillsBoard>()) return;
+        ref var board = ref stoveEnt.GetComponent<BillsBoard>();
+        if (board.Bills is null) return;
+        if (BillIndex < 0 || BillIndex >= board.Bills.Count) return;
+        var b = board.Bills[BillIndex];
+        b.RepeatMode = RepeatMode;
+        b.TargetCount = TargetCount;
+        b.RemainingCount = RemainingCount;
+        b.OutputDest = OutputDest;
+        b.StockpileEntityId = StockpileEntityId;
+        board.Bills[BillIndex] = b;
+    }
+}
+
+// Harness helper: drop an item pile onto a tile (carrots, meals, etc).
+public sealed class SpawnItemPileCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public string ItemPath { get; }
+    public int Count { get; }
+    public SpawnItemPileCommand(TilePos tile, string itemPath, int count)
+    { Tile = tile; ItemPath = itemPath; Count = count; }
+    public void Apply(SimRuntime sim) => sim.SpawnItemPile(Tile, ItemPath, Count);
+}
+
+// Harness helper: add a bill to the first stove found (for demo scenarios
+// where we don't want to plumb stove entity ids through the schedule).
+public sealed class AddBillToFirstStoveCommand : ISimCommand
+{
+    public RecipeId Recipe { get; }
+    public BillRepeatMode RepeatMode { get; }
+    public int TargetCount { get; }
+    public int RemainingCount { get; }
+    public AddBillToFirstStoveCommand(RecipeId recipe, BillRepeatMode mode, int target, int remaining)
+    { Recipe = recipe; RepeatMode = mode; TargetCount = target; RemainingCount = remaining; }
+    public void Apply(SimRuntime sim)
+    {
+        foreach (var kv in sim.StoveMap)
+        {
+            var stoveEnt = kv.Value;
+            if (!stoveEnt.HasComponent<BillsBoard>()) continue;
+            ref var board = ref stoveEnt.GetComponent<BillsBoard>();
+            board.Bills ??= new List<Bill>();
+            board.Bills.Add(new Bill
+            {
+                Recipe = Recipe,
+                RepeatMode = RepeatMode,
+                TargetCount = TargetCount,
+                RemainingCount = RemainingCount,
+                OutputDest = BillOutputDest.DropAtWorkbench,
+                StockpileEntityId = 0,
+            });
+            return;
+        }
+    }
+}
+
+public sealed class ReorderBillCommand : ISimCommand
+{
+    public int StoveEntityId { get; }
+    public int FromIndex { get; }
+    public int ToIndex { get; }
+    public ReorderBillCommand(int stoveId, int from, int to)
+    { StoveEntityId = stoveId; FromIndex = from; ToIndex = to; }
+    public void Apply(SimRuntime sim)
+    {
+        if (!sim.Store.TryGetEntityById(StoveEntityId, out var stoveEnt)) return;
+        if (!stoveEnt.HasComponent<BillsBoard>()) return;
+        ref var board = ref stoveEnt.GetComponent<BillsBoard>();
+        if (board.Bills is null) return;
+        if (FromIndex < 0 || FromIndex >= board.Bills.Count) return;
+        if (ToIndex < 0 || ToIndex >= board.Bills.Count) return;
+        var b = board.Bills[FromIndex];
+        board.Bills.RemoveAt(FromIndex);
+        board.Bills.Insert(ToIndex, b);
+    }
 }

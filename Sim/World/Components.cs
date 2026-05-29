@@ -395,6 +395,86 @@ public struct BedBlueprint : IComponent
     public float ProgressSec;
 }
 
+// Recreation kinds the colonist can roll as a preferred activity. The
+// roll pool is filtered to "currently possible on this map" — Ur is
+// only in the pool if at least one Ur board exists. Spectating is in
+// the pool only when at least one active game is happening (i.e. a
+// board with a player). Future entries: Walk, Cloudwatch, etc.
+public enum RecreationKind : byte
+{
+    Ur = 0,
+    Spectating = 1,
+}
+
+// 0 = burnt out, 1 = freshly rested. Decays linearly over 16 sim-hours
+// of "no recreation"; refills while AtRecreation is present at a per-
+// kind power rate. Threshold + roll cadence live in RecreationSystem
+// + DummyController.
+public struct RecreationNeed : IComponent
+{
+    public float Level;
+}
+
+// Per-colonist preferred recreation type. Re-rolled every
+// RecreationSystem.PreferenceRollSec from the live pool of types
+// currently available on the map. Kind = 255 means "not yet rolled"
+// — RecreationSystem fills it in on the first eligible tick.
+public struct RecreationPreference : IComponent
+{
+    public RecreationKind Kind;
+    public float SecondsUntilRoll;
+}
+
+// A built game-of-Ur board. 1x1, blocks pathing. Two player seats (the
+// 4-cardinal-adjacent walkable tiles, picked at reservation time); up
+// to 8 spectator slots clumping around within RecreationSystem.SpectatorRadius.
+public struct UrBoard : IComponent
+{
+    public TilePos Tile;
+}
+
+// Pending Ur-board blueprint. ProgressSec advances while a builder is
+// adjacent. Cost = 25 wood (UrBoardBuildWoodCost in SimRuntime).
+public struct UrBoardBlueprint : IComponent
+{
+    public TilePos Tile;
+    public float ProgressSec;
+}
+
+// Active recreation session on the pawn. BoardEntityId = the board
+// they're attached to (Ur today; future boards reuse the same field).
+// Role = Player (occupies a player seat) or Spectator. RecreationSystem
+// reads this each tick to refill RecreationNeed; DummyController spawns
+// + tears it down. SeatTile = the tile the pawn is standing on for the
+// session, so reservation release can free the right slot.
+public enum RecreationRole : byte
+{
+    Player = 0,
+    Spectator = 1,
+}
+
+public struct AtRecreation : IComponent
+{
+    public int BoardEntityId;
+    public RecreationKind Kind;
+    public RecreationRole Role;
+    public TilePos SeatTile;
+}
+
+// Sticky reservation held by a pawn while walking to a seat. Without
+// this, DummyController.Plan would re-call TryReserveUrSeat every tick
+// and silently leak seats / player counters. The reservation transfers
+// to AtRecreation on arrival; on interruption (tired, drafted, seat
+// unreachable) DummyController releases the held seat back to the
+// board's seat pool.
+public struct RecreationReservation : IComponent
+{
+    public int BoardEntityId;
+    public RecreationKind Kind;
+    public RecreationRole Role;
+    public TilePos SeatTile;
+}
+
 // One item in a pawn's carry inventory. Each slot references an
 // existing item entity (Wood today, more later) kept alive across
 // the haul so completion is a re-anchor rather than delete/recreate.
@@ -483,4 +563,177 @@ public struct ResourceReq
     // on success, and the abort paths decrement Reserved without raising
     // Deposited. (Needed - Deposited - Reserved) drives "still wanted".
     public int Reserved;
+}
+
+// ─── Stove / workbench / bills ────────────────────────────────────────
+// 3x1 body + 1 standing tile making a T shape. Orientation = direction
+// the standing tile extends from the center body tile.
+public enum StoveOrientation : byte
+{
+    North = 0,
+    East  = 1,
+    South = 2,
+    West  = 3,
+}
+
+public static class StoveOrientations
+{
+    // Body offsets relative to Origin (center body tile).
+    public static (int Dx, int Dy)[] BodyOffsets(StoveOrientation o) => o switch
+    {
+        StoveOrientation.North => new (int, int)[] { (-1, 0), (0, 0), (1, 0) },
+        StoveOrientation.South => new (int, int)[] { (-1, 0), (0, 0), (1, 0) },
+        StoveOrientation.East  => new (int, int)[] { (0, -1), (0, 0), (0, 1) },
+        StoveOrientation.West  => new (int, int)[] { (0, -1), (0, 0), (0, 1) },
+        _                      => new (int, int)[] { (0, 0) },
+    };
+
+    // Offset from Origin to the cook's standing tile.
+    public static (int Dx, int Dy) StandingOffset(StoveOrientation o) => o switch
+    {
+        StoveOrientation.North => (0, -1),
+        StoveOrientation.East  => (1, 0),
+        StoveOrientation.South => (0, 1),
+        StoveOrientation.West  => (-1, 0),
+        _                      => (0, 1),
+    };
+
+    public static IEnumerable<TilePos> BodyTiles(TilePos origin, StoveOrientation o)
+    {
+        foreach (var (dx, dy) in BodyOffsets(o))
+            yield return new TilePos(origin.X + dx, origin.Y + dy);
+    }
+
+    public static TilePos StandingTile(TilePos origin, StoveOrientation o)
+    {
+        var (dx, dy) = StandingOffset(o);
+        return new TilePos(origin.X + dx, origin.Y + dy);
+    }
+}
+
+// Built stove. 3-tile body (high-cost walkable) + standing tile (blocked
+// to other pathing except the cook). Active cook progress and current
+// bill live here so interrupt-recovery can resume without touching the
+// pawn (today: master spec is reset-on-interrupt, but the data shape
+// supports both).
+public struct Stove : IComponent
+{
+    public TilePos Origin;
+    public StoveOrientation Orientation;
+    public float CookProgressTicks;
+    public int CurrentBillIndex; // -1 = idle
+    public int ActiveCookEntityId; // 0 = no pawn currently bound
+}
+
+// Pending stove construction. Builder must be adjacent to any body tile.
+public struct StoveBlueprint : IComponent
+{
+    public TilePos Origin;
+    public StoveOrientation Orientation;
+    public float ProgressSec;
+}
+
+// Bill repeat modes (rimworld-style).
+//   Forever     — never stop.
+//   DoUntilCount — keep cooking until world has TargetCount of the output.
+//   DoXTimes    — decrement RemainingCount per completion; stop at 0.
+public enum BillRepeatMode : byte
+{
+    Forever = 0,
+    DoUntilCount = 1,
+    DoXTimes = 2,
+}
+
+// Where finished output lands.
+//   DropAtWorkbench   — drop on the standing tile (or nearest free body tile).
+//   SpecificStockpile — haul to StockpileEntityId.
+//   AnyStockpile      — pick the best haul destination at completion.
+public enum BillOutputDest : byte
+{
+    DropAtWorkbench = 0,
+    SpecificStockpile = 1,
+    AnyStockpile = 2,
+}
+
+// Static recipe registry. Add entries when adding new recipes.
+public enum RecipeId : byte
+{
+    CookSimpleMeal = 0,
+    CookSimpleMealBatch = 1,
+}
+
+public sealed class Recipe
+{
+    public RecipeId Id { get; }
+    public string DisplayName { get; }
+    public (string ItemPath, int Count)[] Inputs { get; }
+    public (string ItemPath, int Count) Output { get; }
+    public int WorkTicks { get; }
+    public Recipe(RecipeId id, string name, (string, int)[] inputs, (string, int) output, int workTicks)
+    {
+        Id = id; DisplayName = name; Inputs = inputs; Output = output; WorkTicks = workTicks;
+    }
+}
+
+public static class Recipes
+{
+    public static readonly Recipe SimpleMeal = new(
+        RecipeId.CookSimpleMeal, "Simple meal",
+        new[] { (Items.ItemCatalog.Carrot.FullPath, 5) },
+        (Items.ItemCatalog.SimpleMeal.FullPath, 1),
+        workTicks: 200);
+
+    public static readonly Recipe SimpleMealBatch = new(
+        RecipeId.CookSimpleMealBatch, "Simple meal x4",
+        new[] { (Items.ItemCatalog.Carrot.FullPath, 20) },
+        (Items.ItemCatalog.SimpleMeal.FullPath, 4),
+        workTicks: 800);
+
+    public static Recipe Get(RecipeId id) => id switch
+    {
+        RecipeId.CookSimpleMeal      => SimpleMeal,
+        RecipeId.CookSimpleMealBatch => SimpleMealBatch,
+        _ => throw new ArgumentOutOfRangeException(nameof(id)),
+    };
+
+    public static IReadOnlyList<Recipe> All => new[] { SimpleMeal, SimpleMealBatch };
+}
+
+// One row in a workbench's bills list.
+public struct Bill
+{
+    public RecipeId Recipe;
+    public BillRepeatMode RepeatMode;
+    public int TargetCount;    // DoUntilCount: stop when world has ≥ this many output items.
+    public int RemainingCount; // DoXTimes: decrements per completion; 0 = done.
+    public BillOutputDest OutputDest;
+    public int StockpileEntityId; // SpecificStockpile target; 0 otherwise.
+}
+
+// Per-stove bills configuration. Bills run top-to-bottom; the first
+// eligible bill wins. Removed when the stove is deconstructed.
+public struct BillsBoard : IComponent
+{
+    public List<Bill>? Bills;
+}
+
+// Active cook session on a pawn. StoveEntityId = the bench they bound to.
+// BillIndex = which bill they're working. Phase: 0 = hauling ingredients,
+// 1 = working ticks (standing at the stove standing tile). Reset to 0 on
+// drafted interrupt (only valid interrupt per master spec).
+public struct Cooking : IComponent
+{
+    public int StoveEntityId;
+    public int BillIndex;
+    public byte Phase; // 0=haul, 1=work
+}
+
+// Carrots the cook has picked up but not yet deposited at the stove.
+// Kept off the generic Carrying flow because Carrying assumes a haul
+// dest tile + stockpile routing — cook ingredients route to the bound
+// stove instead. Cleared on deposit + on drafted interrupt (carrots drop
+// at the pawn's current tile as a fresh ItemPile so they aren't lost).
+public struct CookHaul : IComponent
+{
+    public int CarrotsCarried;
 }

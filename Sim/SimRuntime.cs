@@ -101,6 +101,10 @@ public sealed class SimRuntime
     private readonly RoofSystem _roofs;
     private readonly LampSystem _lamps;
     private readonly BedSystem _beds;
+    private readonly StoveSystem _stoves;
+    private readonly CookSystem _cooks;
+    private readonly UrBoardSystem _urBoards;
+    private readonly RecreationSystem _recreation;
     private readonly DoorBuildSystem _doorBuilds;
     private readonly DoorSystem _doors;
     private readonly HaulSystem _hauls;
@@ -126,6 +130,23 @@ public sealed class SimRuntime
     // as blocked.
     private readonly Dictionary<TilePos, Entity> _bedMap = new();
     private readonly HashSet<TilePos> _bedOccupied = new();
+    // Placed Ur boards. Tile → board entity. The board itself blocks
+    // pathing (entered into _bedOccupied via MapView.HasFurniture path).
+    private readonly Dictionary<TilePos, Entity> _urBoardMap = new();
+    private readonly HashSet<TilePos> _urBoardOccupied = new();
+    // Placed stoves. Key = origin (center body) tile. All 4 occupied
+    // tiles (3 body + 1 standing) enter _stoveOccupied so MapView marks
+    // them as high-cost furniture (pathable but A* avoids).
+    private readonly Dictionary<TilePos, Entity> _stoveMap = new();
+    private readonly HashSet<TilePos> _stoveOccupied = new();
+    // Per-board seat reservations: board entity id → seated pawn ids.
+    // Players + spectators share the same slot list; the role is stored
+    // on the pawn's AtRecreation. Cleared by ReleaseUrSeat or board decon.
+    private readonly Dictionary<int, HashSet<int>> _urBoardSeats = new();
+    // Per-board active player count — distinct from total seats since a
+    // spectator-only board has zero players. Bumped by ReserveUrSeat with
+    // role=Player, decremented by ReleaseUrSeat.
+    private readonly Dictionary<int, int> _urBoardPlayers = new();
     // In-flight sleep reservation: bed entity id → pawn entity id. Kept
     // out of ECS so Plan() can reserve from inside a query loop without
     // triggering Friflo's StructuralChangeException.
@@ -244,9 +265,12 @@ public sealed class SimRuntime
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
         _spawnRng = new Random(seed + 7);
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
-        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority, CurrentScheduleSlot, IsBlueprintFunded, GetJobBlueprintId, GetBlueprintClaimant, TryReserveBedAdapter, ReleaseBedReservation);
+        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority, CurrentScheduleSlot, IsBlueprintFunded, GetJobBlueprintId, GetBlueprintClaimant, TryReserveBedAdapter, ReleaseBedReservation, TryReserveRecreation, ReleaseUrSeat);
         _dummies.OnHaulPickup = (carriedEnt, cb) => OnHaulPickedUp(carriedEnt, cb);
         _dummies.OnHaulDeliver = (carrierEntity, dropTile, cb) => DeliverCarrying(carrierEntity, dropTile, cb);
+        _dummies.CookFindNearestPile = (from, path) => FindNearestItemPile(from, path);
+        _dummies.CookConsumePile = (tile, path, wanted) => TryConsumeFromPile(tile, path, wanted);
+        _dummies.CookSpawnPile = (tile, path, count) => SpawnItemPile(tile, path, count);
         _builds = new BuildSystem(this, Jobs);
         _chops = new ChopSystem(this, Jobs);
         _growth = new GrowthSystem(this);
@@ -260,6 +284,10 @@ public sealed class SimRuntime
         _roofs = new RoofSystem(this, Jobs);
         _lamps = new LampSystem(this, Jobs);
         _beds = new BedSystem(this, Jobs);
+        _stoves = new StoveSystem(this, Jobs);
+        _cooks = new CookSystem(this, Jobs);
+        _urBoards = new UrBoardSystem(this, Jobs);
+        _recreation = new RecreationSystem(seed + 11, GetAvailableRecreationKinds);
         _doorBuilds = new DoorBuildSystem(this, Jobs);
         _doors = new DoorSystem();
         _hauls = new HaulSystem(this, Jobs);
@@ -313,6 +341,10 @@ public sealed class SimRuntime
         _roofs.Step(Store, dt);
         _lamps.Step(Store, dt);
         _beds.Step(Store, dt);
+        _stoves.Step(Store, dt);
+        _cooks.Step(Store, dt);
+        _urBoards.Step(Store, dt);
+        _recreation.Step(Store, dt);
         _doorBuilds.Step(Store, dt);
         _doors.Step(Store, dt);
         _bpClearance.Step(Store, dt);
@@ -355,6 +387,7 @@ public sealed class SimRuntime
     public const int FloorWoodCost = 3;
     public const int DoorWoodCost = 20;
     public const int BedWoodCost = 45;
+    public const int UrBoardWoodCost = 25;
 
     // Build-system funding check. Free pass when GodModeFreeBuild is on;
     // otherwise defer to per-blueprint BlueprintCost deposits.
@@ -523,6 +556,22 @@ public sealed class SimRuntime
     {
         if (ent.HasComponent<SleepNeed>()) return;
         ent.AddComponent(new SleepNeed { Level = 1f });
+    }
+
+    // RecreationNeed + RecreationPreference. Initial Kind sentinel (255)
+    // tells RecreationSystem to roll on the first eligible tick. SecondsUntilRoll
+    // starts at 0 so the first tick after spawn picks immediately from the
+    // live pool.
+    public static void EnsureRecreationNeed(Entity ent)
+    {
+        if (!ent.HasComponent<RecreationNeed>())
+        {
+            ent.AddComponent(new RecreationNeed { Level = 1f });
+        }
+        if (!ent.HasComponent<RecreationPreference>())
+        {
+            ent.AddComponent(new RecreationPreference { Kind = (RecreationKind)255, SecondsUntilRoll = 0f });
+        }
     }
 
     public static void EnsureSchedule(Entity ent)
@@ -701,6 +750,25 @@ public sealed class SimRuntime
         foreach (var s in sleepers) s.RemoveComponent<Sleeping>();
     }
 
+    // Called when an Ur board is removed (decon). Evicts every pawn
+    // currently seated at it: drop AtRecreation + release the seat
+    // reservation so the seat bookkeeping stays sane.
+    private void ForgetUrBoard(Entity boardEnt)
+    {
+        int bid = boardEnt.Id;
+        var evictees = new List<Entity>();
+        Store.Query<AtRecreation>().ForEachEntity((ref AtRecreation ar, Entity ent) =>
+        {
+            if (ar.BoardEntityId == bid) evictees.Add(ent);
+        });
+        foreach (var ent in evictees)
+        {
+            ent.RemoveComponent<AtRecreation>();
+        }
+        _urBoardSeats.Remove(bid);
+        _urBoardPlayers.Remove(bid);
+    }
+
     // Atomic "pick a bed for this pawn to sleep in" call. Returns the
     // bed entity reserved to the pawn, or default if none is available.
     // Rules:
@@ -811,6 +879,7 @@ public sealed class SimRuntime
             case JobKind.FloorBuild:
             case JobKind.DoorBuild:
             case JobKind.BedBuild:
+            case JobKind.UrBoardBuild:
                 return job.Entity.Id;
             case JobKind.Haul:
                 if (job.Entity.HasComponent<HaulPayload>())
@@ -977,6 +1046,16 @@ public sealed class SimRuntime
             }
             bool carrying = ent.HasComponent<Carrying>();
             if (carrying) label = "Haul";
+            if (!drafted && ent.HasComponent<AtRecreation>())
+            {
+                var ar = ent.GetComponent<AtRecreation>();
+                label = ar.Role == RecreationRole.Player ? "Playing Ur" : "Watching Ur";
+            }
+            else if (!drafted && ent.HasComponent<RecreationReservation>())
+            {
+                var rr = ent.GetComponent<RecreationReservation>();
+                label = rr.Role == RecreationRole.Player ? "→ Play Ur" : "→ Watch Ur";
+            }
 
             CarriedItemState[] inventory = Array.Empty<CarriedItemState>();
             float carryW = 0f, carryB = 0f;
@@ -1001,11 +1080,14 @@ public sealed class SimRuntime
             float sleepLevel = ent.HasComponent<SleepNeed>() ? ent.GetComponent<SleepNeed>().Level : 1f;
             bool isSleeping = ent.HasComponent<Sleeping>();
             int assignedBedId = ent.HasComponent<AssignedBed>() ? ent.GetComponent<AssignedBed>().BedEntityId : 0;
+            float recLevel = ent.HasComponent<RecreationNeed>() ? ent.GetComponent<RecreationNeed>().Level : 1f;
+            RecreationKind? atRecKind = ent.HasComponent<AtRecreation>() ? ent.GetComponent<AtRecreation>().Kind : null;
             dummiesBuf[i++] = new DummyState(
                 ent.Id, p.X, p.Y, label, drafted, carrying,
                 inventory, carryW, carryB,
                 SimConstants.MaxCarryWeight, SimConstants.MaxCarryBulk,
-                sleepLevel, isSleeping, assignedBedId);
+                sleepLevel, isSleeping, assignedBedId,
+                recLevel, atRecKind);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {
@@ -1311,6 +1393,76 @@ public sealed class SimRuntime
         });
         snap.BedBlueprintsCount = bbi;
 
+        EnsureCap(ref snap.UrBoardsBuf, _urBoardMap.Count);
+        var urBuf = snap.UrBoardsBuf;
+        int ubi = 0;
+        foreach (var (tile, ubEnt) in _urBoardMap)
+        {
+            int boardId = ubEnt.Id;
+            urBuf[ubi++] = new UrBoardState(boardId, tile, UrBoardPlayerCount(boardId), UrBoardSpectatorCount(boardId));
+        }
+        snap.UrBoardsCount = ubi;
+
+        var urBpQuery = Store.Query<UrBoardBlueprint>();
+        EnsureCap(ref snap.UrBoardBlueprintsBuf, urBpQuery.Count);
+        var urBpBuf = snap.UrBoardBlueprintsBuf;
+        int ubbi = 0;
+        urBpQuery.ForEachEntity((ref UrBoardBlueprint bp, Entity ent) =>
+        {
+            bool forbidden = Jobs.GetByTile(bp.Tile)?.Forbidden ?? false;
+            urBpBuf[ubbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / UrBoardSystem.BuildTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent), BlueprintCostOps.SnapshotEntries(ent));
+        });
+        snap.UrBoardBlueprintsCount = ubbi;
+
+        EnsureCap(ref snap.StovesBuf, _stoveMap.Count);
+        var stoveBuf = snap.StovesBuf;
+        int stoveIdx = 0;
+        foreach (var (origin, sEnt) in _stoveMap)
+        {
+            var sc = sEnt.GetComponent<Stove>();
+            var board = sEnt.HasComponent<BillsBoard>() ? sEnt.GetComponent<BillsBoard>() : default;
+            var bills = board.Bills;
+            BillState[] billArr;
+            if (bills is null || bills.Count == 0)
+            {
+                billArr = System.Array.Empty<BillState>();
+            }
+            else
+            {
+                billArr = new BillState[bills.Count];
+                for (int bi3 = 0; bi3 < bills.Count; bi3++)
+                {
+                    var b = bills[bi3];
+                    billArr[bi3] = new BillState(b.Recipe, b.RepeatMode, b.TargetCount, b.RemainingCount, b.OutputDest, b.StockpileEntityId);
+                }
+            }
+            var recipeForProgress = Recipes.Get(sc.CurrentBillIndex >= 0 && sc.CurrentBillIndex < (bills?.Count ?? 0)
+                ? bills![sc.CurrentBillIndex].Recipe
+                : RecipeId.CookSimpleMeal);
+            float progress01 = sc.CurrentBillIndex >= 0 && recipeForProgress.WorkTicks > 0
+                ? Math.Clamp(sc.CookProgressTicks / recipeForProgress.WorkTicks, 0f, 1f)
+                : 0f;
+            stoveBuf[stoveIdx++] = new StoveState(sEnt.Id, origin, sc.Orientation, sc.CurrentBillIndex, progress01, sc.ActiveCookEntityId, billArr);
+        }
+        snap.StovesCount = stoveIdx;
+
+        var stoveBpQuery = Store.Query<StoveBlueprint>();
+        EnsureCap(ref snap.StoveBlueprintsBuf, stoveBpQuery.Count);
+        var stoveBpBuf = snap.StoveBlueprintsBuf;
+        int stoveBpIdx = 0;
+        stoveBpQuery.ForEachEntity((ref StoveBlueprint bp, Entity ent) =>
+        {
+            bool forbidden = Jobs.GetByTile(bp.Origin)?.Forbidden ?? false;
+            stoveBpBuf[stoveBpIdx++] = new StoveBlueprintState(
+                bp.Origin,
+                bp.Orientation,
+                bp.ProgressSec / StoveSystem.StoveBuildTimeSec,
+                forbidden,
+                BlueprintCostOps.FundingFraction(ent),
+                BlueprintCostOps.SnapshotEntries(ent));
+        });
+        snap.StoveBlueprintsCount = stoveBpIdx;
+
         return snap;
     }
 
@@ -1432,7 +1584,141 @@ public sealed class SimRuntime
         if (_lampMap.ContainsKey(t)) return false;
         if (_trees.ContainsKey(t)) return false;
         if (_bedOccupied.Contains(t)) return false;
+        if (_urBoardOccupied.Contains(t)) return false;
+        if (_stoveOccupied.Contains(t)) return false;
         return true;
+    }
+
+    // ─── Stove placement / decon ─────────────────────────────────────
+    public bool TryPlaceStoveBlueprint(TilePos origin, StoveOrientation orientation)
+    {
+        foreach (var t in StoveOrientations.BodyTiles(origin, orientation))
+        {
+            if (!IsBedTileFree(t)) return false;
+            if (Jobs.HasTile(t)) return false;
+        }
+        var standing = StoveOrientations.StandingTile(origin, orientation);
+        if (!IsBedTileFree(standing)) return false;
+        if (Jobs.HasTile(standing)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new StoveBlueprint { Origin = origin, Orientation = orientation, ProgressSec = 0f });
+        World.BlueprintCostOps.AttachCost(e, (Items.ItemCatalog.Wood.FullPath, StoveWoodCost));
+        var id = Jobs.Post(JobKind.StoveBuild, origin, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        foreach (var t in StoveOrientations.BodyTiles(origin, orientation))
+            _stoveOccupied.Add(t);
+        _stoveOccupied.Add(standing);
+        RebuildMapView();
+        return true;
+    }
+
+    public bool TryPostStoveDeconstructJob(TilePos origin)
+    {
+        if (!_stoveMap.ContainsKey(origin)) return false;
+        if (Jobs.HasTile(origin)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new Decon { Tile = origin, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.StoveDeconstruct, origin, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        return true;
+    }
+
+    public bool CanPlaceStove(TilePos origin, StoveOrientation orientation)
+    {
+        foreach (var t in StoveOrientations.BodyTiles(origin, orientation))
+            if (!IsBedTileFree(t)) return false;
+        var standing = StoveOrientations.StandingTile(origin, orientation);
+        return IsBedTileFree(standing);
+    }
+
+    public IReadOnlyDictionary<TilePos, Entity> StoveMap => _stoveMap;
+    public const int StoveWoodCost = 40;
+
+    // Drop an ItemPile of (path, count) on the given tile. Used by
+    // CookSystem when a meal finishes, by harness scenarios for stocking
+    // ingredients, and anything else that needs a runtime drop.
+    public void SpawnItemPile(TilePos tile, string itemPath, int count)
+    {
+        if (count <= 0) return;
+        var e = Store.CreateEntity();
+        e.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
+        e.AddComponent(new ItemPile { Tile = tile, Count = count, ItemPath = itemPath });
+    }
+
+    // Cook callback: consume up to `wanted` items of `itemPath` from any
+    // ItemPile at the given tile. Returns how many were actually consumed.
+    public int TryConsumeFromPile(TilePos tile, string itemPath, int wanted)
+    {
+        if (wanted <= 0) return 0;
+        int taken = 0;
+        var query = Store.Query<ItemPile>();
+        Entity? toDelete = null;
+        query.ForEachEntity((ref ItemPile p, Entity ent) =>
+        {
+            if (taken >= wanted) return;
+            if (p.Tile != tile) return;
+            if (p.ItemPath != itemPath) return;
+            int can = Math.Min(p.Count, wanted - taken);
+            p.Count -= can;
+            taken += can;
+            if (p.Count <= 0) toDelete = ent;
+        });
+        if (toDelete is Entity te) te.DeleteEntity();
+        return taken;
+    }
+
+    // Find the nearest tile holding a matching ItemPile reachable via
+    // simple Manhattan distance. Returns null if nothing matches.
+    public TilePos? FindNearestItemPile(TilePos from, string itemPath)
+    {
+        int best = int.MaxValue;
+        TilePos bestT = default;
+        bool any = false;
+        var query = Store.Query<ItemPile>();
+        query.ForEachEntity((ref ItemPile p, Entity _) =>
+        {
+            if (p.ItemPath != itemPath) return;
+            if (p.Count <= 0) return;
+            int d = Math.Abs(p.Tile.X - from.X) + Math.Abs(p.Tile.Y - from.Y);
+            if (d < best)
+            {
+                best = d;
+                bestT = p.Tile;
+                any = true;
+            }
+        });
+        return any ? bestT : null;
+    }
+
+    // Harness shortcut: skip blueprint+build and drop a finished stove.
+    public void InstantPlaceStove(TilePos origin, StoveOrientation orientation)
+    {
+        if (!CanPlaceStove(origin, orientation)) return;
+        var e = Store.CreateEntity();
+        e.AddComponent(new Stove
+        {
+            Origin = origin,
+            Orientation = orientation,
+            CookProgressTicks = 0f,
+            CurrentBillIndex = -1,
+            ActiveCookEntityId = 0,
+        });
+        e.AddComponent(new BillsBoard { Bills = new List<Bill>() });
+        foreach (var t in StoveOrientations.BodyTiles(origin, orientation))
+            _stoveOccupied.Add(t);
+        _stoveOccupied.Add(StoveOrientations.StandingTile(origin, orientation));
+        _stoveMap[origin] = e;
+        RebuildMapView();
     }
 
     // Exposed so the BedDesignator preview can ask the sim whether a
@@ -1448,6 +1734,260 @@ public sealed class SimRuntime
     }
 
     public IReadOnlyDictionary<TilePos, Entity> BedMap => _bedMap;
+    public IReadOnlyDictionary<TilePos, Entity> UrBoardMap => _urBoardMap;
+
+    // Reserve the same tile as the bed pipeline — IsBedTileFree already
+    // covers the common rejections (border, wall, door, lamp, tree, other
+    // furniture). The board is 1x1 so no foot offset.
+    public bool TryPlaceUrBoardBlueprint(TilePos tile)
+    {
+        if (!IsBedTileFree(tile)) return false;
+        if (Jobs.HasTile(tile)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new UrBoardBlueprint { Tile = tile, ProgressSec = 0f });
+        World.BlueprintCostOps.AttachCost(e, (Items.ItemCatalog.Wood.FullPath, UrBoardWoodCost));
+        var id = Jobs.Post(JobKind.UrBoardBuild, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        _urBoardOccupied.Add(tile);
+        RebuildMapView();
+        return true;
+    }
+
+    // Harness shortcut: drop a finished Ur board directly, no blueprint
+    // or job. Mirrors InstantPlaceLamp.
+    public bool InstantPlaceUrBoard(TilePos tile)
+    {
+        if (!IsBedTileFree(tile)) return false;
+        var e = Store.CreateEntity();
+        e.AddComponent(new UrBoard { Tile = tile });
+        _urBoardMap[tile] = e;
+        _urBoardOccupied.Add(tile);
+        RebuildMapView();
+        return true;
+    }
+
+    public bool TryPostUrBoardDeconstructJob(TilePos tile)
+    {
+        if (!_urBoardMap.ContainsKey(tile)) return false;
+        if (Jobs.HasTile(tile)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new Decon { Tile = tile, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.UrBoardDeconstruct, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        return true;
+    }
+
+    public bool CanPlaceUrBoard(TilePos tile) => IsBedTileFree(tile);
+
+    // === Ur board seat reservation ===
+    // DummyController calls this when a tired-for-fun pawn wants to sit
+    // at a board. Picks the nearest board with an open slot for `role`
+    // and returns the seat tile to walk to. Player seats are the 4
+    // cardinal-adjacent walkable tiles; spectator slots clump in the
+    // SpectatorRadius Chebyshev ring beyond.
+    private static readonly (int dx, int dy)[] PlayerSeatOffsets = new (int, int)[]
+    {
+        (1, 0), (-1, 0), (0, 1), (0, -1),
+    };
+
+    public bool TryReserveUrSeat(Entity pawn, RecreationRole role, out int boardEntityId, out TilePos boardTile, out TilePos seatTile)
+    {
+        boardEntityId = 0;
+        boardTile = default;
+        seatTile = default;
+
+        if (!pawn.HasComponent<WorldPos>()) return false;
+        var pp = pawn.GetComponent<WorldPos>();
+        var here = new TilePos((int)pp.X, (int)pp.Y);
+
+        // Snapshot occupied seats this tick so two pawns in the same
+        // plan loop don't grab the same tile.
+        Entity bestBoard = default;
+        TilePos bestSeat = default;
+        int bestDist = int.MaxValue;
+
+        foreach (var kv in _urBoardMap)
+        {
+            var board = kv.Value;
+            int bid = board.Id;
+            var btile = kv.Key;
+
+            int players = _urBoardPlayers.TryGetValue(bid, out var p) ? p : 0;
+            var seats = _urBoardSeats.TryGetValue(bid, out var s) ? s : null;
+            int totalSeated = seats?.Count ?? 0;
+
+            if (role == RecreationRole.Player)
+            {
+                if (players >= RecreationSystem.PlayerSeats) continue;
+                if (!TryPickFreePlayerSeat(btile, seats, out var ps)) continue;
+                int d = Math.Abs(ps.X - here.X) + Math.Abs(ps.Y - here.Y);
+                if (d < bestDist) { bestDist = d; bestBoard = board; bestSeat = ps; }
+            }
+            else
+            {
+                // Spectating requires at least 1 player at the board.
+                if (players < 1) continue;
+                int specSlots = totalSeated - players;
+                if (specSlots >= RecreationSystem.MaxSpectators) continue;
+                if (!TryPickFreeSpectatorSeat(btile, seats, here, out var ss)) continue;
+                int d = Math.Abs(ss.X - here.X) + Math.Abs(ss.Y - here.Y);
+                if (d < bestDist) { bestDist = d; bestBoard = board; bestSeat = ss; }
+            }
+        }
+        if (bestDist == int.MaxValue) return false;
+
+        boardEntityId = bestBoard.Id;
+        boardTile = bestBoard.GetComponent<UrBoard>().Tile;
+        seatTile = bestSeat;
+        if (!_urBoardSeats.TryGetValue(boardEntityId, out var live))
+        {
+            live = new HashSet<int>();
+            _urBoardSeats[boardEntityId] = live;
+        }
+        live.Add(MakeSeatKey(seatTile));
+        if (role == RecreationRole.Player)
+        {
+            _urBoardPlayers.TryGetValue(boardEntityId, out var cur);
+            _urBoardPlayers[boardEntityId] = cur + 1;
+        }
+        return true;
+    }
+
+    // Preference-aware seat picker for the recreation phase. Ur preference
+    // tries Player first, then falls back to Spectator at the same/any
+    // board that already has a player. Spectating goes straight to a
+    // spectator slot.
+    public bool TryReserveRecreation(Entity pawn, RecreationKind preferred, out int boardEntityId, out TilePos boardTile, out TilePos seatTile, out RecreationRole role)
+    {
+        boardEntityId = 0; boardTile = default; seatTile = default; role = RecreationRole.Player;
+        if (preferred == RecreationKind.Ur)
+        {
+            if (TryReserveUrSeat(pawn, RecreationRole.Player, out boardEntityId, out boardTile, out seatTile))
+            {
+                role = RecreationRole.Player;
+                return true;
+            }
+            if (TryReserveUrSeat(pawn, RecreationRole.Spectator, out boardEntityId, out boardTile, out seatTile))
+            {
+                role = RecreationRole.Spectator;
+                return true;
+            }
+            return false;
+        }
+        // Spectating preference.
+        if (TryReserveUrSeat(pawn, RecreationRole.Spectator, out boardEntityId, out boardTile, out seatTile))
+        {
+            role = RecreationRole.Spectator;
+            return true;
+        }
+        return false;
+    }
+
+    public void ReleaseUrSeat(int boardEntityId, TilePos seatTile, RecreationRole role)
+    {
+        if (boardEntityId == 0) return;
+        if (_urBoardSeats.TryGetValue(boardEntityId, out var seats))
+        {
+            seats.Remove(MakeSeatKey(seatTile));
+            if (seats.Count == 0) _urBoardSeats.Remove(boardEntityId);
+        }
+        if (role == RecreationRole.Player)
+        {
+            if (_urBoardPlayers.TryGetValue(boardEntityId, out var cur))
+            {
+                int next = cur - 1;
+                if (next <= 0) _urBoardPlayers.Remove(boardEntityId);
+                else _urBoardPlayers[boardEntityId] = next;
+            }
+        }
+    }
+
+    // Per-board player count for the renderer / info panel.
+    public int UrBoardPlayerCount(int boardEntityId)
+        => _urBoardPlayers.TryGetValue(boardEntityId, out var p) ? p : 0;
+
+    public int UrBoardSpectatorCount(int boardEntityId)
+    {
+        int total = _urBoardSeats.TryGetValue(boardEntityId, out var s) ? s.Count : 0;
+        return total - UrBoardPlayerCount(boardEntityId);
+    }
+
+    // Encode (tile.X, tile.Y) into a single int hash for the seat set.
+    // Map size is bounded so X * MapSize + Y fits.
+    private int MakeSeatKey(TilePos t) => t.X * SimConstants.MapSize + t.Y;
+
+    private bool TryPickFreePlayerSeat(TilePos board, HashSet<int>? seats, out TilePos tile)
+    {
+        tile = default;
+        var view = MapView;
+        foreach (var (dx, dy) in PlayerSeatOffsets)
+        {
+            var t = new TilePos(board.X + dx, board.Y + dy);
+            if (!view.Walkable(t)) continue;
+            if (view.HasFurniture(t)) continue;
+            if (seats is not null && seats.Contains(MakeSeatKey(t))) continue;
+            tile = t;
+            return true;
+        }
+        return false;
+    }
+
+    private bool TryPickFreeSpectatorSeat(TilePos board, HashSet<int>? seats, TilePos from, out TilePos tile)
+    {
+        tile = default;
+        var view = MapView;
+        TilePos best = default;
+        int bestDist = int.MaxValue;
+        for (int dy = -RecreationSystem.SpectatorRadius; dy <= RecreationSystem.SpectatorRadius; dy++)
+        {
+            for (int dx = -RecreationSystem.SpectatorRadius; dx <= RecreationSystem.SpectatorRadius; dx++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                // Player seats live in the 4 cardinal slots; spectators
+                // get everything else inside the radius.
+                if ((dx == 1 || dx == -1 || dx == 0) && (dy == 1 || dy == -1 || dy == 0)
+                    && Math.Abs(dx) + Math.Abs(dy) == 1) continue;
+                var t = new TilePos(board.X + dx, board.Y + dy);
+                if (!view.Walkable(t)) continue;
+                if (view.HasFurniture(t)) continue;
+                if (seats is not null && seats.Contains(MakeSeatKey(t))) continue;
+                int d = Math.Abs(t.X - from.X) + Math.Abs(t.Y - from.Y);
+                if (d < bestDist) { bestDist = d; best = t; }
+            }
+        }
+        if (bestDist == int.MaxValue) return false;
+        tile = best;
+        return true;
+    }
+
+    // Live pool of recreation kinds the 12h roll can pick. Ur is in iff
+    // there's at least one board on the map. Spectating is in iff there's
+    // an active game (>=1 player seated at any board) — without that the
+    // spectate role has nowhere to go.
+    private readonly List<RecreationKind> _availableKindsScratch = new();
+    public IReadOnlyList<RecreationKind> GetAvailableRecreationKinds()
+    {
+        _availableKindsScratch.Clear();
+        if (_urBoardMap.Count == 0) return _availableKindsScratch;
+        _availableKindsScratch.Add(RecreationKind.Ur);
+        bool anyActive = false;
+        foreach (var kv in _urBoardPlayers)
+        {
+            if (kv.Value > 0) { anyActive = true; break; }
+        }
+        if (anyActive) _availableKindsScratch.Add(RecreationKind.Spectating);
+        return _availableKindsScratch;
+    }
 
     // Harness shortcut: stamp roof bytes directly across a rect. Skips
     // the chunked build-job pipeline used by PaintRoofRect.
@@ -1746,6 +2286,60 @@ public sealed class SimRuntime
                 RebuildMapView();
             }
         }
+        else if (kind == JobKind.UrBoardBuild)
+        {
+            var bp = entity.GetComponent<UrBoardBlueprint>();
+            entity.RemoveComponent<UrBoardBlueprint>();
+            entity.AddComponent(new UrBoard { Tile = bp.Tile });
+            _urBoardMap[bp.Tile] = entity;
+        }
+        else if (kind == JobKind.UrBoardDeconstruct)
+        {
+            entity.DeleteEntity();
+            if (_urBoardMap.TryGetValue(tile, out var boardEnt))
+            {
+                ForgetUrBoard(boardEnt);
+                _urBoardMap.Remove(tile);
+                _urBoardOccupied.Remove(tile);
+                boardEnt.DeleteEntity();
+                RebuildMapView();
+            }
+        }
+        else if (kind == JobKind.StoveBuild)
+        {
+            var bp = entity.GetComponent<StoveBlueprint>();
+            entity.RemoveComponent<StoveBlueprint>();
+            entity.AddComponent(new Stove
+            {
+                Origin = bp.Origin,
+                Orientation = bp.Orientation,
+                CookProgressTicks = 0f,
+                CurrentBillIndex = -1,
+                ActiveCookEntityId = 0,
+            });
+            entity.AddComponent(new BillsBoard { Bills = new List<Bill>() });
+            _stoveMap[bp.Origin] = entity;
+        }
+        else if (kind == JobKind.StoveDeconstruct)
+        {
+            entity.DeleteEntity();
+            if (_stoveMap.TryGetValue(tile, out var stoveEnt))
+            {
+                var stove = stoveEnt.GetComponent<Stove>();
+                foreach (var t in StoveOrientations.BodyTiles(stove.Origin, stove.Orientation))
+                    _stoveOccupied.Remove(t);
+                _stoveOccupied.Remove(StoveOrientations.StandingTile(stove.Origin, stove.Orientation));
+                _stoveMap.Remove(tile);
+                stoveEnt.DeleteEntity();
+                RebuildMapView();
+            }
+        }
+        else if (kind == JobKind.Cook)
+        {
+            // Cook completion is handled by CookSystem (it consumes
+            // ingredients + spawns the meal item). Here we just close
+            // the job. Job entity is the stove — don't delete it.
+        }
         else if (kind == JobKind.Deconstruct)
         {
             // Decon marker entity is single-purpose; throw it away.
@@ -1870,7 +2464,9 @@ public sealed class SimRuntime
             && (kind == JobKind.WallBuild
                 || kind == JobKind.FloorBuild
                 || kind == JobKind.DoorBuild
-                || kind == JobKind.BedBuild))
+                || kind == JobKind.BedBuild
+                || kind == JobKind.UrBoardBuild
+                || kind == JobKind.StoveBuild))
         {
             _blueprintPriority.Remove(pinnedBpId);
         }
@@ -1949,6 +2545,44 @@ public sealed class SimRuntime
         {
             // Decon cancelled — bed stays; throw the marker away.
             entity.DeleteEntity();
+        }
+        else if (kind == JobKind.UrBoardBuild)
+        {
+            var bp = entity.GetComponent<UrBoardBlueprint>();
+            RefundDeposits(entity, bp.Tile);
+            _urBoardOccupied.Remove(bp.Tile);
+            entity.DeleteEntity();
+            RebuildMapView();
+        }
+        else if (kind == JobKind.UrBoardDeconstruct)
+        {
+            entity.DeleteEntity();
+        }
+        else if (kind == JobKind.StoveBuild)
+        {
+            var bp = entity.GetComponent<StoveBlueprint>();
+            RefundDeposits(entity, bp.Origin);
+            foreach (var t in StoveOrientations.BodyTiles(bp.Origin, bp.Orientation))
+                _stoveOccupied.Remove(t);
+            _stoveOccupied.Remove(StoveOrientations.StandingTile(bp.Origin, bp.Orientation));
+            entity.DeleteEntity();
+            RebuildMapView();
+        }
+        else if (kind == JobKind.StoveDeconstruct)
+        {
+            entity.DeleteEntity();
+        }
+        else if (kind == JobKind.Cook)
+        {
+            // Cook cancelled mid-flight (master spec: only drafted
+            // interrupt cancels). Reset stove progress + active cook.
+            if (entity.HasComponent<Stove>())
+            {
+                ref var stove = ref entity.GetComponent<Stove>();
+                stove.CookProgressTicks = 0f;
+                stove.CurrentBillIndex = -1;
+                stove.ActiveCookEntityId = 0;
+            }
         }
         else if (kind == JobKind.DoorDeconstruct)
         {
@@ -3265,13 +3899,22 @@ public sealed class SimRuntime
             // are marked as furniture so A* applies a steep cost weight
             // and routes around them when there's another way through.
             TilePos[]? furnitureTiles = null;
-            if (_bedOccupied.Count > 0)
+            int furnCount = _bedOccupied.Count + _stoveOccupied.Count;
+            if (furnCount > 0)
             {
-                furnitureTiles = new TilePos[_bedOccupied.Count];
+                furnitureTiles = new TilePos[furnCount];
                 int bi = 0;
                 foreach (var t in _bedOccupied) furnitureTiles[bi++] = t;
+                foreach (var t in _stoveOccupied) furnitureTiles[bi++] = t;
             }
-            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden, doorTiles, doorCosts, furnitureTiles);
+            TilePos[]? blockingFurniture = null;
+            if (_urBoardOccupied.Count > 0)
+            {
+                blockingFurniture = new TilePos[_urBoardOccupied.Count];
+                int bi = 0;
+                foreach (var t in _urBoardOccupied) blockingFurniture[bi++] = t;
+            }
+            newView = Map.Snapshot(MapVersion, _mapView, _playerWalls.ToArray(), treeTiles, forbidden, doorTiles, doorCosts, furnitureTiles, blockingFurniture);
         }
         Volatile.Write(ref _mapView, newView);
     }
@@ -4249,6 +4892,23 @@ public sealed class SimRuntime
         return true;
     }
 
+    public bool SpawnDummyAt(int tileX, int tileY)
+    {
+        try { SpawnDummy(tileX, tileY); return true; }
+        catch { return false; }
+    }
+
+    // Debug/harness: force every pawn's RecreationNeed to a level.
+    // Used by the ur-board scenario to drop all colonists below the
+    // SeekThreshold so they urgent-seek the board immediately.
+    public void SetAllRecreationLevel(float level)
+    {
+        Store.Query<RecreationNeed>().ForEachEntity((ref RecreationNeed r, Entity _) =>
+        {
+            r.Level = level;
+        });
+    }
+
     private void SpawnDummy(int tileX, int tileY)
     {
         var view = MapView;
@@ -4270,6 +4930,7 @@ public sealed class SimRuntime
                     EnsureWorkPriorities(e);
                     EnsureSchedule(e);
                     EnsureSleepNeed(e);
+                    EnsureRecreationNeed(e);
                     return;
                 }
             }

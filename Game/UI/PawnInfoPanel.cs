@@ -3,6 +3,7 @@ using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Items;
 using StruggleGame.Sim.Snapshots;
+using StruggleGame.Sim.World;
 
 namespace StruggleGame.Game.UI;
 
@@ -30,6 +31,8 @@ public partial class PawnInfoPanel : CanvasLayer
     private Label _capLabel = null!;
     private Label _sleepLabel = null!;
     private ProgressBar _sleepBar = null!;
+    private Label _recLabel = null!;
+    private ProgressBar _recBar = null!;
     private VBoxContainer _invList = null!;
     private Label _invEmptyLabel = null!;
 
@@ -98,6 +101,18 @@ public partial class PawnInfoPanel : CanvasLayer
             CustomMinimumSize = new Vector2(0, 18),
         };
         vbox.AddChild(_sleepBar);
+
+        _recLabel = new Label { Text = "Recreation" };
+        _recLabel.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(_recLabel);
+        _recBar = new ProgressBar
+        {
+            MinValue = 0,
+            MaxValue = 1,
+            Step = 0.0001,
+            CustomMinimumSize = new Vector2(0, 18),
+        };
+        vbox.AddChild(_recBar);
 
         vbox.AddChild(new HSeparator());
 
@@ -174,6 +189,10 @@ public partial class PawnInfoPanel : CanvasLayer
 
         _sleepBar.Value = p.SleepLevel;
         _sleepLabel.Text = $"Sleep: {p.SleepLevel * 100f:0}%" + (p.Sleeping ? "  (asleep)" : "");
+
+        _recBar.Value = p.RecreationLevel;
+        string recTag = p.AtRecreationKind is RecreationKind k ? $"  ({k})" : "";
+        _recLabel.Text = $"Recreation: {p.RecreationLevel * 100f:0}%{recTag}";
 
         _capLabel.Text = $"Carry: {p.CarryWeight:0.#} / {p.MaxCarryWeight:0.#} wt    {p.CarryBulk:0.#} / {p.MaxCarryBulk:0.#} bulk";
 

@@ -77,6 +77,12 @@ public partial class Bootstrap : Node2D
         var bedDesignator = new BedDesignator { Host = _host, Tools = _tools, Name = "BedDesignator" };
         AddChild(bedDesignator);
 
+        var urBoardDesignator = new UrBoardDesignator { Host = _host, Tools = _tools, Name = "UrBoardDesignator" };
+        AddChild(urBoardDesignator);
+
+        var stoveDesignator = new StoveDesignator { Host = _host, Tools = _tools, Name = "StoveDesignator" };
+        AddChild(stoveDesignator);
+
         var spawnDesignator = new SpawnPawnDesignator { Host = _host, Tools = _tools, Name = "SpawnPawnDesignator" };
         AddChild(spawnDesignator);
 
@@ -133,6 +139,15 @@ public partial class Bootstrap : Node2D
 
         var bedInfoPanel = new BedInfoPanel { Host = _host, Name = "BedInfoPanel" };
         AddChild(bedInfoPanel);
+
+        var urBoardInfoPanel = new UrBoardInfoPanel { Host = _host, Name = "UrBoardInfoPanel" };
+        AddChild(urBoardInfoPanel);
+
+        var billsPanel = new BillsPanel { Host = _host, Name = "BillsPanel" };
+        AddChild(billsPanel);
+
+        var stoveInfoPanel = new StoveInfoPanel { Host = _host, Bills = billsPanel, Name = "StoveInfoPanel" };
+        AddChild(stoveInfoPanel);
 
         var blueprintInfoPanel = new BlueprintInfoPanel { Host = _host, Name = "BlueprintInfoPanel" };
         AddChild(blueprintInfoPanel);
@@ -360,6 +375,11 @@ public partial class Bootstrap : Node2D
                 foreach (var t in _host.SelectedBedTiles)
                 {
                     _host.QueueCommand(new Sim.Commands.PostBedDeconCommand(t));
+                    any = true;
+                }
+                foreach (var t in _host.SelectedStoveTiles)
+                {
+                    _host.QueueCommand(new Sim.Commands.DeconstructStoveCommand(t));
                     any = true;
                 }
                 if (any) GetViewport().SetInputAsHandled();

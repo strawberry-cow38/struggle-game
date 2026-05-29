@@ -120,7 +120,8 @@ public sealed class TileMap
         IReadOnlyList<TilePos>? forbiddenDoors = null,
         IReadOnlyList<TilePos>? doorTiles = null,
         IReadOnlyList<float>? doorCosts = null,
-        IReadOnlyList<TilePos>? furnitureTiles = null)
+        IReadOnlyList<TilePos>? furnitureTiles = null,
+        IReadOnlyList<TilePos>? blockingFurniture = null)
     {
         var terrainChunks = BuildChunks(_terrain, _terrainChunkDirty, previous?.TerrainChunks);
         var flooringChunks = BuildChunks(_flooring, _flooringChunkDirty, previous?.FlooringChunks);
@@ -140,7 +141,8 @@ public sealed class TileMap
             forbiddenDoors,
             doorTiles,
             doorCosts,
-            furnitureTiles);
+            furnitureTiles,
+            blockingFurniture);
     }
 
     private byte[][] BuildChunks(byte[] flat, bool[] dirty, byte[][]? prev)

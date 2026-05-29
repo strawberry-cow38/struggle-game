@@ -352,6 +352,7 @@ public partial class Selector : Node2D
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             Host.SelectedLampTiles = Array.Empty<TilePos>();
             Host.SelectedBedTiles = Array.Empty<TilePos>();
+            Host.SelectedUrBoardTiles = Array.Empty<TilePos>();
         }
         else if (!shift)
         {
@@ -366,6 +367,7 @@ public partial class Selector : Node2D
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             Host.SelectedLampTiles = Array.Empty<TilePos>();
             Host.SelectedBedTiles = Array.Empty<TilePos>();
+            Host.SelectedUrBoardTiles = Array.Empty<TilePos>();
         }
     }
 
@@ -415,6 +417,7 @@ public partial class Selector : Node2D
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             Host.SelectedLampTiles = Array.Empty<TilePos>();
             Host.SelectedBedTiles = Array.Empty<TilePos>();
+            Host.SelectedUrBoardTiles = Array.Empty<TilePos>();
             return;
         }
 
@@ -510,6 +513,8 @@ public partial class Selector : Node2D
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             Host.SelectedLampTiles = Array.Empty<TilePos>();
             Host.SelectedBedTiles = Array.Empty<TilePos>();
+            Host.SelectedUrBoardTiles = Array.Empty<TilePos>();
+            Host.SelectedStoveTiles = Array.Empty<TilePos>();
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
             Host.SelectedGrowZoneId = null;
@@ -528,6 +533,8 @@ public partial class Selector : Node2D
             Host.SelectedWallTiles = Array.Empty<TilePos>();
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             Host.SelectedBedTiles = Array.Empty<TilePos>();
+            Host.SelectedUrBoardTiles = Array.Empty<TilePos>();
+            Host.SelectedStoveTiles = Array.Empty<TilePos>();
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
             Host.SelectedGrowZoneId = null;
@@ -542,6 +549,43 @@ public partial class Selector : Node2D
         if (TryPickBed(snap, clickTile, out var bedOrigin))
         {
             Host.SelectedBedTiles = ToggleTile(Host.SelectedBedTiles, bedOrigin, shift);
+            Host.SelectedUrBoardTiles = Array.Empty<TilePos>();
+            Host.SelectedLampTiles = Array.Empty<TilePos>();
+            Host.SelectedDoorTiles = Array.Empty<TilePos>();
+            Host.SelectedWallTiles = Array.Empty<TilePos>();
+            Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
+            Host.SelectedDummyId = null;
+            Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
+            return;
+        }
+
+        if (TryPickUrBoard(snap, clickTile))
+        {
+            Host.SelectedUrBoardTiles = ToggleTile(Host.SelectedUrBoardTiles, clickTile, shift);
+            Host.SelectedBedTiles = Array.Empty<TilePos>();
+            Host.SelectedLampTiles = Array.Empty<TilePos>();
+            Host.SelectedDoorTiles = Array.Empty<TilePos>();
+            Host.SelectedWallTiles = Array.Empty<TilePos>();
+            Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
+            Host.SelectedDummyId = null;
+            Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
+            Host.SelectedStoveTiles = Array.Empty<TilePos>();
+            return;
+        }
+
+        if (TryPickStove(snap, clickTile, out var stoveOrigin))
+        {
+            Host.SelectedStoveTiles = ToggleTile(Host.SelectedStoveTiles, stoveOrigin, shift);
+            Host.SelectedUrBoardTiles = Array.Empty<TilePos>();
+            Host.SelectedBedTiles = Array.Empty<TilePos>();
             Host.SelectedLampTiles = Array.Empty<TilePos>();
             Host.SelectedDoorTiles = Array.Empty<TilePos>();
             Host.SelectedWallTiles = Array.Empty<TilePos>();
@@ -582,6 +626,8 @@ public partial class Selector : Node2D
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             Host.SelectedLampTiles = Array.Empty<TilePos>();
             Host.SelectedBedTiles = Array.Empty<TilePos>();
+            Host.SelectedUrBoardTiles = Array.Empty<TilePos>();
+            Host.SelectedStoveTiles = Array.Empty<TilePos>();
             Host.SelectedDummyId = null;
             Host.SelectedStockpileId = null;
             Host.SelectedGrowZoneId = null;
@@ -605,6 +651,8 @@ public partial class Selector : Node2D
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
             Host.SelectedLampTiles = Array.Empty<TilePos>();
             Host.SelectedBedTiles = Array.Empty<TilePos>();
+            Host.SelectedUrBoardTiles = Array.Empty<TilePos>();
+            Host.SelectedStoveTiles = Array.Empty<TilePos>();
         }
     }
 
@@ -678,7 +726,41 @@ public partial class Selector : Node2D
             var foot = StruggleGame.Sim.World.BedOrientations.Foot(b.Origin, b.Orientation);
             if (foot == tile) { resolved = b.Origin; return true; }
         }
+        foreach (var b in snap.UrBoardBlueprints) { if (b.Tile == tile) return true; }
+        foreach (var b in snap.StoveBlueprints)
+        {
+            foreach (var t in StruggleGame.Sim.World.StoveOrientations.BodyTiles(b.Origin, b.Orientation))
+            {
+                if (t == tile) { resolved = b.Origin; return true; }
+            }
+            if (StruggleGame.Sim.World.StoveOrientations.StandingTile(b.Origin, b.Orientation) == tile)
+            { resolved = b.Origin; return true; }
+        }
         foreach (var d in snap.Decons)          { if (d.Tile == tile) return true; }
+        return false;
+    }
+
+    private bool TryPickUrBoard(SimSnapshot snap, TilePos tile)
+    {
+        foreach (var ub in snap.UrBoards)
+        {
+            if (ub.Tile == tile) return true;
+        }
+        return false;
+    }
+
+    private bool TryPickStove(SimSnapshot snap, TilePos tile, out TilePos origin)
+    {
+        foreach (var s in snap.Stoves)
+        {
+            foreach (var t in StruggleGame.Sim.World.StoveOrientations.BodyTiles(s.Origin, s.Orientation))
+            {
+                if (t == tile) { origin = s.Origin; return true; }
+            }
+            if (StruggleGame.Sim.World.StoveOrientations.StandingTile(s.Origin, s.Orientation) == tile)
+            { origin = s.Origin; return true; }
+        }
+        origin = default;
         return false;
     }
 
