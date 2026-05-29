@@ -104,6 +104,7 @@ public sealed class SimSnapshot
     public TilePos[]? SelectedOrders { get; internal set; }
     public int[] SelectedTreeIds { get; internal set; } = System.Array.Empty<int>();
     public int[] SelectedWoodIds { get; internal set; } = System.Array.Empty<int>();
+    public int[] SelectedCropIds { get; internal set; } = System.Array.Empty<int>();
 }
 
 public readonly record struct DummyState(

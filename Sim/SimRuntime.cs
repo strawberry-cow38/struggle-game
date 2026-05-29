@@ -929,7 +929,7 @@ public sealed class SimRuntime
         Array.Resize(ref arr, next);
     }
 
-    public SimSnapshot BuildSnapshot(int? selectedDummyId = null, int[]? selectedDummyIds = null, IReadOnlyCollection<int>? selectedTreeIds = null, IReadOnlyCollection<int>? selectedWoodIds = null)
+    public SimSnapshot BuildSnapshot(int? selectedDummyId = null, int[]? selectedDummyIds = null, IReadOnlyCollection<int>? selectedTreeIds = null, IReadOnlyCollection<int>? selectedWoodIds = null, IReadOnlyCollection<int>? selectedCropIds = null)
     {
         _useSlotA = !_useSlotA;
         var snap = _useSlotA ? _snapSlotA : _snapSlotB;
@@ -1187,6 +1187,15 @@ public sealed class SimRuntime
             foreach (var id in selectedWoodIds) selWoodArr[si++] = id;
         }
         snap.SelectedWoodIds = selWoodArr;
+
+        int[] selCropArr = Array.Empty<int>();
+        if (selectedCropIds is { Count: > 0 })
+        {
+            selCropArr = new int[selectedCropIds.Count];
+            int si = 0;
+            foreach (var id in selectedCropIds) selCropArr[si++] = id;
+        }
+        snap.SelectedCropIds = selCropArr;
 
         EnsureCap(ref snap.DeconsBuf, Jobs.Count);
         var deconsBuf = snap.DeconsBuf;

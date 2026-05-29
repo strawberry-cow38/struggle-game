@@ -73,6 +73,8 @@ public partial class WorldRenderer : Node2D
     private HashSet<int>? _cachedSelectedTreeSet;
     private int[]? _cachedSelectedWoodIdRef;
     private HashSet<int>? _cachedSelectedWoodSet;
+    private int[]? _cachedSelectedCropIdRef;
+    private HashSet<int>? _cachedSelectedCropSet;
 
     // Wall base color — brown brick mid-tone. Old (0.18, 0.16, 0.14)
     // was too dark for the mul overlay swing to read; the bumped 0.60
@@ -442,11 +444,14 @@ public partial class WorldRenderer : Node2D
 
         using (FrameProfiler.Instance.BeginScope("Crops"))
         {
+            var selectedCropSet = GetCachedSelectedSet(
+                snap.SelectedCropIds, ref _cachedSelectedCropIdRef, ref _cachedSelectedCropSet);
             foreach (var c in snap.Crops)
             {
                 if (c.Tile.X < viewMinTileX || c.Tile.X > viewMaxTileX
                     || c.Tile.Y < viewMinTileY || c.Tile.Y > viewMaxTileY) continue;
                 DrawCrop(c, simpleLod);
+                if (selectedCropSet is not null && selectedCropSet.Contains(c.EntityId)) DrawWoodSelectionRing(c.Tile);
             }
         }
 

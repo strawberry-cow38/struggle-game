@@ -5,11 +5,11 @@ using StruggleGame.Sim.Snapshots;
 
 namespace StruggleGame.Game.UI;
 
-// Right-side panel for the selected tree(s). Mirrors ItemInfoPanel.
-// Single selection shows tile + chop progress. Multi-selection shows
-// aggregate counts. Chop / Cancel buttons fire one 1x1 rect command
-// per selected tree so the existing rect plumbing handles every tile.
-public partial class TreeInfoPanel : CanvasLayer
+// Right-side panel for the selected crop(s). Mirrors TreeInfoPanel.
+// Action button is "Harvest" when the selection contains any crop at
+// >= HarvestMinGrowth, otherwise "Cut" (the verb that clears immature
+// crops with no yield).
+public partial class CropInfoPanel : CanvasLayer
 {
     public SimHost? Host { get; set; }
 
@@ -17,21 +17,20 @@ public partial class TreeInfoPanel : CanvasLayer
     private const int MarginRight = 16;
     private const int MarginTop = 16;
 
+    // Mirror of SimRuntime.HarvestMinGrowthStage. Below this crops yield
+    // nothing on harvest, so the action button swaps to "Cut".
+    private const float HarvestMinGrowth = 0.75f;
+
     private Panel _root = null!;
     private Label _nameLabel = null!;
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
-    private Button _chopBtn = null!;
+    private Button _actionBtn = null!;
     private Button _cancelBtn = null!;
 
     private int _shownCount = -1;
     private int _shownFirstId = -1;
     private long _lastSnapshotTick = -1;
-
-    // Mirror of SimRuntime.ChopMinGrowthStage. Trees below this can't be
-    // chopped (TryPostChopJob refuses) so the action button swaps to
-    // "Cut" and fires CutPlantsInRectCommand instead.
-    private const float ChopMinGrowth = 0.5f;
 
     public override void _Ready()
     {
@@ -56,12 +55,12 @@ public partial class TreeInfoPanel : CanvasLayer
         _root.AddChild(vbox);
 
         var headerRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        _nameLabel = new Label { Text = "Tree", CustomMinimumSize = new Vector2(0, 24) };
+        _nameLabel = new Label { Text = "Crop", CustomMinimumSize = new Vector2(0, 24) };
         _nameLabel.AddThemeFontSizeOverride("font_size", 18);
         _nameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         headerRow.AddChild(_nameLabel);
         var closeBtn = new Button { Text = "X", CustomMinimumSize = new Vector2(28, 24) };
-        closeBtn.Pressed += () => Host!.SelectedTreeIds = Array.Empty<int>();
+        closeBtn.Pressed += () => Host!.SelectedCropIds = Array.Empty<int>();
         headerRow.AddChild(closeBtn);
         vbox.AddChild(headerRow);
 
@@ -75,9 +74,9 @@ public partial class TreeInfoPanel : CanvasLayer
 
         var btnRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         btnRow.AddThemeConstantOverride("separation", 6);
-        _chopBtn = new Button { Text = "Chop", CustomMinimumSize = new Vector2(0, 28), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        _chopBtn.Pressed += OnChopPressed;
-        btnRow.AddChild(_chopBtn);
+        _actionBtn = new Button { Text = "Harvest", CustomMinimumSize = new Vector2(0, 28), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        _actionBtn.Pressed += OnActionPressed;
+        btnRow.AddChild(_actionBtn);
         _cancelBtn = new Button { Text = "Cancel", CustomMinimumSize = new Vector2(0, 28), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _cancelBtn.Pressed += OnCancelPressed;
         btnRow.AddChild(_cancelBtn);
@@ -95,7 +94,7 @@ public partial class TreeInfoPanel : CanvasLayer
     public override void _Process(double delta)
     {
         if (Host is null) return;
-        var ids = Host.SelectedTreeIds;
+        var ids = Host.SelectedCropIds;
         var snap = Host.LatestSnapshot;
         if (ids.Length == 0 || snap is null)
         {
@@ -123,95 +122,93 @@ public partial class TreeInfoPanel : CanvasLayer
     private void Render(SimSnapshot snap, int[] ids)
     {
         var idSet = new HashSet<int>(ids);
-        int withJob = 0, standing = 0, missing = 0;
-        int standingMature = 0, standingImmature = 0;
-        TreeState? first = null;
-        foreach (var t in snap.Trees)
+        int withJob = 0, growing = 0;
+        int growingMature = 0;
+        CropState? first = null;
+        foreach (var c in snap.Crops)
         {
-            if (!idSet.Contains(t.EntityId)) continue;
-            if (first is null) first = t;
-            if (t.HasJob) withJob++;
+            if (!idSet.Contains(c.EntityId)) continue;
+            if (first is null) first = c;
+            if (c.ActiveJob is not null) withJob++;
             else
             {
-                standing++;
-                if (t.GrowthStage >= ChopMinGrowth) standingMature++;
-                else standingImmature++;
+                growing++;
+                if (c.GrowthStage >= HarvestMinGrowth) growingMature++;
             }
-            idSet.Remove(t.EntityId);
+            idSet.Remove(c.EntityId);
         }
-        // Anything left in idSet was felled out from under the selection.
-        missing = idSet.Count;
-        if (missing > 0 && withJob + standing == 0)
+        // Anything left in idSet was cut/harvested out from under the selection.
+        int missing = idSet.Count;
+        if (missing > 0 && withJob + growing == 0)
         {
-            Host!.SelectedTreeIds = Array.Empty<int>();
+            Host!.SelectedCropIds = Array.Empty<int>();
             return;
         }
 
-        if (ids.Length == 1 && first is TreeState t1)
+        if (ids.Length == 1 && first is CropState c1)
         {
-            _nameLabel.Text = "Tree";
-            _tileLabel.Text = $"Tile: ({t1.Tile.X}, {t1.Tile.Y})";
-            int growPct = Mathf.Clamp((int)Mathf.Round(t1.GrowthStage * 100f), 0, 100);
+            _nameLabel.Text = c1.Kind.ToString();
+            _tileLabel.Text = $"Tile: ({c1.Tile.X}, {c1.Tile.Y})";
+            int growPct = Mathf.Clamp((int)Mathf.Round(c1.GrowthStage * 100f), 0, 100);
             string growth = $"Growth {growPct}%";
-            if (t1.HasJob)
+            if (c1.ActiveJob is not null)
             {
-                int pct = Mathf.Clamp((int)Mathf.Round(t1.ChopProgress * 100f), 0, 100);
-                _stateLabel.Text = $"Chop job queued ({pct}%)\n{growth}";
+                int pct = Mathf.Clamp((int)Mathf.Round(c1.WorkProgress * 100f), 0, 100);
+                _stateLabel.Text = $"{c1.ActiveJob} job queued ({pct}%)\n{growth}";
             }
             else
             {
-                _stateLabel.Text = $"Standing\n{growth}";
+                _stateLabel.Text = $"Growing\n{growth}";
             }
         }
         else
         {
-            _nameLabel.Text = $"Trees ({ids.Length})";
-            _tileLabel.Text = first is TreeState f
+            _nameLabel.Text = $"Crops ({ids.Length})";
+            _tileLabel.Text = first is CropState f
                 ? $"First: ({f.Tile.X}, {f.Tile.Y})"
                 : "";
-            _stateLabel.Text = $"{withJob} queued · {standing} standing";
+            _stateLabel.Text = $"{withJob} queued · {growing} growing";
         }
-        // Mature → Chop; if zero mature but immature exist → Cut.
-        bool anyMature = standingMature > 0;
-        _chopBtn.Text = anyMature ? "Chop" : "Cut";
-        _chopBtn.Disabled = standing == 0;
+        bool anyMature = growingMature > 0;
+        _actionBtn.Text = anyMature ? "Harvest" : "Cut";
+        _actionBtn.Disabled = growing == 0;
         _cancelBtn.Disabled = withJob == 0;
     }
 
-    private void OnChopPressed()
+    private void OnActionPressed()
     {
         if (Host is null) return;
-        var ids = Host.SelectedTreeIds;
+        var ids = Host.SelectedCropIds;
         if (ids.Length == 0) return;
         var snap = Host.LatestSnapshot;
         if (snap is null) return;
         var idSet = new HashSet<int>(ids);
-        foreach (var t in snap.Trees)
+        foreach (var c in snap.Crops)
         {
-            if (!idSet.Contains(t.EntityId)) continue;
-            if (t.HasJob) continue;
-            // Mature → chop (yields full wood). Immature → cut (yields a
-            // ramp from 0..WoodPerTreeFull based on stage).
-            if (t.GrowthStage >= ChopMinGrowth)
-                Host.QueueCommand(new ChopTreesInRectCommand(t.Tile, t.Tile));
+            if (!idSet.Contains(c.EntityId)) continue;
+            if (c.ActiveJob is not null) continue;
+            // Mature → harvest (yields crop). Immature → cut (clears
+            // the tile with no yield, for reclaiming ground).
+            if (c.GrowthStage >= HarvestMinGrowth)
+                Host.QueueCommand(new HarvestInRectCommand(c.Tile, c.Tile));
             else
-                Host.QueueCommand(new CutPlantsInRectCommand(t.Tile, t.Tile));
+                Host.QueueCommand(new CutPlantsInRectCommand(c.Tile, c.Tile));
         }
     }
 
     private void OnCancelPressed()
     {
         if (Host is null) return;
-        var ids = Host.SelectedTreeIds;
+        var ids = Host.SelectedCropIds;
         if (ids.Length == 0) return;
         var snap = Host.LatestSnapshot;
         if (snap is null) return;
         var idSet = new HashSet<int>(ids);
-        foreach (var t in snap.Trees)
+        foreach (var c in snap.Crops)
         {
-            if (!idSet.Contains(t.EntityId)) continue;
-            if (!t.HasJob) continue;
-            Host.QueueCommand(new CancelJobsInRectCommand(t.Tile, t.Tile));
+            if (!idSet.Contains(c.EntityId)) continue;
+            if (c.ActiveJob is null) continue;
+            Host.QueueCommand(new CancelJobsInRectCommand(c.Tile, c.Tile));
         }
     }
 }

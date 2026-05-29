@@ -344,6 +344,7 @@ public partial class Selector : Node2D
         {
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
             Host.SelectedGrowZoneId = null;
             Host.SelectedWallTiles = Array.Empty<TilePos>();
@@ -357,6 +358,7 @@ public partial class Selector : Node2D
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
             Host.SelectedGrowZoneId = null;
             Host.SelectedWallTiles = Array.Empty<TilePos>();
@@ -389,9 +391,14 @@ public partial class Selector : Node2D
                 SelectAllTreesInView(snap);
                 return;
             }
-            // No tree / wood under cursor — let the single-click path
-            // below run so wall + door + pawn picks still work on a
-            // fast double-click.
+            if (TryPickCrop(snap, world, out _))
+            {
+                SelectAllCropsInView(snap);
+                return;
+            }
+            // No tree / wood / crop under cursor — let the single-click
+            // path below run so wall + door + pawn picks still work on
+            // a fast double-click.
         }
 
         // Pawn beats wood/tree if both are within radius.
@@ -400,6 +407,7 @@ public partial class Selector : Node2D
             Host.SelectedDummyIds = ToggleInt(Host.SelectedDummyIds, pawnId, shift);
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
             Host.SelectedGrowZoneId = null;
             Host.SelectedWallTiles = Array.Empty<TilePos>();
@@ -418,6 +426,7 @@ public partial class Selector : Node2D
             WriteWoodSelection(set);
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             Host.SelectedStockpileId = null;
             Host.SelectedGrowZoneId = null;
             Host.SelectedWallTile = null;
@@ -436,9 +445,28 @@ public partial class Selector : Node2D
             Host.SelectedStockpileId = null;
             Host.SelectedGrowZoneId = null;
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             Host.SelectedWallTile = null;
             Host.SelectedDoorTile = null;
             Host.SelectedBlueprintTile = null;
+            return;
+        }
+
+        if (TryPickCrop(snap, world, out int cropId))
+        {
+            var set = shift ? new HashSet<int>(Host.SelectedCropIds) : new HashSet<int>();
+            if (shift && !set.Add(cropId)) set.Remove(cropId);
+            else set.Add(cropId);
+            Host.SelectedDummyId = null;
+            Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
+            Host.SelectedWallTile = null;
+            Host.SelectedDoorTile = null;
+            Host.SelectedBlueprintTile = null;
+            WriteCropSelection(set);
             return;
         }
 
@@ -453,6 +481,7 @@ public partial class Selector : Node2D
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             Host.SelectedWallTile = null;
             Host.SelectedDoorTile = null;
             Host.SelectedBlueprintTile = null;
@@ -466,6 +495,7 @@ public partial class Selector : Node2D
             Host.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             Host.SelectedWallTile = null;
             Host.SelectedDoorTile = null;
             Host.SelectedBlueprintTile = null;
@@ -485,6 +515,7 @@ public partial class Selector : Node2D
             Host.SelectedGrowZoneId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             return;
         }
 
@@ -502,6 +533,7 @@ public partial class Selector : Node2D
             Host.SelectedGrowZoneId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             return;
         }
 
@@ -519,6 +551,7 @@ public partial class Selector : Node2D
             Host.SelectedGrowZoneId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             return;
         }
 
@@ -536,6 +569,7 @@ public partial class Selector : Node2D
             Host.SelectedGrowZoneId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             return;
         }
 
@@ -553,6 +587,7 @@ public partial class Selector : Node2D
             Host.SelectedGrowZoneId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             return;
         }
 
@@ -564,6 +599,7 @@ public partial class Selector : Node2D
             Host.SelectedStockpileId = null;
             Host.SelectedGrowZoneId = null;
             Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
             Host.SelectedWallTiles = Array.Empty<TilePos>();
             Host.SelectedDoorTiles = Array.Empty<TilePos>();
             Host.SelectedBlueprintTiles = Array.Empty<TilePos>();
@@ -732,6 +768,26 @@ public partial class Selector : Node2D
         return id >= 0;
     }
 
+    private bool TryPickCrop(SimSnapshot snap, Vector2 world, out int id)
+    {
+        id = -1;
+        float bestSq = (PixelsPerTile * 0.5f) * (PixelsPerTile * 0.5f);
+        foreach (var c in snap.Crops)
+        {
+            float px = (c.Tile.X + 0.5f) * PixelsPerTile;
+            float py = (c.Tile.Y + 0.5f) * PixelsPerTile;
+            float dx = px - world.X;
+            float dy = py - world.Y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 < bestSq)
+            {
+                bestSq = d2;
+                id = c.EntityId;
+            }
+        }
+        return id >= 0;
+    }
+
     private void SelectAllTreesInView(SimSnapshot snap)
     {
         var vp = GetViewport().GetVisibleRect();
@@ -753,7 +809,11 @@ public partial class Selector : Node2D
             set.Add(t.EntityId);
         }
         WriteTreeSelection(set);
-        if (set.Count > 0) Host!.SelectedDummyId = null;
+        if (set.Count > 0)
+        {
+            Host!.SelectedDummyId = null;
+            Host.SelectedCropIds = Array.Empty<int>();
+        }
     }
 
     private void WriteTreeSelection(HashSet<int> set)
@@ -770,6 +830,46 @@ public partial class Selector : Node2D
         int i = 0;
         foreach (var id in set) arr[i++] = id;
         Host!.SelectedWoodIds = arr;
+    }
+
+    private void WriteCropSelection(HashSet<int> set)
+    {
+        var arr = new int[set.Count];
+        int i = 0;
+        foreach (var id in set) arr[i++] = id;
+        Host!.SelectedCropIds = arr;
+    }
+
+    private void SelectAllCropsInView(SimSnapshot snap)
+    {
+        var vp = GetViewport().GetVisibleRect();
+        var canvasXform = GetCanvasTransform().AffineInverse();
+        var topLeft = canvasXform * vp.Position;
+        var bottomRight = canvasXform * (vp.Position + vp.Size);
+        float minX = Mathf.Min(topLeft.X, bottomRight.X);
+        float maxX = Mathf.Max(topLeft.X, bottomRight.X);
+        float minY = Mathf.Min(topLeft.Y, bottomRight.Y);
+        float maxY = Mathf.Max(topLeft.Y, bottomRight.Y);
+
+        var set = new HashSet<int>();
+        foreach (var c in snap.Crops)
+        {
+            float px = (c.Tile.X + 0.5f) * PixelsPerTile;
+            float py = (c.Tile.Y + 0.5f) * PixelsPerTile;
+            if (px < minX || px > maxX) continue;
+            if (py < minY || py > maxY) continue;
+            set.Add(c.EntityId);
+        }
+        WriteCropSelection(set);
+        if (set.Count > 0)
+        {
+            Host!.SelectedDummyId = null;
+            Host.SelectedTreeIds = Array.Empty<int>();
+            Host.SelectedWoodIds = Array.Empty<int>();
+            Host.SelectedCropIds = Array.Empty<int>();
+            Host.SelectedStockpileId = null;
+            Host.SelectedGrowZoneId = null;
+        }
     }
 
     private void SelectAllWoodInView(SimSnapshot snap)
