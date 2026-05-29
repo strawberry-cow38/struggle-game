@@ -34,10 +34,13 @@ public sealed class BodyPartDef
     // value = sum(partEfficiency*weight) / sum(weight) across all parts
     // that provide it, so full health = 1.0.
     public (HealthCapacity Cap, float Weight)[] Provides { get; }
+    // Internal/abstract parts (organs, brain, the Body root) can't be hit
+    // by a melee punch — only outer parts are valid targets.
+    public bool Internal { get; }
 
-    public BodyPartDef(string id, string name, string? parent, (HealthCapacity, float)[] provides)
+    public BodyPartDef(string id, string name, string? parent, (HealthCapacity, float)[] provides, bool internalPart)
     {
-        Id = id; DisplayName = name; ParentId = parent; Provides = provides;
+        Id = id; DisplayName = name; ParentId = parent; Provides = provides; Internal = internalPart;
     }
 }
 
@@ -58,9 +61,9 @@ public static class BodyTree
 
     static BodyTree()
     {
-        void P(string id, string name, string? parent, params (HealthCapacity, float)[] provides)
+        void Add(string id, string name, string? parent, bool internalPart, (HealthCapacity, float)[] provides)
         {
-            var def = new BodyPartDef(id, name, parent, provides);
+            var def = new BodyPartDef(id, name, parent, provides, internalPart);
             _all.Add(def); _byId[id] = def;
             if (parent is not null)
             {
@@ -68,15 +71,21 @@ public static class BodyTree
                 list.Add(id);
             }
         }
+        // Outer (punchable) part.
+        void P(string id, string name, string? parent, params (HealthCapacity, float)[] provides)
+            => Add(id, name, parent, false, provides);
+        // Internal/abstract part (can't be hit by melee).
+        void PI(string id, string name, string? parent, params (HealthCapacity, float)[] provides)
+            => Add(id, name, parent, true, provides);
 
-        P("Body", "Body", null);
+        PI("Body", "Body", null);
         P("Torso", "Torso", "Body");
-        P("Heart", "Heart", "Torso", (HealthCapacity.BloodPumping, 1f));
-        P("LungL", "Left Lung", "Torso", (HealthCapacity.Breathing, 0.5f));
-        P("LungR", "Right Lung", "Torso", (HealthCapacity.Breathing, 0.5f));
+        PI("Heart", "Heart", "Torso", (HealthCapacity.BloodPumping, 1f));
+        PI("LungL", "Left Lung", "Torso", (HealthCapacity.Breathing, 0.5f));
+        PI("LungR", "Right Lung", "Torso", (HealthCapacity.Breathing, 0.5f));
         P("Neck", "Neck", "Body");
         P("Head", "Head", "Neck");
-        P("Brain", "Brain", "Head", (HealthCapacity.Consciousness, 1f));
+        PI("Brain", "Brain", "Head", (HealthCapacity.Consciousness, 1f));
         P("EyeL", "Left Eye", "Head", (HealthCapacity.Sight, 0.5f));
         P("EyeR", "Right Eye", "Head", (HealthCapacity.Sight, 0.5f));
         P("EarL", "Left Ear", "Head", (HealthCapacity.Hearing, 0.5f));
@@ -91,9 +100,16 @@ public static class BodyTree
         P("FootR", "Right Foot", "LegR", (HealthCapacity.Moving, 0.5f));
 
         foreach (var def in _all)
+        {
             foreach (var (cap, w) in def.Provides)
                 _capacityTotalWeight[cap] = _capacityTotalWeight.GetValueOrDefault(cap) + w;
+            if (!def.Internal) _punchable.Add(def.Id);
+        }
     }
+
+    // Outer parts a melee hit can land on (organs/brain/root excluded).
+    private static readonly List<string> _punchable = new();
+    public static IReadOnlyList<string> PunchableParts => _punchable;
 
     public static float TotalWeight(HealthCapacity cap) => _capacityTotalWeight.GetValueOrDefault(cap);
 

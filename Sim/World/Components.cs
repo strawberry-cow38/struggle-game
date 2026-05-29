@@ -581,6 +581,15 @@ public struct PickupOrder : IComponent
     public int RequestedCount;
 }
 
+// Drafted-pawn order: close on TargetEntityId and punch it on a cadence
+// until it's downed. Cleared by a new move order, a new attack, the
+// target going down, or un-drafting. Handled in DummyController.
+public struct MeleeTarget : IComponent
+{
+    public int TargetEntityId;
+    public long LastHitTick;
+}
+
 // One condition on one body part (a cut on the left hand, etc).
 public struct PartInjury
 {

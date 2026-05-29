@@ -54,6 +54,9 @@ public partial class Selector : Node2D
     private string _pickupName = "";
     // Quantity dialog for "Pick up X..." — wired by Bootstrap.
     public PickupQuantityDialog? PickupDialog { get; set; }
+    // Melee menu (id 5): the victim + the drafted attackers ordered on it.
+    private int _meleeTargetId;
+    private int[] _meleeAttackers = Array.Empty<int>();
 
     public override void _Ready()
     {
@@ -104,6 +107,35 @@ public partial class Selector : Node2D
             // Pick up X — open the quantity dialog.
             PickupDialog?.Open(_bpMenuPawnId, _pickupItemId, _pickupMax, _pickupName);
         }
+        else if (id == 5)
+        {
+            foreach (var attacker in _meleeAttackers)
+                Host.QueueCommand(new MeleeAttackCommand(attacker, _meleeTargetId));
+        }
+    }
+
+    // Drafted pawn(s) RMB on another pawn → "Melee attack X". Returns
+    // false (→ move-order drag) if the cursor isn't on a different pawn.
+    private bool TryShowMeleeMenu(Vector2 world, int[] attackers)
+    {
+        if (Host is null || _bpMenu is null) return false;
+        var snap = Host.LatestSnapshot;
+        if (snap is null) return false;
+        if (!TryPickPawn(snap, world, out int targetId)) return false;
+        if (System.Array.IndexOf(attackers, targetId) >= 0) return false; // don't punch self
+
+        string name = $"Colonist {targetId}";
+        foreach (var pw in snap.PawnWork)
+            if (pw.EntityId == targetId) { name = pw.Name; break; }
+
+        _meleeTargetId = targetId;
+        _meleeAttackers = attackers;
+        _bpMenu.Clear();
+        _bpMenu.AddItem($"Melee attack {name}", 5);
+        var screenPos = GetCanvasTransform() * world;
+        _bpMenu.Position = new Vector2I((int)screenPos.X, (int)screenPos.Y);
+        _bpMenu.Popup();
+        return true;
     }
 
     private void ClearDrag()
@@ -161,6 +193,13 @@ public partial class Selector : Node2D
                         {
                             GetViewport().SetInputAsHandled();
                         }
+                        return;
+                    }
+                    // Drafted: RMB on another pawn → "Melee attack X" menu.
+                    // Otherwise fall through to the move-order drag.
+                    if (TryShowMeleeMenu(GetGlobalMousePosition(), drafted))
+                    {
+                        GetViewport().SetInputAsHandled();
                         return;
                     }
                     _rmbDragging = true;

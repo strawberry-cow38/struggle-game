@@ -174,6 +174,7 @@ public sealed class ToggleDraftCommand : ISimCommand
         {
             ent.RemoveComponent<Drafted>();
             if (ent.HasComponent<OrderQueue>()) ent.RemoveComponent<OrderQueue>();
+            if (ent.HasComponent<MeleeTarget>()) ent.RemoveComponent<MeleeTarget>();
             if (ent.HasComponent<PathFollower>())
             {
                 ref var pf = ref ent.GetComponent<PathFollower>();
@@ -257,6 +258,9 @@ public sealed class IssueMoveOrderCommand : ISimCommand
         if (!ent.HasComponent<Drafted>()) return;
         if (!sim.MapView.Walkable(Tile)) return;
         if (sim.MapView.HasFurniture(Tile)) return;
+
+        // A move order cancels any melee attack.
+        if (ent.HasComponent<MeleeTarget>()) ent.RemoveComponent<MeleeTarget>();
 
         if (!ent.HasComponent<OrderQueue>())
         {
@@ -756,6 +760,19 @@ public sealed class PickUpItemCommand : ISimCommand
         Count = count;
     }
     public void Apply(SimRuntime sim) => sim.SetPickupOrder(PawnEntityId, ItemEntityId, Count);
+}
+
+// RMB "Melee attack X" on a drafted pawn: order it to punch the target.
+public sealed class MeleeAttackCommand : ISimCommand
+{
+    public int AttackerEntityId { get; }
+    public int TargetEntityId { get; }
+    public MeleeAttackCommand(int attackerId, int targetId)
+    {
+        AttackerEntityId = attackerId;
+        TargetEntityId = targetId;
+    }
+    public void Apply(SimRuntime sim) => sim.SetMeleeTarget(AttackerEntityId, TargetEntityId);
 }
 
 // Debug "Add Injury": apply a condition to a colonist's body part.

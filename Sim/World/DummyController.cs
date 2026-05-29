@@ -118,6 +118,12 @@ public sealed class DummyController
     private readonly Dictionary<int, (long Version, long Tick)> _lastJobSeek = new();
     private long _tick;
 
+    // Melee: punch cadence + flat miss chance (melee-skill stub).
+    private const long MeleeAttackInterval = 60;
+    private const double MeleeMissChance = 0.10;
+    // Wired by SimRuntime: land a melee hit on a target entity.
+    public Action<int>? MeleeHit;
+
     public DummyController(
         PathService paths,
         JobBoard jobs,
@@ -443,6 +449,52 @@ public sealed class DummyController
                 }
                 path.Waypoints = null;
                 path.Index = 0;
+            }
+
+            // Melee attack order: close to the target and punch on cadence
+            // until it's downed. A move order / new attack clears this
+            // (see IssueMoveOrderCommand); un-drafting clears it too.
+            if (entity.HasComponent<MeleeTarget>())
+            {
+                var mt = entity.GetComponent<MeleeTarget>();
+                bool valid = store.TryGetEntityById(mt.TargetEntityId, out var tgt)
+                    && tgt.HasComponent<Health>() && tgt.HasComponent<WorldPos>()
+                    && !tgt.GetComponent<Health>().Unconscious;
+                if (!valid)
+                {
+                    cb.RemoveComponent<MeleeTarget>(entity.Id);
+                    path.Waypoints = null; path.Index = 0;
+                    return;
+                }
+                var tp = tgt.GetComponent<WorldPos>();
+                var ttile = new TilePos((int)tp.X, (int)tp.Y);
+                bool adjacent = ttile != here
+                    && Math.Abs(ttile.X - here.X) <= 1 && Math.Abs(ttile.Y - here.Y) <= 1;
+                if (adjacent)
+                {
+                    path.Waypoints = null; path.Index = 0;
+                    w.Facing = MathF.Atan2(tp.Y - pos.Y, tp.X - pos.X); // face the victim
+                    if (_tick - mt.LastHitTick >= MeleeAttackInterval)
+                    {
+                        if (_rng.NextDouble() >= MeleeMissChance) MeleeHit?.Invoke(mt.TargetEntityId);
+                        ref var live = ref entity.GetComponent<MeleeTarget>();
+                        live.LastHitTick = _tick;
+                    }
+                    return;
+                }
+                bool headingAdj = path.Waypoints is { Count: > 0 }
+                    && Math.Abs(path.Waypoints[path.Waypoints.Count - 1].X - ttile.X) <= 1
+                    && Math.Abs(path.Waypoints[path.Waypoints.Count - 1].Y - ttile.Y) <= 1;
+                if (!headingAdj && path.PendingPathId == 0)
+                {
+                    if (TryPickNeighbor(view, here, ttile, out var approach))
+                    {
+                        path.Waypoints = null; path.Index = 0;
+                        path.PendingPathId = _paths.Request(here, approach);
+                    }
+                    else cb.RemoveComponent<MeleeTarget>(entity.Id);
+                }
+                return;
             }
 
             if (path.Waypoints is not null && path.Index < path.Waypoints.Count) return;

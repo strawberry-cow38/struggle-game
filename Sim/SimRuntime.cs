@@ -313,6 +313,7 @@ public sealed class SimRuntime
         _sleep = new SleepSystem();
         _health = new HealthSystem(this);
         _health.SpawnBloodPuddle = SpawnBloodPuddle;
+        _dummies.MeleeHit = MeleePunch;
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
@@ -3601,6 +3602,26 @@ public sealed class SimRuntime
             ItemEntityId = itemEntityId,
             RequestedCount = requestedCount,
         });
+    }
+
+    public const float MeleeBruiseSeverity = 0.12f;
+
+    // Order a drafted colonist to melee-attack another pawn.
+    public void SetMeleeTarget(int attackerId, int targetId)
+    {
+        if (attackerId == targetId) return;
+        if (!Store.TryGetEntityById(attackerId, out var a) || !a.HasComponent<Drafted>()) return;
+        if (!Store.TryGetEntityById(targetId, out var t) || !t.HasComponent<Health>()) return;
+        a.AddComponent(new MeleeTarget { TargetEntityId = targetId, LastHitTick = 0 });
+    }
+
+    // Land one melee hit: a bruise on a random outer (punchable) body part.
+    public void MeleePunch(int targetId)
+    {
+        var parts = StruggleGame.Sim.Bodies.BodyTree.PunchableParts;
+        if (parts.Count == 0) return;
+        var part = parts[_spawnRng.Next(parts.Count)];
+        ApplyInjury(targetId, part, StruggleGame.Sim.Bodies.ConditionKind.Bruise, MeleeBruiseSeverity);
     }
 
     // Drip blood on a tile — grows an existing puddle there or starts a
