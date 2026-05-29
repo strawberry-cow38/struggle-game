@@ -755,6 +755,20 @@ public sealed class PickUpItemCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetPickupOrder(PawnEntityId, ItemEntityId, Count);
 }
 
+// RMB "Prioritize Haul" on a dropped pile outside a stockpile: pin its
+// stockpile haul to the chosen colonist.
+public sealed class PrioritizeHaulForPawnCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public int ItemEntityId { get; }
+    public PrioritizeHaulForPawnCommand(int pawnId, int itemEntityId)
+    {
+        PawnEntityId = pawnId;
+        ItemEntityId = itemEntityId;
+    }
+    public void Apply(SimRuntime sim) => sim.PrioritizeHaulForPawn(ItemEntityId, PawnEntityId);
+}
+
 // Pawn info panel: move equipped slot [EquipIndex] into general inventory.
 public sealed class ForceUnequipCommand : ISimCommand
 {

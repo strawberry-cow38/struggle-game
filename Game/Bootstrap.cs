@@ -95,6 +95,10 @@ public partial class Bootstrap : Node2D
         var selector = new Selector { Host = _host, Tools = _tools, Name = "Selector" };
         AddChild(selector);
 
+        var pickupDialog = new PickupQuantityDialog { Host = _host, Name = "PickupQuantityDialog" };
+        AddChild(pickupDialog);
+        selector.PickupDialog = pickupDialog;
+
         float worldPx = SimConstants.MapSize * SimConstants.PixelsPerTile;
         var camera = new GameCamera
         {

@@ -93,6 +93,34 @@ public class HaulTests
     }
 
     [Fact]
+    public void PrioritizeHaul_PostsJobAndDelivers()
+    {
+        var sim = new SimRuntime();
+        var dest = NearbyWalkable(sim, new TilePos(50, 50));
+        sim.QueueCommand(new CreateStockpileRectCommand(dest, dest));
+        sim.Step(SimConstants.TickSeconds);
+
+        var src = NearbyWalkableNotEqual(sim, new TilePos(46, 46), dest);
+        var item = sim.SpawnWoodPile(src, 5);
+
+        int pawnId = 0;
+        sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity e) =>
+        { if (pawnId == 0) pawnId = e.Id; });
+
+        sim.PrioritizeHaulForPawn(item.Id, pawnId);
+        // A haul job was posted + reserved immediately.
+        Assert.True(item.HasComponent<HaulReserved>(), "prioritize should post a haul job");
+
+        bool delivered = false;
+        for (int i = 0; i < 8000; i++)
+        {
+            sim.Step(SimConstants.TickSeconds);
+            if (WoodAtTile(sim, dest)) { delivered = true; break; }
+        }
+        Assert.True(delivered, "prioritized wood should reach the stockpile");
+    }
+
+    [Fact]
     public void WoodOutsideAnyZone_GetsHauledIn()
     {
         var sim = new SimRuntime();

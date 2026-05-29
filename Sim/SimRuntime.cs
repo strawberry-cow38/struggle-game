@@ -918,7 +918,11 @@ public sealed class SimRuntime
                     var hp = job.Entity.GetComponent<HaulPayload>();
                     if (hp.BlueprintEntityId != 0) return hp.BlueprintEntityId;
                 }
-                return 0;
+                // Stockpile hauls have no blueprint — use the item entity's
+                // own id as the pin key so "Prioritize Haul" can bind a
+                // specific stockpile haul to a specific pawn. Unpinned
+                // hauls return claimant 0 and behave normally.
+                return job.Entity.Id;
             default:
                 return 0;
         }
@@ -3355,7 +3359,14 @@ public sealed class SimRuntime
         if (!c.PrimaryJobId.IsNone)
         {
             var job = Jobs.Get(c.PrimaryJobId);
-            if (job is not null) Jobs.Complete(c.PrimaryJobId);
+            if (job is not null)
+            {
+                // Clear any "Prioritize Haul" pin (keyed by the item entity)
+                // before completing — this path bypasses CompleteJob.
+                int pinId = GetJobBlueprintId(job);
+                if (pinId != 0) _blueprintPriority.Remove(pinId);
+                Jobs.Complete(c.PrimaryJobId);
+            }
         }
         // Resolve blueprint dropoff (Carrying may name a blueprint that
         // got cancelled / completed between pickup and delivery; in that
@@ -3490,6 +3501,35 @@ public sealed class SimRuntime
             ItemPath = pile.ItemPath,
             ItemEntityId = itemEntityId,
         });
+    }
+
+    // RMB "Prioritize Haul": ensure a stockpile haul exists for this item
+    // and pin it to the chosen colonist (same pin path as blueprints,
+    // keyed by the item entity id). No-op if there's no valid stockpile.
+    public void PrioritizeHaulForPawn(int itemEntityId, int pawnEntityId)
+    {
+        if (!Store.TryGetEntityById(itemEntityId, out var item)) return;
+        if (!item.HasComponent<ItemPile>() || item.HasComponent<Forbidden>()) return;
+        var pile = item.GetComponent<ItemPile>();
+        if (pile.Count <= 0) return;
+        if (!ItemCatalog.ItemsByPath.TryGetValue(pile.ItemPath, out var def)) return;
+
+        if (!item.HasComponent<HaulReserved>())
+        {
+            if (!TryFindBestHaulDest(pile.Tile, def, pile.Count, out var dest, out var stockpileId)) return;
+            item.AddComponent(new HaulPayload
+            {
+                DestTile = dest,
+                StockpileId = stockpileId,
+                ItemPath = def.FullPath,
+                Count = pile.Count,
+            });
+            var id = Jobs.Post(JobKind.Haul, pile.Tile, item);
+            if (id.IsNone) { item.RemoveComponent<HaulPayload>(); return; }
+            item.AddComponent(new HaulReserved { JobId = id });
+            ReserveHaulDest(dest);
+        }
+        PrioritizeBlueprintForPawn(itemEntityId, pawnEntityId);
     }
 
     // Order a colonist to fetch up to `requestedCount` units of a dropped

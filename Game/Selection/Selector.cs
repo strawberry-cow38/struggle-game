@@ -1,6 +1,7 @@
 using Godot;
 using StruggleGame.Game.Designation;
 using StruggleGame.Game.Tools;
+using StruggleGame.Game.UI;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Items;
@@ -46,6 +47,13 @@ public partial class Selector : Node2D
     // Set when the context menu carries an "Equip" entry (id 1); names the
     // dropped pile entity the selected colonist would go fetch.
     private int _equipItemEntityId;
+    // Pick-up entry (ids 3 = all, 4 = X) state: the pile, how many the
+    // selected colonist can carry, and its display name for the dialog.
+    private int _pickupItemId;
+    private int _pickupMax;
+    private string _pickupName = "";
+    // Quantity dialog for "Pick up X..." — wired by Bootstrap.
+    public PickupQuantityDialog? PickupDialog { get; set; }
 
     public override void _Ready()
     {
@@ -81,6 +89,20 @@ public partial class Selector : Node2D
         else if (id == 1)
         {
             Host.QueueCommand(new EquipItemCommand(_bpMenuPawnId, _equipItemEntityId));
+        }
+        else if (id == 2)
+        {
+            Host.QueueCommand(new PrioritizeHaulForPawnCommand(_bpMenuPawnId, _pickupItemId));
+        }
+        else if (id == 3)
+        {
+            // Pick up all (capacity-clamped sim-side).
+            Host.QueueCommand(new PickUpItemCommand(_bpMenuPawnId, _pickupItemId, int.MaxValue));
+        }
+        else if (id == 4)
+        {
+            // Pick up X — open the quantity dialog.
+            PickupDialog?.Open(_bpMenuPawnId, _pickupItemId, _pickupMax, _pickupName);
         }
     }
 
@@ -258,6 +280,24 @@ public partial class Selector : Node2D
             _equipItemEntityId = itemId;
             _bpMenu.AddItem($"Equip {itemName}", 1);
         }
+        // Pick-up / haul entries for any dropped pile under the cursor.
+        if (TryPickAnyPile(snap, clickTile, out var pile)
+            && ItemCatalog.ItemsByPath.TryGetValue(pile.ItemPath, out var pileDef))
+        {
+            _pickupItemId = pile.EntityId;
+            _pickupName = pileDef.DisplayName;
+            // Prioritize Haul (id 2) — only for piles not already in a stockpile.
+            if (!IsInStockpile(snap, pile.Tile))
+            {
+                _bpMenu.AddItem($"Prioritize Haul for {pawnName}", 2);
+            }
+            _pickupMax = PawnPickupMax(snap, pawnId, pileDef, pile.Count);
+            if (_pickupMax > 0)
+            {
+                _bpMenu.AddItem($"Pick up all ({Math.Min(_pickupMax, pile.Count)})", 3);
+                _bpMenu.AddItem("Pick up X...", 4);
+            }
+        }
         if (_bpMenu.ItemCount == 0) return false;
 
         var canvasXform = GetCanvasTransform();
@@ -265,6 +305,46 @@ public partial class Selector : Node2D
         _bpMenu.Position = new Vector2I((int)screenPos.X, (int)screenPos.Y);
         _bpMenu.Popup();
         return true;
+    }
+
+    private static bool IsInStockpile(SimSnapshot snap, TilePos tile)
+    {
+        foreach (var sp in snap.Stockpiles)
+            foreach (var t in sp.Tiles)
+                if (t == tile) return true;
+        return false;
+    }
+
+    // Any dropped pile on the clicked tile (wood, food, anything).
+    private static bool TryPickAnyPile(SimSnapshot snap, TilePos tile, out ItemPileState pile)
+    {
+        foreach (var p in snap.ItemPiles)
+        {
+            if (p.Tile == tile) { pile = p; return true; }
+        }
+        pile = default;
+        return false;
+    }
+
+    // How many units of `def` the selected colonist could still carry,
+    // capped at what's in the pile. Reads the already-summed carry load
+    // from the pawn's snapshot row.
+    private static int PawnPickupMax(SimSnapshot snap, int pawnId, ItemDef def, int pileCount)
+    {
+        foreach (var d in snap.Dummies)
+        {
+            if (d.EntityId != pawnId) continue;
+            float remW = d.MaxCarryWeight - d.CarryWeight;
+            float remB = d.MaxCarryBulk - d.CarryBulk;
+            int fit = (def.Weight <= 0f && def.Bulk <= 0f)
+                ? int.MaxValue
+                : (int)Math.Floor(Math.Min(
+                    def.Weight > 0f ? remW / def.Weight : int.MaxValue,
+                    def.Bulk > 0f ? remB / def.Bulk : int.MaxValue));
+            if (fit < 0) fit = 0;
+            return Math.Min(fit, pileCount);
+        }
+        return 0;
     }
 
     // Find an equippable ItemPile on the clicked tile. Returns its entity
