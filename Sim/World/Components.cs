@@ -564,6 +564,20 @@ public struct EquipOrder : IComponent
     public int ItemEntityId;
 }
 
+// Player order: walk to ItemTile and pick up to RequestedCount units of
+// ItemPath into GENERAL inventory (not equipped). The actual amount is
+// clamped to the pawn's remaining carry capacity on arrival.
+// RequestedCount == int.MaxValue means "as much as fits" (pick up all).
+// Handled in DummyController.Plan ahead of the job auction, same as
+// EquipOrder.
+public struct PickupOrder : IComponent
+{
+    public TilePos ItemTile;
+    public string ItemPath;
+    public int ItemEntityId;
+    public int RequestedCount;
+}
+
 // Marks an item entity as already promised to a haul job. Posted by
 // HaulSystem when a Job is created; the same component is removed when
 // the job completes/cancels. Prevents the poster from re-posting a haul

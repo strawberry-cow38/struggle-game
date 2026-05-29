@@ -738,6 +738,23 @@ public sealed class EquipItemCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetEquipOrder(PawnEntityId, ItemEntityId);
 }
 
+// RMB "Pick up" / "Pick up X" on a dropped pile: order the colonist to
+// fetch up to Count units into general inventory. Count == int.MaxValue
+// means "pick up all" (capacity permitting).
+public sealed class PickUpItemCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public int ItemEntityId { get; }
+    public int Count { get; }
+    public PickUpItemCommand(int pawnId, int itemEntityId, int count)
+    {
+        PawnEntityId = pawnId;
+        ItemEntityId = itemEntityId;
+        Count = count;
+    }
+    public void Apply(SimRuntime sim) => sim.SetPickupOrder(PawnEntityId, ItemEntityId, Count);
+}
+
 // Pawn info panel: move equipped slot [EquipIndex] into general inventory.
 public sealed class ForceUnequipCommand : ISimCommand
 {

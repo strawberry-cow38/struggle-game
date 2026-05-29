@@ -3492,6 +3492,27 @@ public sealed class SimRuntime
         });
     }
 
+    // Order a colonist to fetch up to `requestedCount` units of a dropped
+    // pile into general inventory. int.MaxValue = pick up all (capacity
+    // permitting). Actual amount is clamped to carry capacity on arrival.
+    public void SetPickupOrder(int pawnId, int itemEntityId, int requestedCount)
+    {
+        if (requestedCount <= 0) return;
+        if (!Store.TryGetEntityById(pawnId, out var pawn)) return;
+        if (!pawn.HasComponent<Wanderer>()) return;
+        if (!Store.TryGetEntityById(itemEntityId, out var item)) return;
+        if (!item.HasComponent<ItemPile>()) return;
+        var pile = item.GetComponent<ItemPile>();
+        if (pile.Count <= 0) return;
+        pawn.AddComponent(new PickupOrder
+        {
+            ItemTile = pile.Tile,
+            ItemPath = pile.ItemPath,
+            ItemEntityId = itemEntityId,
+            RequestedCount = requestedCount,
+        });
+    }
+
     // Move an equipped item into the pawn's general inventory. Both share
     // the carry budget, so this is a pure reclassification — no weight
     // changes, the item just stops being "worn".

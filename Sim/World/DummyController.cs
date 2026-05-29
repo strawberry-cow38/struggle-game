@@ -275,6 +275,80 @@ public sealed class DummyController
             return;
         }
 
+        // Player pick-up order. Same shape as EquipOrder, but the unit(s)
+        // go into general inventory and the amount is clamped to remaining
+        // carry capacity on arrival.
+        if (entity.HasComponent<PickupOrder>())
+        {
+            var po = entity.GetComponent<PickupOrder>();
+            bool stillThere = store.TryGetEntityById(po.ItemEntityId, out var itemEnt)
+                && itemEnt.HasComponent<ItemPile>()
+                && itemEnt.GetComponent<ItemPile>().Tile == po.ItemTile
+                && itemEnt.GetComponent<ItemPile>().Count > 0;
+            if (!stillThere)
+            {
+                cb.RemoveComponent<PickupOrder>(entity.Id);
+                path.Waypoints = null;
+                path.Index = 0;
+                return;
+            }
+            if (here == po.ItemTile)
+            {
+                path.Waypoints = null;
+                path.Index = 0;
+                int want = po.RequestedCount;
+                if (ItemCatalog.ItemsByPath.TryGetValue(po.ItemPath, out var def))
+                {
+                    CurrentCarryLoad(entity, out float lw, out float lb);
+                    int fit = (def.Weight <= 0f && def.Bulk <= 0f)
+                        ? int.MaxValue
+                        : (int)Math.Floor(Math.Min(
+                            def.Weight > 0f ? (SimConstants.MaxCarryWeight - lw) / def.Weight : int.MaxValue,
+                            def.Bulk > 0f ? (SimConstants.MaxCarryBulk - lb) / def.Bulk : int.MaxValue));
+                    if (fit < 0) fit = 0;
+                    want = Math.Min(want, fit);
+                }
+                int got = want > 0 ? (CookConsumePile?.Invoke(po.ItemTile, po.ItemPath, want) ?? 0) : 0;
+                if (got > 0)
+                {
+                    if (entity.HasComponent<Inventory>())
+                    {
+                        ref var inv = ref entity.GetComponent<Inventory>();
+                        inv.Items ??= new List<InventoryStack>();
+                        int idx = inv.Items.FindIndex(s => s.ItemPath == po.ItemPath);
+                        if (idx >= 0) { var s = inv.Items[idx]; s.Count += got; inv.Items[idx] = s; }
+                        else inv.Items.Add(new InventoryStack { ItemPath = po.ItemPath, Count = got });
+                    }
+                    else
+                    {
+                        cb.AddComponent(entity.Id, new Inventory
+                        {
+                            Items = new List<InventoryStack> { new InventoryStack { ItemPath = po.ItemPath, Count = got } },
+                            Equipped = new List<EquippedItemSlot>(),
+                        });
+                    }
+                }
+                cb.RemoveComponent<PickupOrder>(entity.Id);
+                return;
+            }
+            bool headingToItem = path.Waypoints is { Count: > 0 }
+                && path.Waypoints[path.Waypoints.Count - 1] == po.ItemTile;
+            if (!headingToItem && path.PendingPathId == 0)
+            {
+                if (view.Walkable(po.ItemTile))
+                {
+                    path.Waypoints = null;
+                    path.Index = 0;
+                    path.PendingPathId = _paths.Request(here, po.ItemTile);
+                }
+                else
+                {
+                    cb.RemoveComponent<PickupOrder>(entity.Id);
+                }
+            }
+            return;
+        }
+
         // Drafted colonists ignore jobs/wander. Walk the active player
         // order if there is one; otherwise dequeue the next move order;
         // otherwise hold position and watch.
@@ -1237,6 +1311,20 @@ public sealed class DummyController
         if (inv.Items is not null)
             foreach (var it in inv.Items)
                 if (ItemCatalog.ItemsByPath.TryGetValue(it.ItemPath, out var d)) { w += d.Weight * it.Count; b += d.Bulk * it.Count; }
+    }
+
+    // Total current carry load = persistent inventory + in-transit haul
+    // cargo. Used to clamp a pick-up to remaining capacity.
+    private static void CurrentCarryLoad(Entity carrier, out float w, out float b)
+    {
+        InventoryLoad(carrier, out w, out b);
+        if (carrier.HasComponent<Carrying>())
+        {
+            var c = carrier.GetComponent<Carrying>();
+            if (c.Slots is not null)
+                foreach (var s in c.Slots)
+                    if (ItemCatalog.ItemsByPath.TryGetValue(s.ItemPath, out var d)) { w += d.Weight * s.Count; b += d.Bulk * s.Count; }
+        }
     }
 
     private void ScanTopoffs(

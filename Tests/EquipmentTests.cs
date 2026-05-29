@@ -95,6 +95,43 @@ public class EquipmentTests
     }
 
     [Fact]
+    public void PickupOrder_FetchesRequestedCountIntoInventory()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (pawnId, pawnTile) = FirstPawn(sim);
+        var itemTile = NearbyWalkableNotEqual(sim, pawnTile, pawnTile);
+        sim.SpawnItemPile(itemTile, ItemCatalog.Carrot.FullPath, 10);
+        int itemId = FindPileEntity(sim, itemTile, ItemCatalog.Carrot.FullPath);
+
+        sim.SetPickupOrder(pawnId, itemId, 4);
+
+        bool done = StepUntil(sim, 4000, () => HeldUnits(sim, pawnId, ItemCatalog.Carrot.FullPath) == 4);
+        Assert.True(done, "pawn never picked up 4 carrots");
+        // 6 left on the ground.
+        Assert.Equal(6, CountUnits(sim, ItemCatalog.Carrot.FullPath));
+    }
+
+    [Fact]
+    public void PickupAll_ClampsToCarryCapacity()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (pawnId, pawnTile) = FirstPawn(sim);
+        var itemTile = NearbyWalkableNotEqual(sim, pawnTile, pawnTile);
+        // Trinket weighs 2; cap is 75 → at most 37 fit. Spawn 50, ask for all.
+        sim.SpawnItemPile(itemTile, ItemCatalog.WoodenTrinket.FullPath, 50);
+        int itemId = FindPileEntity(sim, itemTile, ItemCatalog.WoodenTrinket.FullPath);
+
+        sim.SetPickupOrder(pawnId, itemId, int.MaxValue);
+
+        bool done = StepUntil(sim, 4000, () => HeldUnits(sim, pawnId, ItemCatalog.WoodenTrinket.FullPath) > 0);
+        Assert.True(done, "pawn never picked up trinkets");
+        int held = HeldUnits(sim, pawnId, ItemCatalog.WoodenTrinket.FullPath);
+        Assert.Equal((int)(SimConstants.MaxCarryWeight / 2f), held); // clamped by weight
+    }
+
+    [Fact]
     public void NonEquippableItem_GetsNoEquipOrder()
     {
         var sim = new SimRuntime();
@@ -145,6 +182,26 @@ public class EquipmentTests
         if (!e.HasComponent<Inventory>()) return 0;
         var inv = e.GetComponent<Inventory>();
         return inv.Equipped?.Count ?? 0;
+    }
+
+    private static int HeldUnits(SimRuntime sim, int pawnId, string path)
+    {
+        Assert.True(sim.Store.TryGetEntityById(pawnId, out var e));
+        if (!e.HasComponent<Inventory>()) return 0;
+        var inv = e.GetComponent<Inventory>();
+        int n = 0;
+        if (inv.Items != null) foreach (var s in inv.Items) if (s.ItemPath == path) n += s.Count;
+        return n;
+    }
+
+    private static int CountUnits(SimRuntime sim, string path)
+    {
+        int n = 0;
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity _) =>
+        {
+            if (p.ItemPath == path) n += p.Count;
+        });
+        return n;
     }
 
     private static int HeldCount(SimRuntime sim, int pawnId)
