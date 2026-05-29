@@ -597,7 +597,9 @@ public partial class WorldRenderer : Node2D
                 {
                     DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
                 }
-                string? labelText = d.Sleeping ? "Sleeping" : (string.IsNullOrEmpty(d.Job) ? null : d.Job);
+                string? labelText = d.Health.Unconscious ? "Unconscious"
+                    : d.Sleeping ? "Sleeping"
+                    : (string.IsNullOrEmpty(d.Job) ? null : d.Job);
                 if (labelFont is not null && labelText is not null)
                 {
                     // Cache label width by string — set of distinct labels
@@ -614,9 +616,13 @@ public partial class WorldRenderer : Node2D
                     DrawString(labelFont, anchor, labelText, HorizontalAlignment.Left, -1f, labelFontSize,
                         JobLabelColor);
                 }
-                if (d.Sleeping && labelFont is not null)
+                if (d.Sleeping && !d.Health.Unconscious && labelFont is not null)
                 {
                     DrawSleepZs(labelFont, center, radius);
+                }
+                if (d.Health.Unconscious && labelFont is not null)
+                {
+                    DrawDownedExclaims(labelFont, center, radius);
                 }
             }
         }
@@ -649,6 +655,27 @@ public partial class WorldRenderer : Node2D
             var col = SleepZColor;
             col.A = 1f - phase;
             DrawString(font, p, "Z", HorizontalAlignment.Left, -1f, SleepZFontSize, col);
+        }
+    }
+
+    // Alarm "!" glyphs streaming up from a downed colonist's head — the
+    // unconscious counterpart to the sleeper's Zs.
+    private const int DownedFontSize = 28;
+    private const float DownedCycleMs = 1100f;
+    private static readonly Color DownedColor = new(1f, 0.35f, 0.30f, 1f);
+
+    private void DrawDownedExclaims(Font font, Vector2 center, float radius)
+    {
+        float now = Time.GetTicksMsec();
+        var head = new Vector2(center.X, center.Y - radius);
+        for (int i = 0; i < 3; i++)
+        {
+            float phase = ((now + i * (DownedCycleMs / 3f)) % DownedCycleMs) / DownedCycleMs;
+            float drift = PixelsPerTile * 0.55f;
+            var p = head + new Vector2(-phase * PixelsPerTile * 0.25f, -phase * drift - 2f);
+            var col = DownedColor;
+            col.A = 1f - phase;
+            DrawString(font, p, "!", HorizontalAlignment.Left, -1f, DownedFontSize, col);
         }
     }
 
