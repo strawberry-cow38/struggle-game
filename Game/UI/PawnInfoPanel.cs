@@ -322,6 +322,26 @@ public partial class PawnInfoPanel : CanvasLayer
         row.AddChild(line);
 
         int index = stack.Index;
+        var btns = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        btns.AddThemeConstantOverride("separation", 4);
+
+        // Equippable items in the bag get a direct Equip button (no walking).
+        if (def is not null && def.Equippable)
+        {
+            var equipBtn = new Button
+            {
+                Text = "Equip",
+                CustomMinimumSize = new Vector2(0, 24),
+                FocusMode = Control.FocusModeEnum.None,
+            };
+            equipBtn.Pressed += () =>
+            {
+                if (Host is null) return;
+                Host.QueueCommand(new EquipFromInventoryCommand(pawnId, index));
+            };
+            btns.AddChild(equipBtn);
+        }
+
         var dropBtn = new Button
         {
             Text = "Force Drop",
@@ -333,7 +353,8 @@ public partial class PawnInfoPanel : CanvasLayer
             if (Host is null) return;
             Host.QueueCommand(new DropHeldItemCommand(pawnId, index));
         };
-        row.AddChild(dropBtn);
+        btns.AddChild(dropBtn);
+        row.AddChild(btns);
         _invList.AddChild(row);
     }
 

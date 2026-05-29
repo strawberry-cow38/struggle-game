@@ -764,6 +764,20 @@ public sealed class DropEquippedCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.DropEquipped(PawnEntityId, EquipIndex);
 }
 
+// Pawn info panel: equip one unit of general-inventory stack [HeldIndex]
+// that's already on the pawn (no walking).
+public sealed class EquipFromInventoryCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public int HeldIndex { get; }
+    public EquipFromInventoryCommand(int pawnId, int heldIndex)
+    {
+        PawnEntityId = pawnId;
+        HeldIndex = heldIndex;
+    }
+    public void Apply(SimRuntime sim) => sim.EquipFromInventory(PawnEntityId, HeldIndex);
+}
+
 // Pawn info panel: drop general-inventory stack [HeldIndex] on the ground.
 public sealed class DropHeldItemCommand : ISimCommand
 {

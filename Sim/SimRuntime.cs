@@ -3530,6 +3530,24 @@ public sealed class SimRuntime
         SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), slot.ItemPath, slot.Count);
     }
 
+    // Equip one unit of a general-inventory stack that's already on the
+    // pawn (no walking — it's in their bag). No-op if not equippable.
+    // Shares the carry budget, so total weight is unchanged.
+    public void EquipFromInventory(int pawnId, int heldIndex)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var pawn)) return;
+        if (!pawn.HasComponent<Inventory>()) return;
+        ref var inv = ref pawn.GetComponent<Inventory>();
+        if (inv.Items is null || heldIndex < 0 || heldIndex >= inv.Items.Count) return;
+        var stack = inv.Items[heldIndex];
+        if (!ItemCatalog.ItemsByPath.TryGetValue(stack.ItemPath, out var def) || !def.Equippable) return;
+        stack.Count -= 1;
+        if (stack.Count <= 0) inv.Items.RemoveAt(heldIndex);
+        else inv.Items[heldIndex] = stack;
+        inv.Equipped ??= new List<EquippedItemSlot>();
+        inv.Equipped.Add(new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = stack.ItemPath, Count = 1 });
+    }
+
     // Drop a general-inventory stack on the ground at the pawn's feet.
     public void DropHeldItem(int pawnId, int heldIndex)
     {

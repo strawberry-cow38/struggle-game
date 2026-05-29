@@ -79,6 +79,22 @@ public class EquipmentTests
     }
 
     [Fact]
+    public void EquipFromInventory_MovesHeldEquippableIntoSlot()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (pawnId, _) = FirstPawn(sim);
+        GiveEquipped(sim, pawnId, ItemCatalog.WoodenTrinket.FullPath);
+        sim.ForceUnequip(pawnId, 0); // trinket now in general inventory
+
+        Assert.Equal(1, HeldCount(sim, pawnId));
+        sim.EquipFromInventory(pawnId, 0);
+
+        Assert.Equal(0, HeldCount(sim, pawnId));
+        Assert.Equal(1, EquippedCount(sim, pawnId));
+    }
+
+    [Fact]
     public void NonEquippableItem_GetsNoEquipOrder()
     {
         var sim = new SimRuntime();
