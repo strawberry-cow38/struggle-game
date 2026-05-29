@@ -106,6 +106,31 @@ public class HealthTests
     }
 
     [Fact]
+    public void UnconsciousPawn_CollapsesAndStopsMoving()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        int pawnId = 0;
+        sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity e) =>
+        { if (pawnId == 0) pawnId = e.Id; });
+
+        // Destroyed brain → zero consciousness → unconscious.
+        sim.ApplyInjury(pawnId, "Brain", ConditionKind.Missing, 1f);
+        // Let the health tick flip the flag + the controller react.
+        for (int i = 0; i < 120; i++) sim.Step(SimConstants.TickSeconds);
+
+        Assert.True(sim.Store.TryGetEntityById(pawnId, out var pawn));
+        Assert.True(pawn.GetComponent<Health>().Unconscious);
+        var wp = pawn.GetComponent<WorldPos>();
+        var before = (wp.X, wp.Y);
+        for (int i = 0; i < 300; i++) sim.Step(SimConstants.TickSeconds);
+        var wp2 = pawn.GetComponent<WorldPos>();
+        Assert.Equal(before.X, wp2.X, 3);
+        Assert.Equal(before.Y, wp2.Y, 3); // stayed put — didn't wander
+        Assert.False(pawn.HasComponent<BuildTarget>());
+    }
+
+    [Fact]
     public void ApplyInjury_OnSpawnedPawn_Recomputes()
     {
         var sim = new SimRuntime();

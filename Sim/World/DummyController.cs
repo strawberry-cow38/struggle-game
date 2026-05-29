@@ -164,7 +164,9 @@ public sealed class DummyController
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer w, Entity entity) =>
         {
             Plan(ref pos, ref path, ref w, dt, entity, cb, view, store);
-            AdvanceAlongPath(ref pos, ref path, dt, view);
+            // Injured legs slow the walk (Moving capacity), floored so a
+            // hurt-but-conscious pawn can still crawl.
+            AdvanceAlongPath(ref pos, ref path, dt, view, HealthMods.MoveSpeed(entity));
         });
         cb.Playback();
     }
@@ -207,6 +209,24 @@ public sealed class DummyController
                 path.Waypoints = null;
                 path.Index = 0;
             }
+        }
+
+        // Unconscious (passed out from blood loss / brain damage): the
+        // colonist collapses where they are. Drop any job so others can
+        // take it, stop moving, and do nothing until they come to.
+        if (entity.HasComponent<Health>() && entity.GetComponent<Health>().Unconscious)
+        {
+            if (entity.HasComponent<BuildTarget>())
+            {
+                var bt = entity.GetComponent<BuildTarget>();
+                if (entity.HasComponent<Carrying>()) OnHaulDeliver?.Invoke(entity, here, cb);
+                else _jobs.Release(bt.JobId);
+                cb.RemoveComponent<BuildTarget>(entity.Id);
+            }
+            if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
+            path.Waypoints = null;
+            path.Index = 0;
+            return;
         }
 
         // Player equip order. Beats the job auction: the chosen colonist
@@ -1436,11 +1456,11 @@ public sealed class DummyController
         }
     }
 
-    private void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt, MapView view)
+    private void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt, MapView view, float speedMul)
     {
         if (path.Waypoints is null || path.Index >= path.Waypoints.Count) return;
 
-        float remaining = SimConstants.WalkTilesPerSecond * dt;
+        float remaining = SimConstants.WalkTilesPerSecond * dt * speedMul;
         while (remaining > 0f && path.Index < path.Waypoints.Count)
         {
             var target = path.Waypoints[path.Index];
