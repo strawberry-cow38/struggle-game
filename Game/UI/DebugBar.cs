@@ -37,6 +37,7 @@ public partial class DebugBar : CanvasLayer
         AddLabel(_hbox, "Actions");
         AddButton(_hbox, ToolMode.SpawnPawn, "Spawn Pawn");
         AddButton(_hbox, ToolMode.RemovePawn, "Remove Pawn");
+        AddButton(_hbox, ToolMode.DebugAddInjury, "Add Injury");
         AddSpawnItemControls(_hbox);
         AddOneShotButton(_hbox, "Reroll Map", () => Host?.Reroll(System.Environment.TickCount));
         AddOneShotButton(_hbox, "-1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(-3600)));

@@ -92,6 +92,9 @@ public partial class Bootstrap : Node2D
         var debugSpawnItemDesignator = new DebugSpawnItemDesignator { Host = _host, Tools = _tools, Name = "DebugSpawnItemDesignator" };
         AddChild(debugSpawnItemDesignator);
 
+        var debugAddInjuryDesignator = new DebugAddInjuryDesignator { Host = _host, Tools = _tools, Name = "DebugAddInjuryDesignator" };
+        AddChild(debugAddInjuryDesignator);
+
         var selector = new Selector { Host = _host, Tools = _tools, Name = "Selector" };
         AddChild(selector);
 
