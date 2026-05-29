@@ -19,6 +19,10 @@ public sealed class SimRuntime
     public EntityStore Store { get; } = new();
     public TileMap Map { get; }
     public JobBoard Jobs { get; } = new();
+    // Incremental spatial index of ground items, fed by the component
+    // add/remove events wired in the constructor (see ItemSpatialIndex).
+    private readonly ItemSpatialIndex _itemIndex = new();
+    public ItemSpatialIndex ItemIndex => _itemIndex;
     public long Tick { get; private set; }
     public long MapVersion { get; private set; }
     public long RoomVersion { get; private set; }
@@ -265,7 +269,12 @@ public sealed class SimRuntime
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
         _spawnRng = new Random(seed + 7);
         PathService = new PathService(Map.Width, Map.Height, () => MapView);
-        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority, CurrentScheduleSlot, IsBlueprintFunded, GetJobBlueprintId, GetBlueprintClaimant, TryReserveBedAdapter, ReleaseBedReservation, TryReserveRecreation, ReleaseUrSeat);
+        // Keep the item index in lockstep with the ECS. These fire at the
+        // real structural-change moment (incl. CommandBuffer playback), so
+        // deferred haul pickup/deliver are covered without per-site hooks.
+        Store.OnComponentAdded += OnItemComponentAdded;
+        Store.OnComponentRemoved += OnItemComponentRemoved;
+        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority, CurrentScheduleSlot, IsBlueprintFunded, GetJobBlueprintId, GetBlueprintClaimant, TryReserveBedAdapter, ReleaseBedReservation, TryReserveRecreation, ReleaseUrSeat, _itemIndex.AnyWoodAt);
         _dummies.OnHaulPickup = (carriedEnt, cb) => OnHaulPickedUp(carriedEnt, cb);
         _dummies.OnHaulDeliver = (carrierEntity, dropTile, cb) => DeliverCarrying(carrierEntity, dropTile, cb);
         _dummies.CookFindNearestPile = (from, path) => FindNearestItemPile(from, path);
@@ -362,6 +371,13 @@ public sealed class SimRuntime
         if (_sunDirty) { _lastSunR = sR; _lastSunG = sG; _lastSunB = sB; LightVersion++; _sunDirty = false; }
         Tick++;
         Watcher.Observe(Tick, Store, Jobs);
+#if DEBUG
+        // Safety net: assert the item index never drifts from the ECS. If
+        // a new item mutation path ever forgets to route through the
+        // events / delete-site notify, this throws loudly in dev. Compiled
+        // out of release builds entirely.
+        if (Tick % 256 == 0) _itemIndex.ValidateAgainst(Store);
+#endif
     }
 
     public IReadOnlyCollection<TilePos> TreeTiles => _trees.Keys;
@@ -1710,7 +1726,7 @@ public sealed class SimRuntime
             taken += can;
             if (p.Count <= 0) toDelete = ent;
         });
-        if (toDelete is Entity te) te.DeleteEntity();
+        if (toDelete is Entity te) { _itemIndex.OnEntityGone(te.Id); te.DeleteEntity(); }
         return taken;
     }
 
@@ -1718,23 +1734,10 @@ public sealed class SimRuntime
     // simple Manhattan distance. Returns null if nothing matches.
     public TilePos? FindNearestItemPile(TilePos from, string itemPath)
     {
-        int best = int.MaxValue;
-        TilePos bestT = default;
-        bool any = false;
-        var query = Store.Query<ItemPile>();
-        query.ForEachEntity((ref ItemPile p, Entity _) =>
-        {
-            if (p.ItemPath != itemPath) return;
-            if (p.Count <= 0) return;
-            int d = Math.Abs(p.Tile.X - from.X) + Math.Abs(p.Tile.Y - from.Y);
-            if (d < best)
-            {
-                best = d;
-                bestT = p.Tile;
-                any = true;
-            }
-        });
-        return any ? bestT : null;
+        // Index-backed: spirals out by chunk instead of scanning every
+        // pile. Indexed piles always have Count > 0 (drained piles are
+        // deleted), so no count filter is needed here.
+        return _itemIndex.TryGetNearest(from, itemPath, out var tile) ? tile : null;
     }
 
     // Harness shortcut: skip blueprint+build and drop a finished stove.
@@ -3540,6 +3543,34 @@ public sealed class SimRuntime
         SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), stack.ItemPath, stack.Count);
     }
 
+    // ItemSpatialIndex feeders. Fire for every component add/remove in the
+    // store; we filter to the two ground-item kinds. On add the component
+    // is present so we read its tile/path; on remove the item has left the
+    // ground (picked up, consumed-but-entity-kept, etc.) so we just drop it.
+    private void OnItemComponentAdded(ComponentChanged c)
+    {
+        if (!Store.TryGetEntityById(c.EntityId, out var e)) return;
+        if (c.Type == typeof(Wood))
+        {
+            if (e.HasComponent<Wood>())
+                _itemIndex.OnItemAdded(c.EntityId, e.GetComponent<Wood>().Tile, isWood: true, ItemCatalog.Wood.FullPath);
+        }
+        else if (c.Type == typeof(ItemPile))
+        {
+            if (e.HasComponent<ItemPile>())
+            {
+                var p = e.GetComponent<ItemPile>();
+                _itemIndex.OnItemAdded(c.EntityId, p.Tile, isWood: false, p.ItemPath);
+            }
+        }
+    }
+
+    private void OnItemComponentRemoved(ComponentChanged c)
+    {
+        if (c.Type == typeof(Wood) || c.Type == typeof(ItemPile))
+            _itemIndex.OnEntityGone(c.EntityId);
+    }
+
     // Called by DummyController when it actually picks up an item from
     // the world. Removes the world-side Wood component so the renderer
     // stops drawing the log; the entity itself stays alive on the
@@ -3647,7 +3678,7 @@ public sealed class SimRuntime
                 dw.Count += amt;
             }
         }
-        foreach (var e in deletes) e.DeleteEntity();
+        foreach (var e in deletes) { _itemIndex.OnEntityGone(e.Id); e.DeleteEntity(); }
     }
 
     // Same end-of-tick consolidator as MergeCoincidentWood, but for
@@ -3683,7 +3714,7 @@ public sealed class SimRuntime
                 dp.Count += amt;
             }
         }
-        foreach (var e in deletes) e.DeleteEntity();
+        foreach (var e in deletes) { _itemIndex.OnEntityGone(e.Id); e.DeleteEntity(); }
     }
 
     private bool HasWallAt(int x, int y)

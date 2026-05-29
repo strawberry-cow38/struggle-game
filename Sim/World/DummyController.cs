@@ -102,11 +102,12 @@ public sealed class DummyController
     // Scratch set populated each Step() so a single tick of topoff scans
     // doesn't reserve the same item for two different carriers.
     private readonly HashSet<int> _topoffReservedThisTick = new();
-    // Tiles holding a Wood entity this tick. Build-kind jobs whose target
-    // tile is in this set are filtered out of the claim list so a pawn
+    // "Is there a Wood stack on this tile" — backed by the sim's item
+    // spatial index (no per-tick full Wood scan). Build-kind jobs whose
+    // target tile holds wood are filtered out of the claim list so a pawn
     // doesn't park next to a wall blueprint with wood sitting on it —
     // BlueprintClearanceSystem handles relocating the wood first.
-    private readonly HashSet<TilePos> _itemBlockedThisTick = new();
+    private readonly Func<TilePos, bool> _anyWoodAt;
 
     public DummyController(
         PathService paths,
@@ -123,8 +124,10 @@ public sealed class DummyController
         TryReserveBedDelegate tryReserveBed,
         Action<int, int> releaseBedReservation,
         TryReserveRecreationDelegate tryReserveRecreation,
-        Action<int, TilePos, RecreationRole> releaseUrSeat)
+        Action<int, TilePos, RecreationRole> releaseUrSeat,
+        Func<TilePos, bool> anyWoodAt)
     {
+        _anyWoodAt = anyWoodAt;
         _paths = paths;
         _jobs = jobs;
         _viewProvider = viewProvider;
@@ -147,11 +150,6 @@ public sealed class DummyController
         var view = _viewProvider();
         var cb = store.GetCommandBuffer();
         _topoffReservedThisTick.Clear();
-        _itemBlockedThisTick.Clear();
-        store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) =>
-        {
-            _itemBlockedThisTick.Add(w.Tile);
-        });
         var query = store.Query<WorldPos, PathFollower, Wanderer>();
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer w, Entity entity) =>
         {
@@ -852,7 +850,7 @@ public sealed class DummyController
             if ((job.Kind == JobKind.WallBuild
                  || job.Kind == JobKind.DoorBuild
                  || job.Kind == JobKind.BedBuild)
-                && _itemBlockedThisTick.Contains(job.Tile)) continue;
+                && _anyWoodAt(job.Tile)) continue;
             int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
             if (d >= bestDist[pr]) continue;
             TilePos approach;
