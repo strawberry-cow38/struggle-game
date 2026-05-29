@@ -150,6 +150,7 @@ public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath
 // + the live injury list (part id + condition + severity).
 public readonly record struct HealthState(
     float BloodLevel,
+    float BleedRate,
     float Consciousness,
     float Moving,
     float Manipulation,

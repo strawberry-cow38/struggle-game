@@ -250,7 +250,8 @@ public partial class PawnInfoPanel : CanvasLayer
         // the equip/inventory early-return below doesn't skip it).
         var hs = p.Health;
         string downed = hs.Unconscious ? "  [UNCONSCIOUS]" : "";
-        _bloodLabel.Text = $"Blood: {hs.BloodLevel * 100f:0}%    Consciousness: {hs.Consciousness * 100f:0}%{downed}";
+        string bleeding = hs.BleedRate > 0f ? $"    bleeding {hs.BleedRate * 100f:0.0}%/s" : "";
+        _bloodLabel.Text = $"Blood: {hs.BloodLevel * 100f:0}%{bleeding}    Consciousness: {hs.Consciousness * 100f:0}%{downed}";
         _capLabel2.Text = $"Move {hs.Moving * 100f:0}%  ·  Manip {hs.Manipulation * 100f:0}%  ·  Sight {hs.Sight * 100f:0}%";
         string injSig = BuildInjurySignature(hs.Injuries);
         if (injSig != _lastInjurySig || pawnId != _shownPawnId)

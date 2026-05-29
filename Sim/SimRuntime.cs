@@ -1178,6 +1178,7 @@ public sealed class SimRuntime
             {
                 var hc = ent.GetComponent<Health>();
                 InjuryState[] injuries = Array.Empty<InjuryState>();
+                float bleedRate = 0f;
                 if (hc.Injuries is { Count: > 0 })
                 {
                     injuries = new InjuryState[hc.Injuries.Count];
@@ -1185,10 +1186,11 @@ public sealed class SimRuntime
                     {
                         var inj = hc.Injuries[ii];
                         injuries[ii] = new InjuryState(inj.PartId, inj.Kind, inj.Severity);
+                        bleedRate += StruggleGame.Sim.Bodies.BodyTree.BleedRate(inj.Kind, inj.Severity);
                     }
                 }
                 healthState = new HealthState(
-                    hc.BloodLevel, hc.Consciousness, hc.Moving, hc.Manipulation,
+                    hc.BloodLevel, bleedRate, hc.Consciousness, hc.Moving, hc.Manipulation,
                     hc.Sight, hc.Unconscious, injuries);
             }
 
