@@ -53,6 +53,22 @@ public partial class Selector : Node2D
         _bpMenu = new PopupMenu();
         AddChild(_bpMenu);
         _bpMenu.IdPressed += OnBlueprintMenuPressed;
+        // PopupMenu only activates items on LMB by default. The menu is
+        // opened with RMB, so let RMB activate the hovered item too — the
+        // player shouldn't have to switch buttons mid-gesture.
+        _bpMenu.WindowInput += OnMenuWindowInput;
+    }
+
+    private void OnMenuWindowInput(InputEvent @event)
+    {
+        if (_bpMenu is null) return;
+        if (@event is not InputEventMouseButton mb) return;
+        if (mb.ButtonIndex != MouseButton.Right || !mb.Pressed) return;
+        int focused = _bpMenu.GetFocusedItem();
+        if (focused < 0) return;
+        long id = _bpMenu.GetItemId(focused);
+        _bpMenu.Hide();
+        OnBlueprintMenuPressed(id);
     }
 
     private void OnBlueprintMenuPressed(long id)

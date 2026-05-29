@@ -40,6 +40,12 @@ public partial class PawnInfoPanel : CanvasLayer
 
     private int _shownPawnId = -1;
     private long _lastSnapshotTick = -1;
+    // Signature of the inventory/equipped/carrying rows last built. Rows
+    // hold clickable buttons; rebuilding them every tick (Render runs per
+    // snapshot tick) would QueueFree a button mid-click and swallow the
+    // press. So rebuild rows only when this signature changes; the live
+    // labels/bars still refresh every tick.
+    private string _lastRowSig = "";
 
     public override void _Ready()
     {
@@ -212,6 +218,12 @@ public partial class PawnInfoPanel : CanvasLayer
 
         _capLabel.Text = $"Carry: {p.CarryWeight:0.#} / {p.MaxCarryWeight:0.#} wt    {p.CarryBulk:0.#} / {p.MaxCarryBulk:0.#} bulk";
 
+        // Only rebuild the clickable rows when their contents actually
+        // change — see _lastRowSig. Pawn switch forces a rebuild.
+        string sig = BuildRowSignature(p);
+        if (sig == _lastRowSig && pawnId == _shownPawnId) return;
+        _lastRowSig = sig;
+
         // Equipped section.
         foreach (var child in _equipList.GetChildren()) child.QueueFree();
         _equipEmptyLabel.Visible = p.Equipped.Length == 0;
@@ -231,6 +243,15 @@ public partial class PawnInfoPanel : CanvasLayer
         {
             BuildSlotRow(p.EntityId, slot);
         }
+    }
+
+    private static string BuildRowSignature(DummyState p)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var eq in p.Equipped) sb.Append('E').Append(eq.Index).Append(eq.ItemPath).Append(eq.Count).Append((int)eq.Slot).Append(';');
+        foreach (var h in p.Held) sb.Append('H').Append(h.Index).Append(h.ItemPath).Append(h.Count).Append(';');
+        foreach (var s in p.Inventory) sb.Append('C').Append(s.SlotEntityId).Append(s.ItemPath).Append(s.Count).Append(s.Forbidden ? '1' : '0').Append(';');
+        return sb.ToString();
     }
 
     private void BuildEquippedRow(int pawnId, EquippedSlotState eq)
