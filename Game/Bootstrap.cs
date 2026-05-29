@@ -312,17 +312,17 @@ public partial class Bootstrap : Node2D
                 if (snap is null) return;
                 var idSet = new HashSet<int>(woodIds);
                 int forbidden = 0, haulable = 0;
-                foreach (var w in snap.Wood)
+                foreach (var p in snap.ItemPiles)
                 {
-                    if (!idSet.Contains(w.EntityId)) continue;
-                    if (w.Forbidden) forbidden++; else haulable++;
+                    if (!idSet.Contains(p.EntityId)) continue;
+                    if (p.Forbidden) forbidden++; else haulable++;
                 }
                 bool target = !(forbidden > haulable);
-                foreach (var w in snap.Wood)
+                foreach (var p in snap.ItemPiles)
                 {
-                    if (!idSet.Contains(w.EntityId)) continue;
-                    if (w.Forbidden == target) continue;
-                    _host.QueueCommand(new Sim.Commands.ForbidStackCommand(w.EntityId, target));
+                    if (!idSet.Contains(p.EntityId)) continue;
+                    if (p.Forbidden == target) continue;
+                    _host.QueueCommand(new Sim.Commands.ForbidStackCommand(p.EntityId, target));
                 }
                 GetViewport().SetInputAsHandled();
                 return;

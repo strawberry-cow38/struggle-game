@@ -431,13 +431,13 @@ public partial class Selector : Node2D
         if (doubleClick)
         {
             // Double-click only expands to "all of this in view" when the
-            // cursor is actually on a wood stack or tree — otherwise fall
+            // cursor is actually on an item stack or tree — otherwise fall
             // through to normal single-click selection. Without the guard
             // a double-click on empty ground (or a wall) was silently
             // selecting every tree in view.
-            if (TryPickWood(snap, world, out _))
+            if (TryPickItemPile(snap, world, out _))
             {
-                SelectAllWoodInView(snap);
+                SelectAllItemsInView(snap);
                 return;
             }
             if (TryPickTree(snap, world, out _))
@@ -470,23 +470,6 @@ public partial class Selector : Node2D
             Host.SelectedLampTiles = Array.Empty<TilePos>();
             Host.SelectedBedTiles = Array.Empty<TilePos>();
             Host.SelectedUrBoardTiles = Array.Empty<TilePos>();
-            return;
-        }
-
-        if (TryPickWood(snap, world, out int woodId))
-        {
-            var set = shift ? new HashSet<int>(Host.SelectedWoodIds) : new HashSet<int>();
-            if (shift && !set.Add(woodId)) set.Remove(woodId);
-            else set.Add(woodId);
-            WriteWoodSelection(set);
-            Host.SelectedDummyId = null;
-            Host.SelectedTreeIds = Array.Empty<int>();
-            Host.SelectedCropIds = Array.Empty<int>();
-            Host.SelectedStockpileId = null;
-            Host.SelectedGrowZoneId = null;
-            Host.SelectedWallTile = null;
-            Host.SelectedDoorTile = null;
-            Host.SelectedBlueprintTile = null;
             return;
         }
 
@@ -879,29 +862,9 @@ public partial class Selector : Node2D
         return id >= 0;
     }
 
-    private bool TryPickWood(SimSnapshot snap, Vector2 world, out int id)
-    {
-        id = -1;
-        float bestSq = (PixelsPerTile * 0.5f) * (PixelsPerTile * 0.5f);
-        foreach (var w in snap.Wood)
-        {
-            float px = (w.Tile.X + 0.5f) * PixelsPerTile;
-            float py = (w.Tile.Y + 0.5f) * PixelsPerTile;
-            float dx = px - world.X;
-            float dy = py - world.Y;
-            float d2 = dx * dx + dy * dy;
-            if (d2 < bestSq)
-            {
-                bestSq = d2;
-                id = w.EntityId;
-            }
-        }
-        return id >= 0;
-    }
-
-    // Dropped non-wood stacks (carrots, meals, …). Feeds the same
-    // SelectedWoodIds selection as wood — the info panel resolves an id
-    // against both snap.Wood and snap.ItemPiles.
+    // Dropped item stacks (wood, carrots, meals — all ItemPiles). Feeds
+    // the SelectedWoodIds selection set; the info panel resolves the id
+    // against snap.ItemPiles.
     private bool TryPickItemPile(SimSnapshot snap, Vector2 world, out int id)
     {
         id = -1;
@@ -1046,7 +1009,7 @@ public partial class Selector : Node2D
         }
     }
 
-    private void SelectAllWoodInView(SimSnapshot snap)
+    private void SelectAllItemsInView(SimSnapshot snap)
     {
         var vp = GetViewport().GetVisibleRect();
         var canvasXform = GetCanvasTransform().AffineInverse();
@@ -1058,13 +1021,13 @@ public partial class Selector : Node2D
         float maxY = Mathf.Max(topLeft.Y, bottomRight.Y);
 
         var set = new HashSet<int>();
-        foreach (var w in snap.Wood)
+        foreach (var p in snap.ItemPiles)
         {
-            float px = (w.Tile.X + 0.5f) * PixelsPerTile;
-            float py = (w.Tile.Y + 0.5f) * PixelsPerTile;
+            float px = (p.Tile.X + 0.5f) * PixelsPerTile;
+            float py = (p.Tile.Y + 0.5f) * PixelsPerTile;
             if (px < minX || px > maxX) continue;
             if (py < minY || py > maxY) continue;
-            set.Add(w.EntityId);
+            set.Add(p.EntityId);
         }
         WriteWoodSelection(set);
         if (set.Count > 0)

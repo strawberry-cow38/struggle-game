@@ -22,8 +22,8 @@ public sealed class BlueprintClearanceSystem
     private readonly JobBoard _jobs;
 
     private readonly HashSet<TilePos> _blockingBpTiles = new();
-    private readonly HashSet<TilePos> _woodTiles = new();
-    private readonly List<(Entity Ent, TilePos Tile, int Count)> _candidates = new();
+    private readonly HashSet<TilePos> _itemTiles = new();
+    private readonly List<(Entity Ent, TilePos Tile, int Count, string Path)> _candidates = new();
 
     // Ring search bounds for "nearest safe tile". Generous enough that
     // a moderately cluttered base will always find a drop spot; bail
@@ -39,7 +39,7 @@ public sealed class BlueprintClearanceSystem
     public void Step(EntityStore store, float dt)
     {
         _blockingBpTiles.Clear();
-        _woodTiles.Clear();
+        _itemTiles.Clear();
 
         store.Query<Blueprint>().ForEachEntity((ref Blueprint bp, Entity _) =>
         {
@@ -56,24 +56,24 @@ public sealed class BlueprintClearanceSystem
         });
         if (_blockingBpTiles.Count == 0) return;
 
-        // Tile->count index of every wood stack on the map, used by the
-        // safe-tile scorer to prefer empty tiles over ones that'd cause
-        // an immediate merge into another existing stack.
-        store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) =>
+        // Tiles holding any item stack, used by the safe-tile scorer to
+        // prefer empty tiles over ones that'd cause an immediate merge.
+        store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity _) =>
         {
-            _woodTiles.Add(w.Tile);
+            _itemTiles.Add(p.Tile);
         });
 
         var view = _sim.MapView;
-        string woodPath = ItemCatalog.Wood.FullPath;
 
+        // Any dropped item on a blueprint tile must move — relocate it,
+        // carrying its own kind.
         _candidates.Clear();
-        store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
+        store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity ent) =>
         {
             if (ent.HasComponent<HaulReserved>()) return;
             if (ent.HasComponent<Forbidden>()) return;
-            if (!_blockingBpTiles.Contains(w.Tile)) return;
-            _candidates.Add((ent, w.Tile, w.Count));
+            if (!_blockingBpTiles.Contains(p.Tile)) return;
+            _candidates.Add((ent, p.Tile, p.Count, p.ItemPath));
         });
 
         // Mutate outside the query loop — Friflo throws
@@ -86,7 +86,7 @@ public sealed class BlueprintClearanceSystem
             {
                 DestTile = safe,
                 StockpileId = 0,
-                ItemPath = woodPath,
+                ItemPath = c.Path,
                 Count = c.Count,
                 BlueprintEntityId = 0,
             });
@@ -102,7 +102,7 @@ public sealed class BlueprintClearanceSystem
             }
             c.Ent.AddComponent(new HaulReserved { JobId = id });
             _sim.ReserveHaulDest(safe);
-            _woodTiles.Add(safe);
+            _itemTiles.Add(safe);
         }
     }
 
@@ -123,7 +123,7 @@ public sealed class BlueprintClearanceSystem
                     if (!view.Walkable(t)) continue;
                     if (_blockingBpTiles.Contains(t)) continue;
                     if (_sim.IsHaulDestReserved(t)) continue;
-                    if (_woodTiles.Contains(t)) continue;
+                    if (_itemTiles.Contains(t)) continue;
                     safe = t;
                     return true;
                 }

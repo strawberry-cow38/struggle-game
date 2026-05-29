@@ -1,4 +1,5 @@
 using System.Linq;
+using StruggleGame.Sim.Items;
 using Friflo.Engine.ECS;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
@@ -96,7 +97,7 @@ public class TreeChopTests
     private static int CountWood(SimRuntime sim)
     {
         int n = 0;
-        sim.Store.Query<Wood>().ForEachEntity((ref Wood _, Entity _) => n++);
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity _) => { if (p.ItemPath == ItemCatalog.Wood.FullPath) n++; });
         return n;
     }
 }

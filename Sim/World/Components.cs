@@ -144,18 +144,12 @@ public struct SowSite : IComponent
     public float ProgressSec;
 }
 
-// Dropped log pile on the ground. Doesn't block walking. No interaction
-// yet — placeholder for future hauling.
-public struct Wood : IComponent
-{
-    public TilePos Tile;
-    public int Count;
-}
-
-// Generic dropped item pile (carrots today, other yields later). Doesn't
-// block walking. Not yet haulable — haul + stockpile filters still key
-// off the Wood component. ItemPath identifies the kind so the renderer +
-// (eventually) haul system can dispatch.
+// The one and only dropped-item-on-ground component. Wood, carrots,
+// meals — everything is an ItemPile identified by ItemPath. Doesn't block
+// walking. (Wood used to be its own component; it was the first item type
+// before this generic one existed. Now wood is just ItemPath ==
+// ItemCatalog.Wood.FullPath, so selection / merging / spilling / hauling
+// all treat it like any other stack.)
 public struct ItemPile : IComponent
 {
     public TilePos Tile;

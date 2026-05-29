@@ -45,7 +45,7 @@ public sealed class BuildSystem
         // Wood stacks on the blueprint tile would get buried by the wall.
         // BlueprintClearanceSystem posts a relocate-haul for them; in the
         // meantime, hold the wall one tick under completion. Occupancy now
-        // comes from the item index (see _sim.ItemIndex.AnyWoodAt below)
+        // comes from the item index (see _sim.ItemIndex.AnyItemAt below)
         // instead of a per-tick full Wood scan.
 
         var builders = store.Query<WorldPos, BuildTarget, Wanderer>();
@@ -66,7 +66,7 @@ public sealed class BuildSystem
             blueprint.ProgressSec += dt;
             if (blueprint.ProgressSec >= BuildTimeSec)
             {
-                if (_occupied.Contains(job.Tile) || _sim.ItemIndex.AnyWoodAt(job.Tile))
+                if (_occupied.Contains(job.Tile) || _sim.ItemIndex.AnyItemAt(job.Tile))
                 {
                     // Hold one tick under completion so as soon as the
                     // tile is free a single tick of work finishes it.

@@ -107,7 +107,7 @@ public sealed class DummyController
     // target tile holds wood are filtered out of the claim list so a pawn
     // doesn't park next to a wall blueprint with wood sitting on it —
     // BlueprintClearanceSystem handles relocating the wood first.
-    private readonly Func<TilePos, bool> _anyWoodAt;
+    private readonly Func<TilePos, bool> _anyItemAt;
     // Idle-pawn job-seek throttle. Scanning every Open job for every idle
     // pawn every tick is pure waste when nothing changed. Skip the scan if
     // the JobBoard version hasn't moved since this pawn last looked AND it
@@ -134,9 +134,9 @@ public sealed class DummyController
         Action<int, int> releaseBedReservation,
         TryReserveRecreationDelegate tryReserveRecreation,
         Action<int, TilePos, RecreationRole> releaseUrSeat,
-        Func<TilePos, bool> anyWoodAt)
+        Func<TilePos, bool> anyItemAt)
     {
-        _anyWoodAt = anyWoodAt;
+        _anyItemAt = anyItemAt;
         _paths = paths;
         _jobs = jobs;
         _viewProvider = viewProvider;
@@ -872,7 +872,7 @@ public sealed class DummyController
             if ((job.Kind == JobKind.WallBuild
                  || job.Kind == JobKind.DoorBuild
                  || job.Kind == JobKind.BedBuild)
-                && _anyWoodAt(job.Tile)) continue;
+                && _anyItemAt(job.Tile)) continue;
             int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
             if (d >= bestDist[pr]) continue;
             TilePos approach;
@@ -1160,7 +1160,7 @@ public sealed class DummyController
             {
                 if (store.TryGetEntityById(pickupEntityId, out var pe)
                     && pe.HasComponent<HaulPayload>()
-                    && (pe.HasComponent<Wood>() || pe.HasComponent<ItemPile>()))
+                    && pe.HasComponent<ItemPile>())
                 {
                     var hp = pe.GetComponent<HaulPayload>();
                     ref var live = ref entity.GetComponent<Carrying>();
@@ -1257,25 +1257,12 @@ public sealed class DummyController
         // Topoff with the same item path the primary slot carries — mixing
         // kinds would route a carrot pile to a wood-only stockpile dest.
         string primaryPath = slots.Count > 0 ? slots[0].ItemPath : string.Empty;
-        bool isWoodTopoff = primaryPath == ItemCatalog.Wood.FullPath;
 
         // Snapshot candidates first so the nested query can't see any
-        // mutations we'd queue mid-iteration.
+        // mutations we'd queue mid-iteration. Wood is just an ItemPile now,
+        // so one query covers every kind.
         var candidates = new List<(Entity Ent, int Count, string Path, int Dist)>();
-        if (isWoodTopoff)
-        {
-            store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) =>
-            {
-                if (e.HasComponent<HaulReserved>()) return;
-                if (e.HasComponent<Forbidden>()) return;
-                if (_topoffReservedThisTick.Contains(e.Id)) return;
-                int md = Math.Abs(w.Tile.X - primarySource.X) + Math.Abs(w.Tile.Y - primarySource.Y);
-                if (md == 0) return; // primary already handled
-                if (md > SimConstants.HaulTopoffRadius) return;
-                candidates.Add((e, w.Count, ItemCatalog.Wood.FullPath, md));
-            });
-        }
-        else if (!string.IsNullOrEmpty(primaryPath))
+        if (!string.IsNullOrEmpty(primaryPath))
         {
             store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
             {
@@ -1313,12 +1300,9 @@ public sealed class DummyController
         }
     }
 
-    // A pickup-pending item entity carries either Wood (legacy stack) or
-    // ItemPile (generic resource drop, e.g. harvested carrots). Both expose
-    // a Tile; pull whichever component is attached.
+    // A pickup-pending item entity carries an ItemPile (wood, carrots, …).
     private static bool TryGetSourceTile(Entity e, out TilePos tile)
     {
-        if (e.HasComponent<Wood>()) { tile = e.GetComponent<Wood>().Tile; return true; }
         if (e.HasComponent<ItemPile>()) { tile = e.GetComponent<ItemPile>().Tile; return true; }
         tile = default;
         return false;

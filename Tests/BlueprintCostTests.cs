@@ -1,4 +1,5 @@
 using Friflo.Engine.ECS;
+using StruggleGame.Sim.Items;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Jobs;
@@ -22,7 +23,7 @@ public class BlueprintCostTests
         // Spawn enough wood adjacent to the blueprint to cover its cost.
         var pile = sim.Store.CreateEntity();
         var pileTile = new TilePos(c + 3, c);
-        pile.AddComponent(new Wood { Tile = pileTile, Count = SimRuntime.WallWoodCost });
+        pile.AddComponent(new ItemPile { Tile = pileTile, Count = SimRuntime.WallWoodCost, ItemPath = ItemCatalog.Wood.FullPath });
         pile.AddComponent(new WorldPos { X = pileTile.X + 0.5f, Y = pileTile.Y + 0.5f });
 
         sim.QueueCommand(new PlaceWallBlueprintCommand(bpTile));
@@ -31,7 +32,7 @@ public class BlueprintCostTests
         for (int i = 0; i < 1800; i++) sim.Step(SimConstants.TickSeconds);
 
         Assert.Equal(WallType.Stone, sim.Map.GetWall(bpTile));
-        Assert.False(sim.Store.TryGetEntityById(pile.Id, out var still) && still.HasComponent<Wood>(),
+        Assert.False(sim.Store.TryGetEntityById(pile.Id, out var still) && still.HasComponent<ItemPile>(),
             "wood stack should have been consumed by blueprint deposit");
     }
 
@@ -65,7 +66,7 @@ public class BlueprintCostTests
         var pileTile = new TilePos(c + 3, c);
 
         var pile = sim.Store.CreateEntity();
-        pile.AddComponent(new Wood { Tile = pileTile, Count = SimRuntime.WallWoodCost + 15 });
+        pile.AddComponent(new ItemPile { Tile = pileTile, Count = SimRuntime.WallWoodCost + 15, ItemPath = ItemCatalog.Wood.FullPath });
         pile.AddComponent(new WorldPos { X = pileTile.X + 0.5f, Y = pileTile.Y + 0.5f });
 
         sim.QueueCommand(new PlaceWallBlueprintCommand(bpTile));
@@ -74,7 +75,7 @@ public class BlueprintCostTests
         Assert.Equal(WallType.Stone, sim.Map.GetWall(bpTile));
 
         int totalWood = 0;
-        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) => totalWood += w.Count);
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile w, Entity _) => { if (w.ItemPath == ItemCatalog.Wood.FullPath) totalWood += w.Count; });
         Assert.Equal(15, totalWood);
     }
 
@@ -101,9 +102,9 @@ public class BlueprintCostTests
         sim.Step(SimConstants.TickSeconds);
 
         int onTile = 0;
-        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) =>
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile w, Entity _) =>
         {
-            if (w.Tile == bpTile) onTile += w.Count;
+            if (w.ItemPath == ItemCatalog.Wood.FullPath && w.Tile == bpTile) onTile += w.Count;
         });
         Assert.Equal(SimRuntime.WallWoodCost, onTile);
         Assert.Equal(WallType.None, sim.Map.GetWall(bpTile));
@@ -129,8 +130,9 @@ public class BlueprintCostTests
 
         int onBlueprintTile = 0;
         int elsewhere = 0;
-        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) =>
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile w, Entity _) =>
         {
+            if (w.ItemPath != ItemCatalog.Wood.FullPath) return;
             if (w.Tile == bpTile) onBlueprintTile += w.Count;
             else elsewhere += w.Count;
         });

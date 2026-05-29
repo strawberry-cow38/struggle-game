@@ -123,9 +123,6 @@ public partial class ItemInfoPanel : CanvasLayer
 
     private static void CollectSelected(SimSnapshot snap, HashSet<int> idSet, List<Stack> outList)
     {
-        foreach (var w in snap.Wood)
-            if (idSet.Contains(w.EntityId))
-                outList.Add(new Stack(w.EntityId, w.Tile, w.Count, w.ItemPath, w.Forbidden));
         foreach (var p in snap.ItemPiles)
             if (idSet.Contains(p.EntityId))
                 outList.Add(new Stack(p.EntityId, p.Tile, p.Count, p.ItemPath, p.Forbidden));

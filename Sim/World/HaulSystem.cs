@@ -42,16 +42,7 @@ public sealed class HaulSystem
         _candidates.Clear();
         foreach (var kv in _stackAt) kv.Value.Clear();
 
-        string woodPath = ItemCatalog.Wood.FullPath;
-        var woodIndex = GetOrCreateIndex(woodPath);
-        store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
-        {
-            woodIndex[w.Tile] = w.Count;
-            if (ent.HasComponent<HaulReserved>()) return;
-            if (ent.HasComponent<Forbidden>()) return;
-            _candidates.Add((ent, w.Tile, w.Count, ItemCatalog.Wood));
-        });
-
+        // One query — wood is just an ItemPile of the wood path now.
         store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity ent) =>
         {
             if (!ItemCatalog.ItemsByPath.TryGetValue(p.ItemPath, out var def)) return;

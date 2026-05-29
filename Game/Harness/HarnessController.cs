@@ -644,7 +644,7 @@ public partial class HarnessController : Node2D
         sb.Append(",\"drafted\":").Append(drafted);
         sb.Append(",\"blueprints\":").Append(snap.Blueprints.Length);
         sb.Append(",\"trees\":").Append(snap.Trees.Length);
-        sb.Append(",\"wood\":").Append(snap.Wood.Length);
+        sb.Append(",\"wood\":").Append(snap.ItemPiles.Length);
         sb.Append(",\"stuck\":").Append(w.StuckTotal);
         sb.Append(",\"braindead\":").Append(w.BrainDeadTotal);
         sb.Append('}');
@@ -820,7 +820,7 @@ public partial class HarnessController : Node2D
     {
         var snap = Host.LatestSnapshot;
         int trees = snap?.Trees.Length ?? -1;
-        int wood = snap?.Wood.Length ?? -1;
+        int wood = snap?.ItemPiles.Length ?? -1;
         _events.Add($"trees[{label}]={trees} wood={wood}");
         Log($"{{\"event\":\"trees\",\"label\":\"{Json(label)}\",\"trees\":{trees},\"wood\":{wood}}}");
     }

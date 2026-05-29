@@ -41,18 +41,20 @@ public sealed class BlueprintHaulSystem
         // reads. Skip the whole pass so relocated stacks survive.
         if (_sim.GodModeFreeBuild) return;
 
-        store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
+        // Blueprint costs are all wood today, so the haul material is wood
+        // (an ItemPile of the wood path). Carrots can't fund a wall.
+        string woodPath = ItemCatalog.Wood.FullPath;
+        store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity ent) =>
         {
+            if (p.ItemPath != woodPath) return;
             if (ent.HasComponent<HaulReserved>()) return;
             if (ent.HasComponent<Forbidden>()) return;
-            _wood.Add((ent, w.Tile, w.Count));
+            _wood.Add((ent, p.Tile, p.Count));
         });
         if (_wood.Count == 0) return;
 
         CollectBlueprintDemand(store);
         if (_demand.Count == 0) return;
-
-        string woodPath = ItemCatalog.Wood.FullPath;
         foreach (var d in _demand)
         {
             int need = d.Need;
@@ -84,10 +86,10 @@ public sealed class BlueprintHaulSystem
             int haulCount = gotReserve;
             if (leftoverAtSource > 0)
             {
-                ref var srcWood = ref pick.Ent.GetComponent<Wood>();
+                ref var srcWood = ref pick.Ent.GetComponent<ItemPile>();
                 srcWood.Count = haulCount;
                 var leftover = _sim.Store.CreateEntity();
-                leftover.AddComponent(new Wood { Tile = pick.Tile, Count = leftoverAtSource });
+                leftover.AddComponent(new ItemPile { Tile = pick.Tile, Count = leftoverAtSource, ItemPath = woodPath });
                 leftover.AddComponent(new WorldPos { X = pick.Tile.X + 0.5f, Y = pick.Tile.Y + 0.5f });
             }
 

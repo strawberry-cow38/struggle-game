@@ -39,10 +39,6 @@ public sealed class SimSnapshot
     internal int CropsCount;
     public SnapshotList<CropState> Crops => new(CropsBuf, CropsCount);
 
-    internal WoodState[] WoodBuf = System.Array.Empty<WoodState>();
-    internal int WoodCount;
-    public SnapshotList<WoodState> Wood => new(WoodBuf, WoodCount);
-
     internal ItemPileState[] ItemPilesBuf = System.Array.Empty<ItemPileState>();
     internal int ItemPilesCount;
     public SnapshotList<ItemPileState> ItemPiles => new(ItemPilesBuf, ItemPilesCount);
@@ -168,7 +164,6 @@ public readonly record struct ResourceCostState(string ItemPath, int Needed, int
 
 public readonly record struct TreeState(int EntityId, TilePos Tile, float ChopProgress, bool HasJob, float GrowthStage);
 
-public readonly record struct WoodState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden);
 
 public readonly record struct CropState(
     int EntityId,

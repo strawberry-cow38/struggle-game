@@ -280,7 +280,7 @@ public sealed class SimRuntime
         // deferred haul pickup/deliver are covered without per-site hooks.
         Store.OnComponentAdded += OnItemComponentAdded;
         Store.OnComponentRemoved += OnItemComponentRemoved;
-        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority, CurrentScheduleSlot, IsBlueprintFunded, GetJobBlueprintId, GetBlueprintClaimant, TryReserveBedAdapter, ReleaseBedReservation, TryReserveRecreation, ReleaseUrSeat, _itemIndex.AnyWoodAt);
+        _dummies = new DummyController(PathService, Jobs, () => MapView, CancelJob, seed + 1, TryGetDoor, EffectivePriority, CurrentScheduleSlot, IsBlueprintFunded, GetJobBlueprintId, GetBlueprintClaimant, TryReserveBedAdapter, ReleaseBedReservation, TryReserveRecreation, ReleaseUrSeat, _itemIndex.AnyItemAt);
         _dummies.OnHaulPickup = (carriedEnt, cb) => OnHaulPickedUp(carriedEnt, cb);
         _dummies.OnHaulDeliver = (carrierEntity, dropTile, cb) => DeliverCarrying(carrierEntity, dropTile, cb);
         _dummies.CookFindNearestPile = (from, path) => FindNearestItemPile(from, path);
@@ -304,7 +304,7 @@ public sealed class SimRuntime
         _urBoards = new UrBoardSystem(this, Jobs);
         _recreation = new RecreationSystem(seed + 11, GetAvailableRecreationKinds);
         _doorBuilds = new DoorBuildSystem(this, Jobs);
-        _doors = new DoorSystem(_itemIndex.AnyUnreservedWoodAt);
+        _doors = new DoorSystem(_itemIndex.AnyUnreservedItemAt);
         _hauls = new HaulSystem(this, Jobs);
         _bpHauls = new BlueprintHaulSystem(this, Jobs);
         _bpClearance = new BlueprintClearanceSystem(this, Jobs);
@@ -376,7 +376,6 @@ public sealed class SimRuntime
         // optimization was unsafe: a pile can also become mergeable when a
         // haul reservation clears or a neighbor is partly consumed, neither
         // of which is an add — so it could leave two coincident stacks.)
-        MergeCoincidentWood();
         MergeCoincidentItemPiles();
         SpillCoincidentPiles();
         _safety.Step(Store, Tick);
@@ -1279,16 +1278,6 @@ public sealed class SimRuntime
         }
         snap.TreesCount = k2;
 
-        var woodQuery = Store.Query<Wood>();
-        EnsureCap(ref snap.WoodBuf, woodQuery.Count);
-        var woodsBuf = snap.WoodBuf;
-        int wi = 0;
-        woodQuery.ForEachEntity((ref Wood w, Entity e) =>
-        {
-            woodsBuf[wi++] = new WoodState(e.Id, w.Tile, w.Count, ItemCatalog.Wood.FullPath, e.HasComponent<Forbidden>());
-        });
-        snap.WoodCount = wi;
-
         EnsureCap(ref snap.CropsBuf, _crops.Count);
         var cropsBuf = snap.CropsBuf;
         int ci = 0;
@@ -2162,7 +2151,7 @@ public sealed class SimRuntime
 
             var wood = Store.CreateEntity();
             wood.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
-            wood.AddComponent(new Wood { Tile = tile, Count = yield });
+            wood.AddComponent(new ItemPile { Tile = tile, Count = yield, ItemPath = ItemCatalog.Wood.FullPath });
 
             RebuildMapView();
         }
@@ -2179,7 +2168,7 @@ public sealed class SimRuntime
                 entity.DeleteEntity();
                 var wood = Store.CreateEntity();
                 wood.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
-                wood.AddComponent(new Wood { Tile = tile, Count = yield });
+                wood.AddComponent(new ItemPile { Tile = tile, Count = yield, ItemPath = ItemCatalog.Wood.FullPath });
                 RebuildMapView();
             }
             else if (entity.HasComponent<Crop>())
@@ -2411,7 +2400,7 @@ public sealed class SimRuntime
             {
                 var wood = Store.CreateEntity();
                 wood.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
-                wood.AddComponent(new Wood { Tile = tile, Count = WallDeconWoodReturn });
+                wood.AddComponent(new ItemPile { Tile = tile, Count = WallDeconWoodReturn, ItemPath = ItemCatalog.Wood.FullPath });
             }
             RebuildMapView();
             // Wall gone = light can flow through that tile again; rebake
@@ -2494,7 +2483,7 @@ public sealed class SimRuntime
             {
                 var wood = Store.CreateEntity();
                 wood.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
-                wood.AddComponent(new Wood { Tile = tile, Count = WallDeconWoodReturn });
+                wood.AddComponent(new ItemPile { Tile = tile, Count = WallDeconWoodReturn, ItemPath = ItemCatalog.Wood.FullPath });
             }
             RebuildMapView();
             // Door gone = light can flow through that tile again. Relight.
@@ -2659,7 +2648,7 @@ public sealed class SimRuntime
                     && Store.TryGetEntityById(hp.BlueprintEntityId, out var bpEnt)
                     && bpEnt.HasComponent<BlueprintCost>())
                 {
-                    int amt = entity.HasComponent<Wood>() ? entity.GetComponent<Wood>().Count : hp.Count;
+                    int amt = entity.HasComponent<ItemPile>() ? entity.GetComponent<ItemPile>().Count : hp.Count;
                     int release = amt < hp.Count ? amt : hp.Count;
                     BlueprintCostOps.ReleaseReservation(bpEnt, hp.ItemPath, release);
                 }
@@ -3274,12 +3263,14 @@ public sealed class SimRuntime
 
     public bool TryFindBestHaulDest(TilePos source, ItemDef def, int countToMove, out TilePos dest, out int stockpileId)
     {
-        var woodAt = new Dictionary<TilePos, int>();
-        Store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
+        // Per-tile counts of the same item kind, for the merge-bias.
+        var countAt = new Dictionary<TilePos, int>();
+        string path = def.FullPath;
+        Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity ent) =>
         {
-            woodAt[w.Tile] = w.Count;
+            if (p.ItemPath == path) countAt[p.Tile] = p.Count;
         });
-        return TryFindBestHaulDest(source, def, countToMove, woodAt, out dest, out stockpileId);
+        return TryFindBestHaulDest(source, def, countToMove, countAt, out dest, out stockpileId);
     }
 
     // Walks the player's zones and picks the best cell that accepts the item.
@@ -3404,14 +3395,7 @@ public sealed class SimRuntime
                     continue;
                 }
                 if (e.HasComponent<HaulReserved>()) cb.RemoveComponent<HaulReserved>(e.Id);
-                if (slot.ItemPath == Items.ItemCatalog.Wood.FullPath)
-                {
-                    cb.AddComponent(e.Id, new Wood { Tile = dropTile, Count = leftover });
-                }
-                else
-                {
-                    cb.AddComponent(e.Id, new ItemPile { Tile = dropTile, Count = leftover, ItemPath = slot.ItemPath });
-                }
+                cb.AddComponent(e.Id, new ItemPile { Tile = dropTile, Count = leftover, ItemPath = slot.ItemPath });
                 cb.AddComponent(e.Id, new WorldPos { X = dropTile.X + 0.5f, Y = dropTile.Y + 0.5f });
             }
         }
@@ -3461,7 +3445,7 @@ public sealed class SimRuntime
         {
             if (slotEnt.HasComponent<HaulReserved>()) slotEnt.RemoveComponent<HaulReserved>();
             if (slotEnt.HasComponent<HaulPayload>()) slotEnt.RemoveComponent<HaulPayload>();
-            if (!slotEnt.HasComponent<Wood>()) slotEnt.AddComponent(new Wood { Tile = here, Count = slot.Count });
+            if (!slotEnt.HasComponent<ItemPile>()) slotEnt.AddComponent(new ItemPile { Tile = here, Count = slot.Count, ItemPath = slot.ItemPath });
             if (!slotEnt.HasComponent<WorldPos>()) slotEnt.AddComponent(new WorldPos { X = here.X + 0.5f, Y = here.Y + 0.5f });
         }
         bool empty = (c.Slots.Count == 0) && (c.PendingPickupIds is null || c.PendingPickupIds.Count == 0);
@@ -3560,42 +3544,35 @@ public sealed class SimRuntime
     }
 
     // ItemSpatialIndex feeders. Fire for every component add/remove in the
-    // store; we filter to the two ground-item kinds. On add the component
-    // is present so we read its tile/path; on remove the item has left the
-    // ground (picked up, consumed-but-entity-kept, etc.) so we just drop it.
+    // store; we filter to ItemPile (the one ground-item kind) and
+    // HaulReserved. On add the component is present so we read its tile/
+    // path; on remove the item has left the ground (picked up, consumed-
+    // but-entity-kept, etc.) so we just drop it.
     private void OnItemComponentAdded(ComponentChanged c)
     {
         if (c.Type == typeof(HaulReserved)) { _itemIndex.OnReservedAdded(c.EntityId); return; }
+        if (c.Type != typeof(ItemPile)) return;
         if (!Store.TryGetEntityById(c.EntityId, out var e)) return;
-        if (c.Type == typeof(Wood))
+        if (e.HasComponent<ItemPile>())
         {
-            if (e.HasComponent<Wood>())
-                _itemIndex.OnItemAdded(c.EntityId, e.GetComponent<Wood>().Tile, isWood: true, ItemCatalog.Wood.FullPath);
-        }
-        else if (c.Type == typeof(ItemPile))
-        {
-            if (e.HasComponent<ItemPile>())
-            {
-                var p = e.GetComponent<ItemPile>();
-                _itemIndex.OnItemAdded(c.EntityId, p.Tile, isWood: false, p.ItemPath);
-            }
+            var p = e.GetComponent<ItemPile>();
+            _itemIndex.OnItemAdded(c.EntityId, p.Tile, p.ItemPath);
         }
     }
 
     private void OnItemComponentRemoved(ComponentChanged c)
     {
         if (c.Type == typeof(HaulReserved)) { _itemIndex.OnReservedRemoved(c.EntityId); return; }
-        if (c.Type == typeof(Wood) || c.Type == typeof(ItemPile))
+        if (c.Type == typeof(ItemPile))
             _itemIndex.OnEntityGone(c.EntityId);
     }
 
     // Called by DummyController when it actually picks up an item from
-    // the world. Removes the world-side Wood component so the renderer
-    // stops drawing the log; the entity itself stays alive on the
+    // the world. Removes the world-side ItemPile component so the renderer
+    // stops drawing the stack; the entity itself stays alive on the
     // carrier until drop.
     public void OnHaulPickedUp(Entity carriedEntity, CommandBuffer cb)
     {
-        if (carriedEntity.HasComponent<Wood>()) cb.RemoveComponent<Wood>(carriedEntity.Id);
         if (carriedEntity.HasComponent<ItemPile>()) cb.RemoveComponent<ItemPile>(carriedEntity.Id);
         if (carriedEntity.HasComponent<HaulPayload>()) cb.RemoveComponent<HaulPayload>(carriedEntity.Id);
     }
@@ -3627,7 +3604,7 @@ public sealed class SimRuntime
                             && Store.TryGetEntityById(hp.BlueprintEntityId, out var bpEnt)
                             && bpEnt.HasComponent<BlueprintCost>())
                         {
-                            int amt = ent.HasComponent<Wood>() ? ent.GetComponent<Wood>().Count : hp.Count;
+                            int amt = ent.HasComponent<ItemPile>() ? ent.GetComponent<ItemPile>().Count : hp.Count;
                             int release = amt < hp.Count ? amt : hp.Count;
                             BlueprintCostOps.ReleaseReservation(bpEnt, hp.ItemPath, release);
                         }
@@ -3646,63 +3623,28 @@ public sealed class SimRuntime
 
     // Sum of all wood stacks at the given tile. Used by HaulSystem to bias
     // merge-haul destinations and by gameplay queries (e.g. a future "X
-    // logs ready" tooltip).
+    // logs ready" tooltip). Wood is now just an ItemPile of the wood path.
     public int WoodCountAtTile(TilePos tile)
     {
         int total = 0;
-        Store.Query<Wood>().ForEachEntity((ref Wood w, Entity ent) =>
+        string woodPath = ItemCatalog.Wood.FullPath;
+        Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity ent) =>
         {
-            if (w.Tile == tile) total += w.Count;
+            if (p.Tile == tile && p.ItemPath == woodPath) total += p.Count;
         });
         return total;
     }
 
-    // End-of-tick consolidator: any two unreserved wood entities on the
-    // same tile whose combined count fits in one stack collapse into one
-    // entity. The result is at-most-one wood entity per tile, which is
-    // what TryFindBestHaulDest assumes.
-    // Reused scratch for the two end-of-tick merge passes — they run
-    // sequentially (never nested), so they can share the op/delete lists.
-    private readonly Dictionary<TilePos, Entity> _mergeWoodByTile = new();
+    // Reused scratch for the merge pass.
     private readonly Dictionary<(TilePos Tile, string Path), Entity> _mergePileByKey = new();
     private readonly List<(int destId, int amt)> _mergeOpsScratch = new();
     private readonly List<Entity> _mergeDeletesScratch = new();
 
-    private void MergeCoincidentWood()
-    {
-        var byTile = _mergeWoodByTile; byTile.Clear();
-        var mergeOps = _mergeOpsScratch; mergeOps.Clear();
-        var deletes = _mergeDeletesScratch; deletes.Clear();
-        Store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) =>
-        {
-            if (e.HasComponent<HaulReserved>()) return;
-            if (byTile.TryGetValue(w.Tile, out var existing))
-            {
-                int existingCount = existing.GetComponent<Wood>().Count;
-                if (existingCount + w.Count <= WoodMaxStack)
-                {
-                    mergeOps.Add((existing.Id, w.Count));
-                    deletes.Add(e);
-                }
-                return;
-            }
-            byTile[w.Tile] = e;
-        });
-        foreach (var (id, amt) in mergeOps)
-        {
-            if (Store.TryGetEntityById(id, out var dest))
-            {
-                ref var dw = ref dest.GetComponent<Wood>();
-                dw.Count += amt;
-            }
-        }
-        foreach (var e in deletes) { _itemIndex.OnEntityGone(e.Id); e.DeleteEntity(); }
-    }
-
-    // Same end-of-tick consolidator as MergeCoincidentWood, but for
-    // ItemPile drops. Keys on (Tile, ItemPath) so a carrot pile won't
-    // swallow a corn pile on the same tile. Uses WoodMaxStack as a
-    // generic cap until per-item stack sizes get pulled into ItemCatalog.
+    // End-of-tick consolidator: any two unreserved piles of the same kind
+    // on the same tile whose combined count fits in one stack collapse into
+    // one entity. Keys on (Tile, ItemPath) so a carrot pile won't swallow a
+    // wood pile on the same tile. Uses WoodMaxStack as a generic cap until
+    // per-item stack sizes get pulled into ItemCatalog.
     private void MergeCoincidentItemPiles()
     {
         var byKey = _mergePileByKey; byKey.Clear();
@@ -3869,11 +3811,13 @@ public sealed class SimRuntime
         }
     }
 
+    // Thin wrapper: wood is just an ItemPile of the wood path now. Kept so
+    // existing callers / tests read clearly.
     public Entity SpawnWoodPile(TilePos tile, int count = 1)
     {
         var w = Store.CreateEntity();
         w.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
-        w.AddComponent(new Wood { Tile = tile, Count = count });
+        w.AddComponent(new ItemPile { Tile = tile, Count = count, ItemPath = ItemCatalog.Wood.FullPath });
         return w;
     }
 

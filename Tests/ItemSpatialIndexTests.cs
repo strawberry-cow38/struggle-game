@@ -24,8 +24,11 @@ public class ItemSpatialIndexTests
         sim.SpawnWoodPile(woodTile);
         sim.SpawnItemPile(pileTile, ItemCatalog.Carrot.FullPath, 3);
 
-        Assert.True(sim.ItemIndex.AnyWoodAt(woodTile));
-        Assert.False(sim.ItemIndex.AnyWoodAt(pileTile));
+        // Occupancy is now item-kind agnostic — wood and carrots both count.
+        Assert.True(sim.ItemIndex.AnyItemAt(woodTile));
+        Assert.True(sim.ItemIndex.AnyItemAt(pileTile));
+        Assert.False(sim.ItemIndex.AnyItemAt(NearbyWalkableNotEqual(sim, new TilePos(70, 70), woodTile)));
+        // Nearest is still path-specific.
         Assert.True(sim.ItemIndex.TryGetNearest(woodTile, ItemCatalog.Carrot.FullPath, out var found));
         Assert.Equal(pileTile, found);
         sim.ItemIndex.ValidateAgainst(sim.Store);
@@ -75,7 +78,7 @@ public class ItemSpatialIndexTests
         // MergeCoincidentWood runs each Step; advance to let it fold them.
         for (int i = 0; i < 3; i++) sim.Step(SimConstants.TickSeconds);
 
-        Assert.True(sim.ItemIndex.AnyWoodAt(t));
+        Assert.True(sim.ItemIndex.AnyItemAt(t));
         sim.ItemIndex.ValidateAgainst(sim.Store);
     }
 
@@ -136,20 +139,20 @@ public class ItemSpatialIndexTests
         sim.SpawnWoodPile(t);
 
         // Fresh wood: wedges a door (unreserved).
-        Assert.True(sim.ItemIndex.AnyUnreservedWoodAt(t));
+        Assert.True(sim.ItemIndex.AnyUnreservedItemAt(t));
 
         // Find the wood entity and reserve it — should stop counting.
         int id = 0;
-        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) => { if (w.Tile == t) id = e.Id; });
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile w, Entity e) => { if (w.ItemPath == ItemCatalog.Wood.FullPath && w.Tile == t) id = e.Id; });
         Assert.True(sim.Store.TryGetEntityById(id, out var wood));
         wood.AddComponent(new HaulReserved { JobId = StruggleGame.Sim.Jobs.JobId.None });
-        Assert.True(sim.ItemIndex.AnyWoodAt(t));            // still wood there
-        Assert.False(sim.ItemIndex.AnyUnreservedWoodAt(t)); // but reserved now
+        Assert.True(sim.ItemIndex.AnyItemAt(t));            // still wood there
+        Assert.False(sim.ItemIndex.AnyUnreservedItemAt(t)); // but reserved now
         sim.ItemIndex.ValidateAgainst(sim.Store);
 
         // Un-reserve: counts again.
         wood.RemoveComponent<HaulReserved>();
-        Assert.True(sim.ItemIndex.AnyUnreservedWoodAt(t));
+        Assert.True(sim.ItemIndex.AnyUnreservedItemAt(t));
         sim.ItemIndex.ValidateAgainst(sim.Store);
     }
 

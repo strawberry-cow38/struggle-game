@@ -462,23 +462,6 @@ public partial class WorldRenderer : Node2D
         var mouseLocal = GetLocalMousePosition();
         int cursorTileX = Mathf.FloorToInt(mouseLocal.X / PixelsPerTile);
         int cursorTileY = Mathf.FloorToInt(mouseLocal.Y / PixelsPerTile);
-        using (FrameProfiler.Instance.BeginScope("Wood"))
-        {
-            var selectedWoodSet = GetCachedSelectedSet(
-                snap.SelectedWoodIds, ref _cachedSelectedWoodIdRef, ref _cachedSelectedWoodSet);
-            foreach (var w in snap.Wood)
-            {
-                if (w.Tile.X < viewMinTileX || w.Tile.X > viewMaxTileX
-                    || w.Tile.Y < viewMinTileY || w.Tile.Y > viewMaxTileY) continue;
-                DrawWood(w.Tile);
-                if (w.Forbidden) DrawForbiddenMark(w.Tile);
-                if (selectedWoodSet is not null && selectedWoodSet.Contains(w.EntityId)) DrawWoodSelectionRing(w.Tile);
-                if (w.Tile.X == cursorTileX && w.Tile.Y == cursorTileY)
-                {
-                    DrawStackLabel(stackFont, w.Tile, w.ItemPath, w.Count);
-                }
-            }
-        }
 
         using (FrameProfiler.Instance.BeginScope("Trees"))
         {
@@ -516,6 +499,7 @@ public partial class WorldRenderer : Node2D
                 if (p.Tile.X < viewMinTileX || p.Tile.X > viewMaxTileX
                     || p.Tile.Y < viewMinTileY || p.Tile.Y > viewMaxTileY) continue;
                 DrawItemPile(p);
+                if (p.Forbidden) DrawForbiddenMark(p.Tile);
                 if (selectedPileSet is not null && selectedPileSet.Contains(p.EntityId)) DrawWoodSelectionRing(p.Tile);
                 if (p.Tile.X == cursorTileX && p.Tile.Y == cursorTileY)
                 {
@@ -853,7 +837,10 @@ public partial class WorldRenderer : Node2D
 
     private void DrawItemPile(Sim.Snapshots.ItemPileState p)
     {
-        // Generic non-wood pile. Carrots = small orange dot stack.
+        // Wood draws as a log (rectangle); everything else as a small
+        // stacked dot. (Wood used to be its own component + render path;
+        // now it's just an ItemPile of the wood path.)
+        if (p.ItemPath == ItemCatalog.Wood.FullPath) { DrawWood(p.Tile); return; }
         var center = new Vector2((p.Tile.X + 0.5f) * PixelsPerTile, (p.Tile.Y + 0.5f) * PixelsPerTile);
         float r = PixelsPerTile * 0.16f;
         DrawCircle(center, r, CarrotBody);

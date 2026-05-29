@@ -148,8 +148,9 @@ public class HaulTests
 
         int entities = 0;
         int total = 0;
-        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) =>
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile w, Entity _) =>
         {
+            if (w.ItemPath != ItemCatalog.Wood.FullPath) return;
             if (w.Tile != tile) return;
             entities++;
             total += w.Count;
@@ -315,9 +316,9 @@ public class HaulTests
     private static int WoodCountAtTile(SimRuntime sim, TilePos t)
     {
         int total = 0;
-        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) =>
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile w, Entity _) =>
         {
-            if (w.Tile == t) total += w.Count;
+            if (w.ItemPath == ItemCatalog.Wood.FullPath && w.Tile == t) total += w.Count;
         });
         return total;
     }
@@ -334,9 +335,9 @@ public class HaulTests
     private static bool WoodAtTile(SimRuntime sim, TilePos t)
     {
         bool found = false;
-        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity _) =>
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile w, Entity _) =>
         {
-            if (w.Tile == t) found = true;
+            if (w.ItemPath == ItemCatalog.Wood.FullPath && w.Tile == t) found = true;
         });
         return found;
     }
