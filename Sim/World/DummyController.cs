@@ -108,6 +108,15 @@ public sealed class DummyController
     // doesn't park next to a wall blueprint with wood sitting on it —
     // BlueprintClearanceSystem handles relocating the wood first.
     private readonly Func<TilePos, bool> _anyWoodAt;
+    // Idle-pawn job-seek throttle. Scanning every Open job for every idle
+    // pawn every tick is pure waste when nothing changed. Skip the scan if
+    // the JobBoard version hasn't moved since this pawn last looked AND it
+    // looked within the last JobReseekInterval ticks. A version bump (job
+    // posted / claimed / freed) forces an immediate re-scan, so newly
+    // available work is still picked up next tick.
+    private const long JobReseekInterval = 10;
+    private readonly Dictionary<int, (long Version, long Tick)> _lastJobSeek = new();
+    private long _tick;
 
     public DummyController(
         PathService paths,
@@ -145,8 +154,9 @@ public sealed class DummyController
         _releaseUrSeat = releaseUrSeat;
     }
 
-    public void Step(EntityStore store, float dt)
+    public void Step(EntityStore store, float dt, long tick)
     {
+        _tick = tick;
         var view = _viewProvider();
         var cb = store.GetCommandBuffer();
         _topoffReservedThisTick.Clear();
@@ -801,6 +811,18 @@ public sealed class DummyController
 
     private bool TryClaimJob(MapView view, TilePos from, Entity entity, CommandBuffer cb, ref PathFollower path)
     {
+        // Throttle: skip the full job scan if nothing changed on the board
+        // since this pawn last looked and it looked recently. (Version bump
+        // = a job appeared/claimed/freed → re-scan immediately.)
+        long jobVersion = _jobs.Version;
+        if (_lastJobSeek.TryGetValue(entity.Id, out var last)
+            && last.Version == jobVersion
+            && _tick - last.Tick < JobReseekInterval)
+        {
+            return false;
+        }
+        _lastJobSeek[entity.Id] = (jobVersion, _tick);
+
         // Per-priority-bucket nearest job. Bucket 0 = player-pinned to
         // this pawn (RMB "Prioritize for X" beats every WorkType priority).
         // Buckets 1..8 are the work-tab priorities. Iterate 0..8 in order

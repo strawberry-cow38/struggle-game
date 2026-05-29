@@ -326,7 +326,7 @@ public sealed class SimRuntime
         _worldTimeSec += SimSecondsPerRealSecond * dt;
         ComputeSun(_worldTimeSec, out var sR, out var sG, out var sB);
         if (sR != _lastSunR || sG != _lastSunG || sB != _lastSunB) _sunDirty = true;
-        _dummies.Step(Store, dt);
+        _dummies.Step(Store, dt, Tick);
         // Drain auto-bed-claim requests posted by Plan(). Safe to do
         // structural changes here — outside the controller's query loop.
         if (_dummies.PendingAutoBedClaims.Count > 0)

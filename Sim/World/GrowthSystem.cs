@@ -20,6 +20,14 @@ public sealed class GrowthSystem
     // stub) fails.
     public const float GrowLightThreshold = 0.51f;
 
+    // RimWorld-style "rare tick": plants don't need 60 Hz resolution. Each
+    // plant advances once every GrowTickInterval ticks, by that many ticks'
+    // worth of growth — so the average rate is identical to ticking every
+    // frame, but the work happens ~250× less often. The (tick + entityId)
+    // phase staggers plants across buckets so they don't all recompute on
+    // the same frame (no spike).
+    public const int GrowTickInterval = 250;
+
     private readonly SimRuntime _sim;
 
     public GrowthSystem(SimRuntime sim)
@@ -29,20 +37,24 @@ public sealed class GrowthSystem
 
     public void Step(EntityStore store, float dt)
     {
-        float perSec = 1f / SecondsToFullGrow;
-        store.Query<Growth, Tree>().ForEachEntity((ref Growth g, ref Tree t, Entity _) =>
+        long tick = _sim.Tick;
+        // dt accrued over the whole interval since this plant last ticked.
+        float step = dt * GrowTickInterval / SecondsToFullGrow;
+        store.Query<Growth, Tree>().ForEachEntity((ref Growth g, ref Tree t, Entity e) =>
         {
             if (g.Stage >= 1f) return;
+            if ((tick + e.Id) % GrowTickInterval != 0) return;
             if (_sim.LightAt(t.Tile) < GrowLightThreshold) return;
             if (!_sim.IsTileGrowTemperature(t.Tile)) return;
-            g.Stage = Math.Min(1f, g.Stage + dt * perSec);
+            g.Stage = Math.Min(1f, g.Stage + step);
         });
-        store.Query<Growth, Crop>().ForEachEntity((ref Growth g, ref Crop c, Entity _) =>
+        store.Query<Growth, Crop>().ForEachEntity((ref Growth g, ref Crop c, Entity e) =>
         {
             if (g.Stage >= 1f) return;
+            if ((tick + e.Id) % GrowTickInterval != 0) return;
             if (_sim.LightAt(c.Tile) < GrowLightThreshold) return;
             if (!_sim.IsTileGrowTemperature(c.Tile)) return;
-            g.Stage = Math.Min(1f, g.Stage + dt * perSec);
+            g.Stage = Math.Min(1f, g.Stage + step);
         });
     }
 }
