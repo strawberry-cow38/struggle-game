@@ -122,6 +122,7 @@ public sealed class SimRuntime
     private readonly BlueprintClearanceSystem _bpClearance;
     private readonly SafetySystem _safety;
     private readonly SleepSystem _sleep;
+    private readonly HealthSystem _health;
     // Stockpile tiles currently promised to an in-flight haul job. Posting
     // a new haul avoids these so two carriers can't target the same cell.
     private readonly HashSet<TilePos> _reservedHaulDests = new();
@@ -310,6 +311,7 @@ public sealed class SimRuntime
         _bpClearance = new BlueprintClearanceSystem(this, Jobs);
         _safety = new SafetySystem(() => MapView, PathService, Watcher);
         _sleep = new SleepSystem();
+        _health = new HealthSystem(this);
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
@@ -371,6 +373,7 @@ public sealed class SimRuntime
         _bpHauls.Step(Store, dt);
         _hauls.Step(Store, dt);
         if (needTick) { _sleep.Step(Store, needDt); _needAccumDt = 0f; }
+        _health.Step(Store, dt);
         AgeRoofFlashes(dt);
         // Run every tick. (An earlier "skip unless an item was added"
         // optimization was unsafe: a pile can also become mergeable when a
@@ -587,6 +590,20 @@ public sealed class SimRuntime
     {
         if (ent.HasComponent<SleepNeed>()) return;
         ent.AddComponent(new SleepNeed { Level = 1f });
+    }
+
+    // Full-health body: full blood, no injuries, every capacity at 1.0.
+    public static void EnsureHealth(Entity ent)
+    {
+        if (ent.HasComponent<Health>()) return;
+        ent.AddComponent(new Health
+        {
+            BloodLevel = 1f,
+            Injuries = new List<PartInjury>(),
+            Consciousness = 1f, Moving = 1f, Manipulation = 1f,
+            Sight = 1f, BloodPumping = 1f, Breathing = 1f,
+            Unconscious = false,
+        });
     }
 
     // RecreationNeed + RecreationPreference. Initial Kind sentinel (255)
@@ -3553,6 +3570,24 @@ public sealed class SimRuntime
         });
     }
 
+    // Debug/gameplay: add a condition to one of a colonist's body parts
+    // and recompute capacities immediately.
+    public void ApplyInjury(int pawnId, string partId, StruggleGame.Sim.Bodies.ConditionKind kind, float severity)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var pawn)) return;
+        if (!pawn.HasComponent<Health>()) return;
+        if (!StruggleGame.Sim.Bodies.BodyTree.TryGet(partId, out _)) return;
+        ref var h = ref pawn.GetComponent<Health>();
+        h.Injuries ??= new List<PartInjury>();
+        h.Injuries.Add(new PartInjury
+        {
+            PartId = partId,
+            Kind = kind,
+            Severity = Math.Clamp(severity <= 0f ? 1f : severity, 0f, 1f),
+        });
+        HealthSystem.Recompute(ref h);
+    }
+
     // Move an equipped item into the pawn's general inventory. Both share
     // the carry budget, so this is a pure reclassification — no weight
     // changes, the item just stops being "worn".
@@ -5119,6 +5154,7 @@ public sealed class SimRuntime
             EnsureWorkPriorities(e);
             EnsureSchedule(e);
             EnsureSleepNeed(e);
+            EnsureHealth(e);
             return true;
         }
         return false;
@@ -5184,6 +5220,7 @@ public sealed class SimRuntime
                     EnsureSchedule(e);
                     EnsureSleepNeed(e);
                     EnsureRecreationNeed(e);
+                    EnsureHealth(e);
                     return;
                 }
             }

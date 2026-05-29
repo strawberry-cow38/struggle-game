@@ -578,6 +578,31 @@ public struct PickupOrder : IComponent
     public int RequestedCount;
 }
 
+// One condition on one body part (a cut on the left hand, etc).
+public struct PartInjury
+{
+    public string PartId;
+    public StruggleGame.Sim.Bodies.ConditionKind Kind;
+    public float Severity; // 0..1
+}
+
+// Per-colonist health. Injuries is the flat list of conditions across the
+// body tree (most parts have none). The capacity fields + Unconscious are
+// recomputed by HealthSystem each rare tick from the injuries + blood, and
+// read by the effect wiring (move/work speed, the unconscious gate).
+public struct Health : IComponent
+{
+    public float BloodLevel; // 0..1
+    public List<PartInjury>? Injuries;
+    public float Consciousness;
+    public float Moving;
+    public float Manipulation;
+    public float Sight;
+    public float BloodPumping;
+    public float Breathing;
+    public bool Unconscious;
+}
+
 // Marks an item entity as already promised to a haul job. Posted by
 // HaulSystem when a Job is created; the same component is removed when
 // the job completes/cancels. Prevents the poster from re-posting a haul

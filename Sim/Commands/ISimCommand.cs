@@ -755,6 +755,23 @@ public sealed class PickUpItemCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetPickupOrder(PawnEntityId, ItemEntityId, Count);
 }
 
+// Debug "Add Injury": apply a condition to a colonist's body part.
+public sealed class ApplyInjuryCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public string PartId { get; }
+    public StruggleGame.Sim.Bodies.ConditionKind Kind { get; }
+    public float Severity { get; }
+    public ApplyInjuryCommand(int pawnId, string partId, StruggleGame.Sim.Bodies.ConditionKind kind, float severity)
+    {
+        PawnEntityId = pawnId;
+        PartId = partId;
+        Kind = kind;
+        Severity = severity;
+    }
+    public void Apply(SimRuntime sim) => sim.ApplyInjury(PawnEntityId, PartId, Kind, Severity);
+}
+
 // RMB "Prioritize Haul" on a dropped pile outside a stockpile: pin its
 // stockpile haul to the chosen colonist.
 public sealed class PrioritizeHaulForPawnCommand : ISimCommand
