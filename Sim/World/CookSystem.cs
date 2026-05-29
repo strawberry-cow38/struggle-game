@@ -28,11 +28,26 @@ public sealed class CookSystem
 
     private readonly List<JobId> _completed = new();
     private readonly List<(int stoveId, int billIdx)> _toPost = new();
+    private readonly List<CookFinish> _finished = new();
+
+    private readonly struct CookFinish
+    {
+        public readonly int StoveEntityId;
+        public readonly int CookEntityId;
+        public readonly int BillIndex;
+        public readonly TilePos OutputTile;
+        public readonly TilePos StandingTile;
+        public readonly string OutputItemPath;
+        public readonly int OutputCount;
+        public CookFinish(int stoveId, int cookId, int billIdx, TilePos output, TilePos standing, string itemPath, int count)
+        { StoveEntityId = stoveId; CookEntityId = cookId; BillIndex = billIdx; OutputTile = output; StandingTile = standing; OutputItemPath = itemPath; OutputCount = count; }
+    }
 
     public void Step(EntityStore store, float dt)
     {
         _completed.Clear();
         _toPost.Clear();
+        _finished.Clear();
 
         // 1. Scan stoves for bill scheduling.
         var stoveQuery = store.Query<Stove, BillsBoard>();
@@ -86,43 +101,56 @@ public sealed class CookSystem
             stove.CookProgressTicks += dt * TicksPerSecond;
             if (stove.CookProgressTicks < recipe.WorkTicks) return;
 
-            // Completion: spawn output, decrement bill, reset stove state.
-            var outputTile = standing; // drop at standing tile for now (worker stands on stove output)
-            // If output dest is stockpile-routed, drop at standing then haul system will move it.
-            _sim.SpawnItemPile(outputTile, recipe.Output.ItemPath, recipe.Output.Count);
+            // Defer all structural changes (entity spawn, component removal,
+            // bill mutation, job close) to after the query loop.
+            _finished.Add(new CookFinish(
+                stoveEnt.Id, pawn.Id, stove.CurrentBillIndex,
+                standing, standing,
+                recipe.Output.ItemPath, recipe.Output.Count));
+        });
+
+        foreach (var f in _finished)
+        {
+            if (!store.TryGetEntityById(f.StoveEntityId, out var stoveEnt)) continue;
+            if (!stoveEnt.HasComponent<Stove>() || !stoveEnt.HasComponent<BillsBoard>()) continue;
+            ref var stove = ref stoveEnt.GetComponent<Stove>();
+            var board = stoveEnt.GetComponent<BillsBoard>();
+
+            // Spawn output now that the query is done.
+            _sim.SpawnItemPile(f.OutputTile, f.OutputItemPath, f.OutputCount);
 
             // Decrement DoXTimes; remove if zero. Leave Forever/DoUntilCount alone.
-            var updated = bill;
-            if (updated.RepeatMode == BillRepeatMode.DoXTimes)
+            if (board.Bills is not null && f.BillIndex >= 0 && f.BillIndex < board.Bills.Count)
             {
-                updated.RemainingCount = Math.Max(0, updated.RemainingCount - 1);
-            }
-            board.Bills[stove.CurrentBillIndex] = updated;
-            if (updated.RepeatMode == BillRepeatMode.DoXTimes && updated.RemainingCount <= 0)
-            {
-                board.Bills.RemoveAt(stove.CurrentBillIndex);
+                var updated = board.Bills[f.BillIndex];
+                if (updated.RepeatMode == BillRepeatMode.DoXTimes)
+                {
+                    updated.RemainingCount = Math.Max(0, updated.RemainingCount - 1);
+                }
+                board.Bills[f.BillIndex] = updated;
+                if (updated.RepeatMode == BillRepeatMode.DoXTimes && updated.RemainingCount <= 0)
+                {
+                    board.Bills.RemoveAt(f.BillIndex);
+                }
             }
 
-            // Reset stove state and the cook.
-            int cookId = stove.ActiveCookEntityId;
             stove.CookProgressTicks = 0f;
             stove.CurrentBillIndex = -1;
             stove.ActiveCookEntityId = 0;
-            if (store.TryGetEntityById(cookId, out var cookEnt))
+
+            if (store.TryGetEntityById(f.CookEntityId, out var cookEnt))
             {
                 if (cookEnt.HasComponent<Cooking>()) cookEnt.RemoveComponent<Cooking>();
                 if (cookEnt.HasComponent<BuildTarget>()) cookEnt.RemoveComponent<BuildTarget>();
             }
 
-            // Close the Cook job.
-            // Look up by stove tile (standing). Skip if already closed.
-            var cookJob = _jobs.GetByTile(standing);
+            var cookJob = _jobs.GetByTile(f.StandingTile);
             if (cookJob is not null && cookJob.Kind == JobKind.Cook
                 && (cookJob.State == JobState.Open || cookJob.State == JobState.Claimed))
             {
                 _completed.Add(cookJob.Id);
             }
-        });
+        }
         foreach (var id in _completed) _sim.CompleteJob(id);
     }
 
