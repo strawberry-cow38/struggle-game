@@ -23,6 +23,12 @@ public sealed class SimRuntime
     // add/remove events wired in the constructor (see ItemSpatialIndex).
     private readonly ItemSpatialIndex _itemIndex = new();
     public ItemSpatialIndex ItemIndex => _itemIndex;
+    // Needs (sleep / recreation) move over many sim-HOURS, so they don't
+    // need 60 Hz updates. Run their decay every NeedTickInterval ticks with
+    // the dt accumulated since the last run — the systems integrate by dt,
+    // so a coarse step is mathematically identical to many fine ones.
+    private const long NeedTickInterval = 250;
+    private float _needAccumDt;
     public long Tick { get; private set; }
     public long MapVersion { get; private set; }
     public long RoomVersion { get; private set; }
@@ -320,6 +326,11 @@ public sealed class SimRuntime
     public void Step(float dt)
     {
         while (_commands.TryDequeue(out var cmd)) cmd.Apply(this);
+        // Need decay runs on a rare tick (see NeedTickInterval). Accumulate
+        // dt every tick; the gated systems below consume it when it fires.
+        _needAccumDt += dt;
+        bool needTick = Tick % NeedTickInterval == 0;
+        float needDt = _needAccumDt;
         // Advance world time. Sun bytes derived once per tick; any change
         // marks the light grid dirty so the end-of-tick coalesce picks it
         // up. ComputeSun is cheap (a few mults + a smoothstep).
@@ -353,13 +364,13 @@ public sealed class SimRuntime
         _stoves.Step(Store, dt);
         _cooks.Step(Store, dt);
         _urBoards.Step(Store, dt);
-        _recreation.Step(Store, dt);
+        if (needTick) _recreation.Step(Store, needDt);
         _doorBuilds.Step(Store, dt);
         _doors.Step(Store, dt);
         _bpClearance.Step(Store, dt);
         _bpHauls.Step(Store, dt);
         _hauls.Step(Store, dt);
-        _sleep.Step(Store, dt);
+        if (needTick) { _sleep.Step(Store, needDt); _needAccumDt = 0f; }
         AgeRoofFlashes(dt);
         // A coincident stack can only form when an item was added this tick
         // (spawn / haul deliver / cook output). Skip the merge scans
