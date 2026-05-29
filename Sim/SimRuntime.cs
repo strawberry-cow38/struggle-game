@@ -1171,12 +1171,32 @@ public sealed class SimRuntime
             int assignedBedId = ent.HasComponent<AssignedBed>() ? ent.GetComponent<AssignedBed>().BedEntityId : 0;
             float recLevel = ent.HasComponent<RecreationNeed>() ? ent.GetComponent<RecreationNeed>().Level : 1f;
             RecreationKind? atRecKind = ent.HasComponent<AtRecreation>() ? ent.GetComponent<AtRecreation>().Kind : null;
+
+            HealthState healthState = default;
+            if (ent.HasComponent<Health>())
+            {
+                var hc = ent.GetComponent<Health>();
+                InjuryState[] injuries = Array.Empty<InjuryState>();
+                if (hc.Injuries is { Count: > 0 })
+                {
+                    injuries = new InjuryState[hc.Injuries.Count];
+                    for (int ii = 0; ii < hc.Injuries.Count; ii++)
+                    {
+                        var inj = hc.Injuries[ii];
+                        injuries[ii] = new InjuryState(inj.PartId, inj.Kind, inj.Severity);
+                    }
+                }
+                healthState = new HealthState(
+                    hc.BloodLevel, hc.Consciousness, hc.Moving, hc.Manipulation,
+                    hc.Sight, hc.Unconscious, injuries);
+            }
+
             dummiesBuf[i++] = new DummyState(
                 ent.Id, p.X, p.Y, label, drafted, carrying,
                 inventory, carryW, carryB,
                 SimConstants.MaxCarryWeight, SimConstants.MaxCarryBulk,
                 sleepLevel, isSleeping, assignedBedId,
-                recLevel, atRecKind, equipped, held);
+                recLevel, atRecKind, equipped, held, healthState);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {

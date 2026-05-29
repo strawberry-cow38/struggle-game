@@ -137,9 +137,23 @@ public readonly record struct DummyState(
     float RecreationLevel,
     RecreationKind? AtRecreationKind,
     EquippedSlotState[] Equipped,
-    HeldStackState[] Held);
+    HeldStackState[] Held,
+    HealthState Health);
 
 public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath, int Count, bool Forbidden);
+
+// Health snapshot for the colonist panel: blood + the derived capacities
+// + the live injury list (part id + condition + severity).
+public readonly record struct HealthState(
+    float BloodLevel,
+    float Consciousness,
+    float Moving,
+    float Manipulation,
+    float Sight,
+    bool Unconscious,
+    InjuryState[] Injuries);
+
+public readonly record struct InjuryState(string PartId, StruggleGame.Sim.Bodies.ConditionKind Kind, float Severity);
 
 // Persistent inventory rows for the pawn info panel. Equipped slots and
 // general (held) stacks are indexed by position in their respective

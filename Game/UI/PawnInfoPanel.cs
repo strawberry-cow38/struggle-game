@@ -37,6 +37,11 @@ public partial class PawnInfoPanel : CanvasLayer
     private Label _invEmptyLabel = null!;
     private VBoxContainer _equipList = null!;
     private Label _equipEmptyLabel = null!;
+    private Label _bloodLabel = null!;
+    private Label _capLabel2 = null!;
+    private VBoxContainer _injuryList = null!;
+    private Label _injuryEmptyLabel = null!;
+    private string _lastInjurySig = "";
 
     private int _shownPawnId = -1;
     private long _lastSnapshotTick = -1;
@@ -121,6 +126,28 @@ public partial class PawnInfoPanel : CanvasLayer
             CustomMinimumSize = new Vector2(0, 18),
         };
         vbox.AddChild(_recBar);
+
+        vbox.AddChild(new HSeparator());
+
+        var healthHeader = new Label { Text = "Health" };
+        healthHeader.AddThemeFontSizeOverride("font_size", 14);
+        vbox.AddChild(healthHeader);
+
+        _bloodLabel = new Label { Text = "" };
+        _bloodLabel.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(_bloodLabel);
+
+        _capLabel2 = new Label { Text = "", AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        _capLabel2.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(_capLabel2);
+
+        _injuryList = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        _injuryList.AddThemeConstantOverride("separation", 2);
+        vbox.AddChild(_injuryList);
+
+        _injuryEmptyLabel = new Label { Text = "(no injuries)" };
+        _injuryEmptyLabel.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(_injuryEmptyLabel);
 
         vbox.AddChild(new HSeparator());
 
@@ -218,6 +245,22 @@ public partial class PawnInfoPanel : CanvasLayer
 
         _capLabel.Text = $"Carry: {p.CarryWeight:0.#} / {p.MaxCarryWeight:0.#} wt    {p.CarryBulk:0.#} / {p.MaxCarryBulk:0.#} bulk";
 
+        // Health — live labels every tick; the injury list rebuilds only
+        // when its content changes (gated separately from the row sig so
+        // the equip/inventory early-return below doesn't skip it).
+        var hs = p.Health;
+        string downed = hs.Unconscious ? "  [UNCONSCIOUS]" : "";
+        _bloodLabel.Text = $"Blood: {hs.BloodLevel * 100f:0}%    Consciousness: {hs.Consciousness * 100f:0}%{downed}";
+        _capLabel2.Text = $"Move {hs.Moving * 100f:0}%  ·  Manip {hs.Manipulation * 100f:0}%  ·  Sight {hs.Sight * 100f:0}%";
+        string injSig = BuildInjurySignature(hs.Injuries);
+        if (injSig != _lastInjurySig || pawnId != _shownPawnId)
+        {
+            _lastInjurySig = injSig;
+            foreach (var child in _injuryList.GetChildren()) child.QueueFree();
+            _injuryEmptyLabel.Visible = hs.Injuries.Length == 0;
+            foreach (var inj in hs.Injuries) BuildInjuryRow(inj);
+        }
+
         // Only rebuild the clickable rows when their contents actually
         // change — see _lastRowSig. Pawn switch forces a rebuild.
         string sig = BuildRowSignature(p);
@@ -243,6 +286,35 @@ public partial class PawnInfoPanel : CanvasLayer
         {
             BuildSlotRow(p.EntityId, slot);
         }
+    }
+
+    private static string BuildInjurySignature(InjuryState[] injuries)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var inj in injuries)
+            sb.Append(inj.PartId).Append((int)inj.Kind).Append((int)(inj.Severity * 100)).Append(';');
+        return sb.ToString();
+    }
+
+    private void BuildInjuryRow(InjuryState inj)
+    {
+        string part = StruggleGame.Sim.Bodies.BodyTree.TryGet(inj.PartId, out var def)
+            ? def.DisplayName : inj.PartId;
+        string kind = inj.Kind.ToString();
+        string detail = inj.Kind switch
+        {
+            StruggleGame.Sim.Bodies.ConditionKind.Missing => "missing",
+            StruggleGame.Sim.Bodies.ConditionKind.Scar => "scar",
+            _ => $"{kind.ToLower()} {inj.Severity * 100f:0}%",
+        };
+        var line = new Label { Text = $"{part}: {detail}" };
+        line.AddThemeFontSizeOverride("font_size", 11);
+        // Tint by how nasty it is.
+        Color c = inj.Kind == StruggleGame.Sim.Bodies.ConditionKind.Missing
+            ? new Color(1f, 0.4f, 0.4f)
+            : inj.Severity >= 0.6f ? new Color(1f, 0.6f, 0.3f) : new Color(0.9f, 0.85f, 0.6f);
+        line.AddThemeColorOverride("font_color", c);
+        _injuryList.AddChild(line);
     }
 
     private static string BuildRowSignature(DummyState p)
