@@ -77,6 +77,23 @@ public class HealthTests
     }
 
     [Fact]
+    public void PainShock_DownsColonist_EvenWithoutBleeding()
+    {
+        var h = Fresh();
+        // Bruises don't bleed and barely touch capacities, but pile on
+        // enough and the pain alone knocks the colonist out.
+        Injure(ref h, "ArmL", ConditionKind.Bruise, 1f);
+        Injure(ref h, "ArmR", ConditionKind.Bruise, 1f);
+        Injure(ref h, "LegL", ConditionKind.Bruise, 1f);
+        Injure(ref h, "LegR", ConditionKind.Bruise, 1f);
+        Injure(ref h, "Torso", ConditionKind.Bruise, 1f);
+        Injure(ref h, "Head", ConditionKind.Bruise, 1f);
+        Assert.True(h.Pain >= HealthSystem.PainShockThreshold);
+        Assert.True(h.Unconscious);
+        Assert.True(h.BloodLevel >= 0.99f); // not from blood loss — pure pain
+    }
+
+    [Fact]
     public void SmallCut_HealsAwayUntended()
     {
         var h = Fresh();

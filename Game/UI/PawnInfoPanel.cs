@@ -252,7 +252,7 @@ public partial class PawnInfoPanel : CanvasLayer
         string downed = hs.Unconscious ? "  [UNCONSCIOUS]" : "";
         string bleeding = hs.BleedRate > 0f ? $"    bleeding {hs.BleedRate * 100f:0.0}%/s" : "";
         _bloodLabel.Text = $"Blood: {hs.BloodLevel * 100f:0}%{bleeding}    Consciousness: {hs.Consciousness * 100f:0}%{downed}";
-        _capLabel2.Text = $"Move {hs.Moving * 100f:0}%  ·  Manip {hs.Manipulation * 100f:0}%  ·  Sight {hs.Sight * 100f:0}%";
+        _capLabel2.Text = $"Move {hs.Moving * 100f:0}%  ·  Manip {hs.Manipulation * 100f:0}%  ·  Sight {hs.Sight * 100f:0}%  ·  Pain {hs.Pain * 100f:0}%";
         string injSig = BuildInjurySignature(hs.Injuries);
         if (injSig != _lastInjurySig || pawnId != _shownPawnId)
         {

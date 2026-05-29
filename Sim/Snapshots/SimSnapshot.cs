@@ -152,6 +152,7 @@ public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath
 public readonly record struct HealthState(
     float BloodLevel,
     float BleedRate,
+    float Pain,
     float Consciousness,
     float Moving,
     float Manipulation,

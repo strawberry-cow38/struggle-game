@@ -131,4 +131,16 @@ public static class BodyTree
 
     public static bool IsPermanent(ConditionKind kind)
         => kind == ConditionKind.Scar || kind == ConditionKind.Missing;
+
+    // Pain contributed by one condition (summed across the body, clamped
+    // to 0..1). Enough total pain causes pain-shock → unconscious.
+    public static float Pain(ConditionKind kind, float severity) => kind switch
+    {
+        ConditionKind.Cut => 0.35f * severity,
+        ConditionKind.Burn => 0.45f * severity,
+        ConditionKind.Bruise => 0.15f * severity,
+        ConditionKind.Scar => 0.05f,
+        ConditionKind.Missing => 0.25f,
+        _ => 0f,
+    };
 }

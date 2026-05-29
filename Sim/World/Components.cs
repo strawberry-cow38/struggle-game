@@ -603,6 +603,7 @@ public struct Health : IComponent
     public float Sight;
     public float BloodPumping;
     public float Breathing;
+    public float Pain; // 0..1 summed across injuries; high pain -> shock
     public bool Unconscious;
     // Blood spilled but not yet dropped as a puddle. HealthSystem drips a
     // puddle each time this crosses a threshold.

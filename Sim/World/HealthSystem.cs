@@ -14,6 +14,7 @@ namespace StruggleGame.Sim.World;
 public sealed class HealthSystem
 {
     public const float UnconsciousThreshold = 0.30f;
+    public const float PainShockThreshold = 0.80f;  // total pain that downs a colonist
     public const float WorsenThreshold = 0.60f;   // severity at/above which an untended wound worsens
     public const float HealPerSec = 0.0002f;       // severity/sim-sec for small wounds
     public const float WorsenPerSec = 0.0001f;
@@ -104,9 +105,15 @@ public sealed class HealthSystem
     {
         var missing = _missingScratch;
         missing.Clear();
+        float pain = 0f;
         if (h.Injuries is not null)
             foreach (var inj in h.Injuries)
+            {
                 if (inj.Kind == ConditionKind.Missing) missing.Add(inj.PartId);
+                pain += BodyTree.Pain(inj.Kind, inj.Severity);
+            }
+        pain = Math.Clamp(pain, 0f, 1f);
+        h.Pain = pain;
 
         var num = _numScratch;
         System.Array.Clear(num, 0, num.Length);
@@ -148,7 +155,10 @@ public sealed class HealthSystem
         // you can't walk or work.
         h.Moving = Math.Clamp(Cap(HealthCapacity.Moving) * consciousness, 0f, 1f);
         h.Manipulation = Math.Clamp(Cap(HealthCapacity.Manipulation) * consciousness, 0f, 1f);
-        h.Unconscious = consciousness < UnconsciousThreshold;
+        // Pass out from low consciousness OR from pain shock — the latter
+        // lets even non-bleeding injuries (e.g. lots of bruises) down a
+        // colonist.
+        h.Unconscious = consciousness < UnconsciousThreshold || pain >= PainShockThreshold;
     }
 
     [ThreadStatic] private static HashSet<string>? _missingScratchTls;
