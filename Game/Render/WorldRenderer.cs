@@ -91,6 +91,11 @@ public partial class WorldRenderer : Node2D
     private static readonly Color PathTargetColor = new(1.0f, 0.92f, 0.10f, 1.0f);
     private static readonly Color DraftedRing = new(1.0f, 0.25f, 0.20f, 1.0f);
     private static readonly Color EquippedMarkerColor = new(0.30f, 0.85f, 1.0f, 1.0f);
+    // Reused polygon scratch so the per-pawn / per-crop draw loops don't
+    // heap-allocate a fresh Vector2[] every frame. DrawColoredPolygon
+    // copies the points immediately, so a shared buffer is safe.
+    private readonly Vector2[] _equipDiamondPts = new Vector2[4];
+    private readonly Vector2[] _cropTriPts = new Vector2[3];
     private static readonly Color OrderMarker = new(1.0f, 0.40f, 0.20f, 0.95f);
     private static readonly Color TrunkColor = new(0.32f, 0.20f, 0.10f);
     private static readonly Color CanopyColor = new(0.20f, 0.50f, 0.18f);
@@ -593,14 +598,11 @@ public partial class WorldRenderer : Node2D
                     // per-item apparel sprites exist.
                     float s = PixelsPerTile * 0.16f;
                     var ec = new Vector2(center.X + radius * 0.6f, center.Y + radius * 0.6f);
-                    var diamond = new Vector2[4]
-                    {
-                        new Vector2(ec.X, ec.Y - s),
-                        new Vector2(ec.X + s, ec.Y),
-                        new Vector2(ec.X, ec.Y + s),
-                        new Vector2(ec.X - s, ec.Y),
-                    };
-                    DrawColoredPolygon(diamond, EquippedMarkerColor);
+                    _equipDiamondPts[0] = new Vector2(ec.X, ec.Y - s);
+                    _equipDiamondPts[1] = new Vector2(ec.X + s, ec.Y);
+                    _equipDiamondPts[2] = new Vector2(ec.X, ec.Y + s);
+                    _equipDiamondPts[3] = new Vector2(ec.X - s, ec.Y);
+                    DrawColoredPolygon(_equipDiamondPts, EquippedMarkerColor);
                 }
                 if (_selectedDummyIdsScratch.Contains(d.EntityId))
                 {
@@ -813,7 +815,8 @@ public partial class WorldRenderer : Node2D
         var p0 = center + new Vector2(-bodyW * 0.5f, -bodyH * 0.10f);
         var p1 = center + new Vector2(bodyW * 0.5f, -bodyH * 0.10f);
         var p2 = center + new Vector2(0f, bodyH);
-        DrawColoredPolygon(new[] { p0, p1, p2 }, CarrotBody);
+        _cropTriPts[0] = p0; _cropTriPts[1] = p1; _cropTriPts[2] = p2;
+        DrawColoredPolygon(_cropTriPts, CarrotBody);
         DrawLine(p0, p2, CarrotBodyDark, width: 1f);
         DrawLine(p1, p2, CarrotBodyDark, width: 1f);
 

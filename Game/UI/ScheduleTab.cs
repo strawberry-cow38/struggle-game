@@ -33,6 +33,10 @@ public partial class ScheduleTab : CanvasLayer
     private long _lastSnapshotTick = -1;
     private bool _suppressEvents;
     private PawnWorkState[] _rows = System.Array.Empty<PawnWorkState>();
+    // Content signature of the grid last built. The grid cells carry
+    // GuiInput / MouseEntered drag-paint handlers; rebuilding every tick
+    // would tear a cell out mid-drag. Rebuild only when this changes.
+    private string _lastGridSig = "";
     private ScheduleCategory _activePaint = ScheduleCategory.Work;
     private readonly Button[] _swatches = new Button[4];
     // Maps each cell ColorRect (one per pawn × hour) back to its
@@ -191,6 +195,13 @@ public partial class ScheduleTab : CanvasLayer
         _rows = new PawnWorkState[pw.Length];
         for (int i = 0; i < pw.Length; i++) _rows[i] = pw[i];
 
+        // Rebuild the grid only when schedule content or the highlighted
+        // current hour changes — otherwise the persistent cells keep their
+        // drag-paint handlers alive across ticks.
+        string sig = BuildGridSignature(curHour, _rows);
+        if (sig == _lastGridSig) { _suppressEvents = false; return; }
+        _lastGridSig = sig;
+
         foreach (var child in _grid.GetChildren()) child.QueueFree();
         _cellLookup.Clear();
 
@@ -247,6 +258,19 @@ public partial class ScheduleTab : CanvasLayer
         }
 
         _suppressEvents = false;
+    }
+
+    private static string BuildGridSignature(int curHour, PawnWorkState[] rows)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(curHour).Append('|');
+        foreach (var r in rows)
+        {
+            sb.Append(r.EntityId).Append(':').Append(r.Name).Append(':');
+            foreach (var h in r.Schedule) sb.Append(h).Append(',');
+            sb.Append('#');
+        }
+        return sb.ToString();
     }
 
     private static Color ColorFor(ScheduleCategory cat) => cat switch

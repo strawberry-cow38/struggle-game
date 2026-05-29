@@ -38,6 +38,9 @@ public partial class StockpilePanel : CanvasLayer
     // a snapshot — otherwise the rebuild would echo back as user clicks.
     private bool _suppressEvents;
     private string _searchFilter = string.Empty;
+    // Signature of the filter tree last built (zone + filter + allowed
+    // set). Gates the Clear()+rebuild so checkbox rows survive clicks.
+    private string _lastTreeSig = "";
 
     public override void _Ready()
     {
@@ -206,12 +209,21 @@ public partial class StockpilePanel : CanvasLayer
         var sp = spOverride ?? FindStockpile(snap, sel.Value);
         if (sp is null) return;
 
+        string filter = _searchFilter.Trim().ToLowerInvariant();
+
+        // Only rebuild the tree when the allowed set, filter, or selected
+        // zone changes. The tree's rows are checkboxes the player clicks;
+        // clearing + recreating them every tick would eat the click.
+        var sortedAllowed = new List<string>(sp.Value.AllowedItemPaths);
+        sortedAllowed.Sort(StringComparer.Ordinal);
+        string sig = sp.Value.Id + "|" + filter + "|" + string.Join(",", sortedAllowed);
+        if (sig == _lastTreeSig) return;
+        _lastTreeSig = sig;
+
         _suppressEvents = true;
         _filterTree.Clear();
         var root = _filterTree.CreateItem();
         var allowed = new HashSet<string>(sp.Value.AllowedItemPaths);
-
-        string filter = _searchFilter.Trim().ToLowerInvariant();
         foreach (var cat in ItemCatalog.Roots)
         {
             BuildCategoryNode(root, cat, allowed, filter);

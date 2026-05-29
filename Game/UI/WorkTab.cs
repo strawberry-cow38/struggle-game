@@ -32,6 +32,10 @@ public partial class WorkTab : CanvasLayer
     // current values without round-tripping through the snapshot.
     private PawnWorkState[] _rows = System.Array.Empty<PawnWorkState>();
     private bool _checkmarkMode = true;
+    // Content signature of the grid last built. The grid holds clickable
+    // Button cells; rebuilding it every snapshot tick would QueueFree a
+    // cell mid-click and swallow the press. Rebuild only when this changes.
+    private string _lastGridSig = "";
 
     public override void _Ready()
     {
@@ -143,6 +147,12 @@ public partial class WorkTab : CanvasLayer
         _rows = new PawnWorkState[pw.Length];
         for (int i = 0; i < pw.Length; i++) _rows[i] = pw[i];
 
+        // Skip the node rebuild when nothing the grid shows has changed
+        // (keeps cell Buttons alive across ticks so clicks register).
+        string sig = BuildGridSignature(_checkmarkMode, _rows);
+        if (sig == _lastGridSig) { _suppressEvents = false; return; }
+        _lastGridSig = sig;
+
         foreach (var child in _grid.GetChildren()) child.QueueFree();
 
         // Header row.
@@ -195,6 +205,21 @@ public partial class WorkTab : CanvasLayer
         }
 
         _suppressEvents = false;
+    }
+
+    private static string BuildGridSignature(bool checkmark, PawnWorkState[] rows)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(checkmark ? '1' : '0').Append('|');
+        foreach (var r in rows)
+        {
+            sb.Append(r.EntityId).Append(':').Append(r.Name).Append(':');
+            foreach (var p in r.Priorities) sb.Append(p).Append(',');
+            sb.Append(';');
+            foreach (var a in r.Allowed) sb.Append(a ? '1' : '0');
+            sb.Append('#');
+        }
+        return sb.ToString();
     }
 
     private static string CellLabel(bool checkmark, byte priority, bool allowed)

@@ -3612,11 +3612,18 @@ public sealed class SimRuntime
     // same tile whose combined count fits in one stack collapse into one
     // entity. The result is at-most-one wood entity per tile, which is
     // what TryFindBestHaulDest assumes.
+    // Reused scratch for the two end-of-tick merge passes — they run
+    // sequentially (never nested), so they can share the op/delete lists.
+    private readonly Dictionary<TilePos, Entity> _mergeWoodByTile = new();
+    private readonly Dictionary<(TilePos Tile, string Path), Entity> _mergePileByKey = new();
+    private readonly List<(int destId, int amt)> _mergeOpsScratch = new();
+    private readonly List<Entity> _mergeDeletesScratch = new();
+
     private void MergeCoincidentWood()
     {
-        var byTile = new Dictionary<TilePos, Entity>();
-        var mergeOps = new List<(int destId, int amt)>();
-        var deletes = new List<Entity>();
+        var byTile = _mergeWoodByTile; byTile.Clear();
+        var mergeOps = _mergeOpsScratch; mergeOps.Clear();
+        var deletes = _mergeDeletesScratch; deletes.Clear();
         Store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) =>
         {
             if (e.HasComponent<HaulReserved>()) return;
@@ -3649,9 +3656,9 @@ public sealed class SimRuntime
     // generic cap until per-item stack sizes get pulled into ItemCatalog.
     private void MergeCoincidentItemPiles()
     {
-        var byKey = new Dictionary<(TilePos Tile, string Path), Entity>();
-        var mergeOps = new List<(int destId, int amt)>();
-        var deletes = new List<Entity>();
+        var byKey = _mergePileByKey; byKey.Clear();
+        var mergeOps = _mergeOpsScratch; mergeOps.Clear();
+        var deletes = _mergeDeletesScratch; deletes.Clear();
         Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
         {
             if (e.HasComponent<HaulReserved>()) return;

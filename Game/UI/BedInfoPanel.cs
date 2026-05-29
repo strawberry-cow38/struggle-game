@@ -29,6 +29,10 @@ public partial class BedInfoPanel : CanvasLayer
     // PawnEntityId at each OptionButton index. Index 0 is always 0 = Unassigned.
     private readonly List<int> _assignIds = new();
     private bool _suppressAssign;
+    // Signature of the assign dropdown's contents last built. Clearing +
+    // refilling the OptionButton every tick would close it under the
+    // player mid-selection; rebuild only when this changes.
+    private string _lastAssignSig = "";
 
     private TilePos[] _shownTiles = Array.Empty<TilePos>();
     private long _lastSnapshotTick = -1;
@@ -161,6 +165,19 @@ public partial class BedInfoPanel : CanvasLayer
 
     private void RebuildAssignDropdown(SimSnapshot snap, List<BedState> live)
     {
+        // Only rebuild when the roster or the selected assignee changes —
+        // keeps the dropdown stable/openable between ticks.
+        var sb = new System.Text.StringBuilder();
+        int firstAssignee0 = live[0].AssignedPawnEntityId;
+        bool allSame0 = true;
+        for (int i = 1; i < live.Count; i++)
+            if (live[i].AssignedPawnEntityId != firstAssignee0) { allSame0 = false; break; }
+        sb.Append(allSame0 ? firstAssignee0 : -1).Append('|');
+        foreach (var p in snap.PawnWork) sb.Append(p.EntityId).Append(':').Append(p.Name).Append(';');
+        string sig = sb.ToString();
+        if (sig == _lastAssignSig) return;
+        _lastAssignSig = sig;
+
         _suppressAssign = true;
         _assignBtn.Clear();
         _assignIds.Clear();
