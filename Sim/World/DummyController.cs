@@ -121,6 +121,10 @@ public sealed class DummyController
     // Melee: punch cadence + flat miss chance (melee-skill stub).
     private const long MeleeAttackInterval = 60;
     private const double MeleeMissChance = 0.10;
+    private const long MeleeEngagedTicks = 120;  // victim stays slowed ~2s after a swing
+    private const long MeleeStunTicks = 30;       // ~0.5s frozen on a stun
+    private const double MeleeStunChance = 0.25;
+    private const float EngagedSlowFactor = 0.5f;
     // Wired by SimRuntime: land a melee hit on a target entity.
     public Action<int>? MeleeHit;
 
@@ -173,7 +177,10 @@ public sealed class DummyController
             // Injured legs slow the walk (Moving capacity), floored so a
             // hurt-but-conscious pawn can still crawl.
             float bx = pos.X, by = pos.Y;
-            AdvanceAlongPath(ref pos, ref path, dt, view, HealthMods.MoveSpeed(entity));
+            float speedMul = HealthMods.MoveSpeed(entity);
+            if (entity.HasComponent<Combat>() && tick < entity.GetComponent<Combat>().EngagedUntil)
+                speedMul *= EngagedSlowFactor;
+            AdvanceAlongPath(ref pos, ref path, dt, view, speedMul);
             float mdx = pos.X - bx, mdy = pos.Y - by;
             if (mdx * mdx + mdy * mdy > 1e-9f) w.Facing = MathF.Atan2(mdy, mdx);
         });
@@ -232,6 +239,16 @@ public sealed class DummyController
                 else _jobs.Release(bt.JobId);
                 cb.RemoveComponent<BuildTarget>(entity.Id);
             }
+            if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
+            path.Waypoints = null;
+            path.Index = 0;
+            return;
+        }
+
+        // Stunned (just took a melee hit): frozen for a moment — can't
+        // move or act.
+        if (entity.HasComponent<Combat>() && _tick < entity.GetComponent<Combat>().StunUntil)
+        {
             if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
             path.Waypoints = null;
             path.Index = 0;
@@ -476,7 +493,27 @@ public sealed class DummyController
                     w.Facing = MathF.Atan2(tp.Y - pos.Y, tp.X - pos.X); // face the victim
                     if (_tick - mt.LastHitTick >= MeleeAttackInterval)
                     {
-                        if (_rng.NextDouble() >= MeleeMissChance) MeleeHit?.Invoke(mt.TargetEntityId);
+                        // Swing: lunge anim on attacker; victim is engaged
+                        // (slowed) whether or not it connects.
+                        if (entity.HasComponent<Combat>())
+                        { ref var ac = ref entity.GetComponent<Combat>(); ac.SwingTick = _tick; }
+                        if (tgt.HasComponent<Combat>())
+                        { ref var tc = ref tgt.GetComponent<Combat>(); tc.EngagedUntil = _tick + MeleeEngagedTicks; }
+
+                        if (_rng.NextDouble() >= MeleeMissChance)
+                        {
+                            MeleeHit?.Invoke(mt.TargetEntityId);
+                            if (tgt.HasComponent<Combat>())
+                            {
+                                ref var tc = ref tgt.GetComponent<Combat>();
+                                tc.FlinchTick = _tick;
+                                if (_rng.NextDouble() < MeleeStunChance) tc.StunUntil = _tick + MeleeStunTicks;
+                            }
+                        }
+                        else if (entity.HasComponent<Combat>())
+                        {
+                            ref var ac = ref entity.GetComponent<Combat>(); ac.MissTick = _tick;
+                        }
                         ref var live = ref entity.GetComponent<MeleeTarget>();
                         live.LastHitTick = _tick;
                     }

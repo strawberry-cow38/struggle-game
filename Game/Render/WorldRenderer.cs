@@ -579,6 +579,16 @@ public partial class WorldRenderer : Node2D
                     drawY = Mathf.Lerp(prev.Y, d.Y, interpAlpha);
                 }
                 var center = new Vector2(drawX * PixelsPerTile, drawY * PixelsPerTile);
+                // Combat juice: lunge forward on a swing, recoil on a hit.
+                {
+                    var fdir = new Vector2(Mathf.Cos(d.Facing), Mathf.Sin(d.Facing));
+                    long sinceSwing = snap.Tick - d.SwingTick;
+                    if (d.SwingTick > 0 && sinceSwing >= 0 && sinceSwing < LungeTicks)
+                        center += fdir * (Mathf.Sin(sinceSwing / (float)LungeTicks * Mathf.Pi) * PixelsPerTile * 0.30f);
+                    long sinceFlinch = snap.Tick - d.FlinchTick;
+                    if (d.FlinchTick > 0 && sinceFlinch >= 0 && sinceFlinch < FlinchTicks)
+                        center -= fdir * (Mathf.Sin(sinceFlinch / (float)FlinchTicks * Mathf.Pi) * PixelsPerTile * 0.22f);
+                }
                 DrawCircle(center, radius, DummyColor);
                 // Facing arrow: a small triangle on the rim pointing the
                 // way the colonist last moved.
@@ -646,6 +656,11 @@ public partial class WorldRenderer : Node2D
                 {
                     DrawDownedExclaims(labelFont, center, radius);
                 }
+                long sinceMiss = snap.Tick - d.MissTick;
+                if (d.MissTick > 0 && sinceMiss >= 0 && sinceMiss < MissTextTicks && labelFont is not null)
+                {
+                    DrawMissedText(labelFont, center, radius, 1f - sinceMiss / (float)MissTextTicks);
+                }
             }
         }
 
@@ -678,6 +693,23 @@ public partial class WorldRenderer : Node2D
             col.A = 1f - phase;
             DrawString(font, p, "Z", HorizontalAlignment.Left, -1f, SleepZFontSize, col);
         }
+    }
+
+    // Combat anim windows (sim ticks).
+    private const long LungeTicks = 8;
+    private const long FlinchTicks = 8;
+    private const long MissTextTicks = 45;
+    private const int MissedFontSize = 24;
+    private static readonly Color MissedColor = new(0.85f, 0.85f, 0.9f, 1f);
+
+    // "Missed!" floating up + fading from the attacker on a whiff.
+    private void DrawMissedText(Font font, Vector2 center, float radius, float fade)
+    {
+        var col = MissedColor;
+        col.A = Mathf.Clamp(fade, 0f, 1f);
+        float rise = (1f - fade) * PixelsPerTile * 0.5f;
+        var p = new Vector2(center.X - PixelsPerTile * 0.35f, center.Y - radius - 4f - rise);
+        DrawString(font, p, "Missed!", HorizontalAlignment.Left, -1f, MissedFontSize, col);
     }
 
     // Alarm "!" glyphs streaming up from a downed colonist's head — the

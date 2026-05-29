@@ -143,7 +143,10 @@ public readonly record struct DummyState(
     EquippedSlotState[] Equipped,
     HeldStackState[] Held,
     HealthState Health,
-    float Facing);
+    float Facing,
+    long SwingTick,
+    long MissTick,
+    long FlinchTick);
 
 public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath, int Count, bool Forbidden);
 

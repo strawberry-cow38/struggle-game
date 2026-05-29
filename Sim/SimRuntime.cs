@@ -594,6 +594,11 @@ public sealed class SimRuntime
         ent.AddComponent(new SleepNeed { Level = 1f });
     }
 
+    public static void EnsureCombat(Entity ent)
+    {
+        if (!ent.HasComponent<Combat>()) ent.AddComponent(new Combat());
+    }
+
     // Full-health body: full blood, no injuries, every capacity at 1.0.
     public static void EnsureHealth(Entity ent)
     {
@@ -1195,12 +1200,19 @@ public sealed class SimRuntime
                     hc.Sight, hc.Unconscious, injuries);
             }
 
+            long swingT = 0, missT = 0, flinchT = 0;
+            if (ent.HasComponent<Combat>())
+            {
+                var cm = ent.GetComponent<Combat>();
+                swingT = cm.SwingTick; missT = cm.MissTick; flinchT = cm.FlinchTick;
+            }
             dummiesBuf[i++] = new DummyState(
                 ent.Id, p.X, p.Y, label, drafted, carrying,
                 inventory, carryW, carryB,
                 SimConstants.MaxCarryWeight, SimConstants.MaxCarryBulk,
                 sleepLevel, isSleeping, assignedBedId,
-                recLevel, atRecKind, equipped, held, healthState, wr.Facing);
+                recLevel, atRecKind, equipped, held, healthState, wr.Facing,
+                swingT, missT, flinchT);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {
@@ -5229,6 +5241,7 @@ public sealed class SimRuntime
             EnsureSchedule(e);
             EnsureSleepNeed(e);
             EnsureHealth(e);
+            EnsureCombat(e);
             return true;
         }
         return false;
@@ -5295,6 +5308,7 @@ public sealed class SimRuntime
                     EnsureSleepNeed(e);
                     EnsureRecreationNeed(e);
                     EnsureHealth(e);
+                    EnsureCombat(e);
                     return;
                 }
             }

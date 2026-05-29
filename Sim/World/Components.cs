@@ -581,6 +581,18 @@ public struct PickupOrder : IComponent
     public int RequestedCount;
 }
 
+// Transient combat state for juice + gameplay. All values are sim-tick
+// stamps/deadlines (0 = none). The renderer reads SwingTick/MissTick/
+// FlinchTick for animations; StunUntil/EngagedUntil drive behavior.
+public struct Combat : IComponent
+{
+    public long SwingTick;     // last tick this pawn threw a punch (lunge anim)
+    public long MissTick;      // last tick this pawn missed (Missed! text)
+    public long FlinchTick;    // last tick this pawn was hit (flinch anim)
+    public long StunUntil;     // stunned (no move/attack) until this tick
+    public long EngagedUntil;  // slowed by melee until this tick
+}
+
 // Drafted-pawn order: close on TargetEntityId and punch it on a cadence
 // until it's downed. Cleared by a new move order, a new attack, the
 // target going down, or un-drafting. Handled in DummyController.
