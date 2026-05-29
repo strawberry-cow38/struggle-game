@@ -41,6 +41,11 @@ public sealed class ItemSpatialIndex
     private readonly Dictionary<int, Entry> _byEntity = new();
     private readonly Dictionary<TilePos, int> _woodTileCount = new();
     private readonly Dictionary<(int, int), List<int>> _chunks = new();
+    // Item entities currently carrying HaulReserved (any kind, wood or pile).
+    private readonly HashSet<int> _reserved = new();
+    // Count of UNRESERVED wood per tile — what wedges a door open. Kept in
+    // sync as wood is added/removed and as reservations flip on/off.
+    private readonly Dictionary<TilePos, int> _unreservedWoodTileCount = new();
     // Set whenever an item is added; lets the merge passes skip entirely on
     // ticks where nothing new dropped (a coincident stack can only appear
     // when an item is added to an already-occupied tile).
@@ -56,7 +61,12 @@ public sealed class ItemSpatialIndex
         _addedSinceMergeDrain = true;
         _byEntity[entityId] = new Entry(tile, isWood, path);
         if (isWood)
+        {
             _woodTileCount[tile] = _woodTileCount.GetValueOrDefault(tile) + 1;
+            // Fresh wood isn't reserved yet, but stay defensive in case the
+            // reserve event somehow landed first.
+            if (!_reserved.Contains(entityId)) Bump(_unreservedWoodTileCount, tile, +1);
+        }
         var key = ChunkOf(tile);
         if (!_chunks.TryGetValue(key, out var list)) { list = new List<int>(); _chunks[key] = list; }
         list.Add(entityId);
@@ -70,13 +80,38 @@ public sealed class ItemSpatialIndex
         {
             int n = _woodTileCount.GetValueOrDefault(e.Tile) - 1;
             if (n <= 0) _woodTileCount.Remove(e.Tile); else _woodTileCount[e.Tile] = n;
+            // Only the unreserved bucket counted it.
+            if (!_reserved.Contains(entityId)) Bump(_unreservedWoodTileCount, e.Tile, -1);
         }
+        _reserved.Remove(entityId);
         var key = ChunkOf(e.Tile);
         if (_chunks.TryGetValue(key, out var list))
         {
             list.Remove(entityId);
             if (list.Count == 0) _chunks.Remove(key);
         }
+    }
+
+    // HaulReserved added/removed (mirrored from the component events). A
+    // reserved wood stack no longer wedges a door — a pawn is coming for it.
+    public void OnReservedAdded(int entityId)
+    {
+        if (!_reserved.Add(entityId)) return;
+        if (_byEntity.TryGetValue(entityId, out var e) && e.IsWood)
+            Bump(_unreservedWoodTileCount, e.Tile, -1);
+    }
+
+    public void OnReservedRemoved(int entityId)
+    {
+        if (!_reserved.Remove(entityId)) return;
+        if (_byEntity.TryGetValue(entityId, out var e) && e.IsWood)
+            Bump(_unreservedWoodTileCount, e.Tile, +1);
+    }
+
+    private static void Bump(Dictionary<TilePos, int> map, TilePos tile, int delta)
+    {
+        int n = map.GetValueOrDefault(tile) + delta;
+        if (n <= 0) map.Remove(tile); else map[tile] = n;
     }
 
     // True (once) if any item was added since the last call. Lets the
@@ -93,6 +128,10 @@ public sealed class ItemSpatialIndex
     // True if any Wood stack sits on the tile (reserved or not). Matches
     // the old all-wood occupancy used by build-blocking checks.
     public bool AnyWoodAt(TilePos tile) => _woodTileCount.ContainsKey(tile);
+
+    // True if an UNRESERVED wood stack sits on the tile — the door-wedge
+    // condition (reserved wood is about to be hauled away, doesn't count).
+    public bool AnyUnreservedWoodAt(TilePos tile) => _unreservedWoodTileCount.ContainsKey(tile);
 
     // Nearest (Manhattan) item entity whose path matches, searched chunk
     // ring by chunk ring out from `from`. Returns false if none exist.
@@ -139,10 +178,20 @@ public sealed class ItemSpatialIndex
     public void ValidateAgainst(EntityStore store)
     {
         var live = new Dictionary<int, Entry>();
+        var liveUnreservedWood = new Dictionary<TilePos, int>();
         store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) =>
-            live[e.Id] = new Entry(w.Tile, true, ItemCatalog.Wood.FullPath));
+        {
+            live[e.Id] = new Entry(w.Tile, true, ItemCatalog.Wood.FullPath);
+            if (!e.HasComponent<HaulReserved>()) Bump(liveUnreservedWood, w.Tile, +1);
+        });
         store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
             live[e.Id] = new Entry(p.Tile, false, p.ItemPath));
+
+        if (liveUnreservedWood.Count != _unreservedWoodTileCount.Count)
+            throw new InvalidOperationException($"ItemSpatialIndex drift: unreserved-wood tiles index={_unreservedWoodTileCount.Count} store={liveUnreservedWood.Count}.");
+        foreach (var (tile, n) in liveUnreservedWood)
+            if (_unreservedWoodTileCount.GetValueOrDefault(tile) != n)
+                throw new InvalidOperationException($"ItemSpatialIndex drift: unreserved wood at {tile} index={_unreservedWoodTileCount.GetValueOrDefault(tile)} store={n}.");
 
         if (live.Count != _byEntity.Count)
             throw new InvalidOperationException($"ItemSpatialIndex drift: index has {_byEntity.Count} entries, store has {live.Count}.");

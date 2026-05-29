@@ -298,7 +298,7 @@ public sealed class SimRuntime
         _urBoards = new UrBoardSystem(this, Jobs);
         _recreation = new RecreationSystem(seed + 11, GetAvailableRecreationKinds);
         _doorBuilds = new DoorBuildSystem(this, Jobs);
-        _doors = new DoorSystem();
+        _doors = new DoorSystem(_itemIndex.AnyUnreservedWoodAt);
         _hauls = new HaulSystem(this, Jobs);
         _bpHauls = new BlueprintHaulSystem(this, Jobs);
         _bpClearance = new BlueprintClearanceSystem(this, Jobs);
@@ -3555,6 +3555,7 @@ public sealed class SimRuntime
     // ground (picked up, consumed-but-entity-kept, etc.) so we just drop it.
     private void OnItemComponentAdded(ComponentChanged c)
     {
+        if (c.Type == typeof(HaulReserved)) { _itemIndex.OnReservedAdded(c.EntityId); return; }
         if (!Store.TryGetEntityById(c.EntityId, out var e)) return;
         if (c.Type == typeof(Wood))
         {
@@ -3573,6 +3574,7 @@ public sealed class SimRuntime
 
     private void OnItemComponentRemoved(ComponentChanged c)
     {
+        if (c.Type == typeof(HaulReserved)) { _itemIndex.OnReservedRemoved(c.EntityId); return; }
         if (c.Type == typeof(Wood) || c.Type == typeof(ItemPile))
             _itemIndex.OnEntityGone(c.EntityId);
     }

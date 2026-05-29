@@ -101,6 +101,32 @@ public class ItemSpatialIndexTests
         sim.ItemIndex.ValidateAgainst(sim.Store);
     }
 
+    [Fact]
+    public void ReservedWood_DoesNotCountAsUnreserved()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var t = NearbyWalkable(sim, new TilePos(50, 50));
+        sim.SpawnWoodPile(t);
+
+        // Fresh wood: wedges a door (unreserved).
+        Assert.True(sim.ItemIndex.AnyUnreservedWoodAt(t));
+
+        // Find the wood entity and reserve it — should stop counting.
+        int id = 0;
+        sim.Store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) => { if (w.Tile == t) id = e.Id; });
+        Assert.True(sim.Store.TryGetEntityById(id, out var wood));
+        wood.AddComponent(new HaulReserved { JobId = StruggleGame.Sim.Jobs.JobId.None });
+        Assert.True(sim.ItemIndex.AnyWoodAt(t));            // still wood there
+        Assert.False(sim.ItemIndex.AnyUnreservedWoodAt(t)); // but reserved now
+        sim.ItemIndex.ValidateAgainst(sim.Store);
+
+        // Un-reserve: counts again.
+        wood.RemoveComponent<HaulReserved>();
+        Assert.True(sim.ItemIndex.AnyUnreservedWoodAt(t));
+        sim.ItemIndex.ValidateAgainst(sim.Store);
+    }
+
     private static TilePos NearbyWalkable(SimRuntime sim, TilePos near)
         => NearbyWalkableNotEqual(sim, near, new TilePos(int.MinValue, int.MinValue));
 

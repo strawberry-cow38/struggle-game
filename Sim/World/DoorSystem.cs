@@ -19,20 +19,19 @@ public sealed class DoorSystem
 
     // Reused per-tick scratch — cleared at top of Step rather than freshly
     // allocated, so the per-tick path doesn't churn the GC.
-    private readonly HashSet<TilePos> _blockedTiles = new();
     private readonly HashSet<TilePos> _occupiedTiles = new();
+    // "Unreserved wood on this tile" — from the item spatial index instead
+    // of a per-tick full Wood scan. Reserved wood (a hauler's coming for
+    // it) doesn't wedge the door, matching the old scan's filter.
+    private readonly Func<TilePos, bool> _anyUnreservedWoodAt;
+
+    public DoorSystem(Func<TilePos, bool> anyUnreservedWoodAt)
+    {
+        _anyUnreservedWoodAt = anyUnreservedWoodAt;
+    }
 
     public void Step(EntityStore store, float dt)
     {
-        // Items on a door tile physically wedge it open — collect the
-        // occupied tiles once so the door loop below is a pure lookup.
-        _blockedTiles.Clear();
-        store.Query<Wood>().ForEachEntity((ref Wood w, Entity e) =>
-        {
-            if (e.HasComponent<HaulReserved>()) return;
-            _blockedTiles.Add(w.Tile);
-        });
-
         // Colonists physically standing on a door tile keep it open too —
         // otherwise a pawn standing in the doorway gets sliced as a
         // second pawn walks through and triggers the close timer. Mover
@@ -63,7 +62,7 @@ public sealed class DoorSystem
                     door.ProgressSec = OpenTimeSec;
                 }
             }
-            bool blocked = _blockedTiles.Contains(door.Tile) || _occupiedTiles.Contains(door.Tile);
+            bool blocked = _anyUnreservedWoodAt(door.Tile) || _occupiedTiles.Contains(door.Tile);
             switch (door.State)
             {
                 case DoorState.Closed:
