@@ -118,48 +118,54 @@ public partial class ItemInfoPanel : CanvasLayer
         _root.Size = new Vector2(PanelWidth, _root.Size.Y);
     }
 
+    // One selected dropped stack, normalized across Wood + ItemPile.
+    private readonly record struct Stack(int Id, Sim.Map.TilePos Tile, int Count, string Path, bool Forbidden);
+
+    private static void CollectSelected(SimSnapshot snap, HashSet<int> idSet, List<Stack> outList)
+    {
+        foreach (var w in snap.Wood)
+            if (idSet.Contains(w.EntityId))
+                outList.Add(new Stack(w.EntityId, w.Tile, w.Count, w.ItemPath, w.Forbidden));
+        foreach (var p in snap.ItemPiles)
+            if (idSet.Contains(p.EntityId))
+                outList.Add(new Stack(p.EntityId, p.Tile, p.Count, p.ItemPath, p.Forbidden));
+    }
+
     private void Render(SimSnapshot snap, int[] ids)
     {
-        var idSet = new HashSet<int>(ids);
-        WoodState? first = null;
-        int totalCount = 0;
-        int forbidden = 0;
-        int haulable = 0;
-        foreach (var w in snap.Wood)
-        {
-            if (!idSet.Contains(w.EntityId)) continue;
-            if (first is null) first = w;
-            totalCount += w.Count;
-            if (w.Forbidden) forbidden++; else haulable++;
-            idSet.Remove(w.EntityId);
-        }
-        int missing = idSet.Count;
-        int found = forbidden + haulable;
-        if (found == 0)
+        var stacks = new List<Stack>(ids.Length);
+        CollectSelected(snap, new HashSet<int>(ids), stacks);
+        if (stacks.Count == 0)
         {
             // All stacks vanished (picked up / merged).
             Host!.SelectedWoodIds = Array.Empty<int>();
             return;
         }
 
-        if (ids.Length == 1 && first is WoodState w1)
+        int totalCount = 0, forbidden = 0, haulable = 0;
+        foreach (var s in stacks)
         {
-            string name = ItemCatalog.ItemsByPath.TryGetValue(w1.ItemPath, out var def)
-                ? def.DisplayName : w1.ItemPath;
+            totalCount += s.Count;
+            if (s.Forbidden) forbidden++; else haulable++;
+        }
+
+        if (stacks.Count == 1)
+        {
+            var s = stacks[0];
+            string name = ItemCatalog.ItemsByPath.TryGetValue(s.Path, out var def)
+                ? def.DisplayName : s.Path;
             _nameLabel.Text = name;
-            _countLabel.Text = $"Count: {w1.Count}";
-            _tileLabel.Text = $"Tile: ({w1.Tile.X}, {w1.Tile.Y})";
-            _stateLabel.Text = w1.Forbidden ? "Forbidden" : "Haulable";
-            _selectionForbidden = w1.Forbidden;
-            _forbidBtn.Text = w1.Forbidden ? "Unforbid" : "Forbid";
+            _countLabel.Text = $"Count: {s.Count}";
+            _tileLabel.Text = $"Tile: ({s.Tile.X}, {s.Tile.Y})";
+            _stateLabel.Text = s.Forbidden ? "Forbidden" : "Haulable";
+            _selectionForbidden = s.Forbidden;
+            _forbidBtn.Text = s.Forbidden ? "Unforbid" : "Forbid";
         }
         else
         {
-            _nameLabel.Text = $"Items ({found})";
+            _nameLabel.Text = $"Items ({stacks.Count})";
             _countLabel.Text = $"Total: {totalCount}";
-            _tileLabel.Text = first is WoodState f
-                ? $"First: ({f.Tile.X}, {f.Tile.Y})"
-                : "";
+            _tileLabel.Text = $"First: ({stacks[0].Tile.X}, {stacks[0].Tile.Y})";
             _stateLabel.Text = $"{forbidden} forbidden · {haulable} haulable";
             // Majority rules: if more than half are forbidden, button unforbids.
             _selectionForbidden = forbidden > haulable;
@@ -175,12 +181,12 @@ public partial class ItemInfoPanel : CanvasLayer
         var snap = Host.LatestSnapshot;
         if (snap is null) return;
         bool target = !_selectionForbidden;
-        var idSet = new HashSet<int>(ids);
-        foreach (var w in snap.Wood)
+        var stacks = new List<Stack>(ids.Length);
+        CollectSelected(snap, new HashSet<int>(ids), stacks);
+        foreach (var s in stacks)
         {
-            if (!idSet.Contains(w.EntityId)) continue;
-            if (w.Forbidden == target) continue;
-            Host.QueueCommand(new ForbidStackCommand(w.EntityId, target));
+            if (s.Forbidden == target) continue;
+            Host.QueueCommand(new ForbidStackCommand(s.Id, target));
         }
     }
 }

@@ -178,7 +178,7 @@ public readonly record struct CropState(
     float WorkProgress,
     Jobs.JobKind? ActiveJob);
 
-public readonly record struct ItemPileState(int EntityId, TilePos Tile, int Count, string ItemPath);
+public readonly record struct ItemPileState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden);
 
 public readonly record struct DeconState(TilePos Tile, float Progress, bool Forbidden);
 

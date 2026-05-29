@@ -372,14 +372,12 @@ public sealed class SimRuntime
         _hauls.Step(Store, dt);
         if (needTick) { _sleep.Step(Store, needDt); _needAccumDt = 0f; }
         AgeRoofFlashes(dt);
-        // A coincident stack can only form when an item was added this tick
-        // (spawn / haul deliver / cook output). Skip the merge scans
-        // entirely on the common no-add tick.
-        if (_itemIndex.ConsumeMergeFlag())
-        {
-            MergeCoincidentWood();
-            MergeCoincidentItemPiles();
-        }
+        // Run every tick. (An earlier "skip unless an item was added"
+        // optimization was unsafe: a pile can also become mergeable when a
+        // haul reservation clears or a neighbor is partly consumed, neither
+        // of which is an add — so it could leave two coincident stacks.)
+        MergeCoincidentWood();
+        MergeCoincidentItemPiles();
         _safety.Step(Store, Tick);
         // Coalesced rebuild: one map clone + one room flood-fill per tick
         // even if N walls/doors mutated this tick.
@@ -1318,7 +1316,7 @@ public sealed class SimRuntime
         int pi = 0;
         pileQuery.ForEachEntity((ref ItemPile p, Entity e) =>
         {
-            pilesBuf[pi++] = new ItemPileState(e.Id, p.Tile, p.Count, p.ItemPath);
+            pilesBuf[pi++] = new ItemPileState(e.Id, p.Tile, p.Count, p.ItemPath, e.HasComponent<Forbidden>());
         });
         snap.ItemPilesCount = pi;
 

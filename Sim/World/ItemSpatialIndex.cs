@@ -46,10 +46,6 @@ public sealed class ItemSpatialIndex
     // Count of UNRESERVED wood per tile — what wedges a door open. Kept in
     // sync as wood is added/removed and as reservations flip on/off.
     private readonly Dictionary<TilePos, int> _unreservedWoodTileCount = new();
-    // Set whenever an item is added; lets the merge passes skip entirely on
-    // ticks where nothing new dropped (a coincident stack can only appear
-    // when an item is added to an already-occupied tile).
-    private bool _addedSinceMergeDrain;
 
     private static (int, int) ChunkOf(TilePos t) => (t.X >> ChunkShift, t.Y >> ChunkShift);
 
@@ -58,7 +54,6 @@ public sealed class ItemSpatialIndex
     public void OnItemAdded(int entityId, TilePos tile, bool isWood, string path)
     {
         if (_byEntity.ContainsKey(entityId)) return; // idempotent
-        _addedSinceMergeDrain = true;
         _byEntity[entityId] = new Entry(tile, isWood, path);
         if (isWood)
         {
@@ -112,15 +107,6 @@ public sealed class ItemSpatialIndex
     {
         int n = map.GetValueOrDefault(tile) + delta;
         if (n <= 0) map.Remove(tile); else map[tile] = n;
-    }
-
-    // True (once) if any item was added since the last call. Lets the
-    // merge passes run only on ticks where a new stack actually landed.
-    public bool ConsumeMergeFlag()
-    {
-        if (!_addedSinceMergeDrain) return false;
-        _addedSinceMergeDrain = false;
-        return true;
     }
 
     // ── queries ──────────────────────────────────────────────────────────

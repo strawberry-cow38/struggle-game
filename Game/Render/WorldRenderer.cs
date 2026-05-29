@@ -507,11 +507,16 @@ public partial class WorldRenderer : Node2D
 
         using (FrameProfiler.Instance.BeginScope("ItemPiles"))
         {
+            // Item piles share the SelectedWoodIds selection set (cached, so
+            // this re-fetch is free within the frame).
+            var selectedPileSet = GetCachedSelectedSet(
+                snap.SelectedWoodIds, ref _cachedSelectedWoodIdRef, ref _cachedSelectedWoodSet);
             foreach (var p in snap.ItemPiles)
             {
                 if (p.Tile.X < viewMinTileX || p.Tile.X > viewMaxTileX
                     || p.Tile.Y < viewMinTileY || p.Tile.Y > viewMaxTileY) continue;
                 DrawItemPile(p);
+                if (selectedPileSet is not null && selectedPileSet.Contains(p.EntityId)) DrawWoodSelectionRing(p.Tile);
                 if (p.Tile.X == cursorTileX && p.Tile.Y == cursorTileY)
                 {
                     DrawStackLabel(stackFont, p.Tile, p.ItemPath, p.Count);
