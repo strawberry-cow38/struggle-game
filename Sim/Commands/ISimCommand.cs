@@ -281,6 +281,11 @@ public sealed class IssueMoveOrderCommand : ISimCommand
 // Post a deconstruct job on every player-built wall AND door whose tile
 // lies in the inclusive rect. Walls from procgen / map border are
 // excluded; doors are always player-placed so all of them are eligible.
+//
+// Multi-tile buildings (stove, bed, ur board) decon as a whole if ANY
+// footprint tile overlaps the rect — you don't have to box the origin.
+// The stove's standing/interact tile is NOT a footprint tile, so brushing
+// only that tile does not trigger a decon.
 public sealed class DeconstructWallsInRectCommand : ISimCommand
 {
     public TilePos A { get; }
@@ -313,9 +318,40 @@ public sealed class DeconstructWallsInRectCommand : ISimCommand
             if (tile.Y < ymin || tile.Y > ymax) continue;
             lampHits.Add(tile);
         }
+        // Multi-tile buildings: hit the whole thing if any footprint tile
+        // overlaps the rect. Collect keys first so TryPost*'s map mutation
+        // can't disturb iteration.
+        bool InRect(TilePos t) =>
+            t.X >= xmin && t.X <= xmax && t.Y >= ymin && t.Y <= ymax;
+
+        var stoveHits = new List<TilePos>();
+        foreach (var (origin, stoveEnt) in sim.StoveMap)
+        {
+            var s = stoveEnt.GetComponent<Stove>();
+            foreach (var t in StoveOrientations.BodyTiles(s.Origin, s.Orientation))
+            {
+                if (InRect(t)) { stoveHits.Add(origin); break; }
+            }
+        }
+        var bedHits = new List<TilePos>();
+        foreach (var (origin, bedEnt) in sim.BedMap)
+        {
+            var b = bedEnt.GetComponent<Bed>();
+            if (InRect(b.Origin) || InRect(BedOrientations.Foot(b.Origin, b.Orientation)))
+                bedHits.Add(origin);
+        }
+        var urBoardHits = new List<TilePos>();
+        foreach (var tile in sim.UrBoardMap.Keys)
+        {
+            if (InRect(tile)) urBoardHits.Add(tile);
+        }
+
         foreach (var tile in wallHits) sim.TryPostDeconstructJob(tile);
         foreach (var tile in doorHits) sim.TryPostDoorDeconstructJob(tile);
         foreach (var tile in lampHits) sim.TryPostLampDeconstructJob(tile);
+        foreach (var tile in stoveHits) sim.TryPostStoveDeconstructJob(tile);
+        foreach (var tile in bedHits) sim.TryPostBedDeconstructJob(tile);
+        foreach (var tile in urBoardHits) sim.TryPostUrBoardDeconstructJob(tile);
     }
 }
 
