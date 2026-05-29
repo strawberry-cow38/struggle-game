@@ -252,10 +252,19 @@ public sealed class DummyController
                 cb.RemoveComponent<EquipOrder>(entity.Id);
                 return;
             }
-            if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
+            // Head for the item now — don't finish the current wander leg
+            // first. Re-path unless we're already walking toward the item
+            // tile (or a request is already in flight from a prior tick).
+            bool headingToItem = path.Waypoints is { Count: > 0 }
+                && path.Waypoints[path.Waypoints.Count - 1] == eo.ItemTile;
+            if (!headingToItem && path.PendingPathId == 0)
             {
                 if (view.Walkable(eo.ItemTile))
                 {
+                    // Drop the stale wander path so the pawn stops walking
+                    // away while the new route resolves.
+                    path.Waypoints = null;
+                    path.Index = 0;
                     path.PendingPathId = _paths.Request(here, eo.ItemTile);
                 }
                 else
