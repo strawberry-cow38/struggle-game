@@ -28,4 +28,5 @@ public enum ToolMode
     Bed = 23,
     UrBoard = 24,
     Stove = 25,
+    DebugSpawnItem = 26,
 }

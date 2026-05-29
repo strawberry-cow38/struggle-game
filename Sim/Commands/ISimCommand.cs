@@ -1076,3 +1076,19 @@ public sealed class ReorderBillCommand : ISimCommand
         board.Bills.Insert(ToIndex, b);
     }
 }
+
+// Debug-bar action: drop an item pile at the given tile. Item is
+// identified by its catalog FullPath. Count >= 1 required.
+public sealed class DebugSpawnItemCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public string ItemPath { get; }
+    public int Count { get; }
+    public DebugSpawnItemCommand(TilePos tile, string itemPath, int count)
+    {
+        Tile = tile;
+        ItemPath = itemPath;
+        Count = count;
+    }
+    public void Apply(SimRuntime sim) => sim.SpawnItemPile(Tile, ItemPath, Count);
+}

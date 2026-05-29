@@ -89,6 +89,9 @@ public partial class Bootstrap : Node2D
         var removeDesignator = new RemovePawnDesignator { Host = _host, Tools = _tools, Name = "RemovePawnDesignator" };
         AddChild(removeDesignator);
 
+        var debugSpawnItemDesignator = new DebugSpawnItemDesignator { Host = _host, Tools = _tools, Name = "DebugSpawnItemDesignator" };
+        AddChild(debugSpawnItemDesignator);
+
         var selector = new Selector { Host = _host, Tools = _tools, Name = "Selector" };
         AddChild(selector);
 

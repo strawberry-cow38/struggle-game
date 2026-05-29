@@ -1,6 +1,8 @@
 using Godot;
+using StruggleGame.Game.Debug;
 using StruggleGame.Game.Tools;
 using StruggleGame.Sim.Commands;
+using StruggleGame.Sim.Items;
 
 namespace StruggleGame.Game.UI;
 
@@ -35,6 +37,7 @@ public partial class DebugBar : CanvasLayer
         AddLabel(_hbox, "Actions");
         AddButton(_hbox, ToolMode.SpawnPawn, "Spawn Pawn");
         AddButton(_hbox, ToolMode.RemovePawn, "Remove Pawn");
+        AddSpawnItemControls(_hbox);
         AddOneShotButton(_hbox, "Reroll Map", () => Host?.Reroll(System.Environment.TickCount));
         AddOneShotButton(_hbox, "-1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(-3600)));
         AddOneShotButton(_hbox, "+1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(3600)));
@@ -137,5 +140,102 @@ public partial class DebugBar : CanvasLayer
         {
             btn.SetPressedNoSignal(m == mode);
         }
+        if (_spawnItemBtn is not null) _spawnItemBtn.SetPressedNoSignal(mode == ToolMode.DebugSpawnItem);
+    }
+
+    // Picker for the DebugSpawnItem tool. A toggle button shows the
+    // current item label ("Spawn: Carrot x1"); pressing it pops up a
+    // PopupMenu enumerating every registered ItemDef. Selecting an
+    // item sets DebugSpawnItemDesignator.Current + flips the tool on.
+    // Closing the popup without a choice toggles the tool off.
+    private Button? _spawnItemBtn;
+    private PopupMenu? _spawnItemMenu;
+    private SpinBox? _spawnItemCount;
+    private readonly List<ItemDef> _spawnItemItems = new();
+
+    private void AddSpawnItemControls(HBoxContainer parent)
+    {
+        _spawnItemBtn = new Button
+        {
+            Text = SpawnItemLabel(),
+            ToggleMode = true,
+            CustomMinimumSize = new Vector2(0, ButtonHeight),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        _spawnItemBtn.Pressed += OnSpawnItemPressed;
+        parent.AddChild(_spawnItemBtn);
+
+        _spawnItemCount = new SpinBox
+        {
+            MinValue = 1,
+            MaxValue = 999,
+            Value = DebugSpawnItemDesignator.Count <= 0 ? 1 : DebugSpawnItemDesignator.Count,
+            Step = 1,
+            CustomMinimumSize = new Vector2(72, ButtonHeight),
+        };
+        _spawnItemCount.ValueChanged += v =>
+        {
+            DebugSpawnItemDesignator.Count = (int)v;
+            if (_spawnItemBtn is not null) _spawnItemBtn.Text = SpawnItemLabel();
+        };
+        parent.AddChild(_spawnItemCount);
+
+        _spawnItemMenu = new PopupMenu();
+        _spawnItemMenu.IdPressed += OnSpawnItemMenuPressed;
+        _spawnItemBtn.AddChild(_spawnItemMenu);
+        RebuildSpawnItemMenu();
+    }
+
+    private void RebuildSpawnItemMenu()
+    {
+        if (_spawnItemMenu is null) return;
+        _spawnItemMenu.Clear();
+        _spawnItemItems.Clear();
+        int id = 0;
+        foreach (var (path, item) in ItemCatalog.ItemsByPath)
+        {
+            _spawnItemMenu.AddItem(item.DisplayName + "  (" + path + ")", id);
+            _spawnItemItems.Add(item);
+            id++;
+        }
+    }
+
+    private void OnSpawnItemPressed()
+    {
+        if (Tools is null) return;
+        if (_spawnItemBtn is null || _spawnItemMenu is null) return;
+        if (Tools.Mode == ToolMode.DebugSpawnItem)
+        {
+            Tools.Mode = ToolMode.None;
+            return;
+        }
+        // Pop up the menu under the button. Selection in
+        // OnSpawnItemMenuPressed flips the tool on; closing without a
+        // pick leaves us in ToolMode.None.
+        var btnRect = _spawnItemBtn.GetGlobalRect();
+        _spawnItemMenu.Position = new Vector2I(
+            (int)btnRect.Position.X,
+            (int)(btnRect.Position.Y + btnRect.Size.Y));
+        _spawnItemMenu.Popup();
+        // The button is in toggle mode and just got "pressed" on. Without
+        // a selection we want it back off; the menu's IdPressed (success)
+        // or close (cancel) handlers settle the final state.
+        _spawnItemBtn.SetPressedNoSignal(false);
+    }
+
+    private void OnSpawnItemMenuPressed(long id)
+    {
+        int idx = (int)id;
+        if (idx < 0 || idx >= _spawnItemItems.Count) return;
+        DebugSpawnItemDesignator.Current = _spawnItemItems[idx];
+        if (_spawnItemBtn is not null) _spawnItemBtn.Text = SpawnItemLabel();
+        if (Tools is not null) Tools.Mode = ToolMode.DebugSpawnItem;
+    }
+
+    private static string SpawnItemLabel()
+    {
+        var item = DebugSpawnItemDesignator.Current;
+        int count = DebugSpawnItemDesignator.Count <= 0 ? 1 : DebugSpawnItemDesignator.Count;
+        return item is null ? "Spawn Item..." : $"Spawn: {item.DisplayName} x{count}";
     }
 }
