@@ -613,6 +613,7 @@ public struct Corpse : IComponent
 {
     public TilePos Tile;
     public Health Health;
+    public string Name; // the dead colonist's name, for the item label
 }
 
 // One condition on one body part (a cut on the left hand, etc).

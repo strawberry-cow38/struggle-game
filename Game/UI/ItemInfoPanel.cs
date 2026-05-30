@@ -119,13 +119,13 @@ public partial class ItemInfoPanel : CanvasLayer
     }
 
     // One selected dropped stack, normalized across Wood + ItemPile.
-    private readonly record struct Stack(int Id, Sim.Map.TilePos Tile, int Count, string Path, bool Forbidden);
+    private readonly record struct Stack(int Id, Sim.Map.TilePos Tile, int Count, string Path, bool Forbidden, string? Label);
 
     private static void CollectSelected(SimSnapshot snap, HashSet<int> idSet, List<Stack> outList)
     {
         foreach (var p in snap.ItemPiles)
             if (idSet.Contains(p.EntityId))
-                outList.Add(new Stack(p.EntityId, p.Tile, p.Count, p.ItemPath, p.Forbidden));
+                outList.Add(new Stack(p.EntityId, p.Tile, p.Count, p.ItemPath, p.Forbidden, p.Label));
     }
 
     private void Render(SimSnapshot snap, int[] ids)
@@ -149,8 +149,8 @@ public partial class ItemInfoPanel : CanvasLayer
         if (stacks.Count == 1)
         {
             var s = stacks[0];
-            string name = ItemCatalog.ItemsByPath.TryGetValue(s.Path, out var def)
-                ? def.DisplayName : s.Path;
+            string name = s.Label ?? (ItemCatalog.ItemsByPath.TryGetValue(s.Path, out var def)
+                ? def.DisplayName : s.Path);
             _nameLabel.Text = name;
             _countLabel.Text = $"Count: {s.Count}";
             _tileLabel.Text = $"Tile: ({s.Tile.X}, {s.Tile.Y})";

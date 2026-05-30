@@ -1208,13 +1208,14 @@ public sealed class SimRuntime
                 var cm = ent.GetComponent<Combat>();
                 swingT = cm.SwingTick; missT = cm.MissTick; flinchT = cm.FlinchTick;
             }
+            int meleeTargetId = ent.HasComponent<MeleeTarget>() ? ent.GetComponent<MeleeTarget>().TargetEntityId : 0;
             dummiesBuf[i++] = new DummyState(
                 ent.Id, p.X, p.Y, label, drafted, carrying,
                 inventory, carryW, carryB,
                 SimConstants.MaxCarryWeight, SimConstants.MaxCarryBulk,
                 sleepLevel, isSleeping, assignedBedId,
                 recLevel, atRecKind, equipped, held, healthState, wr.Facing,
-                swingT, missT, flinchT);
+                swingT, missT, flinchT, meleeTargetId);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {
@@ -1365,7 +1366,8 @@ public sealed class SimRuntime
         int pi = 0;
         pileQuery.ForEachEntity((ref ItemPile p, Entity e) =>
         {
-            pilesBuf[pi++] = new ItemPileState(e.Id, p.Tile, p.Count, p.ItemPath, e.HasComponent<Forbidden>());
+            string? label = e.HasComponent<Corpse>() ? e.GetComponent<Corpse>().Name : null;
+            pilesBuf[pi++] = new ItemPileState(e.Id, p.Tile, p.Count, p.ItemPath, e.HasComponent<Forbidden>(), label);
         });
         snap.ItemPilesCount = pi;
 
@@ -3719,7 +3721,7 @@ public sealed class SimRuntime
         // The corpse is a real dropped item (selectable / haulable) that
         // also carries the colonist's data for resurrection.
         c.AddComponent(new ItemPile { Tile = tile, Count = 1, ItemPath = Items.ItemCatalog.Corpse.FullPath });
-        c.AddComponent(new Corpse { Tile = tile, Health = corpseHealth });
+        c.AddComponent(new Corpse { Tile = tile, Health = corpseHealth, Name = $"Colonist {pawnId}" });
         RemoveDummy(pawnId);
     }
 

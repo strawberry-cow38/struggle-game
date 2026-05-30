@@ -528,7 +528,7 @@ public partial class WorldRenderer : Node2D
                 if (selectedPileSet is not null && selectedPileSet.Contains(p.EntityId)) DrawWoodSelectionRing(p.Tile);
                 if (p.Tile.X == cursorTileX && p.Tile.Y == cursorTileY)
                 {
-                    DrawStackLabel(stackFont, p.Tile, p.ItemPath, p.Count);
+                    DrawStackLabel(stackFont, p.Tile, p.ItemPath, p.Count, p.Label);
                 }
             }
         }
@@ -643,6 +643,7 @@ public partial class WorldRenderer : Node2D
                     DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
                 }
                 string? labelText = d.Health.Unconscious ? "Unconscious"
+                    : d.MeleeTargetId != 0 ? $"Melee Attacking Colonist {d.MeleeTargetId}"
                     : d.Sleeping ? "Sleeping"
                     : (string.IsNullOrEmpty(d.Job) ? null : d.Job);
                 if (labelFont is not null && labelText is not null)
@@ -752,13 +753,14 @@ public partial class WorldRenderer : Node2D
     // drown in text.
     private const int StackLabelFontSize = 25;
 
-    private void DrawStackLabel(Font? font, TilePos tile, string itemPath, int count)
+    private void DrawStackLabel(Font? font, TilePos tile, string itemPath, int count, string? labelOverride = null)
     {
         if (font is null) return;
-        string name = ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def)
+        string name = labelOverride ?? (ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def)
             ? def.DisplayName
-            : itemPath;
-        string text = $"{name} x{count}";
+            : itemPath);
+        // Corpse labels are already the colonist name; don't append a count.
+        string text = labelOverride is not null ? name : $"{name} x{count}";
         var size = font.GetStringSize(text, HorizontalAlignment.Left, -1f, StackLabelFontSize);
         float cx = (tile.X + 0.5f) * PixelsPerTile;
         float baseY = (tile.Y + 0.5f) * PixelsPerTile + PixelsPerTile * 0.22f + font.GetAscent(StackLabelFontSize);

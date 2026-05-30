@@ -147,7 +147,8 @@ public readonly record struct DummyState(
     float Facing,
     long SwingTick,
     long MissTick,
-    long FlinchTick);
+    long FlinchTick,
+    int MeleeTargetId);
 
 public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath, int Count, bool Forbidden);
 
@@ -198,7 +199,9 @@ public readonly record struct CropState(
     float WorkProgress,
     Jobs.JobKind? ActiveJob);
 
-public readonly record struct ItemPileState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden);
+// Label overrides the catalog display name when set (corpses use the dead
+// colonist's name instead of "Corpse").
+public readonly record struct ItemPileState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden, string? Label);
 
 public readonly record struct BloodPuddleState(TilePos Tile, float Amount);
 

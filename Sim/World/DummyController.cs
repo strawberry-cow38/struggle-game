@@ -125,6 +125,7 @@ public sealed class DummyController
     private const long MeleeStunTicks = 30;       // ~0.5s frozen on a stun
     private const double MeleeStunChance = 0.25;
     private const float EngagedSlowFactor = 0.5f;
+    private const float SouthFacing = MathF.PI / 2f; // +Y is down on screen
     // Wired by SimRuntime: land a melee hit (attacker, target). Attacker's
     // equipped weapon decides the damage.
     public Action<int, int>? MeleeHit;
@@ -559,6 +560,8 @@ public sealed class DummyController
                     return;
                 }
             }
+            // Idle drafted: stand at the ready facing south.
+            w.Facing = SouthFacing;
             return; // standing watch
         }
 
