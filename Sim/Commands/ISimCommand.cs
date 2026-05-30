@@ -964,6 +964,15 @@ public sealed class SpawnDummyAtCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SpawnDummyAt(Tile.X, Tile.Y);
 }
 
+// Harness "gunfight" demo: armed+drafted shooter opens fire on a target.
+public sealed class SetupGunfightCommand : ISimCommand
+{
+    public TilePos ShooterTile { get; }
+    public TilePos TargetTile { get; }
+    public SetupGunfightCommand(TilePos shooterTile, TilePos targetTile) { ShooterTile = shooterTile; TargetTile = targetTile; }
+    public void Apply(SimRuntime sim) => sim.SetupGunfight(ShooterTile, TargetTile);
+}
+
 public sealed class SetAllRecreationLevelCommand : ISimCommand
 {
     public float Level { get; }

@@ -5650,7 +5650,7 @@ public sealed class SimRuntime
         });
     }
 
-    private void SpawnDummy(int tileX, int tileY)
+    private Entity SpawnDummy(int tileX, int tileY)
     {
         var view = MapView;
         for (int r = 0; r < SimConstants.MapSize; r++)
@@ -5674,11 +5674,33 @@ public sealed class SimRuntime
                     EnsureRecreationNeed(e);
                     EnsureHealth(e);
                     EnsureCombat(e);
-                    return;
+                    return e;
                 }
             }
         }
         throw new InvalidOperationException("No walkable tile found for dummy spawn.");
+    }
+
+    // Harness: spawn an M16-armed, drafted shooter and a target, and order
+    // the shooter to open fire (full-auto). For the "gunfight" demo video.
+    public void SetupGunfight(TilePos shooterTile, TilePos targetTile)
+    {
+        var shooter = SpawnDummy(shooterTile.X, shooterTile.Y);
+        var target = SpawnDummy(targetTile.X, targetTile.Y);
+        shooter.AddComponent(new Inventory
+        {
+            Items = new List<InventoryStack>
+            {
+                new InventoryStack { ItemPath = Items.ItemCatalog.RifleAmmoFmj.FullPath, Count = 120 },
+            },
+            Equipped = new List<EquippedItemSlot>
+            {
+                new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = Items.ItemCatalog.AssaultRifle.FullPath, Count = 1 },
+            },
+        });
+        shooter.AddComponent(new Drafted());
+        shooter.AddComponent(new RangedCombat { Mode = Items.FireMode.Auto });
+        SetFireTarget(shooter.Id, target.Id);
     }
 
     private bool IsOccupied(int tileX, int tileY)

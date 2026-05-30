@@ -554,6 +554,25 @@ public partial class HarnessController : Node2D
                     _screenshotEverySec = double.PositiveInfinity;
                 }
                 break;
+            case "gunfight":
+                // Ranged demo: an M16-armed, drafted shooter full-autos a
+                // target ~20 tiles away. Manual-sim + 60fps PNG capture so it
+                // encodes to a smooth clip. Camera zoomed out to frame both.
+                if (MovieMode)
+                {
+                    _screenshotEverySec = double.PositiveInfinity;
+                }
+                else
+                {
+                    _screenshotEverySec = 1.0 / 60.0;
+                    _screenshotScale = 1.0f;
+                }
+                _warmupSec = 2.0;
+                _manualSim = true;
+                _schedule.Add((0.1, h => h.SetCameraZoom(0.6f), "zoom out"));
+                _schedule.Add((0.5, h => h.SetupGunfight(c - 10, c, c + 10, c), "spawn shooter + target, open fire"));
+                _schedule.Add((7.0, h => h.Finish("gunfight complete"), "finish"));
+                break;
             case "stress":
                 for (int r = 2; r <= 6; r++)
                 {
@@ -708,6 +727,11 @@ public partial class HarnessController : Node2D
     private void SpawnPawnAt(int x, int y)
     {
         Host.QueueCommand(new SpawnDummyAtCommand(new TilePos(x, y)));
+    }
+
+    private void SetupGunfight(int sx, int sy, int tx, int ty)
+    {
+        Host.QueueCommand(new SetupGunfightCommand(new TilePos(sx, sy), new TilePos(tx, ty)));
     }
 
     private void DrainAllRecreation()
