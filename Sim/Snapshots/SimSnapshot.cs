@@ -47,6 +47,10 @@ public sealed class SimSnapshot
     internal int BloodPuddlesCount;
     public SnapshotList<BloodPuddleState> BloodPuddles => new(BloodPuddlesBuf, BloodPuddlesCount);
 
+    internal ProjectileState[] ProjectilesBuf = System.Array.Empty<ProjectileState>();
+    internal int ProjectilesCount;
+    public SnapshotList<ProjectileState> Projectiles => new(ProjectilesBuf, ProjectilesCount);
+
 
     internal DeconState[] DeconsBuf = System.Array.Empty<DeconState>();
     internal int DeconsCount;
@@ -148,7 +152,16 @@ public readonly record struct DummyState(
     long SwingTick,
     long MissTick,
     long FlinchTick,
-    int MeleeTargetId);
+    int MeleeTargetId,
+    // Ranged-weapon state (HasRangedWeapon false → the rest is unused).
+    bool HasRangedWeapon,
+    int RangedMag,
+    int RangedMagSize,
+    StruggleGame.Sim.Items.FireMode RangedMode,
+    StruggleGame.Sim.Items.FireModeFlags RangedModes,
+    int FireTargetId,
+    long ShotTick,
+    float RangedRange);
 
 public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath, int Count, bool Forbidden);
 
@@ -204,6 +217,10 @@ public readonly record struct CropState(
 public readonly record struct ItemPileState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden, string? Label);
 
 public readonly record struct BloodPuddleState(TilePos Tile, float Amount);
+
+// A bullet in flight, in tile coordinates. Angle is the travel heading for
+// drawing the streak; IsAp tints AP rounds differently from HP.
+public readonly record struct ProjectileState(float X, float Y, float Angle, bool IsAp);
 
 public readonly record struct DeconState(TilePos Tile, float Progress, bool Forbidden);
 

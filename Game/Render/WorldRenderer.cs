@@ -513,6 +513,17 @@ public partial class WorldRenderer : Node2D
             }
         }
 
+        using (FrameProfiler.Instance.BeginScope("Projectiles"))
+        {
+            foreach (var pr in snap.Projectiles)
+            {
+                int ptx = (int)pr.X, pty = (int)pr.Y;
+                if (ptx < viewMinTileX || ptx > viewMaxTileX
+                    || pty < viewMinTileY || pty > viewMaxTileY) continue;
+                DrawProjectile(pr);
+            }
+        }
+
         using (FrameProfiler.Instance.BeginScope("ItemPiles"))
         {
             // Item piles share the SelectedWoodIds selection set (cached, so
@@ -617,6 +628,15 @@ public partial class WorldRenderer : Node2D
                 {
                     DrawArc(center, radius + 2f, 0f, Mathf.Tau, 32, DraftedRing, 2f, antialiased: true);
                 }
+                long sinceShot = snap.Tick - d.ShotTick;
+                if (d.HasRangedWeapon && d.ShotTick > 0 && sinceShot >= 0 && sinceShot < MuzzleFlashTicks)
+                {
+                    var fdir2 = new Vector2(Mathf.Cos(d.Facing), Mathf.Sin(d.Facing));
+                    var muzzle = center + fdir2 * (radius + PixelsPerTile * 0.18f);
+                    float fade = 1f - sinceShot / (float)MuzzleFlashTicks;
+                    var fc = new Color(1f, 0.85f, 0.3f, fade);
+                    DrawCircle(muzzle, PixelsPerTile * 0.12f * fade + 2f, fc);
+                }
                 if (d.Carrying)
                 {
                     float logW = PixelsPerTile * 0.45f;
@@ -710,6 +730,7 @@ public partial class WorldRenderer : Node2D
     }
 
     // Combat anim windows (sim ticks).
+    private const long MuzzleFlashTicks = 5;
     private const long LungeTicks = 8;
     private const long FlinchTicks = 8;
     private const long MissTextTicks = 45;
@@ -932,6 +953,19 @@ public partial class WorldRenderer : Node2D
     }
 
     private static readonly Color BloodColor = new(0.45f, 0.03f, 0.03f);
+
+    private static readonly Color BulletColor = new(1.0f, 0.92f, 0.45f);
+    private static readonly Color BulletApColor = new(0.75f, 0.85f, 1.0f);
+
+    private void DrawProjectile(Sim.Snapshots.ProjectileState pr)
+    {
+        var head = new Vector2(pr.X * PixelsPerTile, pr.Y * PixelsPerTile);
+        var dir = new Vector2(Mathf.Cos(pr.Angle), Mathf.Sin(pr.Angle));
+        var tail = head - dir * (PixelsPerTile * 0.45f);
+        var col = pr.IsAp ? BulletApColor : BulletColor;
+        DrawLine(tail, head, col, 2.0f, antialiased: true);
+        DrawCircle(head, 2.5f, col);
+    }
 
     private void DrawBloodPuddle(Sim.Snapshots.BloodPuddleState bp)
     {

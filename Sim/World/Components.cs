@@ -612,6 +612,44 @@ public struct MeleeTarget : IComponent
     public bool FinishOff;
 }
 
+// Ranged-weapon state for a pawn carrying an equipped ranged weapon.
+// Attached/removed by DummyController to mirror the equipped weapon. Holds
+// the magazine (loaded count + which ammo is chambered), the selected fire
+// mode, the forced target, and the cooldown/burst bookkeeping.
+public struct RangedCombat : IComponent
+{
+    public int TargetEntityId;     // forced fire target, 0 = none
+    public int MagCount;           // rounds currently in the magazine
+    public string? LoadedAmmoPath; // which ammo is chambered (decides the wound)
+    public StruggleGame.Sim.Items.FireMode Mode;
+    public long NextActionTick;    // earliest tick the next shot / reload-finish may happen
+    public int BurstRemaining;     // shots left to fire in the current burst
+    public bool Reloading;         // mag refill in progress until NextActionTick
+    public long ShotTick;          // last tick a shot left the muzzle (flash anim)
+}
+
+// A bullet in flight. Created from a DummyController fire request, advanced
+// each tick toward (ToX,ToY). On arrival it resolves: a hit applies the
+// ammo's wound to TargetEntityId; a miss simply vanishes.
+public struct Projectile : IComponent
+{
+    public float X, Y;             // live position (tiles)
+    public float ToX, ToY;         // flight destination (aim point; scattered on a miss)
+    public float Speed;            // tiles per second
+    public int ShooterEntityId;
+    public int TargetEntityId;     // intended victim (for hit resolution)
+    public bool WillHit;           // accuracy already rolled at fire time
+    public string AmmoPath;        // wound source on a hit
+    public float Angle;            // travel heading, for the streak render
+}
+
+// Queued bullet spawn emitted by DummyController during its query pass and
+// drained by SimRuntime after the pass (entity creation is a structural
+// change, so it can't happen mid-iteration).
+public readonly record struct ProjectileSpawn(
+    float FromX, float FromY, float ToX, float ToY,
+    float Speed, int ShooterEntityId, int TargetEntityId, bool WillHit, string AmmoPath);
+
 // A dead colonist's body, dropped on the ground where they fell. Stashes
 // the colonist's data (health/injuries) so future resurrection magic can
 // rebuild the pawn. Rendered with a big red X.

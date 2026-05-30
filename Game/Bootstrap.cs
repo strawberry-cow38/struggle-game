@@ -95,6 +95,9 @@ public partial class Bootstrap : Node2D
         var debugAddInjuryDesignator = new DebugAddInjuryDesignator { Host = _host, Tools = _tools, Name = "DebugAddInjuryDesignator" };
         AddChild(debugAddInjuryDesignator);
 
+        var forceTargetDesignator = new ForceTargetDesignator { Host = _host, Tools = _tools, Name = "ForceTargetDesignator" };
+        AddChild(forceTargetDesignator);
+
         var selector = new Selector { Host = _host, Tools = _tools, Name = "Selector" };
         AddChild(selector);
 
@@ -167,6 +170,9 @@ public partial class Bootstrap : Node2D
 
         var debugBar = new DebugBar { Tools = _tools, Host = _host, Name = "DebugBar" };
         AddChild(debugBar);
+
+        var draftActionBar = new DraftActionBar { Host = _host, Tools = _tools, Name = "DraftActionBar" };
+        AddChild(draftActionBar);
 
         var profiler = new FrameProfilerOverlay { Host = _host, Name = "FrameProfiler" };
         AddChild(profiler);

@@ -30,4 +30,5 @@ public enum ToolMode
     Stove = 25,
     DebugSpawnItem = 26,
     DebugAddInjury = 27,
+    ForceFireTarget = 28,
 }

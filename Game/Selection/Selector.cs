@@ -57,6 +57,8 @@ public partial class Selector : Node2D
     // Melee menu (id 5): the victim + the drafted attackers ordered on it.
     private int _meleeTargetId;
     private int[] _meleeAttackers = Array.Empty<int>();
+    // Fire menu (id 6): drafted attackers that hold a ranged weapon.
+    private int[] _fireAttackers = Array.Empty<int>();
 
     public override void _Ready()
     {
@@ -112,6 +114,11 @@ public partial class Selector : Node2D
             foreach (var attacker in _meleeAttackers)
                 Host.QueueCommand(new MeleeAttackCommand(attacker, _meleeTargetId));
         }
+        else if (id == 6)
+        {
+            foreach (var shooter in _fireAttackers)
+                Host.QueueCommand(new SetFireTargetCommand(shooter, _meleeTargetId));
+        }
     }
 
     // Drafted pawn(s) RMB on another pawn → "Melee attack X". Returns
@@ -132,6 +139,10 @@ public partial class Selector : Node2D
         _meleeAttackers = attackers;
         _bpMenu.Clear();
         _bpMenu.AddItem($"Melee attack {name}", 5);
+        // Fire option for any selected attacker that holds a ranged weapon.
+        _fireAttackers = FilterRangedHolders(snap, attackers);
+        if (_fireAttackers.Length > 0)
+            _bpMenu.AddItem($"Fire at {name}", 6);
         var screenPos = GetCanvasTransform() * world;
         _bpMenu.Position = new Vector2I((int)screenPos.X, (int)screenPos.Y);
         _bpMenu.Popup();
@@ -964,6 +975,18 @@ public partial class Selector : Node2D
             }
         }
         return false;
+    }
+
+    // Of the given pawn ids, those currently holding a ranged weapon.
+    private static int[] FilterRangedHolders(SimSnapshot snap, int[] ids)
+    {
+        var set = new HashSet<int>();
+        foreach (var d in snap.Dummies)
+            if (d.HasRangedWeapon) set.Add(d.EntityId);
+        var list = new List<int>();
+        foreach (var id in ids)
+            if (set.Contains(id)) list.Add(id);
+        return list.ToArray();
     }
 
     private bool TryPickPawn(SimSnapshot snap, Vector2 world, out int id)

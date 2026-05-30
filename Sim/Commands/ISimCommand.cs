@@ -775,6 +775,33 @@ public sealed class MeleeAttackCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetMeleeTarget(AttackerEntityId, TargetEntityId);
 }
 
+// RMB "Fire at X" / force-target button on a drafted ranged pawn: order it
+// to shoot the target while line of sight holds.
+public sealed class SetFireTargetCommand : ISimCommand
+{
+    public int ShooterEntityId { get; }
+    public int TargetEntityId { get; }
+    public SetFireTargetCommand(int shooterId, int targetId)
+    {
+        ShooterEntityId = shooterId;
+        TargetEntityId = targetId;
+    }
+    public void Apply(SimRuntime sim) => sim.SetFireTarget(ShooterEntityId, TargetEntityId);
+}
+
+// Draft action bar: switch the selected pawn's ranged weapon fire mode.
+public sealed class SetFireModeCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public StruggleGame.Sim.Items.FireMode Mode { get; }
+    public SetFireModeCommand(int pawnId, StruggleGame.Sim.Items.FireMode mode)
+    {
+        PawnEntityId = pawnId;
+        Mode = mode;
+    }
+    public void Apply(SimRuntime sim) => sim.SetFireMode(PawnEntityId, Mode);
+}
+
 // Debug "Add Injury": apply a condition to a colonist's body part.
 public sealed class ApplyInjuryCommand : ISimCommand
 {

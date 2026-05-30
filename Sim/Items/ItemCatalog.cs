@@ -32,6 +32,43 @@ public sealed class ItemCategory
     public string FullPath => Parent is null ? Id : $"{Parent.FullPath}/{Id}";
 }
 
+// Which fire mode a colonist's ranged weapon is currently set to.
+public enum FireMode : byte { Single = 0, Burst = 1, Auto = 2 }
+
+// Bitmask of the fire modes a weapon supports. The action bar only
+// offers buttons for the flags present here.
+[System.Flags]
+public enum FireModeFlags : byte { None = 0, Single = 1, Burst = 2, Auto = 4 }
+
+// Ranged-weapon stat block. Attached to an ItemDef that fires
+// projectiles. Vertical coordinate / cover math is intentionally absent
+// for now — projectiles fly flat from muzzle to aim point.
+public sealed class RangedSpec
+{
+    public float Range;                // max firing distance, tiles
+    public string AmmoCategoryPath = "";  // accepts ammo whose AmmoSpec.CategoryPath matches
+    public int MagazineSize;
+    public FireModeFlags Modes;        // which fire modes the gun supports
+    public int BurstShots;             // shots per pull in Burst mode
+    public float ProjectileSpeed;      // tiles per second
+    public float Accuracy;             // base hit chance at point-blank (0..1)
+    public float AccuracyFalloff;      // hit chance lost per tile of distance
+    public long WarmupTicks;           // aim time before a burst's first shot
+    public long ShotCooldownTicks;     // between shots inside a burst / auto
+    public long CycleCooldownTicks;    // between bursts (and between single shots)
+    public long ReloadTicks;           // mag refill time
+}
+
+// Ammo stat block. The loaded round decides the wound — AP vs HP is
+// just different numbers here (ArmorPen reserved for future cover math).
+public sealed class AmmoSpec
+{
+    public string CategoryPath = "";   // matches a weapon's RangedSpec.AmmoCategoryPath
+    public ConditionKind InjuryKind;   // typically Gunshot
+    public float Damage;               // injury severity per hit (0..1)
+    public float ArmorPen;             // reserved — cover/armor not implemented yet
+}
+
 // Leaf of the taxonomy. One per concrete item kind that can exist
 // in the world (wood, stone, raw meat, …). Stockpile filters and
 // haul jobs reference items by Def, not by string.
@@ -56,8 +93,15 @@ public sealed class ItemDef
     // Whether a freshly-created stockpile accepts this item. Corpses are
     // off by default — the player opts in per stockpile.
     public bool DefaultStockpileAllowed { get; }
+    // Ranged-weapon stats when equipped, else null. Equipping a ranged
+    // weapon attaches a RangedCombat component (mag + fire mode).
+    public RangedSpec? Ranged { get; }
+    public bool IsRangedWeapon => Ranged is not null;
+    // Ammo stats when this item is a round of ammunition, else null.
+    public AmmoSpec? Ammo { get; }
+    public bool IsAmmo => Ammo is not null;
 
-    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable, (ConditionKind, float)[]? meleeAttacks, bool defaultStockpileAllowed)
+    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable, (ConditionKind, float)[]? meleeAttacks, bool defaultStockpileAllowed, RangedSpec? ranged, AmmoSpec? ammo)
     {
         Id = id;
         DisplayName = displayName;
@@ -67,6 +111,8 @@ public sealed class ItemDef
         Equippable = equippable;
         MeleeAttacks = meleeAttacks ?? System.Array.Empty<(ConditionKind, float)>();
         DefaultStockpileAllowed = defaultStockpileAllowed;
+        Ranged = ranged;
+        Ammo = ammo;
     }
 
     public string FullPath => $"{Category.FullPath}/{Id}";
@@ -101,6 +147,12 @@ public static class ItemCatalog
     // A dead colonist's body as a haulable item. Carries a Corpse data
     // component for resurrection. Heavy; stockpiles reject it by default.
     public static readonly ItemDef Corpse;
+    // First ranged weapon — ships with all three fire modes for testing.
+    public static readonly ItemDef AssaultRifle;
+    public static readonly ItemCategory Ammo;
+    // Rifle ammo variants: AP penetrates (future), HP wounds harder.
+    public static readonly ItemDef RifleAmmoAp;
+    public static readonly ItemDef RifleAmmoHp;
 
     static ItemCatalog()
     {
@@ -115,6 +167,28 @@ public static class ItemCatalog
             meleeAttacks: new (ConditionKind, float)[] { (ConditionKind.Cut, 0.25f), (ConditionKind.Stab, 0.22f) });
         Corpses = RegisterCategory("Corpses", "Corpses");
         Corpse = RegisterItem("Colonist", "Corpse", Corpses, weight: 40f, bulk: 40f, defaultStockpileAllowed: false);
+
+        Ammo = RegisterCategory("Ammo", "Ammo");
+        RifleAmmoAp = RegisterItem("RifleAmmoAP", "Rifle Rounds (AP)", Ammo, weight: 0.02f, bulk: 0.02f,
+            ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.30f, ArmorPen = 0.6f });
+        RifleAmmoHp = RegisterItem("RifleAmmoHP", "Rifle Rounds (HP)", Ammo, weight: 0.02f, bulk: 0.02f,
+            ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.48f, ArmorPen = 0.1f });
+        AssaultRifle = RegisterItem("AssaultRifle", "Assault Rifle", Equipment, weight: 4f, bulk: 3f, equippable: true,
+            ranged: new RangedSpec
+            {
+                Range = 25f,
+                AmmoCategoryPath = "Rifle",
+                MagazineSize = 30,
+                Modes = FireModeFlags.Single | FireModeFlags.Burst | FireModeFlags.Auto,
+                BurstShots = 3,
+                ProjectileSpeed = 40f,
+                Accuracy = 0.95f,
+                AccuracyFalloff = 0.018f,
+                WarmupTicks = 30,
+                ShotCooldownTicks = 6,
+                CycleCooldownTicks = 36,
+                ReloadTicks = 120,
+            });
     }
 
     public static ItemCategory RegisterCategory(string id, string displayName, ItemCategory? parent = null)
@@ -129,9 +203,9 @@ public static class ItemCatalog
         return cat;
     }
 
-    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false, (ConditionKind, float)[]? meleeAttacks = null, bool defaultStockpileAllowed = true)
+    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false, (ConditionKind, float)[]? meleeAttacks = null, bool defaultStockpileAllowed = true, RangedSpec? ranged = null, AmmoSpec? ammo = null)
     {
-        var item = new ItemDef(id, displayName, category, weight, bulk, equippable, meleeAttacks, defaultStockpileAllowed);
+        var item = new ItemDef(id, displayName, category, weight, bulk, equippable, meleeAttacks, defaultStockpileAllowed, ranged, ammo);
         if (!_itemsByPath.TryAdd(item.FullPath, item))
         {
             throw new InvalidOperationException($"Item already registered at path '{item.FullPath}'.");

@@ -23,6 +23,7 @@ public enum ConditionKind : byte
     Scar = 3,    // permanent, small fixed efficiency loss, no bleed
     Missing = 4, // part (and its descendants) gone
     Stab = 5,    // puncture — bleeds heavily, heals like a cut
+    Gunshot = 6, // bullet wound — heavy damage + heavy bleed, heals like a cut
 }
 
 // Static definition of one body part in the hierarchy.
@@ -132,6 +133,7 @@ public static class BodyTree
         ConditionKind.Bruise => 0.10f * severity,
         ConditionKind.Cut => 0.20f * severity,
         ConditionKind.Stab => 0.15f * severity, // less than a cut...
+        ConditionKind.Gunshot => 0.28f * severity, // mangles the part
         ConditionKind.Burn => 0.25f * severity,
         ConditionKind.Scar => 0.10f,           // fixed, severity-independent
         ConditionKind.Missing => 1f,
@@ -143,6 +145,7 @@ public static class BodyTree
     {
         ConditionKind.Cut => 0.020f * severity,
         ConditionKind.Stab => 0.030f * severity, // ...but bleeds more
+        ConditionKind.Gunshot => 0.040f * severity, // bleeds hardest
         ConditionKind.Burn => 0.008f * severity,
         ConditionKind.Bruise => 0f,
         _ => 0f,
@@ -157,6 +160,7 @@ public static class BodyTree
     {
         ConditionKind.Cut => 0.35f * severity,
         ConditionKind.Stab => 0.30f * severity,
+        ConditionKind.Gunshot => 0.40f * severity,
         ConditionKind.Burn => 0.45f * severity,
         ConditionKind.Bruise => 0.15f * severity,
         ConditionKind.Scar => 0.05f,

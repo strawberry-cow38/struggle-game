@@ -129,6 +129,11 @@ public sealed class DummyController
     // Wired by SimRuntime: land a melee hit (attacker, target). Attacker's
     // equipped weapon decides the damage.
     public Action<int, int>? MeleeHit;
+    // Wired by SimRuntime: line-of-sight test for bullets (x0,y0,x1,y1).
+    public Func<int, int, int, int, bool>? LosClear;
+    // Bullet-spawn requests emitted this tick, drained by SimRuntime after
+    // the query pass (entity creation can't happen mid-iteration).
+    public readonly List<ProjectileSpawn> PendingProjectiles = new();
 
     public DummyController(
         PathService paths,
@@ -205,6 +210,21 @@ public sealed class DummyController
         }
         if (drafted) w.Snapping = false; // re-drafted: drafted logic owns movement
         w.WasDrafted = drafted;
+
+        // Keep RangedCombat attached iff a ranged weapon is equipped. (The
+        // structural add/remove lands at cb.Playback — next tick it's live.)
+        bool hasRangedWeapon = TryGetRangedWeapon(entity, out var rangedWeaponDef);
+        if (hasRangedWeapon && !entity.HasComponent<RangedCombat>())
+            cb.AddComponent(entity.Id, new RangedCombat { Mode = DefaultFireMode(rangedWeaponDef.Ranged!) });
+        else if (!hasRangedWeapon && entity.HasComponent<RangedCombat>())
+            cb.RemoveComponent<RangedCombat>(entity.Id);
+        // Undrafting stops any fire order (mirrors melee being cleared).
+        if (!drafted && entity.HasComponent<RangedCombat>())
+        {
+            ref var rc0 = ref entity.GetComponent<RangedCombat>();
+            rc0.TargetEntityId = 0;
+            rc0.BurstRemaining = 0;
+        }
 
         // 1. Resolve in-flight request.
         if (path.PendingPathId != 0)
@@ -505,6 +525,57 @@ public sealed class DummyController
                 }
                 path.Waypoints = null;
                 path.Index = 0;
+            }
+
+            // Ranged fire order: shoot the forced target while range + line
+            // of sight hold. Reposition (close in) when they don't.
+            if (entity.HasComponent<RangedCombat>()
+                && entity.GetComponent<RangedCombat>().TargetEntityId != 0
+                && TryGetRangedWeapon(entity, out var rwDef))
+            {
+                var spec = rwDef.Ranged!;
+                int targetId = entity.GetComponent<RangedCombat>().TargetEntityId;
+                bool valid = store.TryGetEntityById(targetId, out var tgt)
+                    && tgt.HasComponent<Health>() && tgt.HasComponent<WorldPos>()
+                    && !tgt.GetComponent<Health>().Unconscious;
+                if (!valid)
+                {
+                    ref var rc = ref entity.GetComponent<RangedCombat>();
+                    rc.TargetEntityId = 0; rc.BurstRemaining = 0;
+                    // fall through to normal drafted hold/move
+                }
+                else
+                {
+                    var tp = tgt.GetComponent<WorldPos>();
+                    float ddx = tp.X - pos.X, ddy = tp.Y - pos.Y;
+                    float distTiles = MathF.Sqrt(ddx * ddx + ddy * ddy);
+                    var ttile = new TilePos((int)tp.X, (int)tp.Y);
+                    bool inRange = distTiles <= spec.Range;
+                    bool los = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
+                    if (inRange && los)
+                    {
+                        path.Waypoints = null; path.Index = 0;
+                        w.Facing = MathF.Atan2(ddy, ddx);
+                        HandleRangedFire(entity, tgt, spec, pos, tp, distTiles);
+                        return;
+                    }
+                    // Out of range / blocked: move closer until both hold.
+                    bool heading = path.Waypoints is { Count: > 0 };
+                    if (!heading && path.PendingPathId == 0)
+                    {
+                        if (TryPickNeighbor(view, here, ttile, out var approach))
+                        {
+                            path.Waypoints = null; path.Index = 0;
+                            path.PendingPathId = _paths.Request(here, approach);
+                        }
+                        else
+                        {
+                            ref var rc = ref entity.GetComponent<RangedCombat>();
+                            rc.TargetEntityId = 0;
+                        }
+                    }
+                    return;
+                }
             }
 
             // Melee attack order: close to the target and punch on cadence
@@ -1598,6 +1669,116 @@ public sealed class DummyController
             path.PendingPathId = _paths.Request(from, goal);
             return;
         }
+    }
+
+    // First equipped ranged weapon on the pawn, if any.
+    private static bool TryGetRangedWeapon(Entity entity, out Items.ItemDef def)
+    {
+        def = null!;
+        if (!entity.HasComponent<Inventory>()) return false;
+        var inv = entity.GetComponent<Inventory>();
+        if (inv.Equipped is null) return false;
+        foreach (var eq in inv.Equipped)
+            if (Items.ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var d) && d.IsRangedWeapon)
+            {
+                def = d;
+                return true;
+            }
+        return false;
+    }
+
+    private static Items.FireMode DefaultFireMode(Items.RangedSpec spec)
+    {
+        if (spec.Modes.HasFlag(Items.FireModeFlags.Single)) return Items.FireMode.Single;
+        if (spec.Modes.HasFlag(Items.FireModeFlags.Burst)) return Items.FireMode.Burst;
+        return Items.FireMode.Auto;
+    }
+
+    private static int ShotsForMode(Items.FireMode mode, Items.RangedSpec spec) => mode switch
+    {
+        Items.FireMode.Single => 1,
+        Items.FireMode.Burst => Math.Max(1, spec.BurstShots),
+        Items.FireMode.Auto => int.MaxValue, // fire until the mag runs dry, then reload
+        _ => 1,
+    };
+
+    // Run one tick of the firing state machine: reload when dry, gate on
+    // cooldowns, run the warmup + burst cadence, emit a bullet per shot.
+    private void HandleRangedFire(Entity entity, Entity tgt, Items.RangedSpec spec, WorldPos pos, WorldPos tp, float dist)
+    {
+        ref var rc = ref entity.GetComponent<RangedCombat>();
+
+        if (rc.Reloading)
+        {
+            if (_tick < rc.NextActionTick) return;
+            rc.Reloading = false; // reload finished — fall through and fire
+        }
+
+        if (rc.MagCount <= 0)
+        {
+            if (!TryStartReload(entity, ref rc, spec)) rc.TargetEntityId = 0; // no ammo
+            return;
+        }
+
+        if (_tick < rc.NextActionTick) return;
+
+        if (rc.BurstRemaining <= 0)
+        {
+            // Begin a new burst/cycle: aim for the warmup window first.
+            rc.BurstRemaining = ShotsForMode(rc.Mode, spec);
+            rc.NextActionTick = _tick + spec.WarmupTicks;
+            return;
+        }
+
+        FireOneShot(entity, tgt, spec, ref rc, pos, tp, dist);
+        rc.MagCount--;
+        rc.BurstRemaining--;
+        rc.ShotTick = _tick;
+        rc.NextActionTick = _tick + (rc.BurstRemaining > 0 ? spec.ShotCooldownTicks : spec.CycleCooldownTicks);
+    }
+
+    // Pull the first matching ammo stack from inventory into the magazine.
+    private bool TryStartReload(Entity entity, ref RangedCombat rc, Items.RangedSpec spec)
+    {
+        if (!entity.HasComponent<Inventory>()) return false;
+        ref var inv = ref entity.GetComponent<Inventory>();
+        if (inv.Items is null) return false;
+        for (int k = 0; k < inv.Items.Count; k++)
+        {
+            var stk = inv.Items[k];
+            if (!Items.ItemCatalog.ItemsByPath.TryGetValue(stk.ItemPath, out var d) || d.Ammo is null) continue;
+            if (d.Ammo.CategoryPath != spec.AmmoCategoryPath) continue;
+            int load = Math.Min(spec.MagazineSize, stk.Count);
+            if (load <= 0) continue;
+            stk.Count -= load;
+            if (stk.Count <= 0) inv.Items.RemoveAt(k); else inv.Items[k] = stk;
+            rc.MagCount = load;
+            rc.LoadedAmmoPath = stk.ItemPath;
+            rc.Reloading = true;
+            rc.NextActionTick = _tick + spec.ReloadTicks;
+            rc.BurstRemaining = 0;
+            return true;
+        }
+        return false;
+    }
+
+    private void FireOneShot(Entity entity, Entity tgt, Items.RangedSpec spec, ref RangedCombat rc, WorldPos pos, WorldPos tp, float dist)
+    {
+        float hitChance = Math.Clamp(spec.Accuracy - dist * spec.AccuracyFalloff, 0.05f, 0.99f);
+        bool willHit = _rng.NextDouble() < hitChance;
+        float toX, toY;
+        if (willHit) { toX = tp.X; toY = tp.Y; }
+        else
+        {
+            // Miss: scatter the bullet to a nearby point so it visibly flies wide.
+            double ang = _rng.NextDouble() * Math.PI * 2.0;
+            float scatter = 0.6f + (float)_rng.NextDouble() * 1.6f;
+            toX = tp.X + (float)Math.Cos(ang) * scatter;
+            toY = tp.Y + (float)Math.Sin(ang) * scatter;
+        }
+        PendingProjectiles.Add(new ProjectileSpawn(
+            pos.X, pos.Y, toX, toY, spec.ProjectileSpeed,
+            entity.Id, tgt.Id, willHit, rc.LoadedAmmoPath ?? ""));
     }
 
     // Smoothly slide pos toward the center of the tile it's currently

@@ -316,6 +316,7 @@ public sealed class SimRuntime
         _health.OnDowned = DropDownedItems;
         _health.OnDied = KillColonist;
         _dummies.MeleeHit = MeleeStrike;
+        _dummies.LosClear = RangedLosClear;
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
@@ -354,6 +355,8 @@ public sealed class SimRuntime
             }
             _dummies.PendingAutoBedClaims.Clear();
         }
+        SpawnPendingProjectiles();
+        StepProjectiles(dt);
         _builds.Step(Store, dt);
         _chops.Step(Store, dt);
         _growth.Step(Store, dt);
@@ -1209,13 +1212,35 @@ public sealed class SimRuntime
                 swingT = cm.SwingTick; missT = cm.MissTick; flinchT = cm.FlinchTick;
             }
             int meleeTargetId = ent.HasComponent<MeleeTarget>() ? ent.GetComponent<MeleeTarget>().TargetEntityId : 0;
+
+            bool hasRanged = false;
+            int rangedMag = 0, rangedMagSize = 0, fireTargetId = 0;
+            long shotTick = 0;
+            float rangedRange = 0f;
+            Items.FireMode rangedMode = Items.FireMode.Single;
+            Items.FireModeFlags rangedModes = Items.FireModeFlags.None;
+            if (ent.HasComponent<RangedCombat>() && TryGetEquippedRangedSpec(ent, out var rspec))
+            {
+                var rc = ent.GetComponent<RangedCombat>();
+                hasRanged = true;
+                rangedMag = rc.MagCount;
+                rangedMagSize = rspec.MagazineSize;
+                fireTargetId = rc.TargetEntityId;
+                shotTick = rc.ShotTick;
+                rangedMode = rc.Mode;
+                rangedModes = rspec.Modes;
+                rangedRange = rspec.Range;
+            }
+
             dummiesBuf[i++] = new DummyState(
                 ent.Id, p.X, p.Y, label, drafted, carrying,
                 inventory, carryW, carryB,
                 SimConstants.MaxCarryWeight, SimConstants.MaxCarryBulk,
                 sleepLevel, isSleeping, assignedBedId,
                 recLevel, atRecKind, equipped, held, healthState, wr.Facing,
-                swingT, missT, flinchT, meleeTargetId);
+                swingT, missT, flinchT, meleeTargetId,
+                hasRanged, rangedMag, rangedMagSize, rangedMode, rangedModes,
+                fireTargetId, shotTick, rangedRange);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {
@@ -1380,6 +1405,17 @@ public sealed class SimRuntime
             puddlesBuf[bpi++] = new BloodPuddleState(bp.Tile, bp.Amount);
         });
         snap.BloodPuddlesCount = bpi;
+
+        var projQuery = Store.Query<Projectile>();
+        EnsureCap(ref snap.ProjectilesBuf, projQuery.Count);
+        var projBuf = snap.ProjectilesBuf;
+        int pri = 0;
+        projQuery.ForEachEntity((ref Projectile pr, Entity _) =>
+        {
+            bool isAp = pr.AmmoPath == Items.ItemCatalog.RifleAmmoAp.FullPath;
+            projBuf[pri++] = new ProjectileState(pr.X, pr.Y, pr.Angle, isAp);
+        });
+        snap.ProjectilesCount = pri;
 
 
         int[] selTreeArr = Array.Empty<int>();
@@ -3663,6 +3699,127 @@ public sealed class SimRuntime
                     }
         }
         ApplyInjury(targetId, part, kind, sev);
+    }
+
+    // === Ranged weapons ===
+
+    private readonly List<Entity> _projScratch = new();
+
+    // The RangedSpec of the first ranged weapon in a pawn's equipped slots.
+    public static bool TryGetEquippedRangedSpec(Entity ent, out Items.RangedSpec spec)
+    {
+        spec = null!;
+        if (!ent.HasComponent<Inventory>()) return false;
+        var inv = ent.GetComponent<Inventory>();
+        if (inv.Equipped is null) return false;
+        foreach (var eq in inv.Equipped)
+            if (Items.ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var def) && def.Ranged is not null)
+            {
+                spec = def.Ranged;
+                return true;
+            }
+        return false;
+    }
+
+    // Order a drafted colonist with a ranged weapon to fire on a target.
+    public void SetFireTarget(int shooterId, int targetId)
+    {
+        if (shooterId == targetId) return;
+        if (!Store.TryGetEntityById(shooterId, out var s) || !s.HasComponent<Drafted>()) return;
+        if (!s.HasComponent<RangedCombat>()) return;
+        if (!Store.TryGetEntityById(targetId, out var t) || !t.HasComponent<Health>()) return;
+        ref var rc = ref s.GetComponent<RangedCombat>();
+        rc.TargetEntityId = targetId;
+        rc.BurstRemaining = 0;
+    }
+
+    // Draft action bar: change a pawn's selected fire mode.
+    public void SetFireMode(int pawnId, Items.FireMode mode)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var p) || !p.HasComponent<RangedCombat>()) return;
+        ref var rc = ref p.GetComponent<RangedCombat>();
+        rc.Mode = mode;
+        rc.BurstRemaining = 0; // re-arm cleanly under the new mode
+    }
+
+    // Line of sight for bullets: walls block, doorways don't (door/cover
+    // occlusion is future work). Bresenham, endpoints excluded.
+    public bool RangedLosClear(int x0, int y0, int x1, int y1)
+    {
+        if (x0 == x1 && y0 == y1) return true;
+        int dx = Math.Abs(x1 - x0), dy = Math.Abs(y1 - y0);
+        int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+        int err = dx - dy;
+        int x = x0, y = y0;
+        while (true)
+        {
+            int e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x += sx; }
+            if (e2 < dx) { err += dx; y += sy; }
+            if (x == x1 && y == y1) return true;
+            if (Map.GetWall(x, y) != WallType.None) return false;
+        }
+    }
+
+    // Drain bullet-spawn requests posted by DummyController this tick into
+    // real Projectile entities.
+    private void SpawnPendingProjectiles()
+    {
+        if (_dummies.PendingProjectiles.Count == 0) return;
+        foreach (var ps in _dummies.PendingProjectiles)
+        {
+            float ddx = ps.ToX - ps.FromX, ddy = ps.ToY - ps.FromY;
+            float ang = MathF.Atan2(ddy, ddx);
+            var e = Store.CreateEntity();
+            e.AddComponent(new Projectile
+            {
+                X = ps.FromX, Y = ps.FromY, ToX = ps.ToX, ToY = ps.ToY,
+                Speed = ps.Speed, ShooterEntityId = ps.ShooterEntityId,
+                TargetEntityId = ps.TargetEntityId, WillHit = ps.WillHit,
+                AmmoPath = ps.AmmoPath, Angle = ang,
+            });
+        }
+        _dummies.PendingProjectiles.Clear();
+    }
+
+    // Advance every bullet; on arrival, a hit wounds the target.
+    private void StepProjectiles(float dt)
+    {
+        _projScratch.Clear();
+        Store.Query<Projectile>().ForEachEntity((ref Projectile _, Entity e) => _projScratch.Add(e));
+        foreach (var e in _projScratch)
+        {
+            ref var pr = ref e.GetComponent<Projectile>();
+            float ddx = pr.ToX - pr.X, ddy = pr.ToY - pr.Y;
+            float dist = MathF.Sqrt(ddx * ddx + ddy * ddy);
+            float step = pr.Speed * dt;
+            if (dist <= step || dist < 1e-4f)
+            {
+                if (pr.WillHit) ResolveProjectileHit(in pr);
+                e.DeleteEntity();
+                continue;
+            }
+            pr.X += ddx / dist * step;
+            pr.Y += ddy / dist * step;
+        }
+    }
+
+    private void ResolveProjectileHit(in Projectile pr)
+    {
+        if (!Store.TryGetEntityById(pr.TargetEntityId, out var t) || !t.HasComponent<Health>()) return;
+        var parts = StruggleGame.Sim.Bodies.BodyTree.PunchableParts;
+        if (parts.Count == 0) return;
+        var part = parts[_spawnRng.Next(parts.Count)];
+        var kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot;
+        float dmg = 0.3f;
+        if (Items.ItemCatalog.ItemsByPath.TryGetValue(pr.AmmoPath, out var def) && def.Ammo is not null)
+        {
+            kind = def.Ammo.InjuryKind;
+            dmg = def.Ammo.Damage;
+        }
+        ApplyInjury(pr.TargetEntityId, part, kind, dmg);
+        if (t.HasComponent<Combat>())
+        { ref var tc = ref t.GetComponent<Combat>(); tc.FlinchTick = Tick; }
     }
 
     // Dump a downed colonist's equipped weapon + carried inventory onto
