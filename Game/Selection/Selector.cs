@@ -54,6 +54,8 @@ public partial class Selector : Node2D
     private string _pickupName = "";
     // Quantity dialog for "Pick up X..." — wired by Bootstrap.
     public PickupQuantityDialog? PickupDialog { get; set; }
+    // Camera ref so an open context menu can forward wheel-zoom. Wired by Bootstrap.
+    public StruggleGame.Game.Camera.GameCamera? Camera { get; set; }
     // Melee menu (id 5): the victim + the drafted attackers ordered on it.
     private int _meleeTargetId;
     private int[] _meleeAttackers = Array.Empty<int>();
@@ -76,6 +78,15 @@ public partial class Selector : Node2D
     {
         if (_bpMenu is null) return;
         if (@event is not InputEventMouseButton mb) return;
+        // Forward scroll-wheel zoom to the camera so the player can zoom with
+        // the context menu still open, instead of the popup swallowing it.
+        if (mb.Pressed && Camera is not null
+            && (mb.ButtonIndex == MouseButton.WheelUp || mb.ButtonIndex == MouseButton.WheelDown))
+        {
+            Camera.ZoomStep(mb.ButtonIndex == MouseButton.WheelUp ? 1 : -1);
+            _bpMenu.SetInputAsHandled();
+            return;
+        }
         if (mb.ButtonIndex != MouseButton.Right || !mb.Pressed) return;
         int focused = _bpMenu.GetFocusedItem();
         if (focused < 0) return;
@@ -140,9 +151,14 @@ public partial class Selector : Node2D
         _bpMenu.Clear();
         _bpMenu.AddItem($"Melee attack {name}", 5);
         // Fire option for any selected attacker that holds a ranged weapon.
+        // Grayed out when no shooter is within its weapon's range of the target.
         _fireAttackers = FilterRangedHolders(snap, attackers);
         if (_fireAttackers.Length > 0)
+        {
             _bpMenu.AddItem($"Fire at {name}", 6);
+            int fireIdx = _bpMenu.ItemCount - 1;
+            _bpMenu.SetItemDisabled(fireIdx, !AnyAttackerInRange(snap, _fireAttackers, targetId));
+        }
         var screenPos = GetCanvasTransform() * world;
         _bpMenu.Position = new Vector2I((int)screenPos.X, (int)screenPos.Y);
         _bpMenu.Popup();
@@ -973,6 +989,23 @@ public partial class Selector : Node2D
             {
                 if (t == tile) { id = sp.Id; return true; }
             }
+        }
+        return false;
+    }
+
+    // True if any of the attackers is within its weapon's range of the target.
+    private static bool AnyAttackerInRange(SimSnapshot snap, int[] attackers, int targetId)
+    {
+        float tx = 0, ty = 0; bool foundTarget = false;
+        foreach (var d in snap.Dummies)
+            if (d.EntityId == targetId) { tx = d.X; ty = d.Y; foundTarget = true; break; }
+        if (!foundTarget) return false;
+        var set = new HashSet<int>(attackers);
+        foreach (var d in snap.Dummies)
+        {
+            if (!set.Contains(d.EntityId)) continue;
+            float dx = d.X - tx, dy = d.Y - ty;
+            if (Mathf.Sqrt(dx * dx + dy * dy) <= d.RangedRange) return true;
         }
         return false;
     }

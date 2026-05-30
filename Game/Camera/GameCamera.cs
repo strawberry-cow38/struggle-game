@@ -110,6 +110,11 @@ public partial class GameCamera : Camera2D
         Position += input * speed * delta / Zoom.X;
     }
 
+    // Step the zoom one notch in/out (dir = +1 in, -1 out). Public so an
+    // open context menu can forward scroll-wheel zoom to the camera instead
+    // of swallowing it.
+    public void ZoomStep(int dir) => SetZoomIndex(_zoomIndex + dir);
+
     private void SetZoomIndex(int idx)
     {
         idx = Mathf.Clamp(idx, 0, ZoomLevels.Length - 1);

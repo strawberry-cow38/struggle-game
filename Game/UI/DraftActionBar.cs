@@ -73,6 +73,19 @@ public partial class DraftActionBar : CanvasLayer
         _magLabel.AddThemeConstantOverride("outline_size", 4);
         _bar.AddChild(_magLabel);
 
+        var reloadBtn = new Button
+        {
+            Text = "Reload",
+            CustomMinimumSize = new Vector2(0, ButtonHeight),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        reloadBtn.Pressed += () =>
+        {
+            if (Host is null || _shownPawnId < 0) return;
+            Host.QueueCommand(new ReloadWeaponCommand(_shownPawnId));
+        };
+        _bar.AddChild(reloadBtn);
+
         _forceTargetBtn = new Button
         {
             Text = "Force Target",

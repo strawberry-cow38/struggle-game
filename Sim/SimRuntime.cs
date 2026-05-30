@@ -3733,6 +3733,36 @@ public sealed class SimRuntime
         rc.BurstRemaining = 0;
     }
 
+    // Draft action bar: manually reload the magazine from inventory ammo.
+    // Discards any partial mag (RimWorld-style) and refills from a matching
+    // ammo stack; no-op if the pawn carries no compatible ammo.
+    public void ManualReload(int pawnId)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var p)) return;
+        if (!p.HasComponent<RangedCombat>()) return;
+        if (!TryGetEquippedRangedSpec(p, out var spec)) return;
+        if (!p.HasComponent<Inventory>()) return;
+        ref var inv = ref p.GetComponent<Inventory>();
+        if (inv.Items is null) return;
+        for (int k = 0; k < inv.Items.Count; k++)
+        {
+            var stk = inv.Items[k];
+            if (!Items.ItemCatalog.ItemsByPath.TryGetValue(stk.ItemPath, out var d) || d.Ammo is null) continue;
+            if (d.Ammo.CategoryPath != spec.AmmoCategoryPath) continue;
+            int load = Math.Min(spec.MagazineSize, stk.Count);
+            if (load <= 0) continue;
+            stk.Count -= load;
+            if (stk.Count <= 0) inv.Items.RemoveAt(k); else inv.Items[k] = stk;
+            ref var rc = ref p.GetComponent<RangedCombat>();
+            rc.MagCount = load;
+            rc.LoadedAmmoPath = stk.ItemPath;
+            rc.Reloading = true;
+            rc.NextActionTick = Tick + spec.ReloadTicks;
+            rc.BurstRemaining = 0;
+            return;
+        }
+    }
+
     // Draft action bar: change a pawn's selected fire mode.
     public void SetFireMode(int pawnId, Items.FireMode mode)
     {

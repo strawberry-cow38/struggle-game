@@ -1,4 +1,5 @@
 using Godot;
+using StruggleGame.Game.Audio;
 using StruggleGame.Game.Camera;
 using StruggleGame.Game.Debug;
 using StruggleGame.Game.Designation;
@@ -113,6 +114,7 @@ public partial class Bootstrap : Node2D
         };
         AddChild(camera);
         camera.MakeCurrent();
+        selector.Camera = camera;
 
         var hud = new HudOverlay { Host = _host, Name = "Hud" };
         AddChild(hud);
@@ -173,6 +175,9 @@ public partial class Bootstrap : Node2D
 
         var draftActionBar = new DraftActionBar { Host = _host, Tools = _tools, Name = "DraftActionBar" };
         AddChild(draftActionBar);
+
+        var combatSfx = new CombatSfx { Host = _host, Name = "CombatSfx" };
+        AddChild(combatSfx);
 
         var profiler = new FrameProfilerOverlay { Host = _host, Name = "FrameProfiler" };
         AddChild(profiler);

@@ -802,6 +802,14 @@ public sealed class SetFireModeCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetFireMode(PawnEntityId, Mode);
 }
 
+// Draft action bar: manually reload the selected pawn's ranged weapon.
+public sealed class ReloadWeaponCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public ReloadWeaponCommand(int pawnId) { PawnEntityId = pawnId; }
+    public void Apply(SimRuntime sim) => sim.ManualReload(PawnEntityId);
+}
+
 // Debug "Add Injury": apply a condition to a colonist's body part.
 public sealed class ApplyInjuryCommand : ISimCommand
 {

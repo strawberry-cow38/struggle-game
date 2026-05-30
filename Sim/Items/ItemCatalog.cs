@@ -169,11 +169,11 @@ public static class ItemCatalog
         Corpse = RegisterItem("Colonist", "Corpse", Corpses, weight: 40f, bulk: 40f, defaultStockpileAllowed: false);
 
         Ammo = RegisterCategory("Ammo", "Ammo");
-        RifleAmmoAp = RegisterItem("RifleAmmoAP", "Rifle Rounds (AP)", Ammo, weight: 0.02f, bulk: 0.02f,
+        RifleAmmoAp = RegisterItem("RifleAmmoAP", "5.56x45mm NATO (AP)", Ammo, weight: 0.02f, bulk: 0.02f,
             ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.30f, ArmorPen = 0.6f });
-        RifleAmmoHp = RegisterItem("RifleAmmoHP", "Rifle Rounds (HP)", Ammo, weight: 0.02f, bulk: 0.02f,
+        RifleAmmoHp = RegisterItem("RifleAmmoHP", "5.56x45mm NATO (HP)", Ammo, weight: 0.02f, bulk: 0.02f,
             ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.48f, ArmorPen = 0.1f });
-        AssaultRifle = RegisterItem("AssaultRifle", "Assault Rifle", Equipment, weight: 4f, bulk: 3f, equippable: true,
+        AssaultRifle = RegisterItem("AssaultRifle", "M16A1", Equipment, weight: 4f, bulk: 3f, equippable: true,
             ranged: new RangedSpec
             {
                 Range = 25f,
