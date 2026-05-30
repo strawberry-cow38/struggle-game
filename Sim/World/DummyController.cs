@@ -1778,23 +1778,23 @@ public sealed class DummyController
         return false;
     }
 
+    // Max aim scatter (tiles) at zero accuracy — a placeholder dispersion
+    // until phase 4's full CE aim model. The round flies a FIXED line to the
+    // scattered aim point; whether it connects is then pure geometry (the
+    // collision pass in SimRuntime), so it can miss wide or clip a bystander.
+    private const float RangedMaxScatterTiles = 2.5f;
+
     private void FireOneShot(Entity entity, Entity tgt, Items.RangedSpec spec, ref RangedCombat rc, WorldPos pos, WorldPos tp, float dist)
     {
-        float hitChance = Math.Clamp(spec.Accuracy - dist * spec.AccuracyFalloff, 0.05f, 0.99f);
-        bool willHit = _rng.NextDouble() < hitChance;
-        float toX, toY;
-        if (willHit) { toX = tp.X; toY = tp.Y; }
-        else
-        {
-            // Miss: scatter the bullet to a nearby point so it visibly flies wide.
-            double ang = _rng.NextDouble() * Math.PI * 2.0;
-            float scatter = 0.6f + (float)_rng.NextDouble() * 1.6f;
-            toX = tp.X + (float)Math.Cos(ang) * scatter;
-            toY = tp.Y + (float)Math.Sin(ang) * scatter;
-        }
+        float acc = Math.Clamp(spec.Accuracy - dist * spec.AccuracyFalloff, 0.05f, 0.99f);
+        float scatter = (1f - acc) * RangedMaxScatterTiles;
+        double ang = _rng.NextDouble() * Math.PI * 2.0;
+        float r = (float)Math.Sqrt(_rng.NextDouble()) * scatter; // uniform in the disc
+        float toX = tp.X + (float)Math.Cos(ang) * r;
+        float toY = tp.Y + (float)Math.Sin(ang) * r;
         PendingProjectiles.Add(new ProjectileSpawn(
             pos.X, pos.Y, toX, toY, spec.ProjectileSpeed,
-            entity.Id, tgt.Id, willHit, rc.LoadedAmmoPath ?? ""));
+            entity.Id, tgt.Id, true, rc.LoadedAmmoPath ?? ""));
     }
 
     // Undrafted idle behavior: keep the equipped ranged weapon's magazine

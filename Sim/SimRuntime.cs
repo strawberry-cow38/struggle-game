@@ -3891,76 +3891,136 @@ public sealed class SimRuntime
         _dummies.PendingProjectiles.Clear();
     }
 
-    // Advance every bullet. A hit homes onto its (possibly moving) target so
-    // the round visibly lands on it; on arrival it wounds the target and
-    // sprays blood at that exact point. A miss flies to its fixed scatter
-    // point and vanishes. If a hit's target dies mid-flight, it whiffs.
+    // Per-bullet hit radius around a pawn (tiles).
+    private const float ProjectileHitRadius = 0.45f;
+    private readonly List<(int Id, float X, float Y)> _projPawns = new();
+
+    // Advance every bullet along its FIXED line (no homing). Each tick the
+    // segment it sweeps is tested against walls and pawns: it stops on the
+    // first wall, or wounds the first pawn whose body it crosses at a
+    // compatible height (any pawn — friendly fire is real). Reaches its aim
+    // point with nothing in the way → it missed, and vanishes.
     private void StepProjectiles(float dt)
     {
         _projScratch.Clear();
         Store.Query<Projectile>().ForEachEntity((ref Projectile _, Entity e) => _projScratch.Add(e));
+        if (_projScratch.Count == 0) return;
+
+        // Gather live pawns once (corpses have no Health component).
+        _projPawns.Clear();
+        Store.Query<WorldPos, Health>().ForEachEntity((ref WorldPos wp, ref Health _, Entity pe) =>
+            _projPawns.Add((pe.Id, wp.X, wp.Y)));
+
         foreach (var e in _projScratch)
         {
             ref var pr = ref e.GetComponent<Projectile>();
-            // Reached the target last tick (drawn there for one frame) — retire it now.
+            // Impacted last tick (drawn there for one frame) — retire it now.
             if (pr.Arrived) { e.DeleteEntity(); continue; }
 
-            bool tracking = false;
-            if (pr.WillHit
-                && Store.TryGetEntityById(pr.TargetEntityId, out var t)
-                && t.HasComponent<WorldPos>() && t.HasComponent<Health>())
-            {
-                tracking = true;
-                var wp = t.GetComponent<WorldPos>();
-                pr.ToX = wp.X; pr.ToY = wp.Y;
-            }
             float ddx = pr.ToX - pr.X, ddy = pr.ToY - pr.Y;
             float dist = MathF.Sqrt(ddx * ddx + ddy * ddy);
             if (dist > 1e-4f) pr.Angle = MathF.Atan2(ddy, ddx);
             float step = pr.Speed * dt;
-            if (dist <= step || dist < 1e-4f)
+            bool reaching = dist <= step || dist < 1e-4f;
+            float nx = reaching ? pr.ToX : pr.X + ddx / dist * step;
+            float ny = reaching ? pr.ToY : pr.Y + ddy / dist * step;
+            float nh = pr.Height + pr.VertVel * dt;
+
+            // Find the nearest blocker along this tick's segment.
+            float bestT = float.MaxValue;
+            int hitPawn = 0;
+            if (SegmentFirstWall(pr.X, pr.Y, nx, ny, out float wallT)) bestT = wallT;
+            if (nh >= 0f && nh <= SimConstants.PawnBodyHeight + 0.1f
+                && SegmentFirstPawn(pr.X, pr.Y, nx, ny, pr.ShooterEntityId, out int pid, out float pawnT)
+                && pawnT < bestT)
+            { bestT = pawnT; hitPawn = pid; }
+
+            if (bestT <= 1f)
             {
-                // Snap onto the target and resolve, but keep the entity one
-                // more tick so it renders AT the target — the tracer visibly
-                // reaches it instead of vanishing a step short.
-                pr.X = pr.ToX; pr.Y = pr.ToY;
-                pr.Height = SimConstants.BodyAimHeight; // land at torso height
-                pr.Arrived = true;
-                if (tracking)
+                float ix = pr.X + (nx - pr.X) * bestT;
+                float iy = pr.Y + (ny - pr.Y) * bestT;
+                float ih = pr.Height + (nh - pr.Height) * bestT;
+                pr.X = ix; pr.Y = iy; pr.Height = ih; pr.Arrived = true;
+                if (hitPawn != 0)
                 {
-                    bool passThrough = ResolveProjectileHit(in pr);
+                    bool passThrough = ResolveProjectileHit(hitPawn, pr.AmmoPath, ih);
                     float cx = MathF.Cos(pr.Angle), cy = MathF.Sin(pr.Angle);
-                    // Entry impact: small back-spatter on the near (shooter-
-                    // facing) edge — placed outside the body + fanned backward
-                    // so it isn't hidden under the pawn circle. Always.
-                    _bloodImpacts.Add((pr.X - cx * 0.45f, pr.Y - cy * 0.45f, pr.Angle + MathF.PI, 0.55f, BloodImpactSec));
-                    // Exit wound: big directional spray on the far side — only
-                    // if the round punched through (lodged → no exit).
+                    _bloodImpacts.Add((ix - cx * 0.45f, iy - cy * 0.45f, pr.Angle + MathF.PI, 0.55f, BloodImpactSec));
                     if (passThrough)
-                        _bloodImpacts.Add((pr.X + cx * 0.45f, pr.Y + cy * 0.45f, pr.Angle, 1.0f, BloodImpactSec));
+                        _bloodImpacts.Add((ix + cx * 0.45f, iy + cy * 0.45f, pr.Angle, 1.0f, BloodImpactSec));
                 }
+                continue; // wall hit = just stop (no effect yet)
+            }
+
+            if (reaching)
+            {
+                // Reached the aim point with nothing hit — a clean miss.
+                pr.X = pr.ToX; pr.Y = pr.ToY; pr.Height = nh; pr.Arrived = true;
                 continue;
             }
-            pr.X += ddx / dist * step;
-            pr.Y += ddy / dist * step;
-            // Ballistic vertical motion (gravity arc).
-            pr.Height += pr.VertVel * dt;
-            pr.VertVel -= SimConstants.ProjectileGravity * dt;
+
+            pr.X = nx; pr.Y = ny; pr.Height = nh;
+            pr.VertVel -= SimConstants.ProjectileGravity * dt; // gravity arc
         }
     }
 
-    // Resolves a bullet hit. Returns true if the round passed clean through
-    // (→ exit-wound spray on the far side); false if it lodged in the body.
-    private bool ResolveProjectileHit(in Projectile pr)
+    // First wall tile crossed by segment A→B, as a fraction t in [0,1].
+    // Walls are full-height for now, so any wall tile blocks. Doors don't.
+    private bool SegmentFirstWall(float ax, float ay, float bx, float by, out float t)
     {
-        if (!Store.TryGetEntityById(pr.TargetEntityId, out var t) || !t.HasComponent<Health>()) return false;
-        var parts = StruggleGame.Sim.Bodies.BodyTree.PunchableParts;
-        if (parts.Count == 0) return false;
-        var part = parts[_spawnRng.Next(parts.Count)];
+        t = 0f;
+        float dx = bx - ax, dy = by - ay;
+        float len = MathF.Sqrt(dx * dx + dy * dy);
+        if (len < 1e-4f) return false;
+        int samples = Math.Max(2, (int)(len / 0.2f));
+        for (int k = 1; k <= samples; k++)
+        {
+            float f = (float)k / samples;
+            int cx = (int)(ax + dx * f), cy = (int)(ay + dy * f);
+            if (Map.GetWall(cx, cy) != WallType.None) { t = f; return true; }
+        }
+        return false;
+    }
+
+    // Nearest pawn (≠ shooter) whose body the segment passes within hit radius.
+    private bool SegmentFirstPawn(float ax, float ay, float bx, float by, int shooterId, out int pawnId, out float t)
+    {
+        pawnId = 0; t = float.MaxValue;
+        float dx = bx - ax, dy = by - ay;
+        float len2 = dx * dx + dy * dy;
+        if (len2 < 1e-6f) return false;
+        float r2 = ProjectileHitRadius * ProjectileHitRadius;
+        foreach (var (id, px, py) in _projPawns)
+        {
+            if (id == shooterId) continue;
+            float proj = ((px - ax) * dx + (py - ay) * dy) / len2;
+            float ct = Math.Clamp(proj, 0f, 1f);
+            float qx = ax + dx * ct, qy = ay + dy * ct;
+            float gx = qx - px, gy = qy - py;
+            if (gx * gx + gy * gy <= r2 && ct < t) { t = ct; pawnId = id; }
+        }
+        return pawnId != 0;
+    }
+
+    private static readonly string[] _lowerParts = { "LegL", "FootL", "LegR", "FootR" };
+    private static readonly string[] _midParts = { "Torso", "ArmL", "HandL", "ArmR", "HandR" };
+    private static readonly string[] _upperParts = { "Head", "Neck", "EyeL", "EyeR", "EarL", "EarR" };
+
+    // Resolve a bullet striking a pawn. Body part is chosen from the round's
+    // height at impact (low→legs, mid→torso/arms, high→head). Returns true if
+    // the round passed clean through (→ exit-wound spray); false if it lodged.
+    private bool ResolveProjectileHit(int targetId, string ammoPath, float impactHeight)
+    {
+        if (!Store.TryGetEntityById(targetId, out var t) || !t.HasComponent<Health>()) return false;
+        float bodyH = SimConstants.PawnBodyHeight;
+        var pool = impactHeight < bodyH * 0.45f ? _lowerParts
+                 : impactHeight < bodyH * 0.85f ? _midParts
+                 : _upperParts;
+        var part = pool[_spawnRng.Next(pool.Length)];
         var kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot;
         float dmg = 12f, pen = 6f;
         string? caliber = null;
-        if (Items.ItemCatalog.ItemsByPath.TryGetValue(pr.AmmoPath, out var def) && def.Ammo is not null)
+        if (Items.ItemCatalog.ItemsByPath.TryGetValue(ammoPath, out var def) && def.Ammo is not null)
         {
             kind = def.Ammo.InjuryKind;
             dmg = def.Ammo.Damage;
@@ -3971,7 +4031,7 @@ public sealed class SimRuntime
         // ones (HP, ~3) lodge; FMJ (~6) is in between.
         float passChance = Math.Clamp(pen / 20f, 0.05f, 0.9f);
         bool passThrough = _spawnRng.NextDouble() < passChance;
-        ApplyInjury(pr.TargetEntityId, part, kind, dmg, caliber, lodged: !passThrough);
+        ApplyInjury(targetId, part, kind, dmg, caliber, lodged: !passThrough);
         if (t.HasComponent<Combat>())
         { ref var tc = ref t.GetComponent<Combat>(); tc.FlinchTick = Tick; }
         return passThrough;
