@@ -4113,67 +4113,77 @@ public sealed class SimRuntime
         });
     }
 
-    // Hitscan along the ballistic arc from the muzzle to the aim point. Marches
-    // the trajectory (height = muzzle + vVel·t − ½g·t²) in short sub-segments,
-    // reusing the wall/sandbag/pawn segment tests so cover behaves exactly as
-    // the old per-tick sweep did. Outputs the first impact (point + arc height +
-    // victim id; 0 = wall or a clean ground miss at the aim point).
+    // Hitscan along the ballistic arc from the muzzle to the aim point. Finds
+    // the nearest blocker — first wall/low-sandbag (one sampled scan) vs nearest
+    // pawn within hit radius (one projection pass over pawns). O(samples+pawns)
+    // per shot, not O(samples×pawns). Height-aware so cover behaves the same.
     private void ResolveArcImpact(float fromX, float fromY, float aimX, float aimY,
         float vVel, float speed, int shooterId,
         out float hitX, out float hitY, out float hitH, out int hitId, out bool hitWall)
     {
         float ddx = aimX - fromX, ddy = aimY - fromY;
         float dist = MathF.Sqrt(ddx * ddx + ddy * ddy);
-        float flight = MathF.Max(dist / MathF.Max(speed, 0.01f), 1e-3f);
         float g = SimConstants.ProjectileGravity, muzzle = SimConstants.MuzzleHeight;
-        int steps = Math.Max(2, (int)(dist / 0.2f));
-        float px = fromX, py = fromY, ph = muzzle;
-        for (int k = 1; k <= steps; k++)
+        float invSpeed = 1f / MathF.Max(speed, 0.01f);
+        // Arc height at a fraction f along the line (f in [0,1]).
+        float HeightAt(float f) { float t = dist * f * invSpeed; return muzzle + vVel * t - 0.5f * g * t * t; }
+
+        if (dist < 1e-4f)
         {
-            float f = (float)k / steps;
-            float t = flight * f;
-            float cx = fromX + ddx * f, cy = fromY + ddy * f;
-            float ch = muzzle + vVel * t - 0.5f * g * t * t;
-
-            float bestT = float.MaxValue; int pawn = 0;
-            if (SegmentFirstWall(px, py, cx, cy, out float wt)) bestT = wt;
-            if (SegmentFirstSandbag(px, py, cx, cy, ph, ch, out float st) && st < bestT)
-            { bestT = st; pawn = 0; }
-            if (ch >= 0f && SegmentFirstPawn(px, py, cx, cy, ch, shooterId, out int pid, out float pt) && pt < bestT)
-            { bestT = pt; pawn = pid; }
-
-            if (bestT <= 1f)
-            {
-                if (pawn != 0)
-                {
-                    // Snap the impact to the pawn's CENTER. The fine sub-stepping
-                    // reports the near edge of the hit radius (~0.45 ahead of the
-                    // body), which would push the entry wound out in front of the
-                    // pawn. Centering keeps entry/exit straddling the body.
-                    float pcx = cx, pcy = cy;
-                    foreach (var (id, ppx, ppy, _) in _projPawns)
-                        if (id == pawn) { pcx = ppx; pcy = ppy; break; }
-                    float hd = MathF.Sqrt((pcx - fromX) * (pcx - fromX) + (pcy - fromY) * (pcy - fromY));
-                    float ht = hd / MathF.Max(speed, 0.01f);
-                    hitX = pcx; hitY = pcy;
-                    hitH = MathF.Max(0f, muzzle + vVel * ht - 0.5f * g * ht * ht);
-                    hitId = pawn; hitWall = false;
-                    return;
-                }
-                // Wall / sandbag — impact at the crossing point.
-                hitX = px + (cx - px) * bestT;
-                hitY = py + (cy - py) * bestT;
-                hitH = ph + (ch - ph) * bestT;
-                hitId = 0; hitWall = true;
-                return;
-            }
-            px = cx; py = cy; ph = ch;
+            hitX = aimX; hitY = aimY; hitH = MathF.Max(0f, muzzle); hitId = 0; hitWall = false; return;
         }
-        // Nothing crossed — a clean miss; the round zips past at the aim point.
+
+        // 1) First wall / low sandbag along the line (single sampled scan).
+        float blockFrac = 1f; bool blocked = false;
+        bool haveSandbags = _sandbagMap.Count > 0;
+        int samples = Math.Max(2, (int)(dist / 0.2f));
+        for (int k = 1; k <= samples; k++)
+        {
+            float f = (float)k / samples;
+            int cx = (int)(fromX + ddx * f), cy = (int)(fromY + ddy * f);
+            if (Map.GetWall(cx, cy) != WallType.None) { blockFrac = f; blocked = true; break; }
+            if (haveSandbags && HeightAt(f) <= SimConstants.SandbagCoverHeight
+                && _sandbagMap.ContainsKey(new TilePos(cx, cy)))
+            { blockFrac = f; blocked = true; break; }
+        }
+
+        // 2) Nearest pawn whose body the line crosses at a strikeable height,
+        //    closer than the wall block.
+        float r2 = ProjectileHitRadius * ProjectileHitRadius;
+        float bestFrac = float.MaxValue; int pawn = 0; float pawnX = 0, pawnY = 0;
+        foreach (var (id, ppx, ppy, bodyH) in _projPawns)
+        {
+            if (id == shooterId) continue;
+            float proj = ((ppx - fromX) * ddx + (ppy - fromY) * ddy) / (dist * dist);
+            float u = Math.Clamp(proj, 0f, 1f);
+            if (u >= bestFrac || u > blockFrac) continue;
+            float qx = fromX + ddx * u, qy = fromY + ddy * u;
+            float gx = qx - ppx, gy = qy - ppy;
+            if (gx * gx + gy * gy > r2) continue;
+            float h = HeightAt(u);
+            if (h < 0f || h > bodyH) continue; // underground / flew over
+            bestFrac = u; pawn = id; pawnX = ppx; pawnY = ppy;
+        }
+
+        if (pawn != 0)
+        {
+            // Snap impact to the pawn's center so entry/exit straddle the body.
+            hitX = pawnX; hitY = pawnY;
+            hitH = MathF.Max(0f, HeightAt(bestFrac));
+            hitId = pawn; hitWall = false;
+            return;
+        }
+        if (blocked)
+        {
+            hitX = fromX + ddx * blockFrac; hitY = fromY + ddy * blockFrac;
+            hitH = MathF.Max(0f, HeightAt(blockFrac));
+            hitId = 0; hitWall = true;
+            return;
+        }
+        // Clean miss — the round zips past at the aim point.
         hitX = aimX; hitY = aimY;
-        hitH = MathF.Max(0f, muzzle + vVel * flight - 0.5f * g * flight * flight);
-        hitId = 0;
-        hitWall = false;
+        hitH = MathF.Max(0f, HeightAt(1f));
+        hitId = 0; hitWall = false;
     }
 
     // Per-bullet hit radius around a pawn (tiles).
@@ -4237,71 +4247,6 @@ public sealed class SimRuntime
                 _bloodImpacts.Add((pr.ToX, pr.ToY, 0f, pr.Angle, 0.6f, true, BloodImpactSec));
             }
         }
-    }
-
-    // First wall tile crossed by segment A→B, as a fraction t in [0,1].
-    // Walls are full-height for now, so any wall tile blocks. Doors don't.
-    private bool SegmentFirstWall(float ax, float ay, float bx, float by, out float t)
-    {
-        t = 0f;
-        float dx = bx - ax, dy = by - ay;
-        float len = MathF.Sqrt(dx * dx + dy * dy);
-        if (len < 1e-4f) return false;
-        int samples = Math.Max(2, (int)(len / 0.2f));
-        for (int k = 1; k <= samples; k++)
-        {
-            float f = (float)k / samples;
-            int cx = (int)(ax + dx * f), cy = (int)(ay + dy * f);
-            if (Map.GetWall(cx, cy) != WallType.None) { t = f; return true; }
-        }
-        return false;
-    }
-
-    // First sandbag tile crossed by segment A→B at a height at/below the
-    // sandbag's cover height. Bullet height is interpolated along the segment
-    // (hA→hB) so an arcing round is judged at its height over the bag's tile.
-    private bool SegmentFirstSandbag(float ax, float ay, float bx, float by, float hA, float hB, out float t)
-    {
-        t = 0f;
-        if (_sandbagMap.Count == 0) return false;
-        float dx = bx - ax, dy = by - ay;
-        float len = MathF.Sqrt(dx * dx + dy * dy);
-        if (len < 1e-4f) return false;
-        int samples = Math.Max(2, (int)(len / 0.2f));
-        for (int k = 1; k <= samples; k++)
-        {
-            float f = (float)k / samples;
-            int cx = (int)(ax + dx * f), cy = (int)(ay + dy * f);
-            if (_sandbagMap.ContainsKey(new TilePos(cx, cy)))
-            {
-                float h = hA + (hB - hA) * f;
-                if (h <= SimConstants.SandbagCoverHeight) { t = f; return true; }
-            }
-        }
-        return false;
-    }
-
-    // Nearest pawn (≠ shooter) whose body the segment passes within hit radius,
-    // AND whose prone/standing height the round is low enough to strike. A
-    // torso-height round flies clean over a downed (prone) pawn.
-    private bool SegmentFirstPawn(float ax, float ay, float bx, float by, float bulletHeight, int shooterId, out int pawnId, out float t)
-    {
-        pawnId = 0; t = float.MaxValue;
-        float dx = bx - ax, dy = by - ay;
-        float len2 = dx * dx + dy * dy;
-        if (len2 < 1e-6f) return false;
-        float r2 = ProjectileHitRadius * ProjectileHitRadius;
-        foreach (var (id, px, py, bodyH) in _projPawns)
-        {
-            if (id == shooterId) continue;
-            if (bulletHeight > bodyH) continue; // round passes above this pawn
-            float proj = ((px - ax) * dx + (py - ay) * dy) / len2;
-            float ct = Math.Clamp(proj, 0f, 1f);
-            float qx = ax + dx * ct, qy = ay + dy * ct;
-            float gx = qx - px, gy = qy - py;
-            if (gx * gx + gy * gy <= r2 && ct < t) { t = ct; pawnId = id; }
-        }
-        return pawnId != 0;
     }
 
     private static readonly string[] _lowerParts = { "LegL", "FootL", "LegR", "FootR" };

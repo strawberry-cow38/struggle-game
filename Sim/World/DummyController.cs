@@ -1923,18 +1923,19 @@ public sealed class DummyController
         if (!hugging) return false;
 
         // Firing axis = dominant direction to the target; the legit peek steps
-        // PERPENDICULAR to it and fires roughly along it (≤45° off).
+        // PERPENDICULAR to it and fires roughly along it (≤45° off). Static perp
+        // tables avoid per-tick allocations (this runs every tick per shooter).
         float axisX, axisY;
         (int dx, int dy)[] perp;
         if (Math.Abs(dx) >= Math.Abs(dy))
         {
             axisX = Math.Sign(dx); axisY = 0f;
-            perp = new (int, int)[] { (0, 1), (0, -1) };
+            perp = _perpVertical;
         }
         else
         {
             axisX = 0f; axisY = Math.Sign(dy);
-            perp = new (int, int)[] { (1, 0), (-1, 0) };
+            perp = _perpHorizontal;
         }
 
         float best = float.MaxValue; bool found = false;
@@ -1958,6 +1959,9 @@ public sealed class DummyController
         }
         return found;
     }
+
+    private static readonly (int dx, int dy)[] _perpVertical = { (0, 1), (0, -1) };
+    private static readonly (int dx, int dy)[] _perpHorizontal = { (1, 0), (-1, 0) };
 
     // Cos of the widest angle a lean shot may sit off the cover axis. 0.707 =
     // 45°: the shot must run more along the wall than along the lean step, else
