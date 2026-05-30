@@ -151,6 +151,25 @@ public partial class WorldRenderer : Node2D
     // and DrawGrowZone since the two never run nested.
     private Font? _fallbackFont;
     private readonly Dictionary<string, Vector2> _jobLabelSizes = new();
+    // Cache for combat overhead labels keyed by (kind<<32 | id) so we don't
+    // re-interpolate "Firing at Colonist N" every pawn every frame.
+    private readonly Dictionary<long, string> _combatLabelCache = new();
+
+    private string CombatLabel(int kind, int id)
+    {
+        long key = ((long)kind << 32) | (uint)id;
+        if (!_combatLabelCache.TryGetValue(key, out var s))
+        {
+            s = kind switch
+            {
+                0 => $"Firing at Colonist {id}",
+                1 => $"Watching for Colonist {id}",
+                _ => $"Melee Attacking Colonist {id}",
+            };
+            _combatLabelCache[key] = s;
+        }
+        return s;
+    }
     private readonly HashSet<TilePos> _zoneScratch = new();
     private readonly Vector2[] _doorPts = new Vector2[4];
 
@@ -726,12 +745,16 @@ public partial class WorldRenderer : Node2D
                         DrawArc(center, rr, 0f, Mathf.Tau, 96, RangeCircleColor, 1.5f, antialiased: true);
                     }
                 }
+                // Combat labels embed a colonist id, so build+cache them once
+                // per (kind,id) instead of allocating a fresh interpolated
+                // string every pawn every frame — that per-frame garbage was
+                // what spiked GC (and a random render scope) during firefights.
                 string? labelText = d.Health.Unconscious ? "Unconscious"
                     : d.RangedStatus == Sim.Snapshots.RangedStatus.Reloading ? "Reloading"
-                    : d.RangedStatus == Sim.Snapshots.RangedStatus.Firing ? $"Firing at Colonist {d.FireTargetId}"
+                    : d.RangedStatus == Sim.Snapshots.RangedStatus.Firing ? CombatLabel(0, d.FireTargetId)
                     : d.RangedStatus == Sim.Snapshots.RangedStatus.TooClose ? "Too close to fire"
-                    : d.RangedStatus == Sim.Snapshots.RangedStatus.Watching ? $"Watching for Colonist {d.FireTargetId}"
-                    : d.MeleeTargetId != 0 ? $"Melee Attacking Colonist {d.MeleeTargetId}"
+                    : d.RangedStatus == Sim.Snapshots.RangedStatus.Watching ? CombatLabel(1, d.FireTargetId)
+                    : d.MeleeTargetId != 0 ? CombatLabel(2, d.MeleeTargetId)
                     : d.Sleeping ? "Sleeping"
                     : (string.IsNullOrEmpty(d.Job) ? null : d.Job);
                 if (labelFont is not null && labelText is not null)
