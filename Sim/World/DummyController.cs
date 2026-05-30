@@ -537,9 +537,10 @@ public sealed class DummyController
             {
                 var spec = rwDef.Ranged!;
                 int targetId = entity.GetComponent<RangedCombat>().TargetEntityId;
+                // Unconscious pawns are valid targets (finish them off) — only
+                // a vanished pawn (dead → corpse) ends the order.
                 bool valid = store.TryGetEntityById(targetId, out var tgt)
-                    && tgt.HasComponent<Health>() && tgt.HasComponent<WorldPos>()
-                    && !tgt.GetComponent<Health>().Unconscious;
+                    && tgt.HasComponent<Health>() && tgt.HasComponent<WorldPos>();
                 if (!valid)
                 {
                     ref var rc = ref entity.GetComponent<RangedCombat>();

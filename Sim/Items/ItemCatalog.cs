@@ -186,8 +186,10 @@ public static class ItemCatalog
                 Modes = FireModeFlags.Single | FireModeFlags.Burst | FireModeFlags.Auto,
                 BurstShots = 3,
                 ProjectileSpeed = 55f,
+                // Hit chance = Accuracy - distance*Falloff (clamped). Point
+                // blank ~0.95, ~0.6 at 25 tiles, ~0.25 at 50 — distance matters.
                 Accuracy = 0.95f,
-                AccuracyFalloff = 0.009f,
+                AccuracyFalloff = 0.014f,
                 WarmupTicks = 12,
                 // ~720 rpm cyclic = a shot every ~5 ticks at 60 Hz.
                 ShotCooldownTicks = 5,

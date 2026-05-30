@@ -166,6 +166,41 @@ public class RangedTests
         Assert.Equal(30, InvCount(e, ItemCatalog.RifleAmmoHp.FullPath));
     }
 
+    [Fact]
+    public void RangedTargeting_FinishesOff_UnconsciousTarget()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, target) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        sim.Store.GetEntityById(target).AddComponent(new Drafted());
+        ArmWithRifle(sim, shooter, ItemCatalog.RifleAmmoHp, 90);
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
+
+        // Knock the target out non-lethally (pain shock from bruises).
+        foreach (var part in new[] { "ArmL", "ArmR", "LegL", "LegR", "Torso", "Head" })
+            sim.ApplyInjury(target, part, ConditionKind.Bruise, 1f);
+        for (int i = 0; i < 120; i++) sim.Step(SimConstants.TickSeconds);
+        Assert.True(sim.Store.GetEntityById(target).GetComponent<Health>().Unconscious,
+            "target should be downed before the fire order");
+
+        // Ordering fire on a downed pawn is allowed and runs until it dies.
+        sim.SetFireTarget(shooter, target);
+        Assert.True(sim.Store.GetEntityById(shooter).GetComponent<RangedCombat>().TargetEntityId == target,
+            "fire order should stick on an unconscious target");
+
+        bool dead = false;
+        for (int i = 0; i < 8000; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f);
+            SetPos(sim, target, 24.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+            if (!sim.Store.TryGetEntityById(target, out var t) || !t.HasComponent<Wanderer>()) { dead = true; break; }
+        }
+        Assert.True(dead, "ranged fire should finish off the downed target");
+    }
+
     private static int InvCount(Entity e, string path)
     {
         int n = 0;
