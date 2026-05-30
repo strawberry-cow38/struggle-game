@@ -623,6 +623,7 @@ public struct RangedCombat : IComponent
     public string? LoadedAmmoPath; // which ammo is chambered (decides the wound)
     public string? PreferredAmmoPath; // player-chosen reload ammo; null = any matching
     public StruggleGame.Sim.Items.FireMode Mode;
+    public StruggleGame.Sim.Items.TargetArea TargetArea; // body region the shot aims for
     public long NextActionTick;    // earliest tick the next shot / reload-finish may happen
     public int BurstRemaining;     // shots left to fire in the current burst
     public bool Reloading;         // mag refill in progress until NextActionTick

@@ -808,6 +808,19 @@ public sealed class SetFireModeCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetFireMode(PawnEntityId, Mode);
 }
 
+// Draft action bar: set the body region a ranged pawn aims for.
+public sealed class SetTargetAreaCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public StruggleGame.Sim.Items.TargetArea Area { get; }
+    public SetTargetAreaCommand(int pawnId, StruggleGame.Sim.Items.TargetArea area)
+    {
+        PawnEntityId = pawnId;
+        Area = area;
+    }
+    public void Apply(SimRuntime sim) => sim.SetTargetArea(PawnEntityId, Area);
+}
+
 // Draft action bar: manually reload the selected pawn's ranged weapon.
 public sealed class ReloadWeaponCommand : ISimCommand
 {

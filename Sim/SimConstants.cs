@@ -23,6 +23,9 @@ public static class SimConstants
     // Downed/unconscious pawns lie prone: a low hitbox you have to aim low for.
     public const float DownedBodyHeight = 0.35f;
     public const float DownedAimHeight = 0.18f;
+    // Aim heights for the targeted-area selector (standing pawn).
+    public const float AimHeadHeight = 1.0f;
+    public const float AimLegsHeight = 0.35f; // BodyAimHeight (0.85) is the torso aim
 
     // Inventory caps for a colonist. Either one being exceeded stops them
     // adding more to their carry. Both default to 75 so a single wood

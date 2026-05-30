@@ -405,6 +405,36 @@ public class RangedTests
             "recoil should recover once the pawn stops firing");
     }
 
+    [Fact]
+    public void TargetArea_Head_LandsUpperBodyWounds()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, target) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        sim.Store.GetEntityById(target).AddComponent(new Drafted());
+        ArmWithRifle(sim, shooter, ItemCatalog.RifleAmmoFmj, 90);
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
+        sim.SetTargetArea(shooter, TargetArea.Head);
+        sim.SetFireMode(shooter, FireMode.Single);
+        sim.SetFireTarget(shooter, target);
+
+        var upper = new HashSet<string> { "Head", "Neck", "EyeL", "EyeR", "EarL", "EarR" };
+        string? hitPart = null;
+        for (int i = 0; i < 2000 && hitPart is null; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f);
+            SetPos(sim, target, 24.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+            if (sim.Store.TryGetEntityById(target, out var t) && t.HasComponent<Health>())
+                foreach (var w in t.GetComponent<Health>().Injuries!)
+                    if (w.Kind == ConditionKind.Gunshot) { hitPart = w.PartId; break; }
+        }
+        Assert.NotNull(hitPart);
+        Assert.True(upper.Contains(hitPart!), $"head-aimed shot should wound an upper-body part, hit {hitPart}");
+    }
+
     private static int InvCount(Entity e, string path)
     {
         int n = 0;

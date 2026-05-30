@@ -35,6 +35,10 @@ public sealed class ItemCategory
 // Which fire mode a colonist's ranged weapon is currently set to.
 public enum FireMode : byte { Single = 0, Burst = 1, Auto = 2 }
 
+// Body region a ranged colonist aims for (sets the shot's aim height).
+// Default 0 = Torso.
+public enum TargetArea : byte { Torso = 0, Head = 1, Legs = 2 }
+
 // Bitmask of the fire modes a weapon supports. The action bar only
 // offers buttons for the flags present here.
 [System.Flags]

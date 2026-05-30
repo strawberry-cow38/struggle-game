@@ -36,6 +36,10 @@ public partial class DraftActionBar : CanvasLayer
     };
     private readonly Button[] _modeButtons = new Button[3];
 
+    private Button _targetAreaBtn = null!;
+    private static readonly TargetArea[] _areaCycle = { TargetArea.Head, TargetArea.Torso, TargetArea.Legs };
+    private TargetArea _shownArea = TargetArea.Torso;
+
     private int _shownPawnId = -1;
 
     public override void _Ready()
@@ -110,6 +114,23 @@ public partial class DraftActionBar : CanvasLayer
             Tools.Mode = _forceTargetBtn.ButtonPressed ? ToolMode.ForceFireTarget : ToolMode.None;
         };
         _bar.AddChild(_forceTargetBtn);
+
+        // Targeted area — cycles Head → Torso → Legs, sets the aim region.
+        _targetAreaBtn = new Button
+        {
+            Text = "Aim: Torso",
+            TooltipText = "Body region the colonist aims for.",
+            CustomMinimumSize = new Vector2(0, ButtonHeight),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        _targetAreaBtn.Pressed += () =>
+        {
+            if (Host is null || _shownPawnId < 0) return;
+            int idx = System.Array.IndexOf(_areaCycle, _shownArea);
+            var next = _areaCycle[(idx + 1) % _areaCycle.Length];
+            Host.QueueCommand(new SetTargetAreaCommand(_shownPawnId, next));
+        };
+        _bar.AddChild(_targetAreaBtn);
     }
 
     public override void _Process(double delta)
@@ -135,6 +156,9 @@ public partial class DraftActionBar : CanvasLayer
             _modeButtons[i].SetPressedNoSignal(avail && p.RangedMode == _modes[i].mode);
         }
         _magLabel.Text = $"Mag: {p.RangedMag}/{p.RangedMagSize}";
+
+        _shownArea = p.RangedTargetArea;
+        _targetAreaBtn.Text = $"Aim: {p.RangedTargetArea}";
 
         if (Tools is not null)
             _forceTargetBtn.SetPressedNoSignal(Tools.Mode == ToolMode.ForceFireTarget);

@@ -1225,6 +1225,7 @@ public sealed class SimRuntime
             Items.FireMode rangedMode = Items.FireMode.Single;
             Items.FireModeFlags rangedModes = Items.FireModeFlags.None;
             var rangedStatus = Snapshots.RangedStatus.None;
+            var rangedArea = Items.TargetArea.Torso;
             if (ent.HasComponent<RangedCombat>() && TryGetEquippedRangedSpec(ent, out var rspec))
             {
                 var rc = ent.GetComponent<RangedCombat>();
@@ -1236,6 +1237,7 @@ public sealed class SimRuntime
                 rangedMode = rc.Mode;
                 rangedModes = rspec.Modes;
                 rangedRange = rspec.Range;
+                rangedArea = rc.TargetArea;
                 // Overhead-label state: reloading > firing (in range + LoS) >
                 // watching (target there but blocked/out of range).
                 if (rc.Reloading) rangedStatus = Snapshots.RangedStatus.Reloading;
@@ -1258,7 +1260,7 @@ public sealed class SimRuntime
                 recLevel, atRecKind, equipped, held, healthState, wr.Facing,
                 swingT, missT, flinchT, meleeTargetId,
                 hasRanged, rangedMag, rangedMagSize, rangedMode, rangedModes,
-                fireTargetId, shotTick, rangedRange, rangedStatus);
+                fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {
@@ -3840,6 +3842,13 @@ public sealed class SimRuntime
         ref var rc = ref p.GetComponent<RangedCombat>();
         rc.Mode = mode;
         rc.BurstRemaining = 0; // re-arm cleanly under the new mode
+    }
+
+    // Draft action bar: set which body region the pawn aims for.
+    public void SetTargetArea(int pawnId, Items.TargetArea area)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var p) || !p.HasComponent<RangedCombat>()) return;
+        p.GetComponent<RangedCombat>().TargetArea = area;
     }
 
     // Line of sight for bullets: walls block, doorways don't (door/cover

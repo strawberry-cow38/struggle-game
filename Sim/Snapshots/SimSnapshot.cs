@@ -166,7 +166,8 @@ public readonly record struct DummyState(
     int FireTargetId,
     long ShotTick,
     float RangedRange,
-    RangedStatus RangedStatus);
+    RangedStatus RangedStatus,
+    StruggleGame.Sim.Items.TargetArea RangedTargetArea);
 
 // What a ranged colonist is doing right now, for the overhead label.
 public enum RangedStatus : byte { None = 0, Firing = 1, Watching = 2, Reloading = 3 }

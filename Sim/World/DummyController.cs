@@ -1793,10 +1793,15 @@ public sealed class DummyController
         float r = (float)Math.Sqrt(_rng.NextDouble()) * radius; // uniform in the disc
         float toX = tp.X + (float)Math.Cos(ang) * r;
         float toY = tp.Y + (float)Math.Sin(ang) * r;
-        // Aim at the target's real body height — low for a downed/prone target
-        // so finishing shots still connect.
+        // Aim at the chosen body region's height — or low for a downed/prone
+        // target so finishing shots still connect.
         bool tgtDowned = tgt.HasComponent<Health>() && tgt.GetComponent<Health>().Unconscious;
-        float aimH = tgtDowned ? SimConstants.DownedAimHeight : SimConstants.BodyAimHeight;
+        float aimH = tgtDowned ? SimConstants.DownedAimHeight : rc.TargetArea switch
+        {
+            Items.TargetArea.Head => SimConstants.AimHeadHeight,
+            Items.TargetArea.Legs => SimConstants.AimLegsHeight,
+            _ => SimConstants.BodyAimHeight, // Torso
+        };
         PendingProjectiles.Add(new ProjectileSpawn(
             pos.X, pos.Y, toX, toY, aimH, spec.ProjectileSpeed,
             entity.Id, tgt.Id, true, rc.LoadedAmmoPath ?? ""));
