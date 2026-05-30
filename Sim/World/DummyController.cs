@@ -527,8 +527,10 @@ public sealed class DummyController
                 path.Index = 0;
             }
 
-            // Ranged fire order: shoot the forced target while range + line
-            // of sight hold. Reposition (close in) when they don't.
+            // Ranged fire order: hold the firing position (never chase). Ease
+            // onto the nearest tile on engage; fire while range + LoS hold;
+            // if the target slips out, wait in place for it to return (or a
+            // new order — move orders clear the fire target).
             if (entity.HasComponent<RangedCombat>()
                 && entity.GetComponent<RangedCombat>().TargetEntityId != 0
                 && TryGetRangedWeapon(entity, out var rwDef))
@@ -546,34 +548,22 @@ public sealed class DummyController
                 }
                 else
                 {
+                    // Hold ground: drop any path, snap smoothly to the tile.
+                    if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
+                    path.Waypoints = null; path.Index = 0;
+                    SnapToNearestTile(ref pos, dt, out _, out _);
+
                     var tp = tgt.GetComponent<WorldPos>();
                     float ddx = tp.X - pos.X, ddy = tp.Y - pos.Y;
                     float distTiles = MathF.Sqrt(ddx * ddx + ddy * ddy);
+                    if (ddx * ddx + ddy * ddy > 1e-9f) w.Facing = MathF.Atan2(ddy, ddx);
+
                     var ttile = new TilePos((int)tp.X, (int)tp.Y);
                     bool inRange = distTiles <= spec.Range;
                     bool los = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
                     if (inRange && los)
-                    {
-                        path.Waypoints = null; path.Index = 0;
-                        w.Facing = MathF.Atan2(ddy, ddx);
                         HandleRangedFire(entity, tgt, spec, pos, tp, distTiles);
-                        return;
-                    }
-                    // Out of range / blocked: move closer until both hold.
-                    bool heading = path.Waypoints is { Count: > 0 };
-                    if (!heading && path.PendingPathId == 0)
-                    {
-                        if (TryPickNeighbor(view, here, ttile, out var approach))
-                        {
-                            path.Waypoints = null; path.Index = 0;
-                            path.PendingPathId = _paths.Request(here, approach);
-                        }
-                        else
-                        {
-                            ref var rc = ref entity.GetComponent<RangedCombat>();
-                            rc.TargetEntityId = 0;
-                        }
-                    }
+                    // else: out of range / no LoS → wait in place.
                     return;
                 }
             }
@@ -1748,6 +1738,8 @@ public sealed class DummyController
             var stk = inv.Items[k];
             if (!Items.ItemCatalog.ItemsByPath.TryGetValue(stk.ItemPath, out var d) || d.Ammo is null) continue;
             if (d.Ammo.CategoryPath != spec.AmmoCategoryPath) continue;
+            // If the player locked an ammo type, only reload from that one.
+            if (rc.PreferredAmmoPath is not null && stk.ItemPath != rc.PreferredAmmoPath) continue;
             int load = Math.Min(spec.MagazineSize, stk.Count);
             if (load <= 0) continue;
             stk.Count -= load;

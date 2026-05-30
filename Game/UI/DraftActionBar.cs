@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Godot;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Items;
@@ -19,9 +20,13 @@ public partial class DraftActionBar : CanvasLayer
     private const int ButtonHeight = 28;
     private const float MarginBottom = 14f;
 
+    private const int UnloadMenuId = 10000;
+
     private HBoxContainer _bar = null!;
     private Label _magLabel = null!;
     private Button _forceTargetBtn = null!;
+    private PopupMenu _reloadMenu = null!;
+    private readonly List<string> _reloadAmmoPaths = new();
 
     private readonly (FireMode mode, FireModeFlags flag)[] _modes =
     {
@@ -76,6 +81,7 @@ public partial class DraftActionBar : CanvasLayer
         var reloadBtn = new Button
         {
             Text = "Reload",
+            TooltipText = "Left-click: reload. Right-click: pick ammo / unload.",
             CustomMinimumSize = new Vector2(0, ButtonHeight),
             FocusMode = Control.FocusModeEnum.None,
         };
@@ -84,7 +90,12 @@ public partial class DraftActionBar : CanvasLayer
             if (Host is null || _shownPawnId < 0) return;
             Host.QueueCommand(new ReloadWeaponCommand(_shownPawnId));
         };
+        reloadBtn.GuiInput += OnReloadGuiInput;
         _bar.AddChild(reloadBtn);
+
+        _reloadMenu = new PopupMenu();
+        AddChild(_reloadMenu);
+        _reloadMenu.IdPressed += OnReloadMenuPick;
 
         _forceTargetBtn = new Button
         {
@@ -131,6 +142,47 @@ public partial class DraftActionBar : CanvasLayer
         // Bottom-center, recomputed each frame (button visibility changes width).
         var vp = GetViewport().GetVisibleRect().Size;
         _bar.Position = new Vector2((vp.X - _bar.Size.X) * 0.5f, vp.Y - _bar.Size.Y - MarginBottom);
+    }
+
+    // Right-click the Reload button → choose an ammo type the colonist is
+    // carrying (force-reloads + locks auto-reload to it), or unload the mag.
+    private void OnReloadGuiInput(InputEvent @event)
+    {
+        if (@event is not InputEventMouseButton mb) return;
+        if (mb.ButtonIndex != MouseButton.Right || !mb.Pressed) return;
+        if (Host?.LatestSnapshot is not { } snap || _shownPawnId < 0) return;
+
+        DummyState? found = null;
+        foreach (var d in snap.Dummies)
+            if (d.EntityId == _shownPawnId) { found = d; break; }
+        if (found is not { } p) return;
+
+        _reloadMenu.Clear();
+        _reloadAmmoPaths.Clear();
+        foreach (var h in p.Held)
+        {
+            if (!ItemCatalog.ItemsByPath.TryGetValue(h.ItemPath, out var def) || def.Ammo is null) continue;
+            int id = _reloadAmmoPaths.Count;
+            _reloadMenu.AddItem($"Reload: {def.DisplayName} ({h.Count})", id);
+            _reloadAmmoPaths.Add(h.ItemPath);
+        }
+        if (_reloadMenu.ItemCount > 0) _reloadMenu.AddSeparator();
+        _reloadMenu.AddItem("Unload Magazine", UnloadMenuId);
+
+        _reloadMenu.Position = (Vector2I)GetViewport().GetMousePosition();
+        _reloadMenu.Popup();
+    }
+
+    private void OnReloadMenuPick(long id)
+    {
+        if (Host is null || _shownPawnId < 0) return;
+        if (id == UnloadMenuId)
+        {
+            Host.QueueCommand(new UnloadMagazineCommand(_shownPawnId));
+            return;
+        }
+        if (id >= 0 && id < _reloadAmmoPaths.Count)
+            Host.QueueCommand(new SetReloadAmmoCommand(_shownPawnId, _reloadAmmoPaths[(int)id]));
     }
 
     private void HideBar()

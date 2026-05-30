@@ -126,4 +126,52 @@ public class RangedTests
         // proving at least one reload drew spare rounds from inventory.
         Assert.True(minInvSeen < 30, $"expected a reload to draw spare ammo (min inv seen={minInvSeen})");
     }
+
+    [Fact]
+    public void PreferredAmmo_LoadsChosenType_AndUnloadReturnsRounds()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, _) = TwoPawns(sim);
+        var e = sim.Store.GetEntityById(shooter);
+        e.AddComponent(new Drafted());
+        e.AddComponent(new Inventory
+        {
+            Items = new List<InventoryStack>
+            {
+                new InventoryStack { ItemPath = ItemCatalog.RifleAmmoFmj.FullPath, Count = 30 },
+                new InventoryStack { ItemPath = ItemCatalog.RifleAmmoHp.FullPath, Count = 30 },
+            },
+            Equipped = new List<EquippedItemSlot>
+            {
+                new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = ItemCatalog.AssaultRifle.FullPath, Count = 1 },
+            },
+        });
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
+        Assert.True(e.HasComponent<RangedCombat>());
+
+        // Lock to HP + force-reload: mag fills with HP, HP inventory empties,
+        // FMJ is untouched.
+        sim.SetPreferredAmmoAndReload(shooter, ItemCatalog.RifleAmmoHp.FullPath);
+        var rc = e.GetComponent<RangedCombat>();
+        Assert.Equal(ItemCatalog.RifleAmmoHp.FullPath, rc.LoadedAmmoPath);
+        Assert.Equal(30, rc.MagCount);
+        Assert.Equal(30, InvCount(e, ItemCatalog.RifleAmmoFmj.FullPath));
+        Assert.Equal(0, InvCount(e, ItemCatalog.RifleAmmoHp.FullPath));
+
+        // Unload returns the 30 HP rounds to inventory and empties the mag.
+        sim.UnloadMagazine(shooter);
+        Assert.Equal(0, e.GetComponent<RangedCombat>().MagCount);
+        Assert.Equal(30, InvCount(e, ItemCatalog.RifleAmmoHp.FullPath));
+    }
+
+    private static int InvCount(Entity e, string path)
+    {
+        int n = 0;
+        var inv = e.GetComponent<Inventory>();
+        if (inv.Items is not null)
+            foreach (var s in inv.Items) if (s.ItemPath == path) n += s.Count;
+        return n;
+    }
 }

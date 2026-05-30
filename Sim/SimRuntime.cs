@@ -3733,22 +3733,25 @@ public sealed class SimRuntime
         rc.BurstRemaining = 0;
     }
 
-    // Draft action bar: manually reload the magazine from inventory ammo.
-    // Discards any partial mag (RimWorld-style) and refills from a matching
-    // ammo stack; no-op if the pawn carries no compatible ammo.
+    // Draft action bar: manually reload. Returns any partial mag to
+    // inventory first (no rounds lost), then refills from a matching ammo
+    // stack — honoring a locked ammo type if one is set.
     public void ManualReload(int pawnId)
     {
         if (!Store.TryGetEntityById(pawnId, out var p)) return;
         if (!p.HasComponent<RangedCombat>()) return;
         if (!TryGetEquippedRangedSpec(p, out var spec)) return;
+        UnloadMagazine(pawnId); // bank the current mag before refilling
         if (!p.HasComponent<Inventory>()) return;
         ref var inv = ref p.GetComponent<Inventory>();
         if (inv.Items is null) return;
+        string? preferred = p.GetComponent<RangedCombat>().PreferredAmmoPath;
         for (int k = 0; k < inv.Items.Count; k++)
         {
             var stk = inv.Items[k];
             if (!Items.ItemCatalog.ItemsByPath.TryGetValue(stk.ItemPath, out var d) || d.Ammo is null) continue;
             if (d.Ammo.CategoryPath != spec.AmmoCategoryPath) continue;
+            if (preferred is not null && stk.ItemPath != preferred) continue;
             int load = Math.Min(spec.MagazineSize, stk.Count);
             if (load <= 0) continue;
             stk.Count -= load;
@@ -3761,6 +3764,43 @@ public sealed class SimRuntime
             rc.BurstRemaining = 0;
             return;
         }
+    }
+
+    // Empty the magazine, returning its rounds to inventory.
+    public void UnloadMagazine(int pawnId)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var p) || !p.HasComponent<RangedCombat>()) return;
+        ref var rc = ref p.GetComponent<RangedCombat>();
+        if (rc.MagCount > 0 && rc.LoadedAmmoPath is not null)
+            AddToInventory(p, rc.LoadedAmmoPath, rc.MagCount);
+        rc.MagCount = 0;
+        rc.LoadedAmmoPath = null;
+        rc.Reloading = false;
+        rc.BurstRemaining = 0;
+    }
+
+    // Reload-button RMB menu: lock the auto-reload ammo type and force an
+    // immediate swap to it.
+    public void SetPreferredAmmoAndReload(int pawnId, string ammoPath)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var p) || !p.HasComponent<RangedCombat>()) return;
+        { ref var rc = ref p.GetComponent<RangedCombat>(); rc.PreferredAmmoPath = ammoPath; }
+        ManualReload(pawnId);
+    }
+
+    private static void AddToInventory(Entity p, string itemPath, int count)
+    {
+        if (count <= 0) return;
+        if (!p.HasComponent<Inventory>())
+            p.AddComponent(new Inventory { Items = new List<InventoryStack>(), Equipped = new List<EquippedItemSlot>() });
+        ref var inv = ref p.GetComponent<Inventory>();
+        inv.Items ??= new List<InventoryStack>();
+        for (int i = 0; i < inv.Items.Count; i++)
+            if (inv.Items[i].ItemPath == itemPath)
+            {
+                var s = inv.Items[i]; s.Count += count; inv.Items[i] = s; return;
+            }
+        inv.Items.Add(new InventoryStack { ItemPath = itemPath, Count = count });
     }
 
     // Draft action bar: change a pawn's selected fire mode.

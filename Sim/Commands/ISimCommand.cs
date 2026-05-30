@@ -261,6 +261,12 @@ public sealed class IssueMoveOrderCommand : ISimCommand
 
         // A move order cancels any melee attack.
         if (ent.HasComponent<MeleeTarget>()) ent.RemoveComponent<MeleeTarget>();
+        // ...and any ranged fire order (keeps the weapon + mag).
+        if (ent.HasComponent<RangedCombat>())
+        {
+            ref var rc = ref ent.GetComponent<RangedCombat>();
+            rc.TargetEntityId = 0; rc.BurstRemaining = 0;
+        }
 
         if (!ent.HasComponent<OrderQueue>())
         {
@@ -808,6 +814,23 @@ public sealed class ReloadWeaponCommand : ISimCommand
     public int PawnEntityId { get; }
     public ReloadWeaponCommand(int pawnId) { PawnEntityId = pawnId; }
     public void Apply(SimRuntime sim) => sim.ManualReload(PawnEntityId);
+}
+
+// Reload-button RMB menu: lock auto-reload to an ammo type + force-reload now.
+public sealed class SetReloadAmmoCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public string AmmoPath { get; }
+    public SetReloadAmmoCommand(int pawnId, string ammoPath) { PawnEntityId = pawnId; AmmoPath = ammoPath; }
+    public void Apply(SimRuntime sim) => sim.SetPreferredAmmoAndReload(PawnEntityId, AmmoPath);
+}
+
+// Reload-button RMB menu: empty the magazine back into inventory.
+public sealed class UnloadMagazineCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public UnloadMagazineCommand(int pawnId) { PawnEntityId = pawnId; }
+    public void Apply(SimRuntime sim) => sim.UnloadMagazine(PawnEntityId);
 }
 
 // Debug "Add Injury": apply a condition to a colonist's body part.

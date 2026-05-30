@@ -150,9 +150,11 @@ public static class ItemCatalog
     // First ranged weapon — ships with all three fire modes for testing.
     public static readonly ItemDef AssaultRifle;
     public static readonly ItemCategory Ammo;
-    // Rifle ammo variants: AP penetrates (future), HP wounds harder.
+    // Rifle ammo variants: AP penetrates (future), HP wounds harder, FMJ
+    // balanced in between.
     public static readonly ItemDef RifleAmmoAp;
     public static readonly ItemDef RifleAmmoHp;
+    public static readonly ItemDef RifleAmmoFmj;
 
     static ItemCatalog()
     {
@@ -173,20 +175,23 @@ public static class ItemCatalog
             ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.30f, ArmorPen = 0.6f });
         RifleAmmoHp = RegisterItem("RifleAmmoHP", "5.56x45mm NATO (HP)", Ammo, weight: 0.02f, bulk: 0.02f,
             ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.48f, ArmorPen = 0.1f });
+        RifleAmmoFmj = RegisterItem("RifleAmmoFMJ", "5.56x45mm NATO (FMJ)", Ammo, weight: 0.02f, bulk: 0.02f,
+            ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.38f, ArmorPen = 0.35f });
         AssaultRifle = RegisterItem("AssaultRifle", "M16A1", Equipment, weight: 4f, bulk: 3f, equippable: true,
             ranged: new RangedSpec
             {
-                Range = 25f,
+                Range = 50f,
                 AmmoCategoryPath = "Rifle",
                 MagazineSize = 30,
                 Modes = FireModeFlags.Single | FireModeFlags.Burst | FireModeFlags.Auto,
                 BurstShots = 3,
-                ProjectileSpeed = 40f,
+                ProjectileSpeed = 55f,
                 Accuracy = 0.95f,
-                AccuracyFalloff = 0.018f,
-                WarmupTicks = 30,
-                ShotCooldownTicks = 6,
-                CycleCooldownTicks = 36,
+                AccuracyFalloff = 0.009f,
+                WarmupTicks = 12,
+                // ~720 rpm cyclic = a shot every ~5 ticks at 60 Hz.
+                ShotCooldownTicks = 5,
+                CycleCooldownTicks = 8,
                 ReloadTicks = 120,
             });
     }

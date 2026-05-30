@@ -621,6 +621,7 @@ public struct RangedCombat : IComponent
     public int TargetEntityId;     // forced fire target, 0 = none
     public int MagCount;           // rounds currently in the magazine
     public string? LoadedAmmoPath; // which ammo is chambered (decides the wound)
+    public string? PreferredAmmoPath; // player-chosen reload ammo; null = any matching
     public StruggleGame.Sim.Items.FireMode Mode;
     public long NextActionTick;    // earliest tick the next shot / reload-finish may happen
     public int BurstRemaining;     // shots left to fire in the current burst
