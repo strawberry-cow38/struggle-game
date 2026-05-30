@@ -13,6 +13,19 @@ namespace StruggleGame.Tests;
 // with a clear flank enters a lean stance.
 public class CoverTests
 {
+    [Fact]
+    public void RangedLos_DoesNotCutPastWallCorner()
+    {
+        var sim = new SimRuntime();
+        // A diagonal sight line that grazes the corner of a wall at (21,20)
+        // must be blocked — a real round would clip the wall, not thread past.
+        bool before = sim.RangedLosClear(20, 20, 22, 18);
+        sim.InstantPlaceWall(new TilePos(21, 20));
+        if (before) // only meaningful if the lane was open pre-wall
+            Assert.False(sim.RangedLosClear(20, 20, 22, 18),
+                "diagonal sight must not cut past the wall corner");
+    }
+
     private static (int a, int b) TwoPawns(SimRuntime sim)
     {
         var ids = new List<int>();

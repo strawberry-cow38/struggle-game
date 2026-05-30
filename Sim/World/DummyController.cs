@@ -589,15 +589,14 @@ public sealed class DummyController
                     // ─── Cover assessment ─────────────────────────────────
                     // Crouch cover: a sandbag in the step toward the target.
                     bool crouchCover = directLos && HasSandbagToward(here, ttile);
-                    // Wall lean: whenever a wall sits toward the target (so a
-                    // straight shot would graze/eat it), peek one cell sideways
-                    // to a spot with clear sight — even if Bresenham snuck a
-                    // diagonal gap through. Peeking out beats firing into the wall.
+                    // Wall lean: when the direct shot is blocked (incl. grazing
+                    // a wall corner — RangedLosClear no longer cuts corners),
+                    // peek one cell sideways to a spot that opens a clear lane.
                     bool leaning = false;
                     WorldPos muzzle = pos;
                     var firePos = pos;
                     bool losFinal = directLos;
-                    if (TryFindLeanCell(view, here, ttile, out var leanCell))
+                    if (!directLos && TryFindLeanCell(view, here, ttile, out var leanCell))
                     {
                         leaning = true;
                         losFinal = true;
@@ -1915,26 +1914,28 @@ public sealed class DummyController
         int dx = ttile.X - here.X, dy = ttile.Y - here.Y;
         if (dx == 0 && dy == 0) return false;
 
-        // The wall we peek around sits one tile toward the target on its
-        // dominant axis; we step along the PERPENDICULAR axis to peek past it.
-        // axisDir is "past the corner" — a legit peek fires roughly along it.
-        int wallX, wallY;
+        // Only lean when actually hugging a wall (a genuine corner peek) — not
+        // sidestepping in the open.
+        bool hugging = view.GetWall(here.X + 1, here.Y) != WallType.None
+            || view.GetWall(here.X - 1, here.Y) != WallType.None
+            || view.GetWall(here.X, here.Y + 1) != WallType.None
+            || view.GetWall(here.X, here.Y - 1) != WallType.None;
+        if (!hugging) return false;
+
+        // Firing axis = dominant direction to the target; the legit peek steps
+        // PERPENDICULAR to it and fires roughly along it (≤45° off).
         float axisX, axisY;
         (int dx, int dy)[] perp;
         if (Math.Abs(dx) >= Math.Abs(dy))
         {
-            wallX = here.X + Math.Sign(dx); wallY = here.Y;
             axisX = Math.Sign(dx); axisY = 0f;
             perp = new (int, int)[] { (0, 1), (0, -1) };
         }
         else
         {
-            wallX = here.X; wallY = here.Y + Math.Sign(dy);
             axisX = 0f; axisY = Math.Sign(dy);
             perp = new (int, int)[] { (1, 0), (-1, 0) };
         }
-        // No wall blocking on the target axis → nothing to peek around, no lean.
-        if (view.GetWall(wallX, wallY) == WallType.None) return false;
 
         float best = float.MaxValue; bool found = false;
         foreach (var (px, py) in perp)
@@ -1942,12 +1943,11 @@ public sealed class DummyController
             int cx = here.X + px, cy = here.Y + py;
             if (!view.InBounds(cx, cy)) continue;
             if (view.GetWall(cx, cy) != WallType.None) continue; // can't peek into a wall
+            // The peek cell must OPEN a lane the body lacks (LoS clear from it).
             if (!LosClear(cx, cy, ttile.X, ttile.Y)) continue;
-            // Clamp the wedge: the shot must run more ALONG the wall (the
-            // cover axis) than along the lean step. A shot near the axis is a
-            // genuine peek (body still behind the wall); one swinging toward
-            // perpendicular means the pawn has stepped into the open, fully
-            // exposed — that's not a lean. Cutoff = 45° off the axis.
+            // Wedge clamp: the shot must run more ALONG the wall (cover axis)
+            // than along the lean step. Near-axis = genuine peek; swinging
+            // toward perpendicular = the pawn stepped fully into the open.
             float ex = ttile.X - cx, ey = ttile.Y - cy;
             float d2 = ex * ex + ey * ey;
             float elen = MathF.Sqrt(d2);

@@ -4002,8 +4002,20 @@ public sealed class SimRuntime
         while (true)
         {
             int e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; x += sx; }
-            if (e2 < dx) { err += dx; y += sy; }
+            bool stepX = e2 > -dy;
+            bool stepY = e2 < dx;
+            if (stepX && stepY)
+            {
+                // Diagonal step: don't let the sight line squeeze past a wall
+                // CORNER. If either cell flanking the diagonal is a wall, a real
+                // round would clip it — so it's blocked (the pawn must lean to
+                // open the lane instead of grazing the corner).
+                if (Map.GetWall(x + sx, y) != WallType.None || Map.GetWall(x, y + sy) != WallType.None)
+                    return false;
+                err -= dy; err += dx; x += sx; y += sy;
+            }
+            else if (stepX) { err -= dy; x += sx; }
+            else { err += dx; y += sy; }
             if (x == x1 && y == y1) return true;
             if (Map.GetWall(x, y) != WallType.None) return false;
         }
