@@ -329,6 +329,48 @@ public class RangedTests
         Assert.True(bystanderHit, "a round fired at the far target should hit the bystander standing in the line");
     }
 
+    [Fact]
+    public void StandingShot_FliesOverDownedBystander()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var ids = new List<int>();
+        sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity e) => ids.Add(e.Id));
+        Assert.True(ids.Count >= 3, "need three pawns");
+        int shooter = ids[0], bystander = ids[1], target = ids[2];
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        sim.Store.GetEntityById(target).AddComponent(new Drafted());
+        ArmWithRifle(sim, shooter, ItemCatalog.RifleAmmoFmj, 200);
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
+        DownByPain(sim, bystander); // prone now
+
+        void Place()
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f);
+            SetPos(sim, bystander, 23.5f, 20.5f); // lying in the line
+            SetPos(sim, target, 28.5f, 20.5f);    // standing
+        }
+        Place();
+        sim.SetFireTarget(shooter, target);
+
+        bool targetHit = false, bystanderGunshot = false;
+        for (int i = 0; i < 2500; i++)
+        {
+            Place();
+            sim.Step(SimConstants.TickSeconds);
+            if (sim.Store.TryGetEntityById(bystander, out var b) && b.HasComponent<Health>())
+                foreach (var w in b.GetComponent<Health>().Injuries!)
+                    if (w.Kind == ConditionKind.Gunshot) bystanderGunshot = true;
+            if (sim.Store.TryGetEntityById(target, out var t) && t.HasComponent<Health>())
+                foreach (var w in t.GetComponent<Health>().Injuries!)
+                    if (w.Kind == ConditionKind.Gunshot) targetHit = true;
+            if (targetHit) break;
+        }
+        Assert.True(targetHit, "the standing target should be hit");
+        Assert.False(bystanderGunshot, "a torso-height round should fly over the prone bystander");
+    }
+
     private static int InvCount(Entity e, string path)
     {
         int n = 0;

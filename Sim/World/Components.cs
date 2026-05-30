@@ -657,7 +657,7 @@ public struct Projectile : IComponent
 // drained by SimRuntime after the pass (entity creation is a structural
 // change, so it can't happen mid-iteration).
 public readonly record struct ProjectileSpawn(
-    float FromX, float FromY, float ToX, float ToY,
+    float FromX, float FromY, float ToX, float ToY, float ToHeight,
     float Speed, int ShooterEntityId, int TargetEntityId, bool WillHit, string AmmoPath);
 
 // A dead colonist's body, dropped on the ground where they fell. Stashes

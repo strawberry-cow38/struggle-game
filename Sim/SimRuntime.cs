@@ -3876,7 +3876,7 @@ public sealed class SimRuntime
             // rounds the flight is brief, so the arc is nearly flat.
             float dist = MathF.Sqrt(ddx * ddx + ddy * ddy);
             float flight = MathF.Max(dist / MathF.Max(ps.Speed, 0.01f), 1e-3f);
-            float vVel = (SimConstants.BodyAimHeight - SimConstants.MuzzleHeight) / flight
+            float vVel = (ps.ToHeight - SimConstants.MuzzleHeight) / flight
                        + 0.5f * SimConstants.ProjectileGravity * flight;
             var e = Store.CreateEntity();
             e.AddComponent(new Projectile
@@ -3893,7 +3893,7 @@ public sealed class SimRuntime
 
     // Per-bullet hit radius around a pawn (tiles).
     private const float ProjectileHitRadius = 0.45f;
-    private readonly List<(int Id, float X, float Y)> _projPawns = new();
+    private readonly List<(int Id, float X, float Y, float BodyH)> _projPawns = new();
 
     // Advance every bullet along its FIXED line (no homing). Each tick the
     // segment it sweeps is tested against walls and pawns: it stops on the
@@ -3906,10 +3906,12 @@ public sealed class SimRuntime
         Store.Query<Projectile>().ForEachEntity((ref Projectile _, Entity e) => _projScratch.Add(e));
         if (_projScratch.Count == 0) return;
 
-        // Gather live pawns once (corpses have no Health component).
+        // Gather live pawns once (corpses have no Health component). Downed
+        // pawns lie prone → a much shorter hitbox.
         _projPawns.Clear();
-        Store.Query<WorldPos, Health>().ForEachEntity((ref WorldPos wp, ref Health _, Entity pe) =>
-            _projPawns.Add((pe.Id, wp.X, wp.Y)));
+        Store.Query<WorldPos, Health>().ForEachEntity((ref WorldPos wp, ref Health h, Entity pe) =>
+            _projPawns.Add((pe.Id, wp.X, wp.Y,
+                h.Unconscious ? SimConstants.DownedBodyHeight : SimConstants.PawnBodyHeight)));
 
         foreach (var e in _projScratch)
         {
@@ -3930,8 +3932,8 @@ public sealed class SimRuntime
             float bestT = float.MaxValue;
             int hitPawn = 0;
             if (SegmentFirstWall(pr.X, pr.Y, nx, ny, out float wallT)) bestT = wallT;
-            if (nh >= 0f && nh <= SimConstants.PawnBodyHeight + 0.1f
-                && SegmentFirstPawn(pr.X, pr.Y, nx, ny, pr.ShooterEntityId, out int pid, out float pawnT)
+            if (nh >= 0f
+                && SegmentFirstPawn(pr.X, pr.Y, nx, ny, nh, pr.ShooterEntityId, out int pid, out float pawnT)
                 && pawnT < bestT)
             { bestT = pawnT; hitPawn = pid; }
 
@@ -3989,17 +3991,20 @@ public sealed class SimRuntime
         return false;
     }
 
-    // Nearest pawn (≠ shooter) whose body the segment passes within hit radius.
-    private bool SegmentFirstPawn(float ax, float ay, float bx, float by, int shooterId, out int pawnId, out float t)
+    // Nearest pawn (≠ shooter) whose body the segment passes within hit radius,
+    // AND whose prone/standing height the round is low enough to strike. A
+    // torso-height round flies clean over a downed (prone) pawn.
+    private bool SegmentFirstPawn(float ax, float ay, float bx, float by, float bulletHeight, int shooterId, out int pawnId, out float t)
     {
         pawnId = 0; t = float.MaxValue;
         float dx = bx - ax, dy = by - ay;
         float len2 = dx * dx + dy * dy;
         if (len2 < 1e-6f) return false;
         float r2 = ProjectileHitRadius * ProjectileHitRadius;
-        foreach (var (id, px, py) in _projPawns)
+        foreach (var (id, px, py, bodyH) in _projPawns)
         {
             if (id == shooterId) continue;
+            if (bulletHeight > bodyH) continue; // round passes above this pawn
             float proj = ((px - ax) * dx + (py - ay) * dy) / len2;
             float ct = Math.Clamp(proj, 0f, 1f);
             float qx = ax + dx * ct, qy = ay + dy * ct;

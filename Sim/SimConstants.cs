@@ -18,8 +18,11 @@ public static class SimConstants
     // and torso-center aim point sit around mid-body.
     public const float PawnBodyHeight = 1.1f;
     public const float MuzzleHeight = 0.9f;     // where a held rifle fires from
-    public const float BodyAimHeight = 0.85f;   // torso-center the shot aims at
+    public const float BodyAimHeight = 0.85f;   // torso-center of a standing pawn
     public const float ProjectileGravity = 6.5f; // ~9.8 m/s² at 1.5 m/tile
+    // Downed/unconscious pawns lie prone: a low hitbox you have to aim low for.
+    public const float DownedBodyHeight = 0.35f;
+    public const float DownedAimHeight = 0.18f;
 
     // Inventory caps for a colonist. Either one being exceeded stops them
     // adding more to their carry. Both default to 75 so a single wood
