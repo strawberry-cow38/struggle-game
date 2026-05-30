@@ -603,15 +603,12 @@ public partial class WorldRenderer : Node2D
                     drawY = Mathf.Lerp(prev.Y, d.Y, interpAlpha);
                 }
                 var center = new Vector2(drawX * PixelsPerTile, drawY * PixelsPerTile);
-                // Combat juice: lunge forward on a swing, recoil on a hit.
+                // Combat juice: lunge forward on a swing. (No victim flinch.)
                 {
                     var fdir = new Vector2(Mathf.Cos(d.Facing), Mathf.Sin(d.Facing));
                     long sinceSwing = snap.Tick - d.SwingTick;
                     if (d.SwingTick > 0 && sinceSwing >= 0 && sinceSwing < LungeTicks)
                         center += fdir * (Mathf.Sin(sinceSwing / (float)LungeTicks * Mathf.Pi) * PixelsPerTile * 0.30f);
-                    long sinceFlinch = snap.Tick - d.FlinchTick;
-                    if (d.FlinchTick > 0 && sinceFlinch >= 0 && sinceFlinch < FlinchTicks)
-                        center -= fdir * (Mathf.Sin(sinceFlinch / (float)FlinchTicks * Mathf.Pi) * PixelsPerTile * 0.22f);
                 }
                 DrawCircle(center, radius, DummyColor);
                 // Facing arrow: a small triangle on the rim pointing the
