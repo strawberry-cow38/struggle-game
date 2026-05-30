@@ -4024,11 +4024,23 @@ public sealed class SimRuntime
     private bool ResolveProjectileHit(int targetId, string ammoPath, float impactHeight)
     {
         if (!Store.TryGetEntityById(targetId, out var t) || !t.HasComponent<Health>()) return false;
-        float bodyH = SimConstants.PawnBodyHeight;
-        var pool = impactHeight < bodyH * 0.45f ? _lowerParts
-                 : impactHeight < bodyH * 0.85f ? _midParts
-                 : _upperParts;
-        var part = pool[_spawnRng.Next(pool.Length)];
+        string part;
+        if (t.GetComponent<Health>().Unconscious)
+        {
+            // Prone: the whole body is laid flat at the impact height, so a hit
+            // can land on any part — height doesn't map to a region.
+            var all = StruggleGame.Sim.Bodies.BodyTree.PunchableParts;
+            part = all[_spawnRng.Next(all.Count)];
+        }
+        else
+        {
+            // Standing: pick the body region from the round's height at impact.
+            float bodyH = SimConstants.PawnBodyHeight;
+            var pool = impactHeight < bodyH * 0.45f ? _lowerParts
+                     : impactHeight < bodyH * 0.85f ? _midParts
+                     : _upperParts;
+            part = pool[_spawnRng.Next(pool.Length)];
+        }
         var kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot;
         float dmg = 12f, pen = 6f;
         string? caliber = null;
