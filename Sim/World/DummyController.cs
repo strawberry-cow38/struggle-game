@@ -1917,16 +1917,20 @@ public sealed class DummyController
 
         // The wall we peek around sits one tile toward the target on its
         // dominant axis; we step along the PERPENDICULAR axis to peek past it.
+        // axisDir is "past the corner" — a legit peek fires roughly along it.
         int wallX, wallY;
+        float axisX, axisY;
         (int dx, int dy)[] perp;
         if (Math.Abs(dx) >= Math.Abs(dy))
         {
             wallX = here.X + Math.Sign(dx); wallY = here.Y;
+            axisX = Math.Sign(dx); axisY = 0f;
             perp = new (int, int)[] { (0, 1), (0, -1) };
         }
         else
         {
             wallX = here.X; wallY = here.Y + Math.Sign(dy);
+            axisX = 0f; axisY = Math.Sign(dy);
             perp = new (int, int)[] { (1, 0), (-1, 0) };
         }
         // No wall blocking on the target axis → nothing to peek around, no lean.
@@ -1939,12 +1943,23 @@ public sealed class DummyController
             if (!view.InBounds(cx, cy)) continue;
             if (view.GetWall(cx, cy) != WallType.None) continue; // can't peek into a wall
             if (!LosClear(cx, cy, ttile.X, ttile.Y)) continue;
+            // Clamp the wedge: the shot from the peek cell must head roughly
+            // PAST the corner (along axisDir), not bend back wide around the
+            // wall. Reject targets more than ~45° off the firing axis — that's
+            // the "max degree of the perpendicular wall" limit.
             float ex = ttile.X - cx, ey = ttile.Y - cy;
             float d2 = ex * ex + ey * ey;
+            float elen = MathF.Sqrt(d2);
+            if (elen < 1e-4f) continue;
+            float dot = (ex / elen) * axisX + (ey / elen) * axisY;
+            if (dot < LeanMaxOffAxisCos) continue;
             if (d2 < best) { best = d2; leanCell = new TilePos(cx, cy); found = true; }
         }
         return found;
     }
+
+    // Cos of the widest angle a lean shot may sit off the corner's axis (~45°).
+    private const float LeanMaxOffAxisCos = 0.70f;
 
     // Undrafted idle behavior: keep the equipped ranged weapon's magazine
     // topped off, walking to fetch ammo from a pile when none is carried.
