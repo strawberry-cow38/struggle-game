@@ -223,8 +223,9 @@ public readonly record struct ItemPileState(int EntityId, TilePos Tile, int Coun
 public readonly record struct BloodPuddleState(TilePos Tile, float Amount);
 
 // A bullet in flight, in tile coordinates. Angle is the travel heading for
-// drawing the streak; IsAp tints AP rounds differently from HP.
-public readonly record struct ProjectileState(float X, float Y, float Angle, bool IsAp);
+// drawing the streak; Speed (tiles/sec) sets the tracer length so it spans
+// one tick of travel (no gaps); IsAp tints AP rounds differently from HP.
+public readonly record struct ProjectileState(float X, float Y, float Angle, float Speed, bool IsAp);
 
 // A transient blood spray at a bullet-hit point. Alpha 1→0 over its life.
 public readonly record struct BloodImpactState(float X, float Y, float Alpha);

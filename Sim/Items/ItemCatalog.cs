@@ -185,7 +185,9 @@ public static class ItemCatalog
                 MagazineSize = 30,
                 Modes = FireModeFlags.Single | FireModeFlags.Burst | FireModeFlags.Auto,
                 BurstShots = 3,
-                ProjectileSpeed = 55f,
+                // Fast round — snappy, not floaty. Tracer length scales with
+                // this so it reads as a continuous streak, not stepping dots.
+                ProjectileSpeed = 150f,
                 // Hit chance = Accuracy - distance*Falloff (clamped). Point
                 // blank ~0.95, ~0.6 at 25 tiles, ~0.25 at 50 — distance matters.
                 Accuracy = 0.95f,

@@ -969,7 +969,10 @@ public partial class WorldRenderer : Node2D
     {
         var head = new Vector2(pr.X * PixelsPerTile, pr.Y * PixelsPerTile);
         var dir = new Vector2(Mathf.Cos(pr.Angle), Mathf.Sin(pr.Angle));
-        var tail = head - dir * (PixelsPerTile * 0.45f);
+        // Tracer spans one tick of travel so a fast round draws a continuous
+        // streak between its stepped positions instead of disconnected dots.
+        float streakTiles = Mathf.Max(0.45f, pr.Speed / Sim.SimConstants.TickHz);
+        var tail = head - dir * (PixelsPerTile * streakTiles);
         var col = pr.IsAp ? BulletApColor : BulletColor;
         DrawLine(tail, head, col, 2.0f, antialiased: true);
         DrawCircle(head, 2.5f, col);

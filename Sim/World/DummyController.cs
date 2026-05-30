@@ -560,14 +560,22 @@ public sealed class DummyController
                     var tp = tgt.GetComponent<WorldPos>();
                     float ddx = tp.X - pos.X, ddy = tp.Y - pos.Y;
                     float distTiles = MathF.Sqrt(ddx * ddx + ddy * ddy);
-                    if (ddx * ddx + ddy * ddy > 1e-9f) w.Facing = MathF.Atan2(ddy, ddx);
-
                     var ttile = new TilePos((int)tp.X, (int)tp.Y);
                     bool inRange = distTiles <= spec.Range;
                     bool los = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
-                    if (inRange && los)
-                        HandleRangedFire(entity, tgt, spec, pos, tp, distTiles);
-                    // else: out of range / no LoS → wait in place.
+
+                    if (los)
+                    {
+                        // Visible: snap-aim at the target, fire if in range.
+                        if (ddx * ddx + ddy * ddy > 1e-9f) w.Facing = MathF.Atan2(ddy, ddx);
+                        if (inRange) HandleRangedFire(entity, tgt, spec, pos, tp, distTiles);
+                    }
+                    else
+                    {
+                        // Lost sight: don't keep staring through the wall —
+                        // stand ready and wait for them to reappear.
+                        w.Facing = SouthFacing;
+                    }
                     return;
                 }
             }

@@ -1418,7 +1418,7 @@ public sealed class SimRuntime
         projQuery.ForEachEntity((ref Projectile pr, Entity _) =>
         {
             bool isAp = pr.AmmoPath == Items.ItemCatalog.RifleAmmoAp.FullPath;
-            projBuf[pri++] = new ProjectileState(pr.X, pr.Y, pr.Angle, isAp);
+            projBuf[pri++] = new ProjectileState(pr.X, pr.Y, pr.Angle, pr.Speed, isAp);
         });
         snap.ProjectilesCount = pri;
 
@@ -3869,7 +3869,10 @@ public sealed class SimRuntime
         _dummies.PendingProjectiles.Clear();
     }
 
-    // Advance every bullet; on arrival, a hit wounds the target.
+    // Advance every bullet. A hit homes onto its (possibly moving) target so
+    // the round visibly lands on it; on arrival it wounds the target and
+    // sprays blood at that exact point. A miss flies to its fixed scatter
+    // point and vanishes. If a hit's target dies mid-flight, it whiffs.
     private void StepProjectiles(float dt)
     {
         _projScratch.Clear();
@@ -3877,12 +3880,27 @@ public sealed class SimRuntime
         foreach (var e in _projScratch)
         {
             ref var pr = ref e.GetComponent<Projectile>();
+            bool tracking = false;
+            if (pr.WillHit
+                && Store.TryGetEntityById(pr.TargetEntityId, out var t)
+                && t.HasComponent<WorldPos>() && t.HasComponent<Health>())
+            {
+                tracking = true;
+                var wp = t.GetComponent<WorldPos>();
+                pr.ToX = wp.X; pr.ToY = wp.Y;
+            }
             float ddx = pr.ToX - pr.X, ddy = pr.ToY - pr.Y;
             float dist = MathF.Sqrt(ddx * ddx + ddy * ddy);
+            if (dist > 1e-4f) pr.Angle = MathF.Atan2(ddy, ddx);
             float step = pr.Speed * dt;
             if (dist <= step || dist < 1e-4f)
             {
-                if (pr.WillHit) ResolveProjectileHit(in pr);
+                pr.X = pr.ToX; pr.Y = pr.ToY;
+                if (tracking)
+                {
+                    ResolveProjectileHit(in pr);
+                    _bloodImpacts.Add((pr.X, pr.Y, BloodImpactSec)); // spray exactly where it landed
+                }
                 e.DeleteEntity();
                 continue;
             }
@@ -3907,12 +3925,6 @@ public sealed class SimRuntime
         ApplyInjury(pr.TargetEntityId, part, kind, dmg);
         if (t.HasComponent<Combat>())
         { ref var tc = ref t.GetComponent<Combat>(); tc.FlinchTick = Tick; }
-        // Blood spray at the point of impact.
-        if (t.HasComponent<WorldPos>())
-        {
-            var wp = t.GetComponent<WorldPos>();
-            _bloodImpacts.Add((wp.X, wp.Y, BloodImpactSec));
-        }
     }
 
     private void AgeBloodImpacts(float dt)
