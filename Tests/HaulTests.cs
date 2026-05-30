@@ -93,6 +93,25 @@ public class HaulTests
     }
 
     [Fact]
+    public void HaulReservedPile_IsNotConsumed()
+    {
+        var sim = new SimRuntime();
+        var tile = NearbyWalkable(sim, new TilePos(50, 50));
+        sim.SpawnItemPile(tile, ItemCatalog.Carrot.FullPath, 5);
+
+        // Reserve the pile for a (fictional) haul.
+        int id = 0;
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
+        { if (p.Tile == tile && p.ItemPath == ItemCatalog.Carrot.FullPath) id = e.Id; });
+        Assert.True(sim.Store.TryGetEntityById(id, out var pileEnt));
+        pileEnt.AddComponent(new HaulReserved { JobId = StruggleGame.Sim.Jobs.JobId.None });
+
+        int got = sim.TryConsumeFromPile(tile, ItemCatalog.Carrot.FullPath, 3);
+        Assert.Equal(0, got); // reserved → left alone, never deleted under a hauler
+        Assert.True(sim.Store.TryGetEntityById(id, out _));
+    }
+
+    [Fact]
     public void PrioritizeHaul_PostsJobAndDelivers()
     {
         var sim = new SimRuntime();

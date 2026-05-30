@@ -1796,6 +1796,9 @@ public sealed class SimRuntime
             if (taken >= wanted) return;
             if (p.Tile != tile) return;
             if (p.ItemPath != itemPath) return;
+            // Don't consume a stack a hauler has already claimed — deleting
+            // it would leave that haul job pointing at a dead entity.
+            if (ent.HasComponent<HaulReserved>()) return;
             int can = Math.Min(p.Count, wanted - taken);
             p.Count -= can;
             taken += can;

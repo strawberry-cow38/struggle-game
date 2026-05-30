@@ -1291,7 +1291,10 @@ public sealed class DummyController
             {
                 path.Waypoints = null;
                 path.Index = 0;
-                if (!job.Entity.HasComponent<HaulPayload>())
+                // The item entity can vanish out from under the job (consumed,
+                // merged, owner died). Bail safely instead of dereferencing a
+                // dead handle.
+                if (job.Entity.IsNull || !job.Entity.HasComponent<HaulPayload>())
                 {
                     _cancelJob(job.Id);
                     cb.RemoveComponent<BuildTarget>(entity.Id);
