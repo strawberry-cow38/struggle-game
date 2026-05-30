@@ -61,6 +61,9 @@ public partial class Selector : Node2D
     private int[] _meleeAttackers = Array.Empty<int>();
     // Fire menu (id 6): drafted attackers that hold a ranged weapon.
     private int[] _fireAttackers = Array.Empty<int>();
+    // Move-here entry (id 7): drafted single pawn ordered to stand on the
+    // clicked tile (lets it move atop dropped piles etc).
+    private TilePos _moveHereTile;
 
     public override void _Ready()
     {
@@ -152,6 +155,11 @@ public partial class Selector : Node2D
         {
             foreach (var shooter in _fireAttackers)
                 Host.QueueCommand(new SetFireTargetCommand(shooter, _meleeTargetId));
+        }
+        else if (id == 7)
+        {
+            // Move here — stand on the clicked tile (e.g. atop dropped items).
+            Host.QueueCommand(new IssueMoveOrderCommand(_bpMenuPawnId, _moveHereTile, append: false));
         }
     }
 
@@ -403,6 +411,16 @@ public partial class Selector : Node2D
                 _bpMenu.AddItem("Pick up X...", 4);
             }
         }
+        // Drafted single pawn RMB'd something rmb-able on a tile → offer to
+        // just move there (stand atop the dropped pile etc). Only when the menu
+        // already has an entry, so RMB on empty ground still falls through to a
+        // direct move order instead of popping a menu.
+        if (draftedMode && _bpMenu.ItemCount > 0)
+        {
+            _moveHereTile = clickTile;
+            _bpMenu.AddItem("Move here", 7);
+        }
+
         if (_bpMenu.ItemCount == 0) return false;
 
         var canvasXform = GetCanvasTransform();
