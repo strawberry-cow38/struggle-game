@@ -5699,8 +5699,14 @@ public sealed class SimRuntime
             },
         });
         shooter.AddComponent(new Drafted());
-        shooter.AddComponent(new RangedCombat { Mode = Items.FireMode.Auto });
-        SetFireTarget(shooter.Id, target.Id);
+        // Full-auto + finish-off so it keeps hammering the target through the
+        // downed state until death — continuous tracers for the demo clip.
+        shooter.AddComponent(new RangedCombat
+        {
+            Mode = Items.FireMode.Auto,
+            TargetEntityId = target.Id,
+            FinishOff = true,
+        });
     }
 
     private bool IsOccupied(int tileX, int tileY)

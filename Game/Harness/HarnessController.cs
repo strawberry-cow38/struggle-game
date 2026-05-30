@@ -569,9 +569,13 @@ public partial class HarnessController : Node2D
                 }
                 _warmupSec = 2.0;
                 _manualSim = true;
-                _schedule.Add((0.1, h => h.SetCameraZoom(0.6f), "zoom out"));
-                _schedule.Add((0.5, h => h.SetupGunfight(c - 10, c, c + 10, c), "spawn shooter + target, open fire"));
-                _schedule.Add((7.0, h => h.Finish("gunfight complete"), "finish"));
+                // Clear the 3 default wanderers so only the duel is in frame.
+                _schedule.Add((0.1, h => h.RemoveLowest(), "remove default 1"));
+                _schedule.Add((0.15, h => h.RemoveLowest(), "remove default 2"));
+                _schedule.Add((0.2, h => h.RemoveLowest(), "remove default 3"));
+                _schedule.Add((0.3, h => h.SetCameraZoom(2.4f), "zoom in"));
+                _schedule.Add((0.6, h => h.SetupGunfight(c - 3, c, c + 3, c), "spawn shooter + target, open fire"));
+                _schedule.Add((5.0, h => h.Finish("gunfight complete"), "finish"));
                 break;
             case "stress":
                 for (int r = 2; r <= 6; r++)

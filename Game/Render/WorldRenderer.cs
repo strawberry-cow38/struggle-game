@@ -977,11 +977,15 @@ public partial class WorldRenderer : Node2D
         var head = headTile * PixelsPerTile;
         // Tracer spans one tick of travel so a fast round draws a continuous
         // streak between its stepped positions instead of disconnected dots.
-        float streakTiles = Mathf.Max(0.45f, pr.Speed / Sim.SimConstants.TickHz);
+        float streakTiles = Mathf.Max(0.6f, pr.Speed / Sim.SimConstants.TickHz);
         var tail = head - dir * (PixelsPerTile * streakTiles);
         var col = pr.IsAp ? BulletApColor : BulletColor;
-        DrawLine(tail, head, col, 2.0f, antialiased: true);
-        DrawCircle(head, 2.5f, col);
+        // Soft glow underlay so the tracer reads even when scaled down for a
+        // clip, then the bright core + head on top.
+        var glow = col; glow.A = 0.35f;
+        DrawLine(tail, head, glow, 9.0f, antialiased: true);
+        DrawLine(tail, head, col, 4.0f, antialiased: true);
+        DrawCircle(head, 5.0f, col);
     }
 
     private static readonly Color BloodSprayColor = new(0.55f, 0.02f, 0.02f);
