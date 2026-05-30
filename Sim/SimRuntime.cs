@@ -170,7 +170,7 @@ public sealed class SimRuntime
     // Transient blood-impact sprays at bullet-hit points (world tile coords +
     // remaining seconds). Cosmetic; aged out each tick.
     private readonly List<(float X, float Y, float Angle, float Sec)> _bloodImpacts = new();
-    private const float BloodImpactSec = 0.35f;
+    private const float BloodImpactSec = 0.45f;
     // Cached per-lamp disc bake. Each entry is the lamp's static
     // contribution pattern (relative to its tile) baked against the
     // current wall/door layout. Color and power state are NOT baked —

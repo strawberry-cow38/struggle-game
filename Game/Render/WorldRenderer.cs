@@ -987,28 +987,40 @@ public partial class WorldRenderer : Node2D
     }
 
     private static readonly Color BloodSprayColor = new(0.55f, 0.02f, 0.02f);
-    // Droplet fan offsets (radians) around the bullet's heading — an
-    // exit-wound cone spraying forward, off the far side of the target.
-    private static readonly float[] SprayFan = { -0.7f, -0.4f, -0.15f, 0.15f, 0.4f, 0.7f };
+    // Exit-wound droplets, biased FORWARD along the bullet heading to show
+    // impact force: (angle offset rad, travel distance in tiles, size factor).
+    // Tight angles fling far; wide angles stay short → a forward cone.
+    private static readonly (float Ang, float Dist, float Size)[] BloodDroplets =
+    {
+        (0.00f, 1.30f, 0.55f), (0.07f, 1.10f, 0.65f), (-0.06f, 1.15f, 0.60f),
+        (0.16f, 0.90f, 0.80f), (-0.17f, 0.85f, 0.75f), (0.05f, 0.70f, 1.00f),
+        (-0.08f, 0.65f, 0.95f), (0.32f, 0.60f, 0.70f), (-0.33f, 0.62f, 0.70f),
+        (0.52f, 0.42f, 0.60f), (-0.50f, 0.45f, 0.60f), (0.00f, 0.35f, 1.15f),
+    };
 
     private void DrawBloodImpact(Sim.Snapshots.BloodImpactState bi)
     {
         // bi.X/Y are world coords (like pawns/bullets) — no tile-center +0.5.
         var center = new Vector2(bi.X * PixelsPerTile, bi.Y * PixelsPerTile);
         float a = Mathf.Clamp(bi.Alpha, 0f, 1f);
-        float spread = (1f - a) * PixelsPerTile * 0.6f; // droplets fly outward as it ages
+        float prog = 1f - a; // 0 at the instant of impact → 1 at the end
+        var fdir = new Vector2(Mathf.Cos(bi.Angle), Mathf.Sin(bi.Angle));
         var col = BloodSprayColor;
         col.A = a;
-        // Central burst.
-        DrawCircle(center, PixelsPerTile * 0.12f * a + 2f, col);
-        // Droplets fan out forward along the bullet's heading (exit wound).
-        for (int i = 0; i < SprayFan.Length; i++)
+        // Velocity smear: a streak shooting forward out the exit side.
+        var smear = col; smear.A = a * 0.5f;
+        DrawLine(center, center + fdir * (PixelsPerTile * 1.0f * (0.4f + 0.6f * prog)), smear,
+            PixelsPerTile * 0.18f * a + 1f, antialiased: true);
+        // Core wound at the exit point.
+        DrawCircle(center, PixelsPerTile * 0.14f * a + 2f, col);
+        // Droplets launch forward along the heading, flying out as it ages.
+        for (int i = 0; i < BloodDroplets.Length; i++)
         {
-            float ang = bi.Angle + SprayFan[i];
-            // Outer droplets in the fan fling a bit farther.
-            float reach = PixelsPerTile * 0.1f + spread * (1f - 0.4f * Mathf.Abs(SprayFan[i]));
+            var d = BloodDroplets[i];
+            float ang = bi.Angle + d.Ang;
+            float reach = PixelsPerTile * (0.1f + d.Dist * prog);
             var p = center + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * reach;
-            DrawCircle(p, PixelsPerTile * 0.06f * a + 1f, col);
+            DrawCircle(p, PixelsPerTile * 0.06f * d.Size * a + 0.8f, col);
         }
     }
 
