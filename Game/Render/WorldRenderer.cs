@@ -676,9 +676,16 @@ public partial class WorldRenderer : Node2D
                 if (d.HasRangedWeapon && d.ShotTick > 0 && sinceShot >= 0 && sinceShot < MuzzleFlashTicks)
                 {
                     var fdir2 = new Vector2(Mathf.Cos(d.Facing), Mathf.Sin(d.Facing));
+                    // Anchor the flash to the actual muzzle position. While
+                    // leaning the round spawns from the peek cell (sim muzzle),
+                    // so the flash must originate there too — not the body
+                    // center — or the tracer looks like it comes from nowhere.
+                    var muzzleBase = (d.CoverStance == 2 && d.Leaning)
+                        ? new Vector2(d.PeekX * PixelsPerTile, d.PeekY * PixelsPerTile)
+                        : center;
                     // Forward to the barrel tip, then lifted to muzzle height
                     // (same oblique factor as the tracer) so flash + round line up.
-                    var muzzle = center + fdir2 * (radius + PixelsPerTile * 0.18f)
+                    var muzzle = muzzleBase + fdir2 * (radius + PixelsPerTile * 0.18f)
                         - new Vector2(0f, Sim.SimConstants.MuzzleHeight * PixelsPerTile * HeightObliqueScale);
                     float fade = 1f - sinceShot / (float)MuzzleFlashTicks;
                     var fc = new Color(1f, 0.85f, 0.3f, fade);
