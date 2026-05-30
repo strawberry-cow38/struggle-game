@@ -5700,12 +5700,16 @@ public sealed class SimRuntime
         });
         shooter.AddComponent(new Drafted());
         // Full-auto + finish-off so it keeps hammering the target through the
-        // downed state until death — continuous tracers for the demo clip.
+        // downed state until death. Pre-load a full mag so it opens fire
+        // immediately instead of burning the first 2s on a reload.
+        var rifle = Items.ItemCatalog.AssaultRifle;
         shooter.AddComponent(new RangedCombat
         {
             Mode = Items.FireMode.Auto,
             TargetEntityId = target.Id,
             FinishOff = true,
+            MagCount = rifle.Ranged!.MagazineSize,
+            LoadedAmmoPath = Items.ItemCatalog.RifleAmmoFmj.FullPath,
         });
     }
 
