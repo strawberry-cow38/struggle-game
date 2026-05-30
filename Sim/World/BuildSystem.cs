@@ -27,6 +27,12 @@ public sealed class BuildSystem
     private readonly List<JobId> _completed = new();
     private readonly List<(JobId Id, int EntityId)> _releaseBlocked = new();
 
+    // Cached queries — Store.Query<>() allocates a query object per call, so
+    // building it inline every tick is ~640B/call of GC churn. Queries are
+    // reusable live views; cache them once.
+    private ArchetypeQuery<WorldPos, Wanderer>? _occQ;
+    private ArchetypeQuery<WorldPos, BuildTarget, Wanderer>? _builderQ;
+
     public BuildSystem(SimRuntime sim, JobBoard jobs)
     {
         _sim = sim;
@@ -38,7 +44,7 @@ public sealed class BuildSystem
         _occupied.Clear();
         _completed.Clear();
         _releaseBlocked.Clear();
-        store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
+        (_occQ ??= store.Query<WorldPos, Wanderer>()).ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
         {
             _occupied.Add(new TilePos((int)p.X, (int)p.Y));
         });
@@ -48,7 +54,7 @@ public sealed class BuildSystem
         // comes from the item index (see _sim.ItemIndex.AnyItemAt below)
         // instead of a per-tick full Wood scan.
 
-        var builders = store.Query<WorldPos, BuildTarget, Wanderer>();
+        var builders = _builderQ ??= store.Query<WorldPos, BuildTarget, Wanderer>();
         builders.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _, Entity ent) =>
         {
             var job = _jobs.Get(target.JobId);

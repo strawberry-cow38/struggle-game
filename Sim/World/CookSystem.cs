@@ -30,6 +30,10 @@ public sealed class CookSystem
     private readonly List<(int stoveId, int billIdx)> _toPost = new();
     private readonly List<CookFinish> _finished = new();
 
+    private ArchetypeQuery<Stove, BillsBoard>? _stoveBillsQ;
+    private ArchetypeQuery<Cooking, WorldPos>? _cookingPosQ;
+    private ArchetypeQuery<ItemPile>? _itemPileQ;
+
     private readonly struct CookFinish
     {
         public readonly int StoveEntityId;
@@ -50,7 +54,7 @@ public sealed class CookSystem
         _finished.Clear();
 
         // 1. Scan stoves for bill scheduling.
-        var stoveQuery = store.Query<Stove, BillsBoard>();
+        var stoveQuery = _stoveBillsQ ??= store.Query<Stove, BillsBoard>();
         stoveQuery.ForEachEntity((ref Stove stove, ref BillsBoard board, Entity ent) =>
         {
             if (stove.CurrentBillIndex != -1) return;
@@ -81,7 +85,7 @@ public sealed class CookSystem
         }
 
         // 2. Advance cook progress.
-        var cookers = store.Query<Cooking, WorldPos>();
+        var cookers = _cookingPosQ ??= store.Query<Cooking, WorldPos>();
         cookers.ForEachEntity((ref Cooking cooking, ref WorldPos pos, Entity pawn) =>
         {
             if (cooking.Phase != 1) return;
@@ -154,7 +158,7 @@ public sealed class CookSystem
         foreach (var id in _completed) _sim.CompleteJob(id);
     }
 
-    private static bool IsBillSatisfied(Bill bill, Recipe recipe, EntityStore store)
+    private bool IsBillSatisfied(Bill bill, Recipe recipe, EntityStore store)
     {
         switch (bill.RepeatMode)
         {
@@ -166,7 +170,7 @@ public sealed class CookSystem
             {
                 // Count world piles matching the output ItemPath.
                 int have = 0;
-                var q = store.Query<ItemPile>();
+                var q = _itemPileQ ??= store.Query<ItemPile>();
                 q.ForEachEntity((ref ItemPile p, Entity _) =>
                 {
                     if (p.ItemPath == recipe.Output.ItemPath) have += p.Count;
@@ -177,12 +181,12 @@ public sealed class CookSystem
         }
     }
 
-    private static bool HasIngredientsOnMap(Recipe recipe, EntityStore store)
+    private bool HasIngredientsOnMap(Recipe recipe, EntityStore store)
     {
         foreach (var input in recipe.Inputs)
         {
             int have = 0;
-            var q = store.Query<ItemPile>();
+            var q = _itemPileQ ??= store.Query<ItemPile>();
             q.ForEachEntity((ref ItemPile p, Entity _) =>
             {
                 if (p.ItemPath == input.ItemPath) have += p.Count;

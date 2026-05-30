@@ -25,6 +25,10 @@ public sealed class DoorSystem
     // it) doesn't wedge the door, matching the old scan's filter.
     private readonly Func<TilePos, bool> _anyUnreservedWoodAt;
 
+    // Cached queries — Store.Query<>() allocates a query object per call.
+    private ArchetypeQuery<WorldPos, Wanderer>? _wanderQ;
+    private ArchetypeQuery<Door>? _doorQ;
+
     public DoorSystem(Func<TilePos, bool> anyUnreservedWoodAt)
     {
         _anyUnreservedWoodAt = anyUnreservedWoodAt;
@@ -39,12 +43,12 @@ public sealed class DoorSystem
         // a pawn that has STOPPED on the tile (paused job, idle) wasn't
         // ticking that reset.
         _occupiedTiles.Clear();
-        store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
+        (_wanderQ ??= store.Query<WorldPos, Wanderer>()).ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
         {
             _occupiedTiles.Add(new TilePos((int)p.X, (int)p.Y));
         });
 
-        var q = store.Query<Door>();
+        var q = _doorQ ??= store.Query<Door>();
         q.ForEachEntity((ref Door door, Entity _) =>
         {
             // Forbidden = treated as a wall; refuse every open trigger.

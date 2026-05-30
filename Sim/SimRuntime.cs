@@ -482,7 +482,7 @@ public sealed class SimRuntime
         // Switching mode can make in-flight jobs newly forbidden. Scan
         // every pawn and abort jobs whose work type is disallowed under
         // the new mode.
-        Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity ent) =>
+        (_wandererQ ??= Store.Query<WorldPos, Wanderer>()).ForEachEntity((ref WorldPos _, ref Wanderer _, Entity ent) =>
         {
             if (!ent.HasComponent<BuildTarget>()) return;
             var bt = ent.GetComponent<BuildTarget>();
@@ -818,7 +818,7 @@ public sealed class SimRuntime
         int bedId = bedEnt.Id;
         _bedReservations.Remove(bedId);
         var sleepers = new List<Entity>();
-        Store.Query<Sleeping>().ForEachEntity((ref Sleeping s, Entity ent) =>
+        (_sleepingQ ??= Store.Query<Sleeping>()).ForEachEntity((ref Sleeping s, Entity ent) =>
         {
             if (s.BedEntityId == bedId) sleepers.Add(ent);
         });
@@ -832,7 +832,7 @@ public sealed class SimRuntime
     {
         int bid = boardEnt.Id;
         var evictees = new List<Entity>();
-        Store.Query<AtRecreation>().ForEachEntity((ref AtRecreation ar, Entity ent) =>
+        (_atRecreationQ ??= Store.Query<AtRecreation>()).ForEachEntity((ref AtRecreation ar, Entity ent) =>
         {
             if (ar.BoardEntityId == bid) evictees.Add(ent);
         });
@@ -996,7 +996,7 @@ public sealed class SimRuntime
         _blueprintPriority[blueprintEntityId] = pawnEntityId;
 
         var evictees = new List<Entity>();
-        var q = Store.Query<BuildTarget>();
+        var q = _buildTargetQ ??= Store.Query<BuildTarget>();
         q.ForEachEntity((ref BuildTarget bt, Entity ent) =>
         {
             if (ent.Id == pawnEntityId) return;
@@ -1070,12 +1070,52 @@ public sealed class SimRuntime
     private readonly SimSnapshot _snapSlotB = new();
     private bool _useSlotA;
 
+    // Cached query objects — Friflo queries are live reusable views; caching
+    // avoids the ~640-byte allocation per Store.Query<>() call on every tick.
+    private ArchetypeQuery<WorldPos, Wanderer>?  _wandererQ;
+    private ArchetypeQuery<Sleeping>?            _sleepingQ;
+    private ArchetypeQuery<AtRecreation>?        _atRecreationQ;
+    private ArchetypeQuery<BuildTarget>?         _buildTargetQ;
+    private ArchetypeQuery<ItemPile>?            _itemPileQ;
+    private ArchetypeQuery<BloodPuddle>?         _bloodPuddleQ;
+    private ArchetypeQuery<Projectile>?          _projectileQ;
+    private ArchetypeQuery<DoorBlueprint>?       _doorBpQ;
+    private ArchetypeQuery<Door>?                _doorQ;
+    private ArchetypeQuery<LampBlueprint>?       _lampBpQ;
+    private ArchetypeQuery<BedBlueprint>?        _bedBpQ;
+    private ArchetypeQuery<UrBoardBlueprint>?    _urBoardBpQ;
+    private ArchetypeQuery<SandbagBlueprint>?    _sandbagBpQ;
+    private ArchetypeQuery<StoveBlueprint>?      _stoveBpQ;
+    private ArchetypeQuery<WorldPos, Health>?    _worldPosHealthQ;
+    private ArchetypeQuery<Blueprint>?           _blueprintQ;
+    private ArchetypeQuery<FloorBlueprint>?      _floorBpQ;
+    private ArchetypeQuery<RecreationNeed>?      _recreationNeedQ;
+
     private static void EnsureCap<T>(ref T[] arr, int needed)
     {
         if (arr.Length >= needed) return;
         int next = Math.Max(4, arr.Length == 0 ? needed : arr.Length * 2);
         while (next < needed) next *= 2;
         Array.Resize(ref arr, next);
+    }
+
+    // Enum→name without per-call allocation (Enum.ToString allocates each time).
+    private static readonly string[] _jobKindNames = BuildJobKindNames();
+    private static string[] BuildJobKindNames()
+    {
+        var arr = new string[256];
+        foreach (Jobs.JobKind k in Enum.GetValues<Jobs.JobKind>()) arr[(byte)k] = k.ToString();
+        return arr;
+    }
+    private static string JobKindName(Jobs.JobKind k) => _jobKindNames[(byte)k] ?? string.Empty;
+
+    // Per-pawn display name, cached so the snapshot doesn't allocate a fresh
+    // "Colonist N" string for every pawn every tick.
+    private readonly Dictionary<int, string> _pawnNameCache = new();
+    private string PawnName(int id)
+    {
+        if (!_pawnNameCache.TryGetValue(id, out var n)) { n = $"Colonist {id}"; _pawnNameCache[id] = n; }
+        return n;
     }
 
     public SimSnapshot BuildSnapshot(int? selectedDummyId = null, int[]? selectedDummyIds = null, IReadOnlyCollection<int>? selectedTreeIds = null, IReadOnlyCollection<int>? selectedWoodIds = null, IReadOnlyCollection<int>? selectedCropIds = null)
@@ -1099,7 +1139,7 @@ public sealed class SimRuntime
         var selSet = (selectedDummyIds is { Length: > 0 }) ? new HashSet<int>(selectedDummyIds) : null;
         List<PawnPathState>? selPaths = null;
 
-        var dq = Store.Query<WorldPos, Wanderer>();
+        var dq = _wandererQ ??= Store.Query<WorldPos, Wanderer>();
         EnsureCap(ref snap.DummiesBuf, dq.Count);
         var dummiesBuf = snap.DummiesBuf;
         int i = 0;
@@ -1125,7 +1165,7 @@ public sealed class SimRuntime
             {
                 var bt = ent.GetComponent<BuildTarget>();
                 var j = Jobs.Get(bt.JobId);
-                if (j is not null) label = j.Kind.ToString();
+                if (j is not null) label = JobKindName(j.Kind);
             }
             bool carrying = ent.HasComponent<Carrying>();
             if (carrying) label = "Haul";
@@ -1338,21 +1378,40 @@ public sealed class SimRuntime
 
         EnsureCap(ref snap.PawnWorkBuf, dq.Count);
         var pwBuf = snap.PawnWorkBuf;
+        // Grow the per-pawn pools to the pawn count; inner arrays allocate only
+        // when the pool grows (steady-state pawn count → zero allocation).
+        int pawnCount = dq.Count;
+        EnsureCap(ref snap.PawnWorkPriPool, pawnCount);
+        EnsureCap(ref snap.PawnWorkAllowedPool, pawnCount);
+        EnsureCap(ref snap.PawnWorkSchedPool, pawnCount);
+        for (int k = 0; k < pawnCount; k++)
+        {
+            snap.PawnWorkPriPool[k] ??= new byte[WorkTypes.Count];
+            snap.PawnWorkAllowedPool[k] ??= new bool[WorkTypes.Count];
+            snap.PawnWorkSchedPool[k] ??= new byte[Schedule.Hours];
+        }
+        var priPool = snap.PawnWorkPriPool;
+        var allowPool = snap.PawnWorkAllowedPool;
+        var schedPool = snap.PawnWorkSchedPool;
         int pwi = 0;
-        Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity ent) =>
+        (_wandererQ ??= Store.Query<WorldPos, Wanderer>()).ForEachEntity((ref WorldPos _, ref Wanderer _, Entity ent) =>
         {
             EnsureWorkPriorities(ent);
             EnsureSchedule(ent);
             EnsureSleepNeed(ent);
             var wp = ent.GetComponent<WorkPriorities>();
             var sched = ent.GetComponent<Schedule>();
-            var pr = new byte[WorkTypes.Count];
-            var al = new bool[WorkTypes.Count];
-            var sl = new byte[Schedule.Hours];
+            if (pwi >= priPool.Length) return; // pawn count grew mid-iteration; skip extra
+            var pr = priPool[pwi];
+            var al = allowPool[pwi];
+            var sl = schedPool[pwi];
+            Array.Clear(pr, 0, pr.Length);
+            Array.Clear(al, 0, al.Length);
+            Array.Clear(sl, 0, sl.Length);
             if (wp.Priorities is not null) Array.Copy(wp.Priorities, pr, Math.Min(wp.Priorities.Length, WorkTypes.Count));
             if (wp.Allowed is not null) Array.Copy(wp.Allowed, al, Math.Min(wp.Allowed.Length, WorkTypes.Count));
             if (sched.Slots is not null) Array.Copy(sched.Slots, sl, Math.Min(sched.Slots.Length, Schedule.Hours));
-            pwBuf[pwi++] = new PawnWorkState(ent.Id, $"Colonist {ent.Id}", pr, al, sl);
+            pwBuf[pwi++] = new PawnWorkState(ent.Id, PawnName(ent.Id), pr, al, sl);
         });
         snap.PawnWorkCount = pwi;
 
@@ -1450,7 +1509,7 @@ public sealed class SimRuntime
         }
         snap.CropsCount = ci;
 
-        var pileQuery = Store.Query<ItemPile>();
+        var pileQuery = _itemPileQ ??= Store.Query<ItemPile>();
         EnsureCap(ref snap.ItemPilesBuf, pileQuery.Count);
         var pilesBuf = snap.ItemPilesBuf;
         int pi = 0;
@@ -1461,7 +1520,7 @@ public sealed class SimRuntime
         });
         snap.ItemPilesCount = pi;
 
-        var puddleQuery = Store.Query<BloodPuddle>();
+        var puddleQuery = _bloodPuddleQ ??= Store.Query<BloodPuddle>();
         EnsureCap(ref snap.BloodPuddlesBuf, puddleQuery.Count);
         var puddlesBuf = snap.BloodPuddlesBuf;
         int bpi = 0;
@@ -1471,7 +1530,7 @@ public sealed class SimRuntime
         });
         snap.BloodPuddlesCount = bpi;
 
-        var projQuery = Store.Query<Projectile>();
+        var projQuery = _projectileQ ??= Store.Query<Projectile>();
         EnsureCap(ref snap.ProjectilesBuf, projQuery.Count);
         var projBuf = snap.ProjectilesBuf;
         int pri = 0;
@@ -1541,7 +1600,7 @@ public sealed class SimRuntime
 
         // Include both active door-build blueprints and ones parked
         // waiting on a deconstruct (they have no DoorBuild job yet).
-        var doorBpQuery = Store.Query<DoorBlueprint>();
+        var doorBpQuery = _doorBpQ ??= Store.Query<DoorBlueprint>();
         EnsureCap(ref snap.DoorBlueprintsBuf, doorBpQuery.Count);
         var doorBpBuf = snap.DoorBlueprintsBuf;
         int dbi = 0;
@@ -1552,7 +1611,7 @@ public sealed class SimRuntime
         });
         snap.DoorBlueprintsCount = dbi;
 
-        var doorQuery = Store.Query<Door>();
+        var doorQuery = _doorQ ??= Store.Query<Door>();
         EnsureCap(ref snap.DoorsBuf, doorQuery.Count);
         var doorBuf = snap.DoorsBuf;
         int dri = 0;
@@ -1611,7 +1670,7 @@ public sealed class SimRuntime
         }
         snap.BedsCount = bi2;
 
-        var lampBpQuery = Store.Query<LampBlueprint>();
+        var lampBpQuery = _lampBpQ ??= Store.Query<LampBlueprint>();
         EnsureCap(ref snap.LampBlueprintsBuf, lampBpQuery.Count);
         var lampBpBuf = snap.LampBlueprintsBuf;
         int lbi = 0;
@@ -1622,7 +1681,7 @@ public sealed class SimRuntime
         });
         snap.LampBlueprintsCount = lbi;
 
-        var bedBpQuery = Store.Query<BedBlueprint>();
+        var bedBpQuery = _bedBpQ ??= Store.Query<BedBlueprint>();
         EnsureCap(ref snap.BedBlueprintsBuf, bedBpQuery.Count);
         var bedBpBuf = snap.BedBlueprintsBuf;
         int bbi = 0;
@@ -1643,7 +1702,7 @@ public sealed class SimRuntime
         }
         snap.UrBoardsCount = ubi;
 
-        var urBpQuery = Store.Query<UrBoardBlueprint>();
+        var urBpQuery = _urBoardBpQ ??= Store.Query<UrBoardBlueprint>();
         EnsureCap(ref snap.UrBoardBlueprintsBuf, urBpQuery.Count);
         var urBpBuf = snap.UrBoardBlueprintsBuf;
         int ubbi = 0;
@@ -1661,7 +1720,7 @@ public sealed class SimRuntime
             sbBuf[sbi++] = new SandbagState(tile);
         snap.SandbagsCount = sbi;
 
-        var sbBpQuery = Store.Query<SandbagBlueprint>();
+        var sbBpQuery = _sandbagBpQ ??= Store.Query<SandbagBlueprint>();
         EnsureCap(ref snap.SandbagBlueprintsBuf, sbBpQuery.Count);
         var sbBpBuf = snap.SandbagBlueprintsBuf;
         int sbbi = 0;
@@ -1704,7 +1763,7 @@ public sealed class SimRuntime
         }
         snap.StovesCount = stoveIdx;
 
-        var stoveBpQuery = Store.Query<StoveBlueprint>();
+        var stoveBpQuery = _stoveBpQ ??= Store.Query<StoveBlueprint>();
         EnsureCap(ref snap.StoveBlueprintsBuf, stoveBpQuery.Count);
         var stoveBpBuf = snap.StoveBlueprintsBuf;
         int stoveBpIdx = 0;
@@ -1920,7 +1979,7 @@ public sealed class SimRuntime
     {
         if (wanted <= 0) return 0;
         int taken = 0;
-        var query = Store.Query<ItemPile>();
+        var query = _itemPileQ ??= Store.Query<ItemPile>();
         Entity? toDelete = null;
         query.ForEachEntity((ref ItemPile p, Entity ent) =>
         {
@@ -3554,7 +3613,7 @@ public sealed class SimRuntime
         // Per-tile counts of the same item kind, for the merge-bias.
         var countAt = new Dictionary<TilePos, int>();
         string path = def.FullPath;
-        Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity ent) =>
+        (_itemPileQ ??= Store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity ent) =>
         {
             if (p.ItemPath == path) countAt[p.Tile] = p.Count;
         });
@@ -4074,7 +4133,7 @@ public sealed class SimRuntime
     private void GatherProjPawns()
     {
         _projPawns.Clear();
-        Store.Query<WorldPos, Health>().ForEachEntity((ref WorldPos wp, ref Health h, Entity pe) =>
+        (_worldPosHealthQ ??= Store.Query<WorldPos, Health>()).ForEachEntity((ref WorldPos wp, ref Health h, Entity pe) =>
         {
             float px = wp.X, py = wp.Y, bh;
             if (h.Unconscious)
@@ -4196,7 +4255,7 @@ public sealed class SimRuntime
     private void StepProjectiles(float dt)
     {
         _projScratch.Clear();
-        Store.Query<Projectile>().ForEachEntity((ref Projectile _, Entity e) => _projScratch.Add(e));
+        (_projectileQ ??= Store.Query<Projectile>()).ForEachEntity((ref Projectile _, Entity e) => _projScratch.Add(e));
         if (_projScratch.Count == 0) return;
 
         foreach (var e in _projScratch)
@@ -4405,7 +4464,7 @@ public sealed class SimRuntime
     public void SpawnBloodPuddle(TilePos tile)
     {
         Entity? found = null;
-        Store.Query<BloodPuddle>().ForEachEntity((ref BloodPuddle bp, Entity e) =>
+        (_bloodPuddleQ ??= Store.Query<BloodPuddle>()).ForEachEntity((ref BloodPuddle bp, Entity e) =>
         {
             if (found is null && bp.Tile == tile) found = e;
         });
@@ -4596,7 +4655,7 @@ public sealed class SimRuntime
     {
         int total = 0;
         string woodPath = ItemCatalog.Wood.FullPath;
-        Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity ent) =>
+        (_itemPileQ ??= Store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity ent) =>
         {
             if (p.Tile == tile && p.ItemPath == woodPath) total += p.Count;
         });
@@ -4618,7 +4677,7 @@ public sealed class SimRuntime
         var byKey = _mergePileByKey; byKey.Clear();
         var mergeOps = _mergeOpsScratch; mergeOps.Clear();
         var deletes = _mergeDeletesScratch; deletes.Clear();
-        Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
+        (_itemPileQ ??= Store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity e) =>
         {
             if (e.HasComponent<HaulReserved>()) return;
             if (e.HasComponent<Corpse>()) return; // unique — never merge corpses
@@ -4661,7 +4720,7 @@ public sealed class SimRuntime
     {
         _spillPileCount.Clear();
         _spillExtras.Clear();
-        Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
+        (_itemPileQ ??= Store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity e) =>
         {
             if (e.HasComponent<HaulReserved>()) return; // in flight, don't move
             if (e.HasComponent<Corpse>()) return;       // unique — never relocate/delete a corpse
@@ -4872,17 +4931,17 @@ public sealed class SimRuntime
             }
         }
         bool near = false;
-        Store.Query<Blueprint>().ForEachEntity((ref Blueprint b, Entity _) =>
+        (_blueprintQ ??= Store.Query<Blueprint>()).ForEachEntity((ref Blueprint b, Entity _) =>
         {
             if (Math.Abs(b.Tile.X - t.X) <= radius && Math.Abs(b.Tile.Y - t.Y) <= radius) near = true;
         });
         if (near) return true;
-        Store.Query<FloorBlueprint>().ForEachEntity((ref FloorBlueprint b, Entity _) =>
+        (_floorBpQ ??= Store.Query<FloorBlueprint>()).ForEachEntity((ref FloorBlueprint b, Entity _) =>
         {
             if (Math.Abs(b.Tile.X - t.X) <= radius && Math.Abs(b.Tile.Y - t.Y) <= radius) near = true;
         });
         if (near) return true;
-        Store.Query<DoorBlueprint>().ForEachEntity((ref DoorBlueprint b, Entity _) =>
+        (_doorBpQ ??= Store.Query<DoorBlueprint>()).ForEachEntity((ref DoorBlueprint b, Entity _) =>
         {
             if (Math.Abs(b.Tile.X - t.X) <= radius && Math.Abs(b.Tile.Y - t.Y) <= radius) near = true;
         });
@@ -6055,7 +6114,7 @@ public sealed class SimRuntime
     // SeekThreshold so they urgent-seek the board immediately.
     public void SetAllRecreationLevel(float level)
     {
-        Store.Query<RecreationNeed>().ForEachEntity((ref RecreationNeed r, Entity _) =>
+        (_recreationNeedQ ??= Store.Query<RecreationNeed>()).ForEachEntity((ref RecreationNeed r, Entity _) =>
         {
             r.Level = level;
         });
@@ -6127,7 +6186,7 @@ public sealed class SimRuntime
     private bool IsOccupied(int tileX, int tileY)
     {
         bool occupied = false;
-        Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
+        (_wandererQ ??= Store.Query<WorldPos, Wanderer>()).ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
         {
             if ((int)p.X == tileX && (int)p.Y == tileY) occupied = true;
         });

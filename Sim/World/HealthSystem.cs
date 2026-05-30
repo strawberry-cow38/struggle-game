@@ -26,6 +26,9 @@ public sealed class HealthSystem
     private readonly SimRuntime _sim;
     private float _accumDt;
     private readonly List<Map.TilePos> _dripScratch = new();
+
+    // Cached queries — Store.Query<>() allocates a query object per call.
+    private ArchetypeQuery<Health, WorldPos>? _healthQ;
     private readonly List<int> _downedScratch = new();
     private readonly List<int> _deadScratch = new();
 
@@ -47,7 +50,7 @@ public sealed class HealthSystem
         _dripScratch.Clear();
         _downedScratch.Clear();
         _deadScratch.Clear();
-        store.Query<Health, WorldPos>().ForEachEntity((ref Health h, ref WorldPos pos, Entity e) =>
+        (_healthQ ??= store.Query<Health, WorldPos>()).ForEachEntity((ref Health h, ref WorldPos pos, Entity e) =>
         {
             float bleed = TotalBleed(h);
             Advance(ref h, step);

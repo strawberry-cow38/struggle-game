@@ -25,6 +25,10 @@ public sealed class BlueprintHaulSystem
     private readonly List<(Entity Ent, TilePos Tile, int Count)> _wood = new();
     private readonly List<(Entity Ent, TilePos Tile, int Need)> _demand = new();
 
+    // Cached queries — Store.Query<>() allocates a query object per call.
+    private ArchetypeQuery<ItemPile>? _itemPileQ;
+    private ArchetypeQuery<BlueprintCost>? _bpCostQ;
+
     public BlueprintHaulSystem(SimRuntime sim, JobBoard jobs)
     {
         _sim = sim;
@@ -44,7 +48,7 @@ public sealed class BlueprintHaulSystem
         // Blueprint costs are all wood today, so the haul material is wood
         // (an ItemPile of the wood path). Carrots can't fund a wall.
         string woodPath = ItemCatalog.Wood.FullPath;
-        store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity ent) =>
+        (_itemPileQ ??= store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity ent) =>
         {
             if (p.ItemPath != woodPath) return;
             if (ent.HasComponent<HaulReserved>()) return;
@@ -119,7 +123,7 @@ public sealed class BlueprintHaulSystem
     private void CollectBlueprintDemand(EntityStore store)
     {
         string woodPath = ItemCatalog.Wood.FullPath;
-        store.Query<BlueprintCost>().ForEachEntity((ref BlueprintCost _, Entity e) =>
+        (_bpCostQ ??= store.Query<BlueprintCost>()).ForEachEntity((ref BlueprintCost _, Entity e) =>
         {
             int need = BlueprintCostOps.FreeNeed(e, woodPath);
             if (need <= 0) return;

@@ -22,10 +22,13 @@ public sealed class SowSystem
 
     private readonly List<JobId> _completed = new();
 
+    // Cached queries — Store.Query<>() allocates a query object per call.
+    private ArchetypeQuery<WorldPos, BuildTarget, Wanderer>? _sowersQ;
+
     public void Step(EntityStore store, float dt)
     {
         _completed.Clear();
-        var sowers = store.Query<WorldPos, BuildTarget, Wanderer>();
+        var sowers = _sowersQ ??= store.Query<WorldPos, BuildTarget, Wanderer>();
         sowers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);

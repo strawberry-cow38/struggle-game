@@ -137,6 +137,15 @@ public sealed class DummyController
     // the query pass (entity creation can't happen mid-iteration).
     public readonly List<ProjectileSpawn> PendingProjectiles = new();
 
+    // Reused scratch for haul top-off candidate scan (avoids a per-pickup List
+    // + a per-call sort-comparer delegate).
+    private readonly List<(Entity Ent, int Count, string Path, int Dist)> _topoffCandidates = new();
+    private static readonly Comparison<(Entity Ent, int Count, string Path, int Dist)> _topoffByDist
+        = (a, b) => a.Dist - b.Dist;
+
+    private ArchetypeQuery<WorldPos, PathFollower, Wanderer>? _wandererQ;
+    private ArchetypeQuery<ItemPile>? _itemPileQ;
+
     public DummyController(
         PathService paths,
         JobBoard jobs,
@@ -179,7 +188,7 @@ public sealed class DummyController
         var view = _viewProvider();
         var cb = store.GetCommandBuffer();
         _topoffReservedThisTick.Clear();
-        var query = store.Query<WorldPos, PathFollower, Wanderer>();
+        var query = _wandererQ ??= store.Query<WorldPos, PathFollower, Wanderer>();
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer w, Entity entity) =>
         {
             Plan(ref pos, ref path, ref w, dt, entity, cb, view, store);
@@ -1658,10 +1667,11 @@ public sealed class DummyController
         // Snapshot candidates first so the nested query can't see any
         // mutations we'd queue mid-iteration. Wood is just an ItemPile now,
         // so one query covers every kind.
-        var candidates = new List<(Entity Ent, int Count, string Path, int Dist)>();
+        var candidates = _topoffCandidates;
+        candidates.Clear();
         if (!string.IsNullOrEmpty(primaryPath))
         {
-            store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
+            (_itemPileQ ??= store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity e) =>
             {
                 if (p.ItemPath != primaryPath) return;
                 if (e.HasComponent<HaulReserved>()) return;
@@ -1673,7 +1683,7 @@ public sealed class DummyController
                 candidates.Add((e, p.Count, p.ItemPath, md));
             });
         }
-        candidates.Sort((a, b) => a.Dist - b.Dist);
+        candidates.Sort(_topoffByDist);
 
         foreach (var cand in candidates)
         {

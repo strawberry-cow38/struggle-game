@@ -22,10 +22,12 @@ public sealed class HarvestSystem
 
     private readonly List<JobId> _completed = new();
 
+    private ArchetypeQuery<WorldPos, BuildTarget, Wanderer>? _harvestersQ;
+
     public void Step(EntityStore store, float dt)
     {
         _completed.Clear();
-        var harvesters = store.Query<WorldPos, BuildTarget, Wanderer>();
+        var harvesters = _harvestersQ ??= store.Query<WorldPos, BuildTarget, Wanderer>();
         harvesters.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);

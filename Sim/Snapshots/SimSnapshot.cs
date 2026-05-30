@@ -130,6 +130,12 @@ public sealed class SimSnapshot
     internal PawnWorkState[] PawnWorkBuf = System.Array.Empty<PawnWorkState>();
     internal int PawnWorkCount;
     public SnapshotList<PawnWorkState> PawnWork => new(PawnWorkBuf, PawnWorkCount);
+    // Per-slot reusable per-pawn work/schedule arrays (this slot's snapshot owns
+    // them; overwritten only when this slot is rebuilt, by which point the
+    // renderer has moved on). Avoids 3 fresh arrays per pawn per tick.
+    internal byte[][] PawnWorkPriPool = System.Array.Empty<byte[]>();
+    internal bool[][] PawnWorkAllowedPool = System.Array.Empty<bool[]>();
+    internal byte[][] PawnWorkSchedPool = System.Array.Empty<byte[]>();
 
     public int? SelectedDummyId { get; internal set; }
     public int[] SelectedDummyIds { get; internal set; } = System.Array.Empty<int>();

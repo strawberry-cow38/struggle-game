@@ -30,6 +30,9 @@ public sealed class HaulSystem
     // carrot pile doesn't try to merge into a Wood stack.
     private readonly Dictionary<string, Dictionary<TilePos, int>> _stackAt = new();
 
+    // Cached queries — Store.Query<>() allocates a query object per call.
+    private ArchetypeQuery<ItemPile>? _itemPileQ;
+
     public HaulSystem(SimRuntime sim, JobBoard jobs)
     {
         _sim = sim;
@@ -43,7 +46,7 @@ public sealed class HaulSystem
         foreach (var kv in _stackAt) kv.Value.Clear();
 
         // One query — wood is just an ItemPile of the wood path now.
-        store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity ent) =>
+        (_itemPileQ ??= store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity ent) =>
         {
             if (!ItemCatalog.ItemsByPath.TryGetValue(p.ItemPath, out var def)) return;
             var idx = GetOrCreateIndex(p.ItemPath);

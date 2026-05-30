@@ -23,10 +23,12 @@ public sealed class StoveSystem
 
     private readonly List<JobId> _completed = new();
 
+    private ArchetypeQuery<WorldPos, BuildTarget, Wanderer>? _workersQ;
+
     public void Step(EntityStore store, float dt)
     {
         _completed.Clear();
-        var workers = store.Query<WorldPos, BuildTarget, Wanderer>();
+        var workers = _workersQ ??= store.Query<WorldPos, BuildTarget, Wanderer>();
         workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);

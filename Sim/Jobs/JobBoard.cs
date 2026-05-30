@@ -19,7 +19,10 @@ public sealed class JobBoard
     public long Version { get; private set; }
     public int Count => _byId.Count;
 
-    public IEnumerable<Job> All => _byId.Values;
+    // Concrete ValueCollection (not IEnumerable<Job>) so foreach uses the
+    // struct enumerator — no boxed-enumerator heap alloc per iteration. Hit per
+    // idle pawn per tick (TryClaimJob) and several times per snapshot.
+    public Dictionary<JobId, Job>.ValueCollection All => _byId.Values;
 
     public bool HasTile(TilePos tile) => _byTile.ContainsKey(tile);
 

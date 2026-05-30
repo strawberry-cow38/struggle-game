@@ -101,14 +101,14 @@ public sealed class AStar
 
     private List<TilePos> Reconstruct(int goalIdx)
     {
-        var stack = new Stack<TilePos>();
-        int cur = goalIdx;
-        while (cur != -1)
-        {
-            stack.Push(new TilePos(cur % _width, cur / _width));
-            cur = _cameFrom[cur];
-        }
-        return new List<TilePos>(stack);
+        // Count the chain so the result list is exact-capacity (no resize), then
+        // fill it backward and reverse in place — avoids the extra Stack + copy.
+        int len = 0;
+        for (int c = goalIdx; c != -1; c = _cameFrom[c]) len++;
+        var path = new List<TilePos>(len);
+        for (int c = goalIdx; c != -1; c = _cameFrom[c]) path.Add(new TilePos(c % _width, c / _width));
+        path.Reverse();
+        return path;
     }
 
     private int Index(int x, int y) => y * _width + x;

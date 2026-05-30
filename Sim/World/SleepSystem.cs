@@ -15,6 +15,9 @@ public sealed class SleepSystem
     // 8h asleep = SleepStartThreshold → full.
     public const double SleepSecToFull = 8.0 * 3600.0;
 
+    // Cached queries — Store.Query<>() allocates a query object per call.
+    private ArchetypeQuery<SleepNeed>? _sleepNeedQ;
+
     public void Step(EntityStore store, float dt)
     {
         float drainPerSimSec = (float)(1.0 / AwakeSecToEmpty);
@@ -23,7 +26,7 @@ public sealed class SleepSystem
         float drain = drainPerSimSec * simDt;
         float gain = gainPerSimSec * simDt;
 
-        store.Query<SleepNeed>().ForEachEntity((ref SleepNeed need, Entity ent) =>
+        (_sleepNeedQ ??= store.Query<SleepNeed>()).ForEachEntity((ref SleepNeed need, Entity ent) =>
         {
             if (ent.HasComponent<Sleeping>())
             {

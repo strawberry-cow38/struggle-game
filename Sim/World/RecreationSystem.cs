@@ -36,6 +36,9 @@ public sealed class RecreationSystem
     private readonly Random _rng;
     private readonly AvailableKindsProvider _availableKinds;
 
+    private ArchetypeQuery<RecreationNeed>? _recreationNeedQ;
+    private ArchetypeQuery<RecreationPreference>? _recreationPreferenceQ;
+
     public RecreationSystem(int seed, AvailableKindsProvider availableKinds)
     {
         _rng = new Random(seed);
@@ -62,12 +65,12 @@ public sealed class RecreationSystem
 
         // TEMP 2026-05-29: recreation pinned to 1.0 until seek/sit/leave
         // bugs are fixed. Disables drain/gain so pawns never seek Ur boards.
-        store.Query<RecreationNeed>().ForEachEntity((ref RecreationNeed need, Entity ent) =>
+        (_recreationNeedQ ??= store.Query<RecreationNeed>()).ForEachEntity((ref RecreationNeed need, Entity ent) =>
         {
             need.Level = 1f;
         });
 
-        store.Query<RecreationPreference>().ForEachEntity((ref RecreationPreference pref, Entity ent) =>
+        (_recreationPreferenceQ ??= store.Query<RecreationPreference>()).ForEachEntity((ref RecreationPreference pref, Entity ent) =>
         {
             pref.SecondsUntilRoll -= simDt;
             // Initial roll: byte 255 sentinel means "never rolled".

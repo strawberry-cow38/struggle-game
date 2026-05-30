@@ -46,6 +46,8 @@ public sealed class ItemSpatialIndex
     // stack is about to be hauled away, so it doesn't count).
     private readonly Dictionary<TilePos, int> _unreservedItemTileCount = new();
 
+    private ArchetypeQuery<ItemPile>? _itemPileQ;
+
     private static (int, int) ChunkOf(TilePos t) => (t.X >> ChunkShift, t.Y >> ChunkShift);
 
     // ── maintenance (called from event handlers + delete sites) ──────────
@@ -155,7 +157,7 @@ public sealed class ItemSpatialIndex
         var live = new Dictionary<int, Entry>();
         var liveItem = new Dictionary<TilePos, int>();
         var liveUnreserved = new Dictionary<TilePos, int>();
-        store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
+        (_itemPileQ ??= store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity e) =>
         {
             live[e.Id] = new Entry(p.Tile, p.ItemPath);
             Bump(liveItem, p.Tile, +1);

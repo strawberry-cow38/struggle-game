@@ -30,6 +30,11 @@ public sealed class BlueprintClearanceSystem
     // beyond that rather than searching the whole map.
     private const int MaxRelocateRadius = 10;
 
+    private ArchetypeQuery<Blueprint>? _blueprintQ;
+    private ArchetypeQuery<DoorBlueprint>? _doorBlueprintQ;
+    private ArchetypeQuery<BedBlueprint>? _bedBlueprintQ;
+    private ArchetypeQuery<ItemPile>? _itemPileQ;
+
     public BlueprintClearanceSystem(SimRuntime sim, JobBoard jobs)
     {
         _sim = sim;
@@ -41,15 +46,15 @@ public sealed class BlueprintClearanceSystem
         _blockingBpTiles.Clear();
         _itemTiles.Clear();
 
-        store.Query<Blueprint>().ForEachEntity((ref Blueprint bp, Entity _) =>
+        (_blueprintQ ??= store.Query<Blueprint>()).ForEachEntity((ref Blueprint bp, Entity _) =>
         {
             _blockingBpTiles.Add(bp.Tile);
         });
-        store.Query<DoorBlueprint>().ForEachEntity((ref DoorBlueprint bp, Entity _) =>
+        (_doorBlueprintQ ??= store.Query<DoorBlueprint>()).ForEachEntity((ref DoorBlueprint bp, Entity _) =>
         {
             _blockingBpTiles.Add(bp.Tile);
         });
-        store.Query<BedBlueprint>().ForEachEntity((ref BedBlueprint bp, Entity _) =>
+        (_bedBlueprintQ ??= store.Query<BedBlueprint>()).ForEachEntity((ref BedBlueprint bp, Entity _) =>
         {
             _blockingBpTiles.Add(bp.Origin);
             _blockingBpTiles.Add(BedOrientations.Foot(bp.Origin, bp.Orientation));
@@ -58,7 +63,7 @@ public sealed class BlueprintClearanceSystem
 
         // Tiles holding any item stack, used by the safe-tile scorer to
         // prefer empty tiles over ones that'd cause an immediate merge.
-        store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity _) =>
+        (_itemPileQ ??= store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity _) =>
         {
             _itemTiles.Add(p.Tile);
         });
@@ -68,7 +73,7 @@ public sealed class BlueprintClearanceSystem
         // Any dropped item on a blueprint tile must move — relocate it,
         // carrying its own kind.
         _candidates.Clear();
-        store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity ent) =>
+        (_itemPileQ ??= store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity ent) =>
         {
             if (ent.HasComponent<HaulReserved>()) return;
             if (ent.HasComponent<Forbidden>()) return;

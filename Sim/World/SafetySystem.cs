@@ -22,6 +22,9 @@ public sealed class SafetySystem
     private readonly PathService _paths;
     private readonly SimWatcher _watcher;
 
+    // Cached queries — Store.Query<>() allocates a query object per call.
+    private ArchetypeQuery<WorldPos, PathFollower, Wanderer>? _pawnsQ;
+
     public SafetySystem(Func<MapView> viewProvider, PathService paths, SimWatcher watcher)
     {
         _viewProvider = viewProvider;
@@ -32,7 +35,7 @@ public sealed class SafetySystem
     public void Step(EntityStore store, long tick)
     {
         var view = _viewProvider();
-        store.Query<WorldPos, PathFollower, Wanderer>().ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity ent) =>
+        (_pawnsQ ??= store.Query<WorldPos, PathFollower, Wanderer>()).ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity ent) =>
         {
             var from = new TilePos((int)pos.X, (int)pos.Y);
             if (view.Walkable(from)) return;

@@ -30,6 +30,10 @@ public sealed class GrowthSystem
 
     private readonly SimRuntime _sim;
 
+    // Cached queries — Store.Query<>() allocates a query object per call.
+    private ArchetypeQuery<Growth, Tree>? _treeQ;
+    private ArchetypeQuery<Growth, Crop>? _cropQ;
+
     public GrowthSystem(SimRuntime sim)
     {
         _sim = sim;
@@ -40,7 +44,7 @@ public sealed class GrowthSystem
         long tick = _sim.Tick;
         // dt accrued over the whole interval since this plant last ticked.
         float step = dt * GrowTickInterval / SecondsToFullGrow;
-        store.Query<Growth, Tree>().ForEachEntity((ref Growth g, ref Tree t, Entity e) =>
+        (_treeQ ??= store.Query<Growth, Tree>()).ForEachEntity((ref Growth g, ref Tree t, Entity e) =>
         {
             if (g.Stage >= 1f) return;
             if ((tick + e.Id) % GrowTickInterval != 0) return;
@@ -48,7 +52,7 @@ public sealed class GrowthSystem
             if (!_sim.IsTileGrowTemperature(t.Tile)) return;
             g.Stage = Math.Min(1f, g.Stage + step);
         });
-        store.Query<Growth, Crop>().ForEachEntity((ref Growth g, ref Crop c, Entity e) =>
+        (_cropQ ??= store.Query<Growth, Crop>()).ForEachEntity((ref Growth g, ref Crop c, Entity e) =>
         {
             if (g.Stage >= 1f) return;
             if ((tick + e.Id) % GrowTickInterval != 0) return;

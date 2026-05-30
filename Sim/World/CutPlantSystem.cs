@@ -24,10 +24,12 @@ public sealed class CutPlantSystem
 
     private readonly List<JobId> _completed = new();
 
+    private ArchetypeQuery<WorldPos, BuildTarget, Wanderer>? _cuttersQ;
+
     public void Step(EntityStore store, float dt)
     {
         _completed.Clear();
-        var cutters = store.Query<WorldPos, BuildTarget, Wanderer>();
+        var cutters = _cuttersQ ??= store.Query<WorldPos, BuildTarget, Wanderer>();
         cutters.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);
