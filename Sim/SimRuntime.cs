@@ -3907,8 +3907,10 @@ public sealed class SimRuntime
                 {
                     bool passThrough = ResolveProjectileHit(in pr);
                     float cx = MathF.Cos(pr.Angle), cy = MathF.Sin(pr.Angle);
-                    // Entry impact: a small pop on the near (entry) side — always.
-                    _bloodImpacts.Add((pr.X - cx * 0.12f, pr.Y - cy * 0.12f, pr.Angle, 0.45f, BloodImpactSec));
+                    // Entry impact: small back-spatter on the near (shooter-
+                    // facing) edge — placed outside the body + fanned backward
+                    // so it isn't hidden under the pawn circle. Always.
+                    _bloodImpacts.Add((pr.X - cx * 0.45f, pr.Y - cy * 0.45f, pr.Angle + MathF.PI, 0.55f, BloodImpactSec));
                     // Exit wound: big directional spray on the far side — only
                     // if the round punched through (lodged → no exit).
                     if (passThrough)
