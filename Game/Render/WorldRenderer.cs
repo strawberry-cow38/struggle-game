@@ -965,13 +965,19 @@ public partial class WorldRenderer : Node2D
     private static readonly Color BulletColor = new(1.0f, 0.92f, 0.45f);
     private static readonly Color BulletApColor = new(0.75f, 0.85f, 1.0f);
 
+    // Oblique projection factor for vertical (height) → screen offset. Keeps a
+    // muzzle-height round visually at the gun, not floating over the head.
+    private const float HeightObliqueScale = 0.22f;
+
     private void DrawProjectile(Sim.Snapshots.ProjectileState pr)
     {
         var dir = new Vector2(Mathf.Cos(pr.Angle), Mathf.Sin(pr.Angle));
         // Ground position, then lift by the round's height (screen up = -Y) so
-        // the bullet rides above its shadow on the floor.
+        // the bullet rides above its shadow on the floor. Top-down oblique view:
+        // project vertical height with a small factor so a muzzle-height round
+        // sits at the pawn (over the gun), not floating above their head.
         var ground = new Vector2(pr.X * PixelsPerTile, pr.Y * PixelsPerTile);
-        float lift = pr.Height * PixelsPerTile;
+        float lift = pr.Height * PixelsPerTile * HeightObliqueScale;
         var head = ground - new Vector2(0f, lift);
         // Ground shadow — shrinks + fades as the round climbs.
         float shade = Mathf.Clamp(1f - pr.Height / 1.5f, 0.25f, 1f);
