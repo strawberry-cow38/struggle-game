@@ -170,7 +170,7 @@ public readonly record struct DummyState(
     StruggleGame.Sim.Items.TargetArea RangedTargetArea);
 
 // What a ranged colonist is doing right now, for the overhead label.
-public enum RangedStatus : byte { None = 0, Firing = 1, Watching = 2, Reloading = 3 }
+public enum RangedStatus : byte { None = 0, Firing = 1, Watching = 2, Reloading = 3, TooClose = 4 }
 
 public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath, int Count, bool Forbidden);
 

@@ -676,6 +676,7 @@ public partial class WorldRenderer : Node2D
                 string? labelText = d.Health.Unconscious ? "Unconscious"
                     : d.RangedStatus == Sim.Snapshots.RangedStatus.Reloading ? "Reloading"
                     : d.RangedStatus == Sim.Snapshots.RangedStatus.Firing ? $"Firing at Colonist {d.FireTargetId}"
+                    : d.RangedStatus == Sim.Snapshots.RangedStatus.TooClose ? "Too close to fire"
                     : d.RangedStatus == Sim.Snapshots.RangedStatus.Watching ? $"Watching for Colonist {d.FireTargetId}"
                     : d.MeleeTargetId != 0 ? $"Melee Attacking Colonist {d.MeleeTargetId}"
                     : d.Sleeping ? "Sleeping"

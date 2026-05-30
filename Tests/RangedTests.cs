@@ -503,7 +503,7 @@ public class RangedTests
     }
 
     [Fact]
-    public void PointBlank_TouchingTarget_StillHits()
+    public void AdjacentTarget_TooClose_DoesNotFire()
     {
         var sim = new SimRuntime();
         sim.Step(SimConstants.TickSeconds);
@@ -516,17 +516,17 @@ public class RangedTests
         sim.SetFireTarget(shooter, target);
 
         bool hit = false;
-        for (int i = 0; i < 1500 && !hit; i++)
+        for (int i = 0; i < 800; i++)
         {
-            // Practically on top of each other (~0.3 tile apart).
+            // One tile apart — too close to bring the rifle to bear.
             SetPos(sim, shooter, 20.5f, 20.5f);
-            SetPos(sim, target, 20.8f, 20.5f);
+            SetPos(sim, target, 21.5f, 20.5f);
             sim.Step(SimConstants.TickSeconds);
             if (sim.Store.TryGetEntityById(target, out var t) && t.HasComponent<Health>())
                 foreach (var w in t.GetComponent<Health>().Injuries!)
                     if (w.Kind == ConditionKind.Gunshot) { hit = true; break; }
         }
-        Assert.True(hit, "a point-blank shooter should still hit a target it's touching");
+        Assert.False(hit, "a ranged colonist shouldn't fire at a target on an adjacent tile");
     }
 
     private static int InvCount(Entity e, string path)

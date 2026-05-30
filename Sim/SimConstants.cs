@@ -20,6 +20,9 @@ public static class SimConstants
     public const float MuzzleHeight = 0.9f;     // where a held rifle fires from
     public const float BodyAimHeight = 0.85f;   // torso-center of a standing pawn
     public const float ProjectileGravity = 6.5f; // ~9.8 m/s² at 1.5 m/tile
+    // Ranged weapons can't engage a target this close — too tight to bring the
+    // gun to bear (melee or back off instead).
+    public const float RangedMinFireRange = 1.5f;
     // Downed/unconscious pawns lie prone: a low hitbox you have to aim low for.
     public const float DownedBodyHeight = 0.35f;
     public const float DownedAimHeight = 0.18f;

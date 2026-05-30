@@ -569,7 +569,9 @@ public sealed class DummyController
                     float ddx = tp.X - pos.X, ddy = tp.Y - pos.Y;
                     float distTiles = MathF.Sqrt(ddx * ddx + ddy * ddy);
                     var ttile = new TilePos((int)tp.X, (int)tp.Y);
-                    bool inRange = distTiles <= spec.Range;
+                    // In range, but not point-blank — too close and the gun
+                    // can't be brought to bear (melee/back off instead).
+                    bool inRange = distTiles <= spec.Range && distTiles >= SimConstants.RangedMinFireRange;
                     bool los = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
 
                     if (los)

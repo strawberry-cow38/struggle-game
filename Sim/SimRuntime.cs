@@ -1246,9 +1246,11 @@ public sealed class SimRuntime
                 {
                     var ftp = ftgt.GetComponent<WorldPos>();
                     float fdx = ftp.X - p.X, fdy = ftp.Y - p.Y;
-                    bool inRange = MathF.Sqrt(fdx * fdx + fdy * fdy) <= rspec.Range;
+                    float fdist = MathF.Sqrt(fdx * fdx + fdy * fdy);
                     bool los = RangedLosClear((int)p.X, (int)p.Y, (int)ftp.X, (int)ftp.Y);
-                    rangedStatus = (inRange && los) ? Snapshots.RangedStatus.Firing : Snapshots.RangedStatus.Watching;
+                    rangedStatus = fdist < SimConstants.RangedMinFireRange ? Snapshots.RangedStatus.TooClose
+                        : (fdist <= rspec.Range && los) ? Snapshots.RangedStatus.Firing
+                        : Snapshots.RangedStatus.Watching;
                 }
             }
 
