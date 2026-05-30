@@ -17,8 +17,9 @@ public partial class DraftActionBar : CanvasLayer
     public ToolService? Tools { get; set; }
 
     private const int ButtonHeight = 28;
+    private const float MarginBottom = 14f;
 
-    private Panel _root = null!;
+    private HBoxContainer _bar = null!;
     private Label _magLabel = null!;
     private Button _forceTargetBtn = null!;
 
@@ -36,19 +37,18 @@ public partial class DraftActionBar : CanvasLayer
     {
         Layer = 96;
 
-        _root = new Panel { Visible = false };
-        _root.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.CenterBottom);
-        _root.CustomMinimumSize = new Vector2(0, ButtonHeight + 16);
-        AddChild(_root);
-
-        var hbox = new HBoxContainer();
-        hbox.AddThemeConstantOverride("separation", 6);
-        hbox.Position = new Vector2(8, 8);
-        _root.AddChild(hbox);
+        _bar = new HBoxContainer
+        {
+            Name = "DraftRow",
+            Visible = false,
+            MouseFilter = Control.MouseFilterEnum.Pass,
+        };
+        _bar.AddThemeConstantOverride("separation", 6);
+        AddChild(_bar);
 
         var fireLabel = new Label { Text = "Fire:" };
         fireLabel.AddThemeConstantOverride("outline_size", 4);
-        hbox.AddChild(fireLabel);
+        _bar.AddChild(fireLabel);
 
         for (int i = 0; i < _modes.Length; i++)
         {
@@ -65,13 +65,13 @@ public partial class DraftActionBar : CanvasLayer
                 if (Host is null || _shownPawnId < 0) return;
                 Host.QueueCommand(new SetFireModeCommand(_shownPawnId, m));
             };
-            hbox.AddChild(btn);
+            _bar.AddChild(btn);
             _modeButtons[i] = btn;
         }
 
         _magLabel = new Label { Text = "" };
         _magLabel.AddThemeConstantOverride("outline_size", 4);
-        hbox.AddChild(_magLabel);
+        _bar.AddChild(_magLabel);
 
         _forceTargetBtn = new Button
         {
@@ -85,7 +85,7 @@ public partial class DraftActionBar : CanvasLayer
             if (Tools is null) return;
             Tools.Mode = _forceTargetBtn.ButtonPressed ? ToolMode.ForceFireTarget : ToolMode.None;
         };
-        hbox.AddChild(_forceTargetBtn);
+        _bar.AddChild(_forceTargetBtn);
     }
 
     public override void _Process(double delta)
@@ -102,7 +102,7 @@ public partial class DraftActionBar : CanvasLayer
         if (found is not { } p || !p.Drafted || !p.HasRangedWeapon) { HideBar(); return; }
 
         _shownPawnId = p.EntityId;
-        if (!_root.Visible) _root.Visible = true;
+        if (!_bar.Visible) _bar.Visible = true;
 
         for (int i = 0; i < _modes.Length; i++)
         {
@@ -114,10 +114,14 @@ public partial class DraftActionBar : CanvasLayer
 
         if (Tools is not null)
             _forceTargetBtn.SetPressedNoSignal(Tools.Mode == ToolMode.ForceFireTarget);
+
+        // Bottom-center, recomputed each frame (button visibility changes width).
+        var vp = GetViewport().GetVisibleRect().Size;
+        _bar.Position = new Vector2((vp.X - _bar.Size.X) * 0.5f, vp.Y - _bar.Size.Y - MarginBottom);
     }
 
     private void HideBar()
     {
-        if (_root.Visible) { _root.Visible = false; _shownPawnId = -1; }
+        if (_bar.Visible) { _bar.Visible = false; _shownPawnId = -1; }
     }
 }
