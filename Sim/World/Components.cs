@@ -670,20 +670,22 @@ public struct RangedCombat : IComponent
                                    // (== the pawn's tile for a crouch; the lean cell for a lean)
 }
 
-// A bullet in flight. Created from a DummyController fire request, advanced
-// each tick toward (ToX,ToY). On arrival it resolves: a hit applies the
-// ammo's wound to TargetEntityId; a miss simply vanishes.
+// A bullet in flight — now a purely COSMETIC tracer. The hit is resolved
+// instantly at fire time by tracing the ballistic arc (see SimRuntime.
+// ResolveArcImpact): ToX/ToY/HitHeight is the locked impact point and
+// ResolvedHitId the victim (0 = wall/ground). The tracer flies that same arc
+// for show and applies the wound only when it ARRIVES (travel-time feel).
 public struct Projectile : IComponent
 {
     public float X, Y;             // live ground position (tiles)
     public float OriginX, OriginY; // muzzle spawn point — clamps the tracer's tail
     public float Height;           // live height above the ground (tiles)
     public float VertVel;          // vertical velocity (tiles/sec); falls under gravity
-    public float ToX, ToY;         // flight destination (aim point; scattered on a miss)
+    public float ToX, ToY;         // locked impact point (where the arc was blocked)
+    public float HitHeight;        // arc height at the impact point (wound region)
     public float Speed;            // tiles per second (horizontal)
     public int ShooterEntityId;
-    public int TargetEntityId;     // intended victim (for hit resolution)
-    public bool WillHit;           // accuracy already rolled at fire time
+    public int ResolvedHitId;      // victim resolved at fire time (0 = wall / ground miss)
     public string AmmoPath;        // wound source on a hit
     public float Angle;            // travel heading, for the streak render
     // Set the tick the round reaches its destination — it's drawn AT the

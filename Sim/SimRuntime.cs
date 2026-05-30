@@ -4009,11 +4009,14 @@ public sealed class SimRuntime
         }
     }
 
-    // Drain bullet-spawn requests posted by DummyController this tick into
-    // real Projectile entities.
+    // Drain bullet-spawn requests posted by DummyController this tick. The hit
+    // is resolved NOW (hitscan along the ballistic arc, height-aware so cover
+    // still works); the spawned Projectile is a cosmetic tracer flying that
+    // same arc to the locked impact point, applying the wound on arrival.
     private void SpawnPendingProjectiles()
     {
         if (_dummies.PendingProjectiles.Count == 0) return;
+        GatherProjPawns();
         foreach (var ps in _dummies.PendingProjectiles)
         {
             float ddx = ps.ToX - ps.FromX, ddy = ps.ToY - ps.FromY;
@@ -4026,39 +4029,28 @@ public sealed class SimRuntime
             float flight = MathF.Max(dist / MathF.Max(ps.Speed, 0.01f), 1e-3f);
             float vVel = (ps.ToHeight - SimConstants.MuzzleHeight) / flight
                        + 0.5f * SimConstants.ProjectileGravity * flight;
+            // Trace the arc instantly: first wall/sandbag/pawn it crosses is the
+            // locked impact. Nothing in the way → it lands at the aim point.
+            ResolveArcImpact(ps.FromX, ps.FromY, ps.ToX, ps.ToY, vVel, ps.Speed,
+                ps.ShooterEntityId, out float hitX, out float hitY, out float hitH, out int hitId);
             var e = Store.CreateEntity();
             e.AddComponent(new Projectile
             {
                 X = ps.FromX, Y = ps.FromY, OriginX = ps.FromX, OriginY = ps.FromY,
-                ToX = ps.ToX, ToY = ps.ToY,
+                ToX = hitX, ToY = hitY, HitHeight = hitH,
                 Height = SimConstants.MuzzleHeight, VertVel = vVel,
                 Speed = ps.Speed, ShooterEntityId = ps.ShooterEntityId,
-                TargetEntityId = ps.TargetEntityId, WillHit = ps.WillHit,
-                AmmoPath = ps.AmmoPath, Angle = ang,
+                ResolvedHitId = hitId, AmmoPath = ps.AmmoPath, Angle = ang,
             });
         }
         _dummies.PendingProjectiles.Clear();
     }
 
-    // Per-bullet hit radius around a pawn (tiles).
-    private const float ProjectileHitRadius = 0.45f;
-    private readonly List<(int Id, float X, float Y, float BodyH)> _projPawns = new();
-
-    // Advance every bullet along its FIXED line (no homing). Each tick the
-    // segment it sweeps is tested against walls and pawns: it stops on the
-    // first wall, or wounds the first pawn whose body it crosses at a
-    // compatible height (any pawn — friendly fire is real). Reaches its aim
-    // point with nothing in the way → it missed, and vanishes.
-    private void StepProjectiles(float dt)
+    // Snapshot every live pawn's hitbox (position + stance-adjusted height) for
+    // this tick's hit resolution. Downed pawns lie prone (short box); pawns in
+    // cover crouch below the sandbag or relocate to their lean peek cell.
+    private void GatherProjPawns()
     {
-        _projScratch.Clear();
-        Store.Query<Projectile>().ForEachEntity((ref Projectile _, Entity e) => _projScratch.Add(e));
-        if (_projScratch.Count == 0) return;
-
-        // Gather live pawns once (corpses have no Health component). Downed
-        // pawns lie prone → a much shorter hitbox. Pawns in cover shrink/relocate
-        // their hitbox by stance: a tucked crouch drops below the sandbag; a
-        // popped lean relocates the exposed body to the peek (lean) cell.
         _projPawns.Clear();
         Store.Query<WorldPos, Health>().ForEachEntity((ref WorldPos wp, ref Health h, Entity pe) =>
         {
@@ -4069,8 +4061,6 @@ public sealed class SimRuntime
             }
             else
             {
-                // Firing stance (ranged pop/tuck/lean) takes priority; failing
-                // that, a drafted pawn crouched by a sandbag keeps its head down.
                 var stance = CoverStance.None;
                 bool leaning = false;
                 float pkx = px, pky = py;
@@ -4086,13 +4076,11 @@ public sealed class SimRuntime
                 switch (stance)
                 {
                     case CoverStance.Tucked:
-                        // Crouch: hitbox drops below the sandbag (high rounds fly
-                        // over). Lean-tuck: stay on-tile — the wall does the blocking.
                         bh = leaning ? SimConstants.PawnBodyHeight : SimConstants.CrouchBodyHeight;
                         break;
                     case CoverStance.Popped:
                         bh = SimConstants.PawnBodyHeight;
-                        if (leaning) { px = pkx; py = pky; } // exposed at the corner
+                        if (leaning) { px = pkx; py = pky; }
                         break;
                     default:
                         bh = SimConstants.PawnBodyHeight;
@@ -4101,6 +4089,65 @@ public sealed class SimRuntime
             }
             _projPawns.Add((pe.Id, px, py, bh));
         });
+    }
+
+    // Hitscan along the ballistic arc from the muzzle to the aim point. Marches
+    // the trajectory (height = muzzle + vVel·t − ½g·t²) in short sub-segments,
+    // reusing the wall/sandbag/pawn segment tests so cover behaves exactly as
+    // the old per-tick sweep did. Outputs the first impact (point + arc height +
+    // victim id; 0 = wall or a clean ground miss at the aim point).
+    private void ResolveArcImpact(float fromX, float fromY, float aimX, float aimY,
+        float vVel, float speed, int shooterId,
+        out float hitX, out float hitY, out float hitH, out int hitId)
+    {
+        float ddx = aimX - fromX, ddy = aimY - fromY;
+        float dist = MathF.Sqrt(ddx * ddx + ddy * ddy);
+        float flight = MathF.Max(dist / MathF.Max(speed, 0.01f), 1e-3f);
+        float g = SimConstants.ProjectileGravity, muzzle = SimConstants.MuzzleHeight;
+        int steps = Math.Max(2, (int)(dist / 0.2f));
+        float px = fromX, py = fromY, ph = muzzle;
+        for (int k = 1; k <= steps; k++)
+        {
+            float f = (float)k / steps;
+            float t = flight * f;
+            float cx = fromX + ddx * f, cy = fromY + ddy * f;
+            float ch = muzzle + vVel * t - 0.5f * g * t * t;
+
+            float bestT = float.MaxValue; int pawn = 0;
+            if (SegmentFirstWall(px, py, cx, cy, out float wt)) bestT = wt;
+            if (SegmentFirstSandbag(px, py, cx, cy, ph, ch, out float st) && st < bestT)
+            { bestT = st; pawn = 0; }
+            if (ch >= 0f && SegmentFirstPawn(px, py, cx, cy, ch, shooterId, out int pid, out float pt) && pt < bestT)
+            { bestT = pt; pawn = pid; }
+
+            if (bestT <= 1f)
+            {
+                hitX = px + (cx - px) * bestT;
+                hitY = py + (cy - py) * bestT;
+                hitH = ph + (ch - ph) * bestT;
+                hitId = pawn;
+                return;
+            }
+            px = cx; py = cy; ph = ch;
+        }
+        // Nothing crossed — a clean miss into the ground at the aim point.
+        hitX = aimX; hitY = aimY;
+        hitH = MathF.Max(0f, muzzle + vVel * flight - 0.5f * g * flight * flight);
+        hitId = 0;
+    }
+
+    // Per-bullet hit radius around a pawn (tiles).
+    private const float ProjectileHitRadius = 0.45f;
+    private readonly List<(int Id, float X, float Y, float BodyH)> _projPawns = new();
+
+    // Animate the cosmetic tracers. The hit was already resolved at fire time
+    // (ResolveArcImpact); each bullet just flies its locked arc to the impact
+    // point and applies the wound the tick it ARRIVES — no live collision.
+    private void StepProjectiles(float dt)
+    {
+        _projScratch.Clear();
+        Store.Query<Projectile>().ForEachEntity((ref Projectile _, Entity e) => _projScratch.Add(e));
+        if (_projScratch.Count == 0) return;
 
         foreach (var e in _projScratch)
         {
@@ -4113,57 +4160,34 @@ public sealed class SimRuntime
             if (dist > 1e-4f) pr.Angle = MathF.Atan2(ddy, ddx);
             float step = pr.Speed * dt;
             bool reaching = dist <= step || dist < 1e-4f;
-            float nx = reaching ? pr.ToX : pr.X + ddx / dist * step;
-            float ny = reaching ? pr.ToY : pr.Y + ddy / dist * step;
-            float nh = pr.Height + pr.VertVel * dt;
 
-            // Find the nearest blocker along this tick's segment.
-            float bestT = float.MaxValue;
-            int hitPawn = 0;
-            if (SegmentFirstWall(pr.X, pr.Y, nx, ny, out float wallT)) bestT = wallT;
-            // A sandbag eats only the low rounds passing through its tile — high
-            // shots clear it. This is the geometric, directional cover: shots
-            // that don't cross the sandbag tile (e.g. from behind) aren't blocked.
-            if (SegmentFirstSandbag(pr.X, pr.Y, nx, ny, pr.Height, nh, out float sbT) && sbT < bestT)
-            { bestT = sbT; hitPawn = 0; }
-            if (nh >= 0f
-                && SegmentFirstPawn(pr.X, pr.Y, nx, ny, nh, pr.ShooterEntityId, out int pid, out float pawnT)
-                && pawnT < bestT)
-            { bestT = pawnT; hitPawn = pid; }
-
-            if (bestT <= 1f)
+            if (!reaching)
             {
-                float ix = pr.X + (nx - pr.X) * bestT;
-                float iy = pr.Y + (ny - pr.Y) * bestT;
-                float ih = pr.Height + (nh - pr.Height) * bestT;
-                pr.X = ix; pr.Y = iy; pr.Height = ih; pr.Arrived = true;
-                if (hitPawn != 0)
-                {
-                    bool passThrough = ResolveProjectileHit(hitPawn, pr.AmmoPath, ih);
-                    float cx = MathF.Cos(pr.Angle), cy = MathF.Sin(pr.Angle);
-                    _bloodImpacts.Add((ix - cx * 0.45f, iy - cy * 0.45f, pr.Angle + MathF.PI, 0.55f, false, BloodImpactSec));
-                    if (passThrough)
-                        _bloodImpacts.Add((ix + cx * 0.45f, iy + cy * 0.45f, pr.Angle, 1.0f, false, BloodImpactSec));
-                }
-                else
-                {
-                    // Struck a wall — kick up debris/dust at the impact point.
-                    _bloodImpacts.Add((ix, iy, pr.Angle, 0.6f, true, BloodImpactSec));
-                }
+                pr.X += ddx / dist * step;
+                pr.Y += ddy / dist * step;
+                pr.Height += pr.VertVel * dt;
+                pr.VertVel -= SimConstants.ProjectileGravity * dt; // gravity arc
                 continue;
             }
 
-            if (reaching)
+            // Arrived at the locked impact — snap on, apply the outcome.
+            pr.X = pr.ToX; pr.Y = pr.ToY; pr.Height = pr.HitHeight; pr.Arrived = true;
+            float ih = pr.HitHeight;
+            bool hitPawn = pr.ResolvedHitId != 0
+                && Store.TryGetEntityById(pr.ResolvedHitId, out var vt) && vt.HasComponent<Health>();
+            if (hitPawn)
             {
-                // Reached the aim point with nothing hit — a clean miss that
-                // kicks up dirt where the round struck the ground.
-                pr.X = pr.ToX; pr.Y = pr.ToY; pr.Height = nh; pr.Arrived = true;
+                bool passThrough = ResolveProjectileHit(pr.ResolvedHitId, pr.AmmoPath, ih);
+                float cx = MathF.Cos(pr.Angle), cy = MathF.Sin(pr.Angle);
+                _bloodImpacts.Add((pr.ToX - cx * 0.45f, pr.ToY - cy * 0.45f, pr.Angle + MathF.PI, 0.55f, false, BloodImpactSec));
+                if (passThrough)
+                    _bloodImpacts.Add((pr.ToX + cx * 0.45f, pr.ToY + cy * 0.45f, pr.Angle, 1.0f, false, BloodImpactSec));
+            }
+            else
+            {
+                // Hit a wall / the ground (or the victim died mid-flight) — dust.
                 _bloodImpacts.Add((pr.ToX, pr.ToY, pr.Angle, 0.6f, true, BloodImpactSec));
-                continue;
             }
-
-            pr.X = nx; pr.Y = ny; pr.Height = nh;
-            pr.VertVel -= SimConstants.ProjectileGravity * dt; // gravity arc
         }
     }
 

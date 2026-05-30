@@ -463,7 +463,12 @@ public class RangedTests
         sim.Step(SimConstants.TickSeconds);
         sim.Step(SimConstants.TickSeconds);
         sim.SetTargetArea(shooter, TargetArea.Torso);
-        sim.SetFireMode(shooter, FireMode.Auto);
+        // Single fire: one round resolves at a time. Auto would batch several
+        // arrivals into one tick (damage now lands on arrival), spiking the
+        // target unconscious before the per-tick heal below — which drops the
+        // vest and lets later rounds hit a bare torso. We're testing armor, not
+        // downing, so keep the rounds spaced out.
+        sim.SetFireMode(shooter, FireMode.Single);
         sim.SetFireTarget(shooter, target);
 
         bool gun = false, bruise = false;
