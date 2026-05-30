@@ -638,9 +638,11 @@ public struct RangedCombat : IComponent
 // ammo's wound to TargetEntityId; a miss simply vanishes.
 public struct Projectile : IComponent
 {
-    public float X, Y;             // live position (tiles)
+    public float X, Y;             // live ground position (tiles)
+    public float Height;           // live height above the ground (tiles)
+    public float VertVel;          // vertical velocity (tiles/sec); falls under gravity
     public float ToX, ToY;         // flight destination (aim point; scattered on a miss)
-    public float Speed;            // tiles per second
+    public float Speed;            // tiles per second (horizontal)
     public int ShooterEntityId;
     public int TargetEntityId;     // intended victim (for hit resolution)
     public bool WillHit;           // accuracy already rolled at fire time

@@ -1418,7 +1418,7 @@ public sealed class SimRuntime
         projQuery.ForEachEntity((ref Projectile pr, Entity _) =>
         {
             bool isAp = pr.AmmoPath == Items.ItemCatalog.RifleAmmoAp.FullPath;
-            projBuf[pri++] = new ProjectileState(pr.X, pr.Y, pr.Angle, pr.Speed, isAp);
+            projBuf[pri++] = new ProjectileState(pr.X, pr.Y, pr.Height, pr.Angle, pr.Speed, isAp);
         });
         snap.ProjectilesCount = pri;
 
@@ -3857,10 +3857,19 @@ public sealed class SimRuntime
         {
             float ddx = ps.ToX - ps.FromX, ddy = ps.ToY - ps.FromY;
             float ang = MathF.Atan2(ddy, ddx);
+            // Ballistic launch: fire from muzzle height, pick a vertical
+            // velocity that lands the round at torso-aim height by the time it
+            // covers the horizontal distance (gravity arcs it). For fast rifle
+            // rounds the flight is brief, so the arc is nearly flat.
+            float dist = MathF.Sqrt(ddx * ddx + ddy * ddy);
+            float flight = MathF.Max(dist / MathF.Max(ps.Speed, 0.01f), 1e-3f);
+            float vVel = (SimConstants.BodyAimHeight - SimConstants.MuzzleHeight) / flight
+                       + 0.5f * SimConstants.ProjectileGravity * flight;
             var e = Store.CreateEntity();
             e.AddComponent(new Projectile
             {
                 X = ps.FromX, Y = ps.FromY, ToX = ps.ToX, ToY = ps.ToY,
+                Height = SimConstants.MuzzleHeight, VertVel = vVel,
                 Speed = ps.Speed, ShooterEntityId = ps.ShooterEntityId,
                 TargetEntityId = ps.TargetEntityId, WillHit = ps.WillHit,
                 AmmoPath = ps.AmmoPath, Angle = ang,
@@ -3902,6 +3911,7 @@ public sealed class SimRuntime
                 // more tick so it renders AT the target — the tracer visibly
                 // reaches it instead of vanishing a step short.
                 pr.X = pr.ToX; pr.Y = pr.ToY;
+                pr.Height = SimConstants.BodyAimHeight; // land at torso height
                 pr.Arrived = true;
                 if (tracking)
                 {
@@ -3920,6 +3930,9 @@ public sealed class SimRuntime
             }
             pr.X += ddx / dist * step;
             pr.Y += ddy / dist * step;
+            // Ballistic vertical motion (gravity arc).
+            pr.Height += pr.VertVel * dt;
+            pr.VertVel -= SimConstants.ProjectileGravity * dt;
         }
     }
 

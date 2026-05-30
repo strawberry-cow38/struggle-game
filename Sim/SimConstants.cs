@@ -13,6 +13,14 @@ public static class SimConstants
 
     public const float WalkTilesPerSecond = 2.0f;
 
+    // === Ballistics (phase 2) — heights in tiles, gravity in tiles/sec². ===
+    // A colonist stands ~1.1 tiles tall (1.65m at 1.5m/tile); the gun muzzle
+    // and torso-center aim point sit around mid-body.
+    public const float PawnBodyHeight = 1.1f;
+    public const float MuzzleHeight = 0.9f;     // where a held rifle fires from
+    public const float BodyAimHeight = 0.85f;   // torso-center the shot aims at
+    public const float ProjectileGravity = 6.5f; // ~9.8 m/s² at 1.5 m/tile
+
     // Inventory caps for a colonist. Either one being exceeded stops them
     // adding more to their carry. Both default to 75 so a single wood
     // stack (also capped 75) maxes them out exactly.

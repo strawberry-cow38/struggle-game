@@ -968,11 +968,14 @@ public partial class WorldRenderer : Node2D
     private void DrawProjectile(Sim.Snapshots.ProjectileState pr)
     {
         var dir = new Vector2(Mathf.Cos(pr.Angle), Mathf.Sin(pr.Angle));
-        // Draw at the raw sim position. (An earlier (1-alpha)-tick rewind to
-        // match the interpolated world made fresh bullets render behind the
-        // shooter's muzzle — the homing + speed + tracer-length fixes already
-        // handle the feel, so just draw where the round actually is.)
-        var head = new Vector2(pr.X * PixelsPerTile, pr.Y * PixelsPerTile);
+        // Ground position, then lift by the round's height (screen up = -Y) so
+        // the bullet rides above its shadow on the floor.
+        var ground = new Vector2(pr.X * PixelsPerTile, pr.Y * PixelsPerTile);
+        float lift = pr.Height * PixelsPerTile;
+        var head = ground - new Vector2(0f, lift);
+        // Ground shadow — shrinks + fades as the round climbs.
+        float shade = Mathf.Clamp(1f - pr.Height / 1.5f, 0.25f, 1f);
+        DrawCircle(ground, PixelsPerTile * 0.09f * shade + 1.5f, new Color(0f, 0f, 0f, 0.30f * shade));
         // Tracer spans one tick of travel so a fast round draws a continuous
         // streak between its stepped positions instead of disconnected dots.
         float streakTiles = Mathf.Max(0.6f, pr.Speed / Sim.SimConstants.TickHz);
