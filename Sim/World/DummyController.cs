@@ -250,6 +250,9 @@ public sealed class DummyController
             if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
             path.Waypoints = null;
             path.Index = 0;
+            // Slide onto the nearest tile as they collapse, rather than
+            // freezing mid-step between tiles.
+            SnapToNearestTile(ref pos, dt, out _, out _);
             return;
         }
 
@@ -560,8 +563,13 @@ public sealed class DummyController
                     return;
                 }
             }
-            // Idle drafted: stand at the ready facing south.
-            w.Facing = SouthFacing;
+            // Idle drafted: ease onto the nearest tile, then stand at the
+            // ready facing south. While still sliding into place, face the
+            // direction of travel so the snap reads naturally.
+            if (SnapToNearestTile(ref pos, dt, out float sdx, out float sdy))
+                w.Facing = SouthFacing;
+            else if (sdx * sdx + sdy * sdy > 1e-9f)
+                w.Facing = MathF.Atan2(sdy, sdx);
             return; // standing watch
         }
 
@@ -1562,6 +1570,26 @@ public sealed class DummyController
             path.PendingPathId = _paths.Request(from, goal);
             return;
         }
+    }
+
+    // Smoothly slide pos toward the center of the tile it's currently
+    // standing on (nearest tile). Used when a colonist is drafted-idle or
+    // gets downed: instead of freezing mid-tile, they ease onto the grid.
+    // Returns true once centered. dir{X,Y} is the (un-normalized) movement
+    // this tick so the caller can face the direction of travel.
+    private static bool SnapToNearestTile(ref WorldPos pos, float dt, out float dirX, out float dirY)
+    {
+        float cx = MathF.Round(pos.X - 0.5f) + 0.5f;
+        float cy = MathF.Round(pos.Y - 0.5f) + 0.5f;
+        float dx = cx - pos.X, dy = cy - pos.Y;
+        float dist = MathF.Sqrt(dx * dx + dy * dy);
+        if (dist < 1e-4f) { pos.X = cx; pos.Y = cy; dirX = dirY = 0f; return true; }
+        float step = SimConstants.WalkTilesPerSecond * dt;
+        if (dist <= step) { dirX = dx; dirY = dy; pos.X = cx; pos.Y = cy; return true; }
+        dirX = dx; dirY = dy;
+        pos.X += dx / dist * step;
+        pos.Y += dy / dist * step;
+        return false;
     }
 
     private void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt, MapView view, float speedMul)
