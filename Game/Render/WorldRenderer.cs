@@ -993,7 +993,8 @@ public partial class WorldRenderer : Node2D
 
     private void DrawBloodImpact(Sim.Snapshots.BloodImpactState bi)
     {
-        var center = new Vector2((bi.X + 0.5f) * PixelsPerTile, (bi.Y + 0.5f) * PixelsPerTile);
+        // bi.X/Y are world coords (like pawns/bullets) — no tile-center +0.5.
+        var center = new Vector2(bi.X * PixelsPerTile, bi.Y * PixelsPerTile);
         float a = Mathf.Clamp(bi.Alpha, 0f, 1f);
         float spread = (1f - a) * PixelsPerTile * 0.6f; // droplets fly outward as it ages
         var col = BloodSprayColor;
