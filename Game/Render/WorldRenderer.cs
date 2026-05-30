@@ -520,7 +520,7 @@ public partial class WorldRenderer : Node2D
                 int ptx = (int)pr.X, pty = (int)pr.Y;
                 if (ptx < viewMinTileX || ptx > viewMaxTileX
                     || pty < viewMinTileY || pty > viewMaxTileY) continue;
-                DrawProjectile(pr, interpAlpha);
+                DrawProjectile(pr);
             }
         }
 
@@ -965,16 +965,14 @@ public partial class WorldRenderer : Node2D
     private static readonly Color BulletColor = new(1.0f, 0.92f, 0.45f);
     private static readonly Color BulletApColor = new(0.75f, 0.85f, 1.0f);
 
-    private void DrawProjectile(Sim.Snapshots.ProjectileState pr, float interpAlpha)
+    private void DrawProjectile(Sim.Snapshots.ProjectileState pr)
     {
         var dir = new Vector2(Mathf.Cos(pr.Angle), Mathf.Sin(pr.Angle));
-        // Sample the bullet at the same interpolated moment the world is drawn
-        // at: pawns render at lerp(prev,cur,alpha) ≈ (1-alpha) tick behind the
-        // current snapshot, so rewind the bullet the same amount. Otherwise it
-        // flies ~one tick ahead of the pawns it's passing — the "floaty" feel.
-        float rewindTiles = pr.Speed * Sim.SimConstants.TickSeconds * (1f - interpAlpha);
-        var headTile = new Vector2(pr.X, pr.Y) - dir * rewindTiles;
-        var head = headTile * PixelsPerTile;
+        // Draw at the raw sim position. (An earlier (1-alpha)-tick rewind to
+        // match the interpolated world made fresh bullets render behind the
+        // shooter's muzzle — the homing + speed + tracer-length fixes already
+        // handle the feel, so just draw where the round actually is.)
+        var head = new Vector2(pr.X * PixelsPerTile, pr.Y * PixelsPerTile);
         // Tracer spans one tick of travel so a fast round draws a continuous
         // streak between its stepped positions instead of disconnected dots.
         float streakTiles = Mathf.Max(0.6f, pr.Speed / Sim.SimConstants.TickHz);
