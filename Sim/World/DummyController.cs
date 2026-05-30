@@ -1802,6 +1802,11 @@ public sealed class DummyController
             Items.TargetArea.Legs => SimConstants.AimLegsHeight,
             _ => SimConstants.BodyAimHeight, // Torso
         };
+        // Vertical inaccuracy too: the same cone scatters the impact height, so
+        // the aimed region is a BIAS, not a guarantee — a head-aimed round can
+        // stray up high or down into the neck/torso.
+        float vScatter = (float)(_rng.NextDouble() * 2.0 - 1.0) * radius;
+        aimH = MathF.Max(0.05f, aimH + vScatter);
         PendingProjectiles.Add(new ProjectileSpawn(
             pos.X, pos.Y, toX, toY, aimH, spec.ProjectileSpeed,
             entity.Id, tgt.Id, true, rc.LoadedAmmoPath ?? ""));
