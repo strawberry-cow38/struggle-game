@@ -502,6 +502,33 @@ public class RangedTests
         Assert.True(gun, "AP should punch through the kevlar torso (gunshot wound)");
     }
 
+    [Fact]
+    public void PointBlank_TouchingTarget_StillHits()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, target) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        sim.Store.GetEntityById(target).AddComponent(new Drafted());
+        ArmWithRifle(sim, shooter, ItemCatalog.RifleAmmoFmj, 90);
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
+        sim.SetFireTarget(shooter, target);
+
+        bool hit = false;
+        for (int i = 0; i < 1500 && !hit; i++)
+        {
+            // Practically on top of each other (~0.3 tile apart).
+            SetPos(sim, shooter, 20.5f, 20.5f);
+            SetPos(sim, target, 20.8f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+            if (sim.Store.TryGetEntityById(target, out var t) && t.HasComponent<Health>())
+                foreach (var w in t.GetComponent<Health>().Injuries!)
+                    if (w.Kind == ConditionKind.Gunshot) { hit = true; break; }
+        }
+        Assert.True(hit, "a point-blank shooter should still hit a target it's touching");
+    }
+
     private static int InvCount(Entity e, string path)
     {
         int n = 0;

@@ -1433,7 +1433,7 @@ public sealed class SimRuntime
         projQuery.ForEachEntity((ref Projectile pr, Entity _) =>
         {
             bool isAp = pr.AmmoPath == Items.ItemCatalog.RifleAmmoAp.FullPath;
-            projBuf[pri++] = new ProjectileState(pr.X, pr.Y, pr.Height, pr.Angle, pr.Speed, isAp);
+            projBuf[pri++] = new ProjectileState(pr.X, pr.Y, pr.Height, pr.Angle, pr.Speed, isAp, pr.OriginX, pr.OriginY);
         });
         snap.ProjectilesCount = pri;
 
@@ -3890,7 +3890,8 @@ public sealed class SimRuntime
             var e = Store.CreateEntity();
             e.AddComponent(new Projectile
             {
-                X = ps.FromX, Y = ps.FromY, ToX = ps.ToX, ToY = ps.ToY,
+                X = ps.FromX, Y = ps.FromY, OriginX = ps.FromX, OriginY = ps.FromY,
+                ToX = ps.ToX, ToY = ps.ToY,
                 Height = SimConstants.MuzzleHeight, VertVel = vVel,
                 Speed = ps.Speed, ShooterEntityId = ps.ShooterEntityId,
                 TargetEntityId = ps.TargetEntityId, WillHit = ps.WillHit,

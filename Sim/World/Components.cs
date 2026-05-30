@@ -642,6 +642,7 @@ public struct RangedCombat : IComponent
 public struct Projectile : IComponent
 {
     public float X, Y;             // live ground position (tiles)
+    public float OriginX, OriginY; // muzzle spawn point — clamps the tracer's tail
     public float Height;           // live height above the ground (tiles)
     public float VertVel;          // vertical velocity (tiles/sec); falls under gravity
     public float ToX, ToY;         // flight destination (aim point; scattered on a miss)

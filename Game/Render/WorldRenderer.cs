@@ -989,8 +989,12 @@ public partial class WorldRenderer : Node2D
         float shade = Mathf.Clamp(1f - pr.Height / 1.5f, 0.25f, 1f);
         DrawCircle(ground, PixelsPerTile * 0.09f * shade + 1.5f, new Color(0f, 0f, 0f, 0.30f * shade));
         // Tracer spans one tick of travel so a fast round draws a continuous
-        // streak between its stepped positions instead of disconnected dots.
+        // streak between its stepped positions instead of disconnected dots —
+        // but never reaches back past the muzzle (else point-blank shots draw
+        // a tail behind the shooter).
         float streakTiles = Mathf.Max(0.6f, pr.Speed / Sim.SimConstants.TickHz);
+        float fromMuzzle = new Vector2(pr.X - pr.OriginX, pr.Y - pr.OriginY).Length();
+        streakTiles = Mathf.Min(streakTiles, fromMuzzle);
         var tail = head - dir * (PixelsPerTile * streakTiles);
         var col = pr.IsAp ? BulletApColor : BulletColor;
         // Slim tracer: faint glow + thin bright core + small head.

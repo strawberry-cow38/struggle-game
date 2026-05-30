@@ -1783,6 +1783,8 @@ public sealed class DummyController
         return false;
     }
 
+    private const float RangedMinShotDist = 1.5f; // min flight line so point-blank shots still sweep the target
+
     private void FireOneShot(Entity entity, Entity tgt, Items.RangedSpec spec, ref RangedCombat rc, WorldPos pos, WorldPos tp, float dist)
     {
         // Dispersion cone = steady spread + current recoil. The scatter radius
@@ -1790,11 +1792,19 @@ public sealed class DummyController
         // to a random point in that disc and connects (or not) purely by
         // geometry in the collision pass.
         float coneRad = (spec.SpreadDegrees + rc.Recoil) * (MathF.PI / 180f);
-        float radius = MathF.Tan(coneRad) * dist;
+        // Forward direction to the target (fallback if standing on top of it).
+        float dirx = tp.X - pos.X, diry = tp.Y - pos.Y;
+        float d = MathF.Sqrt(dirx * dirx + diry * diry);
+        if (d < 1e-3f) { dirx = 1f; diry = 0f; d = 1f; } else { dirx /= d; diry /= d; }
+        // Always aim at least MinShotDist ahead so the flight line genuinely
+        // sweeps the target (a zero-length point-blank line can't hit) and the
+        // ballistic solve doesn't blow up on a near-zero flight time.
+        float aimDist = MathF.Max(d, RangedMinShotDist);
+        float radius = MathF.Tan(coneRad) * aimDist;
         double ang = _rng.NextDouble() * Math.PI * 2.0;
         float r = (float)Math.Sqrt(_rng.NextDouble()) * radius; // uniform in the disc
-        float toX = tp.X + (float)Math.Cos(ang) * r;
-        float toY = tp.Y + (float)Math.Sin(ang) * r;
+        float toX = pos.X + dirx * aimDist + (float)Math.Cos(ang) * r;
+        float toY = pos.Y + diry * aimDist + (float)Math.Sin(ang) * r;
         // Aim at the chosen body region's height — or low for a downed/prone
         // target so finishing shots still connect.
         bool tgtDowned = tgt.HasComponent<Health>() && tgt.GetComponent<Health>().Unconscious;
