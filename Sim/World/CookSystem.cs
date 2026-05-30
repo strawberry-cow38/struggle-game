@@ -34,6 +34,22 @@ public sealed class CookSystem
     private ArchetypeQuery<Cooking, WorldPos>? _cookingPosQ;
     private ArchetypeQuery<ItemPile>? _itemPileQ;
 
+    // Map-wide item count by path, built at most ONCE per tick (lazily, only if
+    // a stove actually evaluates a bill) and shared across every stove/input —
+    // replaces a full ItemPile scan per stove per input check.
+    private readonly Dictionary<string, int> _pathTotals = new();
+    private bool _totalsReady;
+    private void EnsureTotals(EntityStore store)
+    {
+        if (_totalsReady) return;
+        _totalsReady = true;
+        _pathTotals.Clear();
+        (_itemPileQ ??= store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity _) =>
+        {
+            _pathTotals[p.ItemPath] = _pathTotals.GetValueOrDefault(p.ItemPath) + p.Count;
+        });
+    }
+
     private readonly struct CookFinish
     {
         public readonly int StoveEntityId;
@@ -52,6 +68,7 @@ public sealed class CookSystem
         _completed.Clear();
         _toPost.Clear();
         _finished.Clear();
+        _totalsReady = false; // rebuilt lazily this tick only if a bill needs it
 
         // 1. Scan stoves for bill scheduling.
         var stoveQuery = _stoveBillsQ ??= store.Query<Stove, BillsBoard>();
@@ -168,14 +185,8 @@ public sealed class CookSystem
                 return bill.RemainingCount > 0;
             case BillRepeatMode.DoUntilCount:
             {
-                // Count world piles matching the output ItemPath.
-                int have = 0;
-                var q = _itemPileQ ??= store.Query<ItemPile>();
-                q.ForEachEntity((ref ItemPile p, Entity _) =>
-                {
-                    if (p.ItemPath == recipe.Output.ItemPath) have += p.Count;
-                });
-                return have < bill.TargetCount;
+                EnsureTotals(store);
+                return _pathTotals.GetValueOrDefault(recipe.Output.ItemPath) < bill.TargetCount;
             }
             default: return false;
         }
@@ -183,16 +194,9 @@ public sealed class CookSystem
 
     private bool HasIngredientsOnMap(Recipe recipe, EntityStore store)
     {
+        EnsureTotals(store);
         foreach (var input in recipe.Inputs)
-        {
-            int have = 0;
-            var q = _itemPileQ ??= store.Query<ItemPile>();
-            q.ForEachEntity((ref ItemPile p, Entity _) =>
-            {
-                if (p.ItemPath == input.ItemPath) have += p.Count;
-            });
-            if (have < input.Count) return false;
-        }
+            if (_pathTotals.GetValueOrDefault(input.ItemPath) < input.Count) return false;
         return true;
     }
 }

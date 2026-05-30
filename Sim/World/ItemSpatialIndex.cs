@@ -42,6 +42,10 @@ public sealed class ItemSpatialIndex
     private readonly HashSet<int> _reserved = new();
     // Any item per tile — what blocks a blueprint from completing.
     private readonly Dictionary<TilePos, int> _itemTileCount = new();
+    // Number of tiles holding >=2 item stacks — the only tiles the merge/spill
+    // passes can ever act on. Lets SimRuntime skip those full scans entirely
+    // when no tile is coincident (the common case).
+    private int _coincidentTileCount;
     // Unreserved items per tile — what wedges a door open (a reserved
     // stack is about to be hauled away, so it doesn't count).
     private readonly Dictionary<TilePos, int> _unreservedItemTileCount = new();
@@ -56,7 +60,7 @@ public sealed class ItemSpatialIndex
     {
         if (_byEntity.ContainsKey(entityId)) return; // idempotent
         _byEntity[entityId] = new Entry(tile, path);
-        Bump(_itemTileCount, tile, +1);
+        BumpItemCount(tile, +1);
         if (!_reserved.Contains(entityId)) Bump(_unreservedItemTileCount, tile, +1);
         var key = ChunkOf(tile);
         if (!_chunks.TryGetValue(key, out var list)) { list = new List<int>(); _chunks[key] = list; }
@@ -67,7 +71,7 @@ public sealed class ItemSpatialIndex
     {
         if (!_byEntity.TryGetValue(entityId, out var e)) return;
         _byEntity.Remove(entityId);
-        Bump(_itemTileCount, e.Tile, -1);
+        BumpItemCount(e.Tile, -1);
         if (!_reserved.Contains(entityId)) Bump(_unreservedItemTileCount, e.Tile, -1);
         _reserved.Remove(entityId);
         var key = ChunkOf(e.Tile);
@@ -99,6 +103,22 @@ public sealed class ItemSpatialIndex
         int n = map.GetValueOrDefault(tile) + delta;
         if (n <= 0) map.Remove(tile); else map[tile] = n;
     }
+
+    // _itemTileCount bump that also maintains the coincident-tile counter
+    // (tiles crossing the 1<->2 boundary).
+    private void BumpItemCount(TilePos tile, int delta)
+    {
+        int before = _itemTileCount.GetValueOrDefault(tile);
+        int after = before + delta;
+        if (after <= 0) _itemTileCount.Remove(tile); else _itemTileCount[tile] = after;
+        bool wasCo = before >= 2, isCo = after >= 2;
+        if (isCo && !wasCo) _coincidentTileCount++;
+        else if (wasCo && !isCo) _coincidentTileCount--;
+    }
+
+    // True if any tile holds >=2 item stacks (the merge/spill passes are pure
+    // no-ops otherwise, so SimRuntime can skip them).
+    public bool HasCoincidentTiles => _coincidentTileCount > 0;
 
     // ── queries ──────────────────────────────────────────────────────────
 
@@ -166,6 +186,11 @@ public sealed class ItemSpatialIndex
 
         CheckTileMap("item", liveItem, _itemTileCount);
         CheckTileMap("unreserved-item", liveUnreserved, _unreservedItemTileCount);
+
+        int liveCoincident = 0;
+        foreach (var n in liveItem.Values) if (n >= 2) liveCoincident++;
+        if (liveCoincident != _coincidentTileCount)
+            throw new InvalidOperationException($"ItemSpatialIndex drift: coincident tiles index={_coincidentTileCount} store={liveCoincident}.");
 
         if (live.Count != _byEntity.Count)
             throw new InvalidOperationException($"ItemSpatialIndex drift: index has {_byEntity.Count} entries, store has {live.Count}.");

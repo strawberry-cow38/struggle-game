@@ -176,6 +176,9 @@ public sealed class SimRuntime
     // Transient blood-impact sprays at bullet-hit points (world tile coords +
     // remaining seconds). Cosmetic; aged out each tick.
     private readonly List<(float X, float Y, float Height, float Angle, float Scale, bool Dirt, float Sec)> _bloodImpacts = new();
+    // Tile → blood-puddle entity (puddles persist, one per tile) so a bleed
+    // drip is an O(1) lookup instead of a full BloodPuddle scan.
+    private readonly Dictionary<TilePos, Entity> _bloodPuddleMap = new();
     private const float BloodImpactSec = 0.45f;
     // Cached per-lamp disc bake. Each entry is the lamp's static
     // contribution pattern (relative to its tile) baked against the
@@ -396,12 +399,17 @@ public sealed class SimRuntime
         _health.Step(Store, dt);
         AgeRoofFlashes(dt);
         AgeBloodImpacts(dt);
-        // Run every tick. (An earlier "skip unless an item was added"
-        // optimization was unsafe: a pile can also become mergeable when a
-        // haul reservation clears or a neighbor is partly consumed, neither
-        // of which is an add — so it could leave two coincident stacks.)
-        MergeCoincidentItemPiles();
-        SpillCoincidentPiles();
+        // Merge/spill only ever act on a tile holding >=2 stacks. The item
+        // index tracks that count (maintained via component add/remove events,
+        // so it's correct across deferred haul pickup/deliver AND covers the
+        // reservation-clear case the old "skip unless added" flag missed). When
+        // no tile is coincident, both passes are guaranteed no-ops → skip the
+        // full ItemPile scans entirely.
+        if (_itemIndex.HasCoincidentTiles)
+        {
+            MergeCoincidentItemPiles();
+            SpillCoincidentPiles();
+        }
         _safety.Step(Store, Tick);
         // Coalesced rebuild: one map clone + one room flood-fill per tick
         // even if N walls/doors mutated this tick.
@@ -4463,12 +4471,7 @@ public sealed class SimRuntime
     // new one. Cosmetic; persists (no cleaning yet).
     public void SpawnBloodPuddle(TilePos tile)
     {
-        Entity? found = null;
-        (_bloodPuddleQ ??= Store.Query<BloodPuddle>()).ForEachEntity((ref BloodPuddle bp, Entity e) =>
-        {
-            if (found is null && bp.Tile == tile) found = e;
-        });
-        if (found is Entity fe)
+        if (_bloodPuddleMap.TryGetValue(tile, out var fe))
         {
             ref var bp = ref fe.GetComponent<BloodPuddle>();
             bp.Amount = Math.Min(1f, bp.Amount + 0.25f);
@@ -4477,6 +4480,7 @@ public sealed class SimRuntime
         var ne = Store.CreateEntity();
         ne.AddComponent(new BloodPuddle { Tile = tile, Amount = 0.4f });
         ne.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
+        _bloodPuddleMap[tile] = ne;
     }
 
     // Debug/gameplay: add a condition to one of a colonist's body parts

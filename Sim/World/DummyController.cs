@@ -1222,7 +1222,10 @@ public sealed class DummyController
         Span<int> bestDist = stackalloc int[9];
         for (int i = 0; i < 9; i++) { bestId[i] = JobId.None; bestDist[i] = int.MaxValue; }
 
-        foreach (var job in _jobs.All)
+        // Only the claimable set (Open + unforbidden), not every job — most
+        // jobs are Claimed mid-work in a busy colony. (State/Forbidden re-checks
+        // kept as a cheap belt-and-suspenders.)
+        foreach (var job in _jobs.OpenJobs)
         {
             if (job.State != JobState.Open) continue;
             if (job.Forbidden) continue;

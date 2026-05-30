@@ -14,7 +14,18 @@ public sealed class JobBoard
 {
     private readonly Dictionary<JobId, Job> _byId = new();
     private readonly Dictionary<TilePos, JobId> _byTile = new();
+    // Jobs that are Open AND not Forbidden — the only ones a pawn can claim.
+    // Maintained on every state/forbidden transition so the per-pawn claim
+    // scan iterates just the claimable set, not every job (most are Claimed
+    // mid-work in a busy colony).
+    private readonly HashSet<Job> _open = new();
     private long _nextId;
+
+    private void RefreshOpen(Job job)
+    {
+        if (job.State == JobState.Open && !job.Forbidden) _open.Add(job);
+        else _open.Remove(job);
+    }
 
     public long Version { get; private set; }
     public int Count => _byId.Count;
@@ -23,6 +34,10 @@ public sealed class JobBoard
     // struct enumerator — no boxed-enumerator heap alloc per iteration. Hit per
     // idle pawn per tick (TryClaimJob) and several times per snapshot.
     public Dictionary<JobId, Job>.ValueCollection All => _byId.Values;
+
+    // Claimable jobs only (Open + not Forbidden). Concrete HashSet so foreach
+    // uses the struct enumerator (no boxed-enumerator alloc).
+    public HashSet<Job> OpenJobs => _open;
 
     public bool HasTile(TilePos tile) => _byTile.ContainsKey(tile);
 
@@ -61,6 +76,7 @@ public sealed class JobBoard
         var id = new JobId(++_nextId);
         var job = new Job(id, kind, tile, entity, extraTiles);
         _byId[id] = job;
+        RefreshOpen(job); // new jobs start Open + unforbidden → claimable
         if (!skipTileIndex)
         {
             _byTile[tile] = id;
@@ -84,6 +100,7 @@ public sealed class JobBoard
         if (job.Forbidden) return false;
         job.State = JobState.Claimed;
         job.Claimant = claimant;
+        RefreshOpen(job);
         Version++;
         return true;
     }
@@ -100,6 +117,7 @@ public sealed class JobBoard
             job.State = JobState.Open;
             job.Claimant = default;
         }
+        RefreshOpen(job);
         Version++;
         return true;
     }
@@ -116,6 +134,7 @@ public sealed class JobBoard
         if (job.State != JobState.Claimed) return;
         job.State = JobState.Open;
         job.Claimant = default;
+        RefreshOpen(job);
         Version++;
     }
 
@@ -123,6 +142,7 @@ public sealed class JobBoard
     {
         if (!_byId.TryGetValue(id, out var job)) return;
         job.State = JobState.Completed;
+        _open.Remove(job);
         RemoveTileIndexIfOwned(job.Tile, id);
         if (job.ExtraTiles is not null)
             foreach (var t in job.ExtraTiles) if (t != job.Tile) RemoveTileIndexIfOwned(t, id);
@@ -134,6 +154,7 @@ public sealed class JobBoard
     {
         if (!_byId.TryGetValue(id, out var job)) return;
         job.State = JobState.Cancelled;
+        _open.Remove(job);
         RemoveTileIndexIfOwned(job.Tile, id);
         if (job.ExtraTiles is not null)
             foreach (var t in job.ExtraTiles) if (t != job.Tile) RemoveTileIndexIfOwned(t, id);
