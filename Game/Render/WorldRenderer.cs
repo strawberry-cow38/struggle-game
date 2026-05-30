@@ -987,23 +987,26 @@ public partial class WorldRenderer : Node2D
     }
 
     private static readonly Color BloodSprayColor = new(0.55f, 0.02f, 0.02f);
-    // Fixed droplet headings so the spray is stable frame-to-frame.
-    private static readonly float[] SprayAngles = { 0.4f, 1.3f, 2.2f, 3.0f, 3.9f, 4.8f, 5.6f };
+    // Droplet fan offsets (radians) around the bullet's heading — an
+    // exit-wound cone spraying forward, off the far side of the target.
+    private static readonly float[] SprayFan = { -0.7f, -0.4f, -0.15f, 0.15f, 0.4f, 0.7f };
 
     private void DrawBloodImpact(Sim.Snapshots.BloodImpactState bi)
     {
         var center = new Vector2((bi.X + 0.5f) * PixelsPerTile, (bi.Y + 0.5f) * PixelsPerTile);
         float a = Mathf.Clamp(bi.Alpha, 0f, 1f);
-        float spread = (1f - a) * PixelsPerTile * 0.45f; // droplets fly outward as it ages
+        float spread = (1f - a) * PixelsPerTile * 0.6f; // droplets fly outward as it ages
         var col = BloodSprayColor;
         col.A = a;
         // Central burst.
         DrawCircle(center, PixelsPerTile * 0.12f * a + 2f, col);
-        // Radiating droplets.
-        for (int i = 0; i < SprayAngles.Length; i++)
+        // Droplets fan out forward along the bullet's heading (exit wound).
+        for (int i = 0; i < SprayFan.Length; i++)
         {
-            float ang = SprayAngles[i];
-            var p = center + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * (PixelsPerTile * 0.12f + spread);
+            float ang = bi.Angle + SprayFan[i];
+            // Outer droplets in the fan fling a bit farther.
+            float reach = PixelsPerTile * 0.1f + spread * (1f - 0.4f * Mathf.Abs(SprayFan[i]));
+            var p = center + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * reach;
             DrawCircle(p, PixelsPerTile * 0.06f * a + 1f, col);
         }
     }

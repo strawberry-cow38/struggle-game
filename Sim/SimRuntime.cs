@@ -169,7 +169,7 @@ public sealed class SimRuntime
     private readonly Dictionary<TilePos, float> _roofFlashes = new();
     // Transient blood-impact sprays at bullet-hit points (world tile coords +
     // remaining seconds). Cosmetic; aged out each tick.
-    private readonly List<(float X, float Y, float Sec)> _bloodImpacts = new();
+    private readonly List<(float X, float Y, float Angle, float Sec)> _bloodImpacts = new();
     private const float BloodImpactSec = 0.35f;
     // Cached per-lamp disc bake. Each entry is the lamp's static
     // contribution pattern (relative to its tile) baked against the
@@ -1427,7 +1427,7 @@ public sealed class SimRuntime
         for (int bi = 0; bi < _bloodImpacts.Count; bi++)
         {
             var b = _bloodImpacts[bi];
-            biBuf[bi] = new BloodImpactState(b.X, b.Y, b.Sec / BloodImpactSec);
+            biBuf[bi] = new BloodImpactState(b.X, b.Y, b.Angle, b.Sec / BloodImpactSec);
         }
         snap.BloodImpactsCount = _bloodImpacts.Count;
 
@@ -3906,7 +3906,12 @@ public sealed class SimRuntime
                 if (tracking)
                 {
                     ResolveProjectileHit(in pr);
-                    _bloodImpacts.Add((pr.X, pr.Y, BloodImpactSec)); // spray exactly where it landed
+                    // Exit-wound spray: push the burst to the far side of the
+                    // target along the bullet's path and spray it forward.
+                    const float exit = 0.45f;
+                    float bx = pr.X + MathF.Cos(pr.Angle) * exit;
+                    float by = pr.Y + MathF.Sin(pr.Angle) * exit;
+                    _bloodImpacts.Add((bx, by, pr.Angle, BloodImpactSec));
                 }
                 continue;
             }
