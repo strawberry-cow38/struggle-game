@@ -194,6 +194,18 @@ public sealed class DummyController
         var here = new TilePos((int)pos.X, (int)pos.Y);
         bool drafted = entity.HasComponent<Drafted>();
 
+        // Undraft-mid-walk edge: abandon the drafted move order and ease
+        // onto the nearest tile before normal jobs/wander resume.
+        if (w.WasDrafted && !drafted)
+        {
+            if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
+            path.Waypoints = null;
+            path.Index = 0;
+            w.Snapping = true;
+        }
+        if (drafted) w.Snapping = false; // re-drafted: drafted logic owns movement
+        w.WasDrafted = drafted;
+
         // 1. Resolve in-flight request.
         if (path.PendingPathId != 0)
         {
@@ -264,6 +276,22 @@ public sealed class DummyController
             path.Waypoints = null;
             path.Index = 0;
             return;
+        }
+
+        // Easing onto the grid after an undraft mid-walk. Hold here (no
+        // jobs/wander) until centered, then fall through this same tick.
+        if (w.Snapping)
+        {
+            if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
+            path.Waypoints = null;
+            path.Index = 0;
+            if (SnapToNearestTile(ref pos, dt, out float udx, out float udy))
+                w.Snapping = false;
+            else
+            {
+                if (udx * udx + udy * udy > 1e-9f) w.Facing = MathF.Atan2(udy, udx);
+                return;
+            }
         }
 
         // Player equip order. Beats the job auction: the chosen colonist

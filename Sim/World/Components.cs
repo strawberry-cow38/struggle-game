@@ -33,6 +33,12 @@ public struct Wanderer : IComponent
     // Heading in radians (atan2 of last movement). Updated while walking;
     // holds its last value when idle so the facing arrow doesn't snap back.
     public float Facing;
+    // Drafted state on the previous Plan tick, used to detect the
+    // drafted->undrafted edge so we can snap a mid-walk pawn onto the grid.
+    public bool WasDrafted;
+    // While true, the pawn is easing onto its nearest tile center before
+    // resuming normal jobs/wander (set when undrafted mid-walk).
+    public bool Snapping;
 }
 
 // Pending construction job on a tile. ProgressSec advances while a
