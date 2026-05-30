@@ -87,12 +87,29 @@ public partial class Selector : Node2D
             _bpMenu.SetInputAsHandled();
             return;
         }
-        if (mb.ButtonIndex != MouseButton.Right || !mb.Pressed) return;
-        int focused = _bpMenu.GetFocusedItem();
-        if (focused < 0) return;
-        long id = _bpMenu.GetItemId(focused);
-        _bpMenu.Hide();
-        OnBlueprintMenuPressed(id);
+        if (!mb.Pressed) return;
+        if (mb.ButtonIndex != MouseButton.Left && mb.ButtonIndex != MouseButton.Right) return;
+
+        // A click outside the menu's rect (left OR right) closes it. We own
+        // WindowInput, so Godot's default outside-click close doesn't fire —
+        // do it ourselves, otherwise the menu would stay stuck open.
+        var rect = new Rect2(Vector2.Zero, _bpMenu.Size);
+        if (!rect.HasPoint(mb.Position))
+        {
+            _bpMenu.Hide();
+            return;
+        }
+
+        // Inside + RMB → activate the hovered item (so the player doesn't have
+        // to switch to LMB mid-gesture). LMB inside is handled by the popup.
+        if (mb.ButtonIndex == MouseButton.Right)
+        {
+            int focused = _bpMenu.GetFocusedItem();
+            if (focused < 0) return;
+            long id = _bpMenu.GetItemId(focused);
+            _bpMenu.Hide();
+            OnBlueprintMenuPressed(id);
+        }
     }
 
     private void OnBlueprintMenuPressed(long id)

@@ -93,6 +93,8 @@ public sealed class ItemDef
     // Whether a freshly-created stockpile accepts this item. Corpses are
     // off by default — the player opts in per stockpile.
     public bool DefaultStockpileAllowed { get; }
+    // Max units in one ground/stockpile stack before it splits into another.
+    public int MaxStack { get; }
     // Ranged-weapon stats when equipped, else null. Equipping a ranged
     // weapon attaches a RangedCombat component (mag + fire mode).
     public RangedSpec? Ranged { get; }
@@ -101,7 +103,7 @@ public sealed class ItemDef
     public AmmoSpec? Ammo { get; }
     public bool IsAmmo => Ammo is not null;
 
-    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable, (ConditionKind, float)[]? meleeAttacks, bool defaultStockpileAllowed, RangedSpec? ranged, AmmoSpec? ammo)
+    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable, (ConditionKind, float)[]? meleeAttacks, bool defaultStockpileAllowed, RangedSpec? ranged, AmmoSpec? ammo, int maxStack)
     {
         Id = id;
         DisplayName = displayName;
@@ -113,6 +115,7 @@ public sealed class ItemDef
         DefaultStockpileAllowed = defaultStockpileAllowed;
         Ranged = ranged;
         Ammo = ammo;
+        MaxStack = maxStack;
     }
 
     public string FullPath => $"{Category.FullPath}/{Id}";
@@ -171,11 +174,11 @@ public static class ItemCatalog
         Corpse = RegisterItem("Colonist", "Corpse", Corpses, weight: 40f, bulk: 40f, defaultStockpileAllowed: false);
 
         Ammo = RegisterCategory("Ammo", "Ammo");
-        RifleAmmoAp = RegisterItem("RifleAmmoAP", "5.56x45mm NATO (AP)", Ammo, weight: 0.02f, bulk: 0.02f,
+        RifleAmmoAp = RegisterItem("RifleAmmoAP", "5.56x45mm NATO (AP)", Ammo, weight: 0.02f, bulk: 0.02f, maxStack: 500,
             ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.30f, ArmorPen = 0.6f });
-        RifleAmmoHp = RegisterItem("RifleAmmoHP", "5.56x45mm NATO (HP)", Ammo, weight: 0.02f, bulk: 0.02f,
+        RifleAmmoHp = RegisterItem("RifleAmmoHP", "5.56x45mm NATO (HP)", Ammo, weight: 0.02f, bulk: 0.02f, maxStack: 500,
             ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.48f, ArmorPen = 0.1f });
-        RifleAmmoFmj = RegisterItem("RifleAmmoFMJ", "5.56x45mm NATO (FMJ)", Ammo, weight: 0.02f, bulk: 0.02f,
+        RifleAmmoFmj = RegisterItem("RifleAmmoFMJ", "5.56x45mm NATO (FMJ)", Ammo, weight: 0.02f, bulk: 0.02f, maxStack: 500,
             ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.38f, ArmorPen = 0.35f });
         AssaultRifle = RegisterItem("AssaultRifle", "M16A1", Equipment, weight: 4f, bulk: 3f, equippable: true,
             ranged: new RangedSpec
@@ -212,9 +215,9 @@ public static class ItemCatalog
         return cat;
     }
 
-    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false, (ConditionKind, float)[]? meleeAttacks = null, bool defaultStockpileAllowed = true, RangedSpec? ranged = null, AmmoSpec? ammo = null)
+    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false, (ConditionKind, float)[]? meleeAttacks = null, bool defaultStockpileAllowed = true, RangedSpec? ranged = null, AmmoSpec? ammo = null, int maxStack = 75)
     {
-        var item = new ItemDef(id, displayName, category, weight, bulk, equippable, meleeAttacks, defaultStockpileAllowed, ranged, ammo);
+        var item = new ItemDef(id, displayName, category, weight, bulk, equippable, meleeAttacks, defaultStockpileAllowed, ranged, ammo, maxStack);
         if (!_itemsByPath.TryAdd(item.FullPath, item))
         {
             throw new InvalidOperationException($"Item already registered at path '{item.FullPath}'.");

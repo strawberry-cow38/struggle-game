@@ -3439,7 +3439,7 @@ public sealed class SimRuntime
                     int existing = (t != source && woodAt.TryGetValue(t, out var c)) ? c : 0;
                     if (mergePass && existing <= 0) continue;
                     if (!mergePass && existing > 0) continue;
-                    if (existing > 0 && existing + countToMove > WoodMaxStack) continue;
+                    if (existing > 0 && existing + countToMove > def.MaxStack) continue;
                     int d = Math.Abs(t.X - source.X) + Math.Abs(t.Y - source.Y);
                     if (existing > pileBestStack || (existing == pileBestStack && d < pileBestDist))
                     {
@@ -4220,7 +4220,8 @@ public sealed class SimRuntime
             if (byKey.TryGetValue(key, out var existing))
             {
                 int existingCount = existing.GetComponent<ItemPile>().Count;
-                if (existingCount + p.Count <= WoodMaxStack)
+                int cap = Items.ItemCatalog.ItemsByPath.TryGetValue(p.ItemPath, out var mdef) ? mdef.MaxStack : WoodMaxStack;
+                if (existingCount + p.Count <= cap)
                 {
                     mergeOps.Add((existing.Id, p.Count));
                     deletes.Add(e);
