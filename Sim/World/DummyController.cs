@@ -218,12 +218,15 @@ public sealed class DummyController
             cb.AddComponent(entity.Id, new RangedCombat { Mode = DefaultFireMode(rangedWeaponDef.Ranged!) });
         else if (!hasRangedWeapon && entity.HasComponent<RangedCombat>())
             cb.RemoveComponent<RangedCombat>(entity.Id);
-        // Undrafting stops any fire order (mirrors melee being cleared).
-        if (!drafted && entity.HasComponent<RangedCombat>())
+        if (entity.HasComponent<RangedCombat>())
         {
             ref var rc0 = ref entity.GetComponent<RangedCombat>();
-            rc0.TargetEntityId = 0;
-            rc0.BurstRemaining = 0;
+            // Always finish a reload once its timer elapses, even if the pawn
+            // stopped firing mid-reload (target lost) — otherwise the
+            // "Reloading" label sticks forever.
+            if (rc0.Reloading && _tick >= rc0.NextActionTick) rc0.Reloading = false;
+            // Undrafting stops any fire order (mirrors melee being cleared).
+            if (!drafted) { rc0.TargetEntityId = 0; rc0.BurstRemaining = 0; }
         }
 
         // 1. Resolve in-flight request.
