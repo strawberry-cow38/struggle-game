@@ -84,6 +84,9 @@ public partial class Bootstrap : Node2D
         var stoveDesignator = new StoveDesignator { Host = _host, Tools = _tools, Name = "StoveDesignator" };
         AddChild(stoveDesignator);
 
+        var sandbagDesignator = new SandbagDesignator { Host = _host, Tools = _tools, Name = "SandbagDesignator" };
+        AddChild(sandbagDesignator);
+
         var spawnDesignator = new SpawnPawnDesignator { Host = _host, Tools = _tools, Name = "SpawnPawnDesignator" };
         AddChild(spawnDesignator);
 

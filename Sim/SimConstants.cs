@@ -30,6 +30,10 @@ public static class SimConstants
     public const float AimHeadHeight = 1.05f;
     public const float AimLegsHeight = 0.3f;  // BodyAimHeight (0.85) is the torso aim
     public const float AimAutoHeight = 0.55f; // Auto = dead center of the body mass
+    // Cover: a sandbag stands ~0.5 tile tall. Shots whose impact height is
+    // below this (and coming from the covered side) eat the sandbag; a
+    // crouched pawn tucks below it. The cover/peeking systems read this.
+    public const float SandbagCoverHeight = 0.5f;
 
     // Inventory caps for a colonist. Either one being exceeded stops them
     // adding more to their carry. Both default to 75 so a single wood

@@ -54,6 +54,13 @@ public sealed class InstantPlaceUrBoardCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.InstantPlaceUrBoard(Tile);
 }
 
+public sealed class InstantPlaceSandbagCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public InstantPlaceSandbagCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.InstantPlaceSandbag(Tile);
+}
+
 public sealed class InstantPaintRoofRectCommand : ISimCommand
 {
     public TilePos A { get; }
@@ -358,6 +365,11 @@ public sealed class DeconstructWallsInRectCommand : ISimCommand
         {
             if (InRect(tile)) urBoardHits.Add(tile);
         }
+        var sandbagHits = new List<TilePos>();
+        foreach (var tile in sim.SandbagMap.Keys)
+        {
+            if (InRect(tile)) sandbagHits.Add(tile);
+        }
 
         foreach (var tile in wallHits) sim.TryPostDeconstructJob(tile);
         foreach (var tile in doorHits) sim.TryPostDoorDeconstructJob(tile);
@@ -365,6 +377,7 @@ public sealed class DeconstructWallsInRectCommand : ISimCommand
         foreach (var tile in stoveHits) sim.TryPostStoveDeconstructJob(tile);
         foreach (var tile in bedHits) sim.TryPostBedDeconstructJob(tile);
         foreach (var tile in urBoardHits) sim.TryPostUrBoardDeconstructJob(tile);
+        foreach (var tile in sandbagHits) sim.TryPostSandbagDeconstructJob(tile);
     }
 }
 
@@ -1081,6 +1094,22 @@ public sealed class PostUrBoardDeconCommand : ISimCommand
     public TilePos Tile { get; }
     public PostUrBoardDeconCommand(TilePos tile) { Tile = tile; }
     public void Apply(SimRuntime sim) => sim.TryPostUrBoardDeconstructJob(Tile);
+}
+
+// Place a sandbag blueprint at the tile. 1x1 low cover, walkable-but-slow.
+// Build cost = SimRuntime.SandbagWoodCost.
+public sealed class PlaceSandbagCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public PlaceSandbagCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.TryPlaceSandbagBlueprint(Tile);
+}
+
+public sealed class PostSandbagDeconCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public PostSandbagDeconCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.TryPostSandbagDeconstructJob(Tile);
 }
 
 // Post a BedDeconstruct job on a built bed identified by its Origin

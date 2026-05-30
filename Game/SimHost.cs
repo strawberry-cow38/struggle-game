@@ -254,6 +254,11 @@ public sealed class SimHost : IDisposable
         lock (_swapLock) { return _sim.CanPlaceUrBoard(tile); }
     }
 
+    public bool CanPlaceSandbag(TilePos tile)
+    {
+        lock (_swapLock) { return _sim.CanPlaceSandbag(tile); }
+    }
+
     public bool CanPlaceStove(TilePos origin, StruggleGame.Sim.World.StoveOrientation orientation)
     {
         lock (_swapLock) { return _sim.CanPlaceStove(origin, orientation); }

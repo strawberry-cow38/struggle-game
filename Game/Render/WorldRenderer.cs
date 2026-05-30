@@ -361,6 +361,14 @@ public partial class WorldRenderer : Node2D
                 DrawStoveBlueprint(sbp.Origin, sbp.Orientation, sbp.Progress, sbp.Funding);
                 if (sbp.Forbidden) DrawForbidX(sbp.Origin);
             }
+
+            foreach (var sbbp in snap.SandbagBlueprints)
+            {
+                if (sbbp.Tile.X < viewMinTileX || sbbp.Tile.X > viewMaxTileX
+                    || sbbp.Tile.Y < viewMinTileY || sbbp.Tile.Y > viewMaxTileY) continue;
+                DrawSandbagBlueprint(sbbp.Tile, sbbp.Progress, sbbp.Funding);
+                if (sbbp.Forbidden) DrawForbidX(sbbp.Tile);
+            }
         }
 
         using (FrameProfiler.Instance.BeginScope("Stoves"))
@@ -392,6 +400,16 @@ public partial class WorldRenderer : Node2D
                 if (ub.Tile.X < viewMinTileX || ub.Tile.X > viewMaxTileX
                     || ub.Tile.Y < viewMinTileY || ub.Tile.Y > viewMaxTileY) continue;
                 DrawUrBoard(ub.Tile);
+            }
+        }
+
+        using (FrameProfiler.Instance.BeginScope("Sandbags"))
+        {
+            foreach (var sb in snap.Sandbags)
+            {
+                if (sb.Tile.X < viewMinTileX || sb.Tile.X > viewMaxTileX
+                    || sb.Tile.Y < viewMinTileY || sb.Tile.Y > viewMaxTileY) continue;
+                DrawSandbag(sb.Tile);
             }
         }
 
@@ -1545,6 +1563,12 @@ public partial class WorldRenderer : Node2D
     private static readonly Color UrBoardShadow = new(0f, 0f, 0f, 0.22f);
     private static readonly Color UrBoardBpFill   = new(0.65f, 0.45f, 0.20f, 0.40f);
     private static readonly Color UrBoardBpBorder = new(0.95f, 0.75f, 0.40f, 0.85f);
+    private static readonly Color SandbagBag    = new(0.62f, 0.56f, 0.34f, 1f);
+    private static readonly Color SandbagBagDark = new(0.48f, 0.43f, 0.25f, 1f);
+    private static readonly Color SandbagSeam   = new(0.36f, 0.32f, 0.18f, 1f);
+    private static readonly Color SandbagShadow = new(0f, 0f, 0f, 0.20f);
+    private static readonly Color SandbagBpFill   = new(0.55f, 0.50f, 0.30f, 0.40f);
+    private static readonly Color SandbagBpBorder = new(0.80f, 0.72f, 0.45f, 0.85f);
 
     private void DrawUrBoard(TilePos tile)
     {
@@ -1582,6 +1606,48 @@ public partial class WorldRenderer : Node2D
         var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
         DrawRect(rect, FundedFill(UrBoardBpFill, funding), filled: true);
         DrawRect(rect, UrBoardBpBorder, filled: false, width: 2f);
+        if (progress > 0f)
+        {
+            float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
+            var bar = new Rect2(rect.Position.X, rect.Position.Y + (PixelsPerTile - h), PixelsPerTile, h);
+            DrawRect(bar, BlueprintProgress, filled: true);
+        }
+    }
+
+    // Low barricade: two stacked rows of bags. Reads as ~half-tile cover.
+    private void DrawSandbag(TilePos tile)
+    {
+        float x0 = tile.X * PixelsPerTile;
+        float y0 = tile.Y * PixelsPerTile;
+        var shadow = new Rect2(x0 + 2, y0 + 3, PixelsPerTile, PixelsPerTile);
+        DrawRect(shadow, SandbagShadow, filled: true);
+
+        float inset = PixelsPerTile * 0.10f;
+        float w = PixelsPerTile - 2 * inset;
+        float rowH = w * 0.42f;
+        float gap = (PixelsPerTile - 2 * inset - 2 * rowH);
+        // Back row (slightly darker, offset up), then front row.
+        var back = new Rect2(x0 + inset, y0 + inset, w, rowH);
+        var front = new Rect2(x0 + inset, y0 + inset + rowH + gap, w, rowH);
+        DrawRect(back, SandbagBagDark, filled: true);
+        DrawRect(front, SandbagBag, filled: true);
+        // Individual bag seams (3 bags per row).
+        for (int i = 1; i < 3; i++)
+        {
+            float sx = x0 + inset + w * i / 3f;
+            DrawLine(new Vector2(sx, back.Position.Y), new Vector2(sx, back.Position.Y + rowH), SandbagSeam, 1.5f);
+            float fx = x0 + inset + w * (i - 0.5f) / 3f;
+            DrawLine(new Vector2(fx, front.Position.Y), new Vector2(fx, front.Position.Y + rowH), SandbagSeam, 1.5f);
+        }
+        DrawRect(back, SandbagSeam, filled: false, width: 1.5f);
+        DrawRect(front, SandbagSeam, filled: false, width: 1.5f);
+    }
+
+    private void DrawSandbagBlueprint(TilePos tile, float progress, float funding)
+    {
+        var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
+        DrawRect(rect, FundedFill(SandbagBpFill, funding), filled: true);
+        DrawRect(rect, SandbagBpBorder, filled: false, width: 2f);
         if (progress > 0f)
         {
             float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);

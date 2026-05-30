@@ -26,4 +26,6 @@ public enum JobKind : byte
     StoveBuild = 20,
     StoveDeconstruct = 21,
     Cook = 22,
+    SandbagBuild = 23,
+    SandbagDeconstruct = 24,
 }

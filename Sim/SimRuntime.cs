@@ -114,6 +114,7 @@ public sealed class SimRuntime
     private readonly StoveSystem _stoves;
     private readonly CookSystem _cooks;
     private readonly UrBoardSystem _urBoards;
+    private readonly SandbagSystem _sandbags;
     private readonly RecreationSystem _recreation;
     private readonly DoorBuildSystem _doorBuilds;
     private readonly DoorSystem _doors;
@@ -145,6 +146,11 @@ public sealed class SimRuntime
     // pathing (entered into _bedOccupied via MapView.HasFurniture path).
     private readonly Dictionary<TilePos, Entity> _urBoardMap = new();
     private readonly HashSet<TilePos> _urBoardOccupied = new();
+    // Placed sandbags. Tile → sandbag entity. Walkable-but-slow (entered
+    // into the furniture cost set, NOT the blocking set) and queryable as
+    // low directional cover by the cover/peeking systems.
+    private readonly Dictionary<TilePos, Entity> _sandbagMap = new();
+    private readonly HashSet<TilePos> _sandbagOccupied = new();
     // Placed stoves. Key = origin (center body) tile. All 4 occupied
     // tiles (3 body + 1 standing) enter _stoveOccupied so MapView marks
     // them as high-cost furniture (pathable but A* avoids).
@@ -307,6 +313,7 @@ public sealed class SimRuntime
         _stoves = new StoveSystem(this, Jobs);
         _cooks = new CookSystem(this, Jobs);
         _urBoards = new UrBoardSystem(this, Jobs);
+        _sandbags = new SandbagSystem(this, Jobs);
         _recreation = new RecreationSystem(seed + 11, GetAvailableRecreationKinds);
         _doorBuilds = new DoorBuildSystem(this, Jobs);
         _doors = new DoorSystem(_itemIndex.AnyUnreservedItemAt);
@@ -377,6 +384,7 @@ public sealed class SimRuntime
         _stoves.Step(Store, dt);
         _cooks.Step(Store, dt);
         _urBoards.Step(Store, dt);
+        _sandbags.Step(Store, dt);
         if (needTick) _recreation.Step(Store, needDt);
         _doorBuilds.Step(Store, dt);
         _doors.Step(Store, dt);
@@ -434,6 +442,7 @@ public sealed class SimRuntime
     public const int DoorWoodCost = 20;
     public const int BedWoodCost = 45;
     public const int UrBoardWoodCost = 25;
+    public const int SandbagWoodCost = 15;
 
     // Build-system funding check. Free pass when GodModeFreeBuild is on;
     // otherwise defer to per-blueprint BlueprintCost deposits.
@@ -945,6 +954,7 @@ public sealed class SimRuntime
             case JobKind.DoorBuild:
             case JobKind.BedBuild:
             case JobKind.UrBoardBuild:
+            case JobKind.SandbagBuild:
                 return job.Entity.Id;
             case JobKind.Haul:
                 if (job.Entity.HasComponent<HaulPayload>())
@@ -1611,6 +1621,24 @@ public sealed class SimRuntime
         });
         snap.UrBoardBlueprintsCount = ubbi;
 
+        EnsureCap(ref snap.SandbagsBuf, _sandbagMap.Count);
+        var sbBuf = snap.SandbagsBuf;
+        int sbi = 0;
+        foreach (var (tile, _) in _sandbagMap)
+            sbBuf[sbi++] = new SandbagState(tile);
+        snap.SandbagsCount = sbi;
+
+        var sbBpQuery = Store.Query<SandbagBlueprint>();
+        EnsureCap(ref snap.SandbagBlueprintsBuf, sbBpQuery.Count);
+        var sbBpBuf = snap.SandbagBlueprintsBuf;
+        int sbbi = 0;
+        sbBpQuery.ForEachEntity((ref SandbagBlueprint bp, Entity ent) =>
+        {
+            bool forbidden = Jobs.GetByTile(bp.Tile)?.Forbidden ?? false;
+            sbBpBuf[sbbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / SandbagSystem.BuildTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent), BlueprintCostOps.SnapshotEntries(ent));
+        });
+        snap.SandbagBlueprintsCount = sbbi;
+
         EnsureCap(ref snap.StovesBuf, _stoveMap.Count);
         var stoveBuf = snap.StovesBuf;
         int stoveIdx = 0;
@@ -1783,6 +1811,7 @@ public sealed class SimRuntime
         if (_bedOccupied.Contains(t)) return false;
         if (_urBoardOccupied.Contains(t)) return false;
         if (_stoveOccupied.Contains(t)) return false;
+        if (_sandbagOccupied.Contains(t)) return false;
         return true;
     }
 
@@ -1975,6 +2004,60 @@ public sealed class SimRuntime
     }
 
     public bool CanPlaceUrBoard(TilePos tile) => IsBedTileFree(tile);
+
+    // ─── Sandbag placement / decon ───────────────────────────────────
+    // 1x1, walkable-but-slow low cover. Same tile-free rejection as the
+    // bed/board pipeline (border, wall, door, lamp, tree, other furniture).
+    public IReadOnlyDictionary<TilePos, Entity> SandbagMap => _sandbagMap;
+
+    public bool TryPlaceSandbagBlueprint(TilePos tile)
+    {
+        if (!IsBedTileFree(tile)) return false;
+        if (Jobs.HasTile(tile)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new SandbagBlueprint { Tile = tile, ProgressSec = 0f });
+        World.BlueprintCostOps.AttachCost(e, (Items.ItemCatalog.Wood.FullPath, SandbagWoodCost));
+        var id = Jobs.Post(JobKind.SandbagBuild, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        _sandbagOccupied.Add(tile);
+        RebuildMapView();
+        return true;
+    }
+
+    // Harness shortcut: drop a finished sandbag directly, no blueprint.
+    public bool InstantPlaceSandbag(TilePos tile)
+    {
+        if (!IsBedTileFree(tile)) return false;
+        var e = Store.CreateEntity();
+        e.AddComponent(new Sandbag { Tile = tile });
+        _sandbagMap[tile] = e;
+        _sandbagOccupied.Add(tile);
+        RebuildMapView();
+        return true;
+    }
+
+    public bool TryPostSandbagDeconstructJob(TilePos tile)
+    {
+        if (!_sandbagMap.ContainsKey(tile)) return false;
+        if (Jobs.HasTile(tile)) return false;
+
+        var e = Store.CreateEntity();
+        e.AddComponent(new Decon { Tile = tile, ProgressSec = 0f });
+        var id = Jobs.Post(JobKind.SandbagDeconstruct, tile, e);
+        if (id.IsNone)
+        {
+            e.DeleteEntity();
+            return false;
+        }
+        return true;
+    }
+
+    public bool CanPlaceSandbag(TilePos tile) => IsBedTileFree(tile);
 
     // === Ur board seat reservation ===
     // DummyController calls this when a tired-for-fun pawn wants to sit
@@ -2492,6 +2575,24 @@ public sealed class SimRuntime
                 RebuildMapView();
             }
         }
+        else if (kind == JobKind.SandbagBuild)
+        {
+            var bp = entity.GetComponent<SandbagBlueprint>();
+            entity.RemoveComponent<SandbagBlueprint>();
+            entity.AddComponent(new Sandbag { Tile = bp.Tile });
+            _sandbagMap[bp.Tile] = entity;
+        }
+        else if (kind == JobKind.SandbagDeconstruct)
+        {
+            entity.DeleteEntity();
+            if (_sandbagMap.TryGetValue(tile, out var sbEnt))
+            {
+                _sandbagMap.Remove(tile);
+                _sandbagOccupied.Remove(tile);
+                sbEnt.DeleteEntity();
+                RebuildMapView();
+            }
+        }
         else if (kind == JobKind.StoveBuild)
         {
             var bp = entity.GetComponent<StoveBlueprint>();
@@ -2742,6 +2843,18 @@ public sealed class SimRuntime
             RebuildMapView();
         }
         else if (kind == JobKind.UrBoardDeconstruct)
+        {
+            entity.DeleteEntity();
+        }
+        else if (kind == JobKind.SandbagBuild)
+        {
+            var bp = entity.GetComponent<SandbagBlueprint>();
+            RefundDeposits(entity, bp.Tile);
+            _sandbagOccupied.Remove(bp.Tile);
+            entity.DeleteEntity();
+            RebuildMapView();
+        }
+        else if (kind == JobKind.SandbagDeconstruct)
         {
             entity.DeleteEntity();
         }
@@ -4820,14 +4933,19 @@ public sealed class SimRuntime
             // Beds remain walkable (sleepers stand on the head tile) but
             // are marked as furniture so A* applies a steep cost weight
             // and routes around them when there's another way through.
+            // Beds, stoves and sandbags stay walkable but carry a steep A*
+            // cost so pawns route around them when another way exists.
+            // Sandbags are deliberately NOT in blockingFurniture — pawns
+            // can clamber over them (slowly), like RimWorld.
             TilePos[]? furnitureTiles = null;
-            int furnCount = _bedOccupied.Count + _stoveOccupied.Count;
+            int furnCount = _bedOccupied.Count + _stoveOccupied.Count + _sandbagOccupied.Count;
             if (furnCount > 0)
             {
                 furnitureTiles = new TilePos[furnCount];
                 int bi = 0;
                 foreach (var t in _bedOccupied) furnitureTiles[bi++] = t;
                 foreach (var t in _stoveOccupied) furnitureTiles[bi++] = t;
+                foreach (var t in _sandbagOccupied) furnitureTiles[bi++] = t;
             }
             TilePos[]? blockingFurniture = null;
             if (_urBoardOccupied.Count > 0)

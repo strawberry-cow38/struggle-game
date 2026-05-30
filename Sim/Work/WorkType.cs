@@ -35,6 +35,7 @@ public static class WorkTypes
             case JobKind.BedBuild:
             case JobKind.UrBoardBuild:
             case JobKind.StoveBuild:
+            case JobKind.SandbagBuild:
                 type = WorkType.Construct; return true;
             case JobKind.Deconstruct:
             case JobKind.FloorDeconstruct:
@@ -44,6 +45,7 @@ public static class WorkTypes
             case JobKind.BedDeconstruct:
             case JobKind.UrBoardDeconstruct:
             case JobKind.StoveDeconstruct:
+            case JobKind.SandbagDeconstruct:
                 type = WorkType.Demolish; return true;
             case JobKind.Cook:
                 type = WorkType.Cook; return true;

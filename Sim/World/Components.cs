@@ -444,6 +444,22 @@ public struct UrBoardBlueprint : IComponent
     public float ProgressSec;
 }
 
+// A built sandbag barricade. 1x1, low cover (~0.5 tile). Passable but
+// slow (furniture cost weight in pathing). Provides directional cover —
+// the cover/peeking systems read SandbagMap by tile + SandbagCoverHeight.
+public struct Sandbag : IComponent
+{
+    public TilePos Tile;
+}
+
+// Pending sandbag blueprint. ProgressSec advances while a builder is
+// adjacent. Cost = SandbagWoodCost wood.
+public struct SandbagBlueprint : IComponent
+{
+    public TilePos Tile;
+    public float ProgressSec;
+}
+
 // Active recreation session on the pawn. BoardEntityId = the board
 // they're attached to (Ur today; future boards reuse the same field).
 // Role = Player (occupies a player seat) or Spectator. RecreationSystem

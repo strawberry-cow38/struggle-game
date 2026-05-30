@@ -31,4 +31,5 @@ public enum ToolMode
     DebugSpawnItem = 26,
     DebugAddInjury = 27,
     ForceFireTarget = 28,
+    Sandbag = 29,
 }

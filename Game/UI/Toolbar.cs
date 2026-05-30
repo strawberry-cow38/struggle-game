@@ -104,6 +104,7 @@ public partial class Toolbar : CanvasLayer
         AddButton(_hbox, ToolMode.Bed, "Bed");
         AddButton(_hbox, ToolMode.UrBoard, "Ur Board");
         AddButton(_hbox, ToolMode.Stove, "Stove");
+        AddButton(_hbox, ToolMode.Sandbag, "Sandbag");
         AddButton(_hbox, ToolMode.Roof, "Roof");
         AddButton(_hbox, ToolMode.RemoveRoof, "UnRoof");
         AddButton(_hbox, ToolMode.NoRoof, "NoRoof");

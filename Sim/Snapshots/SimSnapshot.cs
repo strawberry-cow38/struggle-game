@@ -104,6 +104,14 @@ public sealed class SimSnapshot
     internal int UrBoardBlueprintsCount;
     public SnapshotList<BlueprintState> UrBoardBlueprints => new(UrBoardBlueprintsBuf, UrBoardBlueprintsCount);
 
+    internal SandbagState[] SandbagsBuf = System.Array.Empty<SandbagState>();
+    internal int SandbagsCount;
+    public SnapshotList<SandbagState> Sandbags => new(SandbagsBuf, SandbagsCount);
+
+    internal BlueprintState[] SandbagBlueprintsBuf = System.Array.Empty<BlueprintState>();
+    internal int SandbagBlueprintsCount;
+    public SnapshotList<BlueprintState> SandbagBlueprints => new(SandbagBlueprintsBuf, SandbagBlueprintsCount);
+
     internal StoveState[] StovesBuf = System.Array.Empty<StoveState>();
     internal int StovesCount;
     public SnapshotList<StoveState> Stoves => new(StovesBuf, StovesCount);
@@ -264,6 +272,8 @@ public readonly record struct BedState(TilePos Origin, BedOrientation Orientatio
 public readonly record struct BedBlueprintState(TilePos Origin, BedOrientation Orientation, float Progress, bool Forbidden, float Funding, ResourceCostState[] Costs);
 
 public readonly record struct UrBoardState(int EntityId, TilePos Tile, int PlayerCount, int SpectatorCount);
+
+public readonly record struct SandbagState(TilePos Tile);
 
 public readonly record struct StoveState(
     int EntityId,
