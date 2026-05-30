@@ -3674,7 +3674,7 @@ public sealed class SimRuntime
         });
     }
 
-    public const float MeleeBruiseSeverity = 0.12f;
+    public const float MeleeBruiseSeverity = 3f; // bare-fist bruise damage in HP
 
     // Order a drafted colonist to melee-attack another pawn.
     public void SetMeleeTarget(int attackerId, int targetId)
@@ -3932,17 +3932,18 @@ public sealed class SimRuntime
         if (parts.Count == 0) return false;
         var part = parts[_spawnRng.Next(parts.Count)];
         var kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot;
-        float dmg = 0.3f, pen = 0.3f;
+        float dmg = 12f, pen = 6f;
         string? caliber = null;
         if (Items.ItemCatalog.ItemsByPath.TryGetValue(pr.AmmoPath, out var def) && def.Ammo is not null)
         {
             kind = def.Ammo.InjuryKind;
             dmg = def.Ammo.Damage;
-            pen = def.Ammo.ArmorPen;
+            pen = def.Ammo.PenSharp;
             caliber = def.DisplayName;
         }
-        // High-penetration rounds (AP) punch through; expanding ones (HP) lodge.
-        float passChance = Math.Clamp(0.35f + pen * 0.5f, 0.05f, 0.95f);
+        // High-penetration rounds (AP, ~12 mmRHA) punch through; expanding
+        // ones (HP, ~3) lodge; FMJ (~6) is in between.
+        float passChance = Math.Clamp(pen / 20f, 0.05f, 0.9f);
         bool passThrough = _spawnRng.NextDouble() < passChance;
         ApplyInjury(pr.TargetEntityId, part, kind, dmg, caliber, lodged: !passThrough);
         if (t.HasComponent<Combat>())
@@ -4054,7 +4055,8 @@ public sealed class SimRuntime
         {
             PartId = partId,
             Kind = kind,
-            Severity = Math.Clamp(severity <= 0f ? 1f : severity, 0f, 1f),
+            // Severity is now damage in hit points — no upper clamp.
+            Severity = severity <= 0f ? 1f : severity,
             Caliber = caliber,
             Lodged = lodged,
         });

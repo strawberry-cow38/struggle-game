@@ -21,7 +21,7 @@ public class RangedTests
     private static void DownByPain(SimRuntime sim, int id)
     {
         foreach (var part in new[] { "ArmL", "ArmR", "LegL", "LegR", "Torso", "Head" })
-            sim.ApplyInjury(id, part, ConditionKind.Bruise, 1f);
+            sim.ApplyInjury(id, part, ConditionKind.Bruise, 14f);
     }
 
     private static void SetPos(SimRuntime sim, int id, float x, float y)
@@ -87,7 +87,8 @@ public class RangedTests
                 var inj = t.GetComponent<Health>().Injuries;
                 if (inj is not null)
                     foreach (var w in inj)
-                        if (w.Kind == ConditionKind.Gunshot) { gunshot = true; break; }
+                        // A gunshot wound, or a part the round shot clean off.
+                        if (w.Kind == ConditionKind.Gunshot || w.Kind == ConditionKind.Missing) { gunshot = true; break; }
             }
             if (gunshot) break;
         }
@@ -186,7 +187,7 @@ public class RangedTests
 
         // Knock the target out non-lethally (pain shock from bruises).
         foreach (var part in new[] { "ArmL", "ArmR", "LegL", "LegR", "Torso", "Head" })
-            sim.ApplyInjury(target, part, ConditionKind.Bruise, 1f);
+            sim.ApplyInjury(target, part, ConditionKind.Bruise, 14f);
         for (int i = 0; i < 120; i++) sim.Step(SimConstants.TickSeconds);
         Assert.True(sim.Store.GetEntityById(target).GetComponent<Health>().Unconscious,
             "target should be downed before the fire order");

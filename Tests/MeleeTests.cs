@@ -11,7 +11,7 @@ public class MeleeTests
     private static void DownByPain(SimRuntime sim, int id)
     {
         foreach (var part in new[] { "ArmL", "ArmR", "LegL", "LegR", "Torso", "Head" })
-            sim.ApplyInjury(id, part, ConditionKind.Bruise, 1f);
+            sim.ApplyInjury(id, part, ConditionKind.Bruise, 14f);
     }
 
     private static (int a, int b) TwoPawns(SimRuntime sim)
@@ -44,12 +44,14 @@ public class MeleeTests
         }
         Assert.True(downed, "melee should eventually down the target");
 
-        // Every wound dealt was a bruise on an outer part (no organs hit).
+        // Every wound is a fist bruise (or a part bludgeoned off — Missing),
+        // never a weapon cut/stab. Outer parts only (no organs hit directly).
         var th = sim.Store.GetEntityById(target).GetComponent<Health>();
         Assert.NotEmpty(th.Injuries!);
         foreach (var inj in th.Injuries!)
         {
-            Assert.Equal(ConditionKind.Bruise, inj.Kind);
+            Assert.True(inj.Kind == ConditionKind.Bruise || inj.Kind == ConditionKind.Missing,
+                $"unexpected unarmed-hit kind: {inj.Kind}");
             Assert.True(BodyTree.TryGet(inj.PartId, out var def) && !def.Internal,
                 $"hit an internal part: {inj.PartId}");
         }
@@ -102,9 +104,10 @@ public class MeleeTests
 
         var th = sim.Store.GetEntityById(target).GetComponent<Health>();
         Assert.NotEmpty(th.Injuries!);
-        // Every wound is a weapon attack (Cut or Stab), never a fist bruise.
+        // Every wound is a weapon attack (Cut/Stab) or a part the weapon hewed
+        // off (Missing) — never a fist bruise.
         foreach (var inj in th.Injuries!)
-            Assert.True(inj.Kind == ConditionKind.Cut || inj.Kind == ConditionKind.Stab,
+            Assert.True(inj.Kind == ConditionKind.Cut || inj.Kind == ConditionKind.Stab || inj.Kind == ConditionKind.Missing,
                 $"unexpected armed-hit kind: {inj.Kind}");
     }
 

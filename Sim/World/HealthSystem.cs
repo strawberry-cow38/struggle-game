@@ -15,9 +15,7 @@ public sealed class HealthSystem
 {
     public const float UnconsciousThreshold = 0.30f;
     public const float PainShockThreshold = 0.80f;  // total pain that downs a colonist
-    public const float WorsenThreshold = 0.60f;   // severity at/above which an untended wound worsens
-    public const float HealPerSec = 0.0002f;       // severity/sim-sec for small wounds
-    public const float WorsenPerSec = 0.0001f;
+    public const float HealPerSecHp = 0.03f;         // hit-points/sim-sec a wound recovers (no tending yet)
     public const float BloodRegenPerSec = 0.0001f;
     // Blood (0..1 units) that must pool before a puddle is dripped.
     public const float PuddlePerDrip = 0.04f;
@@ -89,8 +87,9 @@ public sealed class HealthSystem
         return bleed;
     }
 
-    // Bleed/regen blood and evolve non-permanent conditions over `dt`
-    // sim-seconds.
+    // Bleed/regen blood and slowly heal non-permanent wounds (damage in hit
+    // points) over `dt` sim-seconds. No tending yet, so wounds just clot +
+    // shrink on their own; scars/missing parts never heal.
     public static void Advance(ref Health h, float dt)
     {
         float bleed = 0f;
@@ -107,10 +106,7 @@ public sealed class HealthSystem
             {
                 var inj = h.Injuries[i];
                 if (BodyTree.IsPermanent(inj.Kind)) continue;
-                if (inj.Severity >= WorsenThreshold)
-                    inj.Severity = Math.Min(1f, inj.Severity + WorsenPerSec * dt);
-                else
-                    inj.Severity -= HealPerSec * dt;
+                inj.Severity -= HealPerSecHp * dt; // Severity == damage in HP
                 if (inj.Severity <= 0f) h.Injuries.RemoveAt(i);
                 else h.Injuries[i] = inj;
             }
@@ -120,6 +116,14 @@ public sealed class HealthSystem
     // Recompute cached capacities + Unconscious from injuries + blood.
     public static void Recompute(ref Health h)
     {
+        // Destruction pass: any part whose accumulated (non-missing) damage
+        // meets/exceeds its MaxHp is shot off — its wounds clear and it
+        // becomes Missing. Descendants are handled by IsGone (ancestor check),
+        // and death from losing a vital part (brain/heart/torso) falls out of
+        // the consciousness chain below.
+        if (h.Injuries is not null)
+            DestroyOverdamagedParts(h.Injuries);
+
         var missing = _missingScratch;
         missing.Clear();
         float pain = 0f;
@@ -141,12 +145,13 @@ public sealed class HealthSystem
             if (BodyTree.IsGone(part.Id, missing)) eff = 0f;
             else
             {
-                float loss = 0f;
+                // Efficiency = remaining HP / max HP.
+                float dmg = 0f;
                 if (h.Injuries is not null)
                     foreach (var inj in h.Injuries)
                         if (inj.PartId == part.Id && inj.Kind != ConditionKind.Missing)
-                            loss += BodyTree.EfficiencyLoss(inj.Kind, inj.Severity);
-                eff = Math.Clamp(1f - loss, 0f, 1f);
+                            dmg += inj.Severity;
+                eff = part.MaxHp > 0f ? Math.Clamp((part.MaxHp - dmg) / part.MaxHp, 0f, 1f) : 1f;
             }
             foreach (var (cap, w) in part.Provides)
                 num[(int)cap] += eff * w;
@@ -178,8 +183,38 @@ public sealed class HealthSystem
         h.Unconscious = consciousness < UnconsciousThreshold || pain >= PainShockThreshold;
     }
 
+    // Mark any part whose summed (non-missing) damage >= its MaxHp as Missing,
+    // clearing its other wounds. Mutates the injury list in place.
+    private static void DestroyOverdamagedParts(List<PartInjury> injuries)
+    {
+        var dmg = _dmgScratch; dmg.Clear();
+        var alreadyMissing = _missingScratch2; alreadyMissing.Clear();
+        foreach (var inj in injuries)
+        {
+            if (inj.Kind == ConditionKind.Missing) { alreadyMissing.Add(inj.PartId); continue; }
+            dmg[inj.PartId] = dmg.GetValueOrDefault(inj.PartId) + inj.Severity;
+        }
+        List<string>? destroy = null;
+        foreach (var kv in dmg)
+        {
+            if (alreadyMissing.Contains(kv.Key)) continue;
+            float max = BodyTree.MaxHp(kv.Key);
+            if (max > 0f && kv.Value >= max) (destroy ??= new()).Add(kv.Key);
+        }
+        if (destroy is null) return;
+        foreach (var part in destroy)
+        {
+            injuries.RemoveAll(i => i.PartId == part && i.Kind != ConditionKind.Missing);
+            injuries.Add(new PartInjury { PartId = part, Kind = ConditionKind.Missing, Severity = 1f });
+        }
+    }
+
     [ThreadStatic] private static HashSet<string>? _missingScratchTls;
     [ThreadStatic] private static float[]? _numScratchTls;
+    [ThreadStatic] private static Dictionary<string, float>? _dmgScratchTls;
+    [ThreadStatic] private static HashSet<string>? _missingScratch2Tls;
     private static HashSet<string> _missingScratch => _missingScratchTls ??= new HashSet<string>();
     private static float[] _numScratch => _numScratchTls ??= new float[System.Enum.GetValues(typeof(HealthCapacity)).Length];
+    private static Dictionary<string, float> _dmgScratch => _dmgScratchTls ??= new Dictionary<string, float>();
+    private static HashSet<string> _missingScratch2 => _missingScratch2Tls ??= new HashSet<string>();
 }

@@ -331,16 +331,16 @@ public partial class PawnInfoPanel : CanvasLayer
             StruggleGame.Sim.Bodies.ConditionKind.Scar => "scar",
             // Gunshots show caliber + whether the round lodged or passed through.
             StruggleGame.Sim.Bodies.ConditionKind.Gunshot when g.Caliber is not null =>
-                $"gunshot {g.MaxSeverity * 100f:0}% — {g.Caliber}, {(g.Lodged ? "lodged" : "through & through")}",
-            _ => $"{kind.ToLower()} {g.MaxSeverity * 100f:0}%",
+                $"gunshot {g.MaxSeverity:0} dmg — {g.Caliber}, {(g.Lodged ? "lodged" : "through & through")}",
+            _ => $"{kind.ToLower()} {g.MaxSeverity:0} dmg",
         };
         string countTag = g.Count > 1 ? $" x{g.Count}" : "";
         var line = new Label { Text = $"{part}: {detail}{countTag}" };
         line.AddThemeFontSizeOverride("font_size", 11);
-        // Tint by how nasty it is.
+        // Tint by how nasty it is (damage in hit points).
         Color c = g.Kind == StruggleGame.Sim.Bodies.ConditionKind.Missing
             ? new Color(1f, 0.4f, 0.4f)
-            : g.MaxSeverity >= 0.6f ? new Color(1f, 0.6f, 0.3f) : new Color(0.9f, 0.85f, 0.6f);
+            : g.MaxSeverity >= 12f ? new Color(1f, 0.6f, 0.3f) : new Color(0.9f, 0.85f, 0.6f);
         line.AddThemeColorOverride("font_color", c);
         _injuryList.AddChild(line);
     }

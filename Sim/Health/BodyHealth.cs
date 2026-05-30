@@ -39,10 +39,13 @@ public sealed class BodyPartDef
     // Internal/abstract parts (organs, brain, the Body root) can't be hit
     // by a melee punch — only outer parts are valid targets.
     public bool Internal { get; }
+    // Max hit points (RimWorld-ish). Damage on the part subtracts from this;
+    // efficiency = remaining/max; accumulated damage >= MaxHp destroys it.
+    public float MaxHp { get; }
 
-    public BodyPartDef(string id, string name, string? parent, (HealthCapacity, float)[] provides, bool internalPart)
+    public BodyPartDef(string id, string name, string? parent, (HealthCapacity, float)[] provides, bool internalPart, float maxHp)
     {
-        Id = id; DisplayName = name; ParentId = parent; Provides = provides; Internal = internalPart;
+        Id = id; DisplayName = name; ParentId = parent; Provides = provides; Internal = internalPart; MaxHp = maxHp;
     }
 }
 
@@ -63,9 +66,9 @@ public static class BodyTree
 
     static BodyTree()
     {
-        void Add(string id, string name, string? parent, bool internalPart, (HealthCapacity, float)[] provides)
+        void Add(string id, string name, string? parent, bool internalPart, float maxHp, (HealthCapacity, float)[] provides)
         {
-            var def = new BodyPartDef(id, name, parent, provides, internalPart);
+            var def = new BodyPartDef(id, name, parent, provides, internalPart, maxHp);
             _all.Add(def); _byId[id] = def;
             if (parent is not null)
             {
@@ -74,32 +77,33 @@ public static class BodyTree
             }
         }
         // Outer (punchable) part.
-        void P(string id, string name, string? parent, params (HealthCapacity, float)[] provides)
-            => Add(id, name, parent, false, provides);
+        void P(string id, string name, string? parent, float maxHp, params (HealthCapacity, float)[] provides)
+            => Add(id, name, parent, false, maxHp, provides);
         // Internal/abstract part (can't be hit by melee).
-        void PI(string id, string name, string? parent, params (HealthCapacity, float)[] provides)
-            => Add(id, name, parent, true, provides);
+        void PI(string id, string name, string? parent, float maxHp, params (HealthCapacity, float)[] provides)
+            => Add(id, name, parent, true, maxHp, provides);
 
-        PI("Body", "Body", null);
-        P("Torso", "Torso", "Body");
-        PI("Heart", "Heart", "Torso", (HealthCapacity.BloodPumping, 1f));
-        PI("LungL", "Left Lung", "Torso", (HealthCapacity.Breathing, 0.5f));
-        PI("LungR", "Right Lung", "Torso", (HealthCapacity.Breathing, 0.5f));
-        P("Neck", "Neck", "Body");
-        P("Head", "Head", "Neck");
-        PI("Brain", "Brain", "Head", (HealthCapacity.Consciousness, 1f));
-        P("EyeL", "Left Eye", "Head", (HealthCapacity.Sight, 0.5f));
-        P("EyeR", "Right Eye", "Head", (HealthCapacity.Sight, 0.5f));
-        P("EarL", "Left Ear", "Head", (HealthCapacity.Hearing, 0.5f));
-        P("EarR", "Right Ear", "Head", (HealthCapacity.Hearing, 0.5f));
-        P("ArmL", "Left Arm", "Body", (HealthCapacity.Manipulation, 0.5f));
-        P("HandL", "Left Hand", "ArmL", (HealthCapacity.Manipulation, 0.5f));
-        P("ArmR", "Right Arm", "Body", (HealthCapacity.Manipulation, 0.5f));
-        P("HandR", "Right Hand", "ArmR", (HealthCapacity.Manipulation, 0.5f));
-        P("LegL", "Left Leg", "Body", (HealthCapacity.Moving, 0.5f));
-        P("FootL", "Left Foot", "LegL", (HealthCapacity.Moving, 0.5f));
-        P("LegR", "Right Leg", "Body", (HealthCapacity.Moving, 0.5f));
-        P("FootR", "Right Foot", "LegR", (HealthCapacity.Moving, 0.5f));
+        // MaxHp values are RimWorld-ish.
+        PI("Body", "Body", null, 100f);
+        P("Torso", "Torso", "Body", 40f);
+        PI("Heart", "Heart", "Torso", 15f, (HealthCapacity.BloodPumping, 1f));
+        PI("LungL", "Left Lung", "Torso", 15f, (HealthCapacity.Breathing, 0.5f));
+        PI("LungR", "Right Lung", "Torso", 15f, (HealthCapacity.Breathing, 0.5f));
+        P("Neck", "Neck", "Body", 25f);
+        P("Head", "Head", "Neck", 25f);
+        PI("Brain", "Brain", "Head", 12f, (HealthCapacity.Consciousness, 1f));
+        P("EyeL", "Left Eye", "Head", 10f, (HealthCapacity.Sight, 0.5f));
+        P("EyeR", "Right Eye", "Head", 10f, (HealthCapacity.Sight, 0.5f));
+        P("EarL", "Left Ear", "Head", 10f, (HealthCapacity.Hearing, 0.5f));
+        P("EarR", "Right Ear", "Head", 10f, (HealthCapacity.Hearing, 0.5f));
+        P("ArmL", "Left Arm", "Body", 30f, (HealthCapacity.Manipulation, 0.5f));
+        P("HandL", "Left Hand", "ArmL", 20f, (HealthCapacity.Manipulation, 0.5f));
+        P("ArmR", "Right Arm", "Body", 30f, (HealthCapacity.Manipulation, 0.5f));
+        P("HandR", "Right Hand", "ArmR", 20f, (HealthCapacity.Manipulation, 0.5f));
+        P("LegL", "Left Leg", "Body", 30f, (HealthCapacity.Moving, 0.5f));
+        P("FootL", "Left Foot", "LegL", 20f, (HealthCapacity.Moving, 0.5f));
+        P("LegR", "Right Leg", "Body", 30f, (HealthCapacity.Moving, 0.5f));
+        P("FootR", "Right Foot", "LegR", 20f, (HealthCapacity.Moving, 0.5f));
 
         foreach (var def in _all)
         {
@@ -127,26 +131,21 @@ public static class BodyTree
         return false;
     }
 
-    // Per-unit-severity efficiency loss + bleed rate for a condition kind.
-    public static float EfficiencyLoss(ConditionKind kind, float severity) => kind switch
-    {
-        ConditionKind.Bruise => 0.10f * severity,
-        ConditionKind.Cut => 0.20f * severity,
-        ConditionKind.Stab => 0.15f * severity, // less than a cut...
-        ConditionKind.Gunshot => 0.28f * severity, // mangles the part
-        ConditionKind.Burn => 0.25f * severity,
-        ConditionKind.Scar => 0.10f,           // fixed, severity-independent
-        ConditionKind.Missing => 1f,
-        _ => 0f,
-    };
+    // Max hit points of a part (0 if unknown).
+    public static float MaxHp(string partId) => _byId.TryGetValue(partId, out var d) ? d.MaxHp : 0f;
 
-    // Blood lost per sim-second from one condition at a given severity.
-    public static float BleedRate(ConditionKind kind, float severity) => kind switch
+    // NOTE: injury "severity" now means DAMAGE in hit points (RimWorld-style),
+    // not a 0..1 fraction. Part efficiency = remaining/max is computed in
+    // HealthSystem; bleed + pain below scale per hit-point of damage.
+
+    // Blood lost per sim-second per hit-point of damage from a condition.
+    // (Tuned loosely; balance pass to follow.)
+    public static float BleedRate(ConditionKind kind, float damage) => kind switch
     {
-        ConditionKind.Cut => 0.020f * severity,
-        ConditionKind.Stab => 0.030f * severity, // ...but bleeds more
-        ConditionKind.Gunshot => 0.040f * severity, // bleeds hardest
-        ConditionKind.Burn => 0.008f * severity,
+        ConditionKind.Cut => 0.00010f * damage,
+        ConditionKind.Stab => 0.00014f * damage, // punctures bleed more
+        ConditionKind.Gunshot => 0.00018f * damage, // bleeds hardest
+        ConditionKind.Burn => 0.00005f * damage,
         ConditionKind.Bruise => 0f,
         _ => 0f,
     };
@@ -154,17 +153,17 @@ public static class BodyTree
     public static bool IsPermanent(ConditionKind kind)
         => kind == ConditionKind.Scar || kind == ConditionKind.Missing;
 
-    // Pain contributed by one condition (summed across the body, clamped
-    // to 0..1). Enough total pain causes pain-shock → unconscious.
-    public static float Pain(ConditionKind kind, float severity) => kind switch
+    // Pain contributed by one condition per hit-point of damage (summed across
+    // the body, clamped 0..1). Enough total pain causes pain-shock → down.
+    public static float Pain(ConditionKind kind, float damage) => kind switch
     {
-        ConditionKind.Cut => 0.35f * severity,
-        ConditionKind.Stab => 0.30f * severity,
-        ConditionKind.Gunshot => 0.40f * severity,
-        ConditionKind.Burn => 0.45f * severity,
-        ConditionKind.Bruise => 0.15f * severity,
-        ConditionKind.Scar => 0.05f,
-        ConditionKind.Missing => 0.25f,
+        ConditionKind.Cut => 0.013f * damage,
+        ConditionKind.Stab => 0.014f * damage,
+        ConditionKind.Gunshot => 0.016f * damage,
+        ConditionKind.Burn => 0.018f * damage,
+        ConditionKind.Bruise => 0.010f * damage,
+        ConditionKind.Scar => 0.003f * damage,
+        ConditionKind.Missing => 4f,   // a lost part hurts a lot, flat
         _ => 0f,
     };
 }

@@ -65,8 +65,9 @@ public sealed class AmmoSpec
 {
     public string CategoryPath = "";   // matches a weapon's RangedSpec.AmmoCategoryPath
     public ConditionKind InjuryKind;   // typically Gunshot
-    public float Damage;               // injury severity per hit (0..1)
-    public float ArmorPen;             // reserved — cover/armor not implemented yet
+    public float Damage;               // hit-point damage per hit (RimWorld/CE scale)
+    public float PenSharp;             // sharp armor penetration, mmRHA — also gates through-and-through
+    public float PenBlunt;             // blunt/concussive penetration, MPa — banked for the armor system
 }
 
 // Leaf of the taxonomy. One per concrete item kind that can exist
@@ -168,18 +169,20 @@ public static class ItemCatalog
         Carrot = RegisterItem("Carrot", "Carrot", ResourcesFood, weight: 0.05f, bulk: 0.05f);
         SimpleMeal = RegisterItem("SimpleMeal", "Simple Meal", ResourcesFood, weight: 0.4f, bulk: 0.4f);
         Equipment = RegisterCategory("Equipment", "Equipment");
+        // Melee attacks now deal hit-point damage (RimWorld scale).
         WoodenTrinket = RegisterItem("WoodenTrinket", "Wooden Trinket", Equipment, weight: 2f, bulk: 1f, equippable: true,
-            meleeAttacks: new (ConditionKind, float)[] { (ConditionKind.Cut, 0.25f), (ConditionKind.Stab, 0.22f) });
+            meleeAttacks: new (ConditionKind, float)[] { (ConditionKind.Cut, 6f), (ConditionKind.Stab, 5f) });
         Corpses = RegisterCategory("Corpses", "Corpses");
         Corpse = RegisterItem("Colonist", "Corpse", Corpses, weight: 40f, bulk: 40f, defaultStockpileAllowed: false);
 
         Ammo = RegisterCategory("Ammo", "Ammo");
+        // CE 5.56x45mm NATO values: Damage / PenSharp(mmRHA) / PenBlunt(MPa).
         RifleAmmoAp = RegisterItem("RifleAmmoAP", "5.56x45mm NATO (AP)", Ammo, weight: 0.02f, bulk: 0.02f, maxStack: 500,
-            ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.30f, ArmorPen = 0.6f });
+            ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 9f, PenSharp = 12f, PenBlunt = 34f });
         RifleAmmoHp = RegisterItem("RifleAmmoHP", "5.56x45mm NATO (HP)", Ammo, weight: 0.02f, bulk: 0.02f, maxStack: 500,
-            ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.48f, ArmorPen = 0.1f });
+            ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 18f, PenSharp = 3f, PenBlunt = 34f });
         RifleAmmoFmj = RegisterItem("RifleAmmoFMJ", "5.56x45mm NATO (FMJ)", Ammo, weight: 0.02f, bulk: 0.02f, maxStack: 500,
-            ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 0.38f, ArmorPen = 0.35f });
+            ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 14f, PenSharp = 6f, PenBlunt = 34f });
         AssaultRifle = RegisterItem("AssaultRifle", "M16A1", Equipment, weight: 4f, bulk: 3f, equippable: true,
             ranged: new RangedSpec
             {

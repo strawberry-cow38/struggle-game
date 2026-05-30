@@ -66,12 +66,12 @@ public class HealthTests
     public void BleedingOut_PassesOut_NoDeath()
     {
         var h = Fresh();
-        Injure(ref h, "Torso", ConditionKind.Cut, 0.8f);
+        Injure(ref h, "Torso", ConditionKind.Gunshot, 25f); // 25 hp wound, bleeds
         Assert.False(h.Unconscious);
 
-        // ~50 sim-sec of a 0.8 cut (bleed 0.016/s) drops blood below the
-        // consciousness threshold.
-        HealthSystem.Advance(ref h, 50f);
+        // A few sim-minutes of an untended torso gunshot bleeds blood below
+        // the consciousness threshold.
+        HealthSystem.Advance(ref h, 200f);
         HealthSystem.Recompute(ref h);
         Assert.True(h.BloodLevel < 0.30f);
         Assert.True(h.Unconscious);
@@ -84,12 +84,12 @@ public class HealthTests
         var h = Fresh();
         // Bruises don't bleed and barely touch capacities, but pile on
         // enough and the pain alone knocks the colonist out.
-        Injure(ref h, "ArmL", ConditionKind.Bruise, 1f);
-        Injure(ref h, "ArmR", ConditionKind.Bruise, 1f);
-        Injure(ref h, "LegL", ConditionKind.Bruise, 1f);
-        Injure(ref h, "LegR", ConditionKind.Bruise, 1f);
-        Injure(ref h, "Torso", ConditionKind.Bruise, 1f);
-        Injure(ref h, "Head", ConditionKind.Bruise, 1f);
+        Injure(ref h, "ArmL", ConditionKind.Bruise, 14f);
+        Injure(ref h, "ArmR", ConditionKind.Bruise, 14f);
+        Injure(ref h, "LegL", ConditionKind.Bruise, 14f);
+        Injure(ref h, "LegR", ConditionKind.Bruise, 14f);
+        Injure(ref h, "Torso", ConditionKind.Bruise, 14f);
+        Injure(ref h, "Head", ConditionKind.Bruise, 14f);
         Assert.True(h.Pain >= HealthSystem.PainShockThreshold);
         Assert.True(h.Unconscious);
         Assert.True(h.BloodLevel >= 0.99f); // not from blood loss — pure pain
@@ -99,19 +99,10 @@ public class HealthTests
     public void SmallCut_HealsAwayUntended()
     {
         var h = Fresh();
-        Injure(ref h, "ArmR", ConditionKind.Cut, 0.3f);
+        Injure(ref h, "ArmR", ConditionKind.Cut, 4f); // 4 hp wound
         Assert.Single(h.Injuries!);
-        HealthSystem.Advance(ref h, 2000f); // heals 0.0002*2000 = 0.4 > 0.3
+        HealthSystem.Advance(ref h, 2000f); // heals 0.03*2000 = 60 hp > 4
         Assert.Empty(h.Injuries!);
-    }
-
-    [Fact]
-    public void LargeWound_WorsensUntended()
-    {
-        var h = Fresh();
-        Injure(ref h, "ArmR", ConditionKind.Cut, 0.7f);
-        HealthSystem.Advance(ref h, 1000f);
-        Assert.True(h.Injuries![0].Severity > 0.7f);
     }
 
     [Fact]
@@ -129,7 +120,7 @@ public class HealthTests
     private static void DownByPain(SimRuntime sim, int id)
     {
         foreach (var part in new[] { "ArmL", "ArmR", "LegL", "LegR", "Torso", "Head" })
-            sim.ApplyInjury(id, part, ConditionKind.Bruise, 1f);
+            sim.ApplyInjury(id, part, ConditionKind.Bruise, 14f); // 14 hp each → pain shock
     }
 
     [Fact]
@@ -164,9 +155,9 @@ public class HealthTests
         int pawnId = 0;
         sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity e) =>
         { if (pawnId == 0) pawnId = e.Id; });
-        sim.ApplyInjury(pawnId, "Torso", ConditionKind.Cut, 0.8f);
+        sim.ApplyInjury(pawnId, "Torso", ConditionKind.Gunshot, 30f);
 
-        for (int i = 0; i < 400; i++) sim.Step(SimConstants.TickSeconds);
+        for (int i = 0; i < 900; i++) sim.Step(SimConstants.TickSeconds);
 
         int puddles = 0;
         sim.Store.Query<BloodPuddle>().ForEachEntity((ref BloodPuddle _, Entity _) => puddles++);

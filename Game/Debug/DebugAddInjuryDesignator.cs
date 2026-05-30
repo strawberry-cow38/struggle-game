@@ -79,11 +79,12 @@ public partial class DebugAddInjuryDesignator : Node2D
     {
         if (Host is null || id < 0 || id >= _kinds.Length) return;
         var kind = _kinds[(int)id];
+        // Damage is now in hit points (RimWorld-ish).
         float severity = kind switch
         {
-            ConditionKind.Scar => 1f,
-            ConditionKind.Missing => 1f,
-            _ => 0.5f,
+            ConditionKind.Missing => 1f, // marker — part is removed regardless
+            ConditionKind.Scar => 8f,    // permanent hp loss
+            _ => 12f,                     // a solid wound
         };
         Host.QueueCommand(new ApplyInjuryCommand(_pawnId, _partId, kind, severity));
     }
