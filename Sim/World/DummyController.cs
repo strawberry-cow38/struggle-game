@@ -537,10 +537,13 @@ public sealed class DummyController
             {
                 var spec = rwDef.Ranged!;
                 int targetId = entity.GetComponent<RangedCombat>().TargetEntityId;
-                // Unconscious pawns are valid targets (finish them off) — only
-                // a vanished pawn (dead → corpse) ends the order.
+                // Stop when a conscious target goes down — UNLESS this is a
+                // finish-off (ordered on an already-downed pawn), which runs
+                // until death. Mirrors melee.
                 bool valid = store.TryGetEntityById(targetId, out var tgt)
-                    && tgt.HasComponent<Health>() && tgt.HasComponent<WorldPos>();
+                    && tgt.HasComponent<Health>() && tgt.HasComponent<WorldPos>()
+                    && (!tgt.GetComponent<Health>().Unconscious
+                        || entity.GetComponent<RangedCombat>().FinishOff);
                 if (!valid)
                 {
                     ref var rc = ref entity.GetComponent<RangedCombat>();

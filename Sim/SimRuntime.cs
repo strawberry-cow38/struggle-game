@@ -3731,6 +3731,9 @@ public sealed class SimRuntime
         ref var rc = ref s.GetComponent<RangedCombat>();
         rc.TargetEntityId = targetId;
         rc.BurstRemaining = 0;
+        // Ordering fire on an already-downed pawn = a deliberate finish-off
+        // that keeps shooting until death (mirrors melee).
+        rc.FinishOff = t.GetComponent<Health>().Unconscious;
     }
 
     // Draft action bar: manually reload. Returns any partial mag to

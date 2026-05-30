@@ -18,6 +18,12 @@ public class RangedTests
         return (ids[0], ids[1]);
     }
 
+    private static void DownByPain(SimRuntime sim, int id)
+    {
+        foreach (var part in new[] { "ArmL", "ArmR", "LegL", "LegR", "Torso", "Head" })
+            sim.ApplyInjury(id, part, ConditionKind.Bruise, 1f);
+    }
+
     private static void SetPos(SimRuntime sim, int id, float x, float y)
     {
         ref var wp = ref sim.Store.GetEntityById(id).GetComponent<WorldPos>();
@@ -199,6 +205,30 @@ public class RangedTests
             if (!sim.Store.TryGetEntityById(target, out var t) || !t.HasComponent<Wanderer>()) { dead = true; break; }
         }
         Assert.True(dead, "ranged fire should finish off the downed target");
+    }
+
+    [Fact]
+    public void RangedStops_WhenConsciousTargetGoesDown()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, target) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        sim.Store.GetEntityById(target).AddComponent(new Drafted());
+        ArmWithRifle(sim, shooter, ItemCatalog.RifleAmmoHp, 90);
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
+
+        // Ordered on a CONSCIOUS target (not a finish-off), then it drops.
+        sim.SetFireTarget(shooter, target);
+        Assert.False(sim.Store.GetEntityById(shooter).GetComponent<RangedCombat>().FinishOff);
+        DownByPain(sim, target);
+        for (int i = 0; i < 200; i++) sim.Step(SimConstants.TickSeconds);
+
+        // Fire stopped when it went down; target is still alive (downed).
+        Assert.Equal(0, sim.Store.GetEntityById(shooter).GetComponent<RangedCombat>().TargetEntityId);
+        Assert.True(sim.Store.TryGetEntityById(target, out var t) && t.HasComponent<Wanderer>(),
+            "downed-but-alive target should not have been finished off");
     }
 
     private static int InvCount(Entity e, string path)

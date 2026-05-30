@@ -627,6 +627,10 @@ public struct RangedCombat : IComponent
     public int BurstRemaining;     // shots left to fire in the current burst
     public bool Reloading;         // mag refill in progress until NextActionTick
     public long ShotTick;          // last tick a shot left the muzzle (flash anim)
+    // True when the order was issued on an already-downed target (manual
+    // retarget) — keeps firing until death. Otherwise fire stops when a
+    // conscious target goes down, mirroring melee.
+    public bool FinishOff;
 }
 
 // A bullet in flight. Created from a DummyController fire request, advanced
