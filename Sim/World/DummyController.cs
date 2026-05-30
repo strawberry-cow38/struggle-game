@@ -1799,8 +1799,9 @@ public sealed class DummyController
         float aimH = tgtDowned ? SimConstants.DownedAimHeight : rc.TargetArea switch
         {
             Items.TargetArea.Head => SimConstants.AimHeadHeight,
+            Items.TargetArea.Torso => SimConstants.BodyAimHeight,
             Items.TargetArea.Legs => SimConstants.AimLegsHeight,
-            _ => SimConstants.BodyAimHeight, // Torso
+            _ => SimConstants.AimAutoHeight, // Auto = center mass
         };
         // Vertical inaccuracy too: the same cone scatters the impact height, so
         // the aimed region is a BIAS, not a guarantee — a head-aimed round can

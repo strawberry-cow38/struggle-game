@@ -37,8 +37,8 @@ public partial class DraftActionBar : CanvasLayer
     private readonly Button[] _modeButtons = new Button[3];
 
     private Button _targetAreaBtn = null!;
-    private static readonly TargetArea[] _areaCycle = { TargetArea.Head, TargetArea.Torso, TargetArea.Legs };
-    private TargetArea _shownArea = TargetArea.Torso;
+    private static readonly TargetArea[] _areaCycle = { TargetArea.Auto, TargetArea.Head, TargetArea.Torso, TargetArea.Legs };
+    private TargetArea _shownArea = TargetArea.Auto;
 
     private int _shownPawnId = -1;
 
@@ -118,7 +118,7 @@ public partial class DraftActionBar : CanvasLayer
         // Targeted area — cycles Head → Torso → Legs, sets the aim region.
         _targetAreaBtn = new Button
         {
-            Text = "Aim: Torso",
+            Text = "Aim: Auto",
             TooltipText = "Body region the colonist aims for.",
             CustomMinimumSize = new Vector2(0, ButtonHeight),
             FocusMode = Control.FocusModeEnum.None,

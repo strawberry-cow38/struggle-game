@@ -36,8 +36,8 @@ public sealed class ItemCategory
 public enum FireMode : byte { Single = 0, Burst = 1, Auto = 2 }
 
 // Body region a ranged colonist aims for (sets the shot's aim height).
-// Default 0 = Torso.
-public enum TargetArea : byte { Torso = 0, Head = 1, Legs = 2 }
+// Default 0 = Auto (center mass / whatever's showing).
+public enum TargetArea : byte { Auto = 0, Torso = 1, Head = 2, Legs = 3 }
 
 // Bitmask of the fire modes a weapon supports. The action bar only
 // offers buttons for the flags present here.

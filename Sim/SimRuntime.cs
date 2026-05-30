@@ -1225,7 +1225,7 @@ public sealed class SimRuntime
             Items.FireMode rangedMode = Items.FireMode.Single;
             Items.FireModeFlags rangedModes = Items.FireModeFlags.None;
             var rangedStatus = Snapshots.RangedStatus.None;
-            var rangedArea = Items.TargetArea.Torso;
+            var rangedArea = Items.TargetArea.Auto;
             if (ent.HasComponent<RangedCombat>() && TryGetEquippedRangedSpec(ent, out var rspec))
             {
                 var rc = ent.GetComponent<RangedCombat>();

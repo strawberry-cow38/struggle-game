@@ -25,7 +25,8 @@ public static class SimConstants
     public const float DownedAimHeight = 0.18f;
     // Aim heights for the targeted-area selector (standing pawn).
     public const float AimHeadHeight = 1.05f;
-    public const float AimLegsHeight = 0.3f; // BodyAimHeight (0.85) is the torso aim
+    public const float AimLegsHeight = 0.3f;  // BodyAimHeight (0.85) is the torso aim
+    public const float AimAutoHeight = 0.55f; // Auto = dead center of the body mass
 
     // Inventory caps for a colonist. Either one being exceeded stops them
     // adding more to their carry. Both default to 75 so a single wood
