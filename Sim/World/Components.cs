@@ -674,6 +674,10 @@ public struct PartInjury
     public string PartId;
     public StruggleGame.Sim.Bodies.ConditionKind Kind;
     public float Severity; // 0..1
+    // Gunshot-only detail (null/false for other kinds): the round's caliber
+    // and whether the bullet lodged in the body vs passed clean through.
+    public string? Caliber;
+    public bool Lodged;
 }
 
 // Per-colonist health. Injuries is the flat list of conditions across the

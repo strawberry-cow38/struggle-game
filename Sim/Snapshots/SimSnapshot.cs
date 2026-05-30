@@ -182,7 +182,7 @@ public readonly record struct HealthState(
     bool Unconscious,
     InjuryState[] Injuries);
 
-public readonly record struct InjuryState(string PartId, StruggleGame.Sim.Bodies.ConditionKind Kind, float Severity);
+public readonly record struct InjuryState(string PartId, StruggleGame.Sim.Bodies.ConditionKind Kind, float Severity, string? Caliber = null, bool Lodged = false);
 
 // Persistent inventory rows for the pawn info panel. Equipped slots and
 // general (held) stacks are indexed by position in their respective
@@ -228,8 +228,9 @@ public readonly record struct BloodPuddleState(TilePos Tile, float Amount);
 public readonly record struct ProjectileState(float X, float Y, float Angle, float Speed, bool IsAp);
 
 // A transient blood spray at a bullet-hit point. Angle = the bullet's travel
-// heading so droplets fan out the exit side. Alpha 1→0 over its life.
-public readonly record struct BloodImpactState(float X, float Y, float Angle, float Alpha);
+// heading so droplets fan out the exit side. Scale shrinks entry pops vs the
+// bigger exit burst. Alpha 1→0 over its life.
+public readonly record struct BloodImpactState(float X, float Y, float Angle, float Scale, float Alpha);
 
 public readonly record struct DeconState(TilePos Tile, float Progress, bool Forbidden);
 

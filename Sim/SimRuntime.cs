@@ -169,7 +169,7 @@ public sealed class SimRuntime
     private readonly Dictionary<TilePos, float> _roofFlashes = new();
     // Transient blood-impact sprays at bullet-hit points (world tile coords +
     // remaining seconds). Cosmetic; aged out each tick.
-    private readonly List<(float X, float Y, float Angle, float Sec)> _bloodImpacts = new();
+    private readonly List<(float X, float Y, float Angle, float Scale, float Sec)> _bloodImpacts = new();
     private const float BloodImpactSec = 0.45f;
     // Cached per-lamp disc bake. Each entry is the lamp's static
     // contribution pattern (relative to its tile) baked against the
@@ -1201,7 +1201,7 @@ public sealed class SimRuntime
                     for (int ii = 0; ii < hc.Injuries.Count; ii++)
                     {
                         var inj = hc.Injuries[ii];
-                        injuries[ii] = new InjuryState(inj.PartId, inj.Kind, inj.Severity);
+                        injuries[ii] = new InjuryState(inj.PartId, inj.Kind, inj.Severity, inj.Caliber, inj.Lodged);
                         bleedRate += StruggleGame.Sim.Bodies.BodyTree.BleedRate(inj.Kind, inj.Severity);
                     }
                 }
@@ -1427,7 +1427,7 @@ public sealed class SimRuntime
         for (int bi = 0; bi < _bloodImpacts.Count; bi++)
         {
             var b = _bloodImpacts[bi];
-            biBuf[bi] = new BloodImpactState(b.X, b.Y, b.Angle, b.Sec / BloodImpactSec);
+            biBuf[bi] = new BloodImpactState(b.X, b.Y, b.Angle, b.Scale, b.Sec / BloodImpactSec);
         }
         snap.BloodImpactsCount = _bloodImpacts.Count;
 
@@ -3905,13 +3905,14 @@ public sealed class SimRuntime
                 pr.Arrived = true;
                 if (tracking)
                 {
-                    ResolveProjectileHit(in pr);
-                    // Exit-wound spray: push the burst to the far side of the
-                    // target along the bullet's path and spray it forward.
-                    const float exit = 0.45f;
-                    float bx = pr.X + MathF.Cos(pr.Angle) * exit;
-                    float by = pr.Y + MathF.Sin(pr.Angle) * exit;
-                    _bloodImpacts.Add((bx, by, pr.Angle, BloodImpactSec));
+                    bool passThrough = ResolveProjectileHit(in pr);
+                    float cx = MathF.Cos(pr.Angle), cy = MathF.Sin(pr.Angle);
+                    // Entry impact: a small pop on the near (entry) side — always.
+                    _bloodImpacts.Add((pr.X - cx * 0.12f, pr.Y - cy * 0.12f, pr.Angle, 0.45f, BloodImpactSec));
+                    // Exit wound: big directional spray on the far side — only
+                    // if the round punched through (lodged → no exit).
+                    if (passThrough)
+                        _bloodImpacts.Add((pr.X + cx * 0.45f, pr.Y + cy * 0.45f, pr.Angle, 1.0f, BloodImpactSec));
                 }
                 continue;
             }
@@ -3920,22 +3921,31 @@ public sealed class SimRuntime
         }
     }
 
-    private void ResolveProjectileHit(in Projectile pr)
+    // Resolves a bullet hit. Returns true if the round passed clean through
+    // (→ exit-wound spray on the far side); false if it lodged in the body.
+    private bool ResolveProjectileHit(in Projectile pr)
     {
-        if (!Store.TryGetEntityById(pr.TargetEntityId, out var t) || !t.HasComponent<Health>()) return;
+        if (!Store.TryGetEntityById(pr.TargetEntityId, out var t) || !t.HasComponent<Health>()) return false;
         var parts = StruggleGame.Sim.Bodies.BodyTree.PunchableParts;
-        if (parts.Count == 0) return;
+        if (parts.Count == 0) return false;
         var part = parts[_spawnRng.Next(parts.Count)];
         var kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot;
-        float dmg = 0.3f;
+        float dmg = 0.3f, pen = 0.3f;
+        string? caliber = null;
         if (Items.ItemCatalog.ItemsByPath.TryGetValue(pr.AmmoPath, out var def) && def.Ammo is not null)
         {
             kind = def.Ammo.InjuryKind;
             dmg = def.Ammo.Damage;
+            pen = def.Ammo.ArmorPen;
+            caliber = def.DisplayName;
         }
-        ApplyInjury(pr.TargetEntityId, part, kind, dmg);
+        // High-penetration rounds (AP) punch through; expanding ones (HP) lodge.
+        float passChance = Math.Clamp(0.35f + pen * 0.5f, 0.05f, 0.95f);
+        bool passThrough = _spawnRng.NextDouble() < passChance;
+        ApplyInjury(pr.TargetEntityId, part, kind, dmg, caliber, lodged: !passThrough);
         if (t.HasComponent<Combat>())
         { ref var tc = ref t.GetComponent<Combat>(); tc.FlinchTick = Tick; }
+        return passThrough;
     }
 
     private void AgeBloodImpacts(float dt)
@@ -4031,7 +4041,7 @@ public sealed class SimRuntime
 
     // Debug/gameplay: add a condition to one of a colonist's body parts
     // and recompute capacities immediately.
-    public void ApplyInjury(int pawnId, string partId, StruggleGame.Sim.Bodies.ConditionKind kind, float severity)
+    public void ApplyInjury(int pawnId, string partId, StruggleGame.Sim.Bodies.ConditionKind kind, float severity, string? caliber = null, bool lodged = false)
     {
         if (!Store.TryGetEntityById(pawnId, out var pawn)) return;
         if (!pawn.HasComponent<Health>()) return;
@@ -4043,6 +4053,8 @@ public sealed class SimRuntime
             PartId = partId,
             Kind = kind,
             Severity = Math.Clamp(severity <= 0f ? 1f : severity, 0f, 1f),
+            Caliber = caliber,
+            Lodged = lodged,
         });
         HealthSystem.Recompute(ref h);
     }

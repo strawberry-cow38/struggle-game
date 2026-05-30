@@ -1004,23 +1004,24 @@ public partial class WorldRenderer : Node2D
         var center = new Vector2(bi.X * PixelsPerTile, bi.Y * PixelsPerTile);
         float a = Mathf.Clamp(bi.Alpha, 0f, 1f);
         float prog = 1f - a; // 0 at the instant of impact → 1 at the end
+        float sc = bi.Scale <= 0f ? 1f : bi.Scale; // entry pops are smaller than exit bursts
         var fdir = new Vector2(Mathf.Cos(bi.Angle), Mathf.Sin(bi.Angle));
         var col = BloodSprayColor;
         col.A = a;
         // Velocity smear: a streak shooting forward out the exit side.
         var smear = col; smear.A = a * 0.5f;
-        DrawLine(center, center + fdir * (PixelsPerTile * 1.0f * (0.4f + 0.6f * prog)), smear,
-            PixelsPerTile * 0.18f * a + 1f, antialiased: true);
-        // Core wound at the exit point.
-        DrawCircle(center, PixelsPerTile * 0.14f * a + 2f, col);
+        DrawLine(center, center + fdir * (PixelsPerTile * sc * (0.4f + 0.6f * prog)), smear,
+            PixelsPerTile * 0.18f * sc * a + 1f, antialiased: true);
+        // Core wound.
+        DrawCircle(center, PixelsPerTile * 0.14f * sc * a + 2f, col);
         // Droplets launch forward along the heading, flying out as it ages.
         for (int i = 0; i < BloodDroplets.Length; i++)
         {
             var d = BloodDroplets[i];
             float ang = bi.Angle + d.Ang;
-            float reach = PixelsPerTile * (0.1f + d.Dist * prog);
+            float reach = PixelsPerTile * sc * (0.1f + d.Dist * prog);
             var p = center + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * reach;
-            DrawCircle(p, PixelsPerTile * 0.06f * d.Size * a + 0.8f, col);
+            DrawCircle(p, PixelsPerTile * 0.06f * d.Size * sc * a + 0.8f, col);
         }
     }
 
