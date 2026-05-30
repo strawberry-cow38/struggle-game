@@ -175,7 +175,7 @@ public sealed class SimRuntime
     private readonly Dictionary<TilePos, float> _roofFlashes = new();
     // Transient blood-impact sprays at bullet-hit points (world tile coords +
     // remaining seconds). Cosmetic; aged out each tick.
-    private readonly List<(float X, float Y, float Angle, float Scale, bool Dirt, float Sec)> _bloodImpacts = new();
+    private readonly List<(float X, float Y, float Height, float Angle, float Scale, bool Dirt, float Sec)> _bloodImpacts = new();
     private const float BloodImpactSec = 0.45f;
     // Cached per-lamp disc bake. Each entry is the lamp's static
     // contribution pattern (relative to its tile) baked against the
@@ -1478,7 +1478,7 @@ public sealed class SimRuntime
         for (int bi = 0; bi < _bloodImpacts.Count; bi++)
         {
             var b = _bloodImpacts[bi];
-            biBuf[bi] = new BloodImpactState(b.X, b.Y, b.Angle, b.Scale, b.Dirt, b.Sec / BloodImpactSec);
+            biBuf[bi] = new BloodImpactState(b.X, b.Y, b.Height, b.Angle, b.Scale, b.Dirt, b.Sec / BloodImpactSec);
         }
         snap.BloodImpactsCount = _bloodImpacts.Count;
 
@@ -4032,7 +4032,8 @@ public sealed class SimRuntime
             // Trace the arc instantly: first wall/sandbag/pawn it crosses is the
             // locked impact. Nothing in the way → it lands at the aim point.
             ResolveArcImpact(ps.FromX, ps.FromY, ps.ToX, ps.ToY, vVel, ps.Speed,
-                ps.ShooterEntityId, out float hitX, out float hitY, out float hitH, out int hitId);
+                ps.ShooterEntityId, out float hitX, out float hitY, out float hitH,
+                out int hitId, out bool hitWall);
             var e = Store.CreateEntity();
             e.AddComponent(new Projectile
             {
@@ -4040,7 +4041,7 @@ public sealed class SimRuntime
                 ToX = hitX, ToY = hitY, HitHeight = hitH,
                 Height = SimConstants.MuzzleHeight, VertVel = vVel,
                 Speed = ps.Speed, ShooterEntityId = ps.ShooterEntityId,
-                ResolvedHitId = hitId, AmmoPath = ps.AmmoPath, Angle = ang,
+                ResolvedHitId = hitId, HitWall = hitWall, AmmoPath = ps.AmmoPath, Angle = ang,
             });
         }
         _dummies.PendingProjectiles.Clear();
@@ -4098,7 +4099,7 @@ public sealed class SimRuntime
     // victim id; 0 = wall or a clean ground miss at the aim point).
     private void ResolveArcImpact(float fromX, float fromY, float aimX, float aimY,
         float vVel, float speed, int shooterId,
-        out float hitX, out float hitY, out float hitH, out int hitId)
+        out float hitX, out float hitY, out float hitH, out int hitId, out bool hitWall)
     {
         float ddx = aimX - fromX, ddy = aimY - fromY;
         float dist = MathF.Sqrt(ddx * ddx + ddy * ddy);
@@ -4126,14 +4127,16 @@ public sealed class SimRuntime
                 hitY = py + (cy - py) * bestT;
                 hitH = ph + (ch - ph) * bestT;
                 hitId = pawn;
+                hitWall = pawn == 0; // wall/sandbag stopped it
                 return;
             }
             px = cx; py = cy; ph = ch;
         }
-        // Nothing crossed — a clean miss into the ground at the aim point.
+        // Nothing crossed — a clean miss; the round zips past at the aim point.
         hitX = aimX; hitY = aimY;
         hitH = MathF.Max(0f, muzzle + vVel * flight - 0.5f * g * flight * flight);
         hitId = 0;
+        hitWall = false;
     }
 
     // Per-bullet hit radius around a pawn (tiles).
@@ -4179,14 +4182,22 @@ public sealed class SimRuntime
             {
                 bool passThrough = ResolveProjectileHit(pr.ResolvedHitId, pr.AmmoPath, ih);
                 float cx = MathF.Cos(pr.Angle), cy = MathF.Sin(pr.Angle);
-                _bloodImpacts.Add((pr.ToX - cx * 0.45f, pr.ToY - cy * 0.45f, pr.Angle + MathF.PI, 0.55f, false, BloodImpactSec));
+                // Entry + exit sprays sit at the wound height so they appear on
+                // the body (torso/head), not down at the pawn's feet.
+                _bloodImpacts.Add((pr.ToX - cx * 0.45f, pr.ToY - cy * 0.45f, ih, pr.Angle + MathF.PI, 0.55f, false, BloodImpactSec));
                 if (passThrough)
-                    _bloodImpacts.Add((pr.ToX + cx * 0.45f, pr.ToY + cy * 0.45f, pr.Angle, 1.0f, false, BloodImpactSec));
+                    _bloodImpacts.Add((pr.ToX + cx * 0.45f, pr.ToY + cy * 0.45f, ih, pr.Angle, 1.0f, false, BloodImpactSec));
+            }
+            else if (pr.HitWall)
+            {
+                // Struck a wall/sandbag — dust at the impact height (wall face).
+                _bloodImpacts.Add((pr.ToX, pr.ToY, ih, pr.Angle, 0.6f, true, BloodImpactSec));
             }
             else
             {
-                // Hit a wall / the ground (or the victim died mid-flight) — dust.
-                _bloodImpacts.Add((pr.ToX, pr.ToY, pr.Angle, 0.6f, true, BloodImpactSec));
+                // Clean miss (or victim died mid-flight) — kick dust off the
+                // ground where the round skips past, not floating at chest height.
+                _bloodImpacts.Add((pr.ToX, pr.ToY, 0f, pr.Angle, 0.6f, true, BloodImpactSec));
             }
         }
     }

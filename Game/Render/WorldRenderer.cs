@@ -1065,7 +1065,11 @@ public partial class WorldRenderer : Node2D
     private void DrawBloodImpact(Sim.Snapshots.BloodImpactState bi)
     {
         // bi.X/Y are world coords (like pawns/bullets) — no tile-center +0.5.
-        var center = new Vector2(bi.X * PixelsPerTile, bi.Y * PixelsPerTile);
+        // Lift by the impact height (same oblique factor as the tracer) so a
+        // torso/head spray lands on the body and a wall strike on the wall
+        // face, instead of pooling at ground level.
+        var center = new Vector2(bi.X * PixelsPerTile, bi.Y * PixelsPerTile)
+            - new Vector2(0f, bi.Height * PixelsPerTile * HeightObliqueScale);
         float a = Mathf.Clamp(bi.Alpha, 0f, 1f);
         float prog = 1f - a; // 0 at the instant of impact → 1 at the end
         float sc = bi.Scale <= 0f ? 1f : bi.Scale; // entry pops are smaller than exit bursts

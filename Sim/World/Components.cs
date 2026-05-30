@@ -686,6 +686,7 @@ public struct Projectile : IComponent
     public float Speed;            // tiles per second (horizontal)
     public int ShooterEntityId;
     public int ResolvedHitId;      // victim resolved at fire time (0 = wall / ground miss)
+    public bool HitWall;           // impact was a wall/sandbag (dust at HitHeight) vs a clean miss
     public string AmmoPath;        // wound source on a hit
     public float Angle;            // travel heading, for the streak render
     // Set the tick the round reaches its destination — it's drawn AT the

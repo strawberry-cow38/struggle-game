@@ -250,7 +250,7 @@ public readonly record struct ProjectileState(float X, float Y, float Height, fl
 // A transient blood spray at a bullet-hit point. Angle = the bullet's travel
 // heading so droplets fan out the exit side. Scale shrinks entry pops vs the
 // bigger exit burst. Alpha 1→0 over its life.
-public readonly record struct BloodImpactState(float X, float Y, float Angle, float Scale, bool Dirt, float Alpha);
+public readonly record struct BloodImpactState(float X, float Y, float Height, float Angle, float Scale, bool Dirt, float Alpha);
 
 public readonly record struct DeconState(TilePos Tile, float Progress, bool Forbidden);
 
