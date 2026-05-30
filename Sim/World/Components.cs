@@ -39,6 +39,11 @@ public struct Wanderer : IComponent
     // While true, the pawn is easing onto its nearest tile center before
     // resuming normal jobs/wander (set when undrafted mid-walk).
     public bool Snapping;
+    // Drafted + adjacent to a sandbag → keep the head down (crouched) even
+    // when not firing, including while walking along a line of sandbags.
+    // Cleared as soon as the pawn steps out of any sandbag's neighbourhood.
+    // A ranged pawn actively popping/leaning to fire overrides this.
+    public bool Crouched;
 }
 
 // Pending construction job on a tile. ProgressSec advances while a

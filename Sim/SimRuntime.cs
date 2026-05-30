@@ -1270,6 +1270,9 @@ public sealed class SimRuntime
                         : Snapshots.RangedStatus.Watching;
                 }
             }
+            // No active firing stance but crouched by a sandbag → show the
+            // head-down crouch (covers melee/unarmed drafted pawns too).
+            if (coverStance == 0 && wr.Crouched) coverStance = 1;
 
             dummiesBuf[i++] = new DummyState(
                 ent.Id, p.X, p.Y, label, drafted, carrying,
@@ -4051,28 +4054,37 @@ public sealed class SimRuntime
             {
                 bh = SimConstants.DownedBodyHeight;
             }
-            else if (pe.HasComponent<RangedCombat>())
+            else
             {
-                var rc = pe.GetComponent<RangedCombat>();
-                switch (rc.Stance)
+                // Firing stance (ranged pop/tuck/lean) takes priority; failing
+                // that, a drafted pawn crouched by a sandbag keeps its head down.
+                var stance = CoverStance.None;
+                bool leaning = false;
+                float pkx = px, pky = py;
+                if (pe.HasComponent<RangedCombat>())
+                {
+                    var rc = pe.GetComponent<RangedCombat>();
+                    stance = rc.Stance; leaning = rc.Leaning; pkx = rc.PeekX; pky = rc.PeekY;
+                }
+                if (stance == CoverStance.None && pe.HasComponent<Wanderer>()
+                    && pe.GetComponent<Wanderer>().Crouched)
+                    stance = CoverStance.Tucked;
+
+                switch (stance)
                 {
                     case CoverStance.Tucked:
                         // Crouch: hitbox drops below the sandbag (high rounds fly
                         // over). Lean-tuck: stay on-tile — the wall does the blocking.
-                        bh = rc.Leaning ? SimConstants.PawnBodyHeight : SimConstants.CrouchBodyHeight;
+                        bh = leaning ? SimConstants.PawnBodyHeight : SimConstants.CrouchBodyHeight;
                         break;
                     case CoverStance.Popped:
                         bh = SimConstants.PawnBodyHeight;
-                        if (rc.Leaning) { px = rc.PeekX; py = rc.PeekY; } // exposed at the corner
+                        if (leaning) { px = pkx; py = pky; } // exposed at the corner
                         break;
                     default:
                         bh = SimConstants.PawnBodyHeight;
                         break;
                 }
-            }
-            else
-            {
-                bh = SimConstants.PawnBodyHeight;
             }
             _projPawns.Add((pe.Id, px, py, bh));
         });

@@ -97,6 +97,33 @@ public class CoverTests
     }
 
     [Fact]
+    public void DraftedNextToSandbag_StaysCrouched_WithoutTarget()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (pawn, _) = TwoPawns(sim);
+        var e = sim.Store.GetEntityById(pawn);
+        e.AddComponent(new Drafted());
+        Assert.True(sim.InstantPlaceSandbag(new TilePos(21, 20)));
+
+        // Standing right next to the sandbag, no fire target → head down.
+        for (int i = 0; i < 5; i++)
+        {
+            SetPos(sim, pawn, 20.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+        }
+        Assert.True(e.GetComponent<Wanderer>().Crouched, "should crouch beside a sandbag");
+
+        // Stepped well away → stands back up.
+        for (int i = 0; i < 5; i++)
+        {
+            SetPos(sim, pawn, 30.5f, 30.5f);
+            sim.Step(SimConstants.TickSeconds);
+        }
+        Assert.False(e.GetComponent<Wanderer>().Crouched, "should stand once clear of cover");
+    }
+
+    [Fact]
     public void ShooterHuggingWall_LeansAroundCorner()
     {
         var sim = new SimRuntime();

@@ -201,6 +201,12 @@ public sealed class DummyController
         var here = new TilePos((int)pos.X, (int)pos.Y);
         bool drafted = entity.HasComponent<Drafted>();
 
+        // Drafted + next to a sandbag → stay crouched (head down) while
+        // standing there or moving along the line. Persists until the pawn
+        // leaves every sandbag's 8-neighbourhood. The firing block may
+        // override with a Popped/Leaning stance when actually shooting.
+        w.Crouched = drafted && IsAdjacentToSandbag(here);
+
         // Undraft-mid-walk edge: abandon the drafted move order and ease
         // onto the nearest tile before normal jobs/wander resume.
         if (w.WasDrafted && !drafted)
@@ -1864,6 +1870,19 @@ public sealed class DummyController
             entity.Id, tgt.Id, true, rc.LoadedAmmoPath ?? ""));
         // Muzzle climb: this shot kicks the cone wider for the next.
         rc.Recoil = MathF.Min(spec.MaxRecoilDegrees, rc.Recoil + spec.RecoilPerShot);
+    }
+
+    // True if any of the 8 tiles around `here` holds a sandbag.
+    private bool IsAdjacentToSandbag(TilePos here)
+    {
+        if (HasSandbag is null) return false;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                if (HasSandbag(here.X + dx, here.Y + dy)) return true;
+            }
+        return false;
     }
 
     // True if a sandbag sits in the immediate step from `here` toward the
