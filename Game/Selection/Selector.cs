@@ -181,6 +181,16 @@ public partial class Selector : Node2D
 
         if (@event is InputEventMouseButton mb)
         {
+            // Any mouse-button press that reaches here is OUTSIDE the context
+            // menu (clicks on the menu go to the popup window). So a click or
+            // right-click off an open menu just closes it, consuming the click.
+            if (mb.Pressed && _bpMenu is { Visible: true }
+                && (mb.ButtonIndex == MouseButton.Left || mb.ButtonIndex == MouseButton.Right))
+            {
+                _bpMenu.Hide();
+                GetViewport().SetInputAsHandled();
+                return;
+            }
             if (mb.ButtonIndex == MouseButton.Left)
             {
                 if (mb.Pressed)

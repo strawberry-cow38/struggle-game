@@ -524,6 +524,17 @@ public partial class WorldRenderer : Node2D
             }
         }
 
+        using (FrameProfiler.Instance.BeginScope("BloodImpacts"))
+        {
+            foreach (var bi in snap.BloodImpacts)
+            {
+                int bx = (int)bi.X, by = (int)bi.Y;
+                if (bx < viewMinTileX || bx > viewMaxTileX
+                    || by < viewMinTileY || by > viewMaxTileY) continue;
+                DrawBloodImpact(bi);
+            }
+        }
+
         using (FrameProfiler.Instance.BeginScope("ItemPiles"))
         {
             // Item piles share the SelectedWoodIds selection set (cached, so
@@ -962,6 +973,28 @@ public partial class WorldRenderer : Node2D
         var col = pr.IsAp ? BulletApColor : BulletColor;
         DrawLine(tail, head, col, 2.0f, antialiased: true);
         DrawCircle(head, 2.5f, col);
+    }
+
+    private static readonly Color BloodSprayColor = new(0.55f, 0.02f, 0.02f);
+    // Fixed droplet headings so the spray is stable frame-to-frame.
+    private static readonly float[] SprayAngles = { 0.4f, 1.3f, 2.2f, 3.0f, 3.9f, 4.8f, 5.6f };
+
+    private void DrawBloodImpact(Sim.Snapshots.BloodImpactState bi)
+    {
+        var center = new Vector2((bi.X + 0.5f) * PixelsPerTile, (bi.Y + 0.5f) * PixelsPerTile);
+        float a = Mathf.Clamp(bi.Alpha, 0f, 1f);
+        float spread = (1f - a) * PixelsPerTile * 0.45f; // droplets fly outward as it ages
+        var col = BloodSprayColor;
+        col.A = a;
+        // Central burst.
+        DrawCircle(center, PixelsPerTile * 0.12f * a + 2f, col);
+        // Radiating droplets.
+        for (int i = 0; i < SprayAngles.Length; i++)
+        {
+            float ang = SprayAngles[i];
+            var p = center + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * (PixelsPerTile * 0.12f + spread);
+            DrawCircle(p, PixelsPerTile * 0.06f * a + 1f, col);
+        }
     }
 
     private void DrawBloodPuddle(Sim.Snapshots.BloodPuddleState bp)

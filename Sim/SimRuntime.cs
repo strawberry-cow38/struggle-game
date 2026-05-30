@@ -167,6 +167,10 @@ public sealed class SimRuntime
     // after RoofBuild completes; ticks down each Step.
     private const float RoofFlashSec = 0.6f;
     private readonly Dictionary<TilePos, float> _roofFlashes = new();
+    // Transient blood-impact sprays at bullet-hit points (world tile coords +
+    // remaining seconds). Cosmetic; aged out each tick.
+    private readonly List<(float X, float Y, float Sec)> _bloodImpacts = new();
+    private const float BloodImpactSec = 0.35f;
     // Cached per-lamp disc bake. Each entry is the lamp's static
     // contribution pattern (relative to its tile) baked against the
     // current wall/door layout. Color and power state are NOT baked —
@@ -382,6 +386,7 @@ public sealed class SimRuntime
         if (needTick) { _sleep.Step(Store, needDt); _needAccumDt = 0f; }
         _health.Step(Store, dt);
         AgeRoofFlashes(dt);
+        AgeBloodImpacts(dt);
         // Run every tick. (An earlier "skip unless an item was added"
         // optimization was unsafe: a pile can also become mergeable when a
         // haul reservation clears or a neighbor is partly consumed, neither
@@ -1416,6 +1421,15 @@ public sealed class SimRuntime
             projBuf[pri++] = new ProjectileState(pr.X, pr.Y, pr.Angle, isAp);
         });
         snap.ProjectilesCount = pri;
+
+        EnsureCap(ref snap.BloodImpactsBuf, _bloodImpacts.Count);
+        var biBuf = snap.BloodImpactsBuf;
+        for (int bi = 0; bi < _bloodImpacts.Count; bi++)
+        {
+            var b = _bloodImpacts[bi];
+            biBuf[bi] = new BloodImpactState(b.X, b.Y, b.Sec / BloodImpactSec);
+        }
+        snap.BloodImpactsCount = _bloodImpacts.Count;
 
 
         int[] selTreeArr = Array.Empty<int>();
@@ -3893,6 +3907,23 @@ public sealed class SimRuntime
         ApplyInjury(pr.TargetEntityId, part, kind, dmg);
         if (t.HasComponent<Combat>())
         { ref var tc = ref t.GetComponent<Combat>(); tc.FlinchTick = Tick; }
+        // Blood spray at the point of impact.
+        if (t.HasComponent<WorldPos>())
+        {
+            var wp = t.GetComponent<WorldPos>();
+            _bloodImpacts.Add((wp.X, wp.Y, BloodImpactSec));
+        }
+    }
+
+    private void AgeBloodImpacts(float dt)
+    {
+        for (int i = _bloodImpacts.Count - 1; i >= 0; i--)
+        {
+            var b = _bloodImpacts[i];
+            b.Sec -= dt;
+            if (b.Sec <= 0f) _bloodImpacts.RemoveAt(i);
+            else _bloodImpacts[i] = b;
+        }
     }
 
     // Dump a downed colonist's equipped weapon + carried inventory onto
