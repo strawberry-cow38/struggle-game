@@ -3880,6 +3880,9 @@ public sealed class SimRuntime
         foreach (var e in _projScratch)
         {
             ref var pr = ref e.GetComponent<Projectile>();
+            // Reached the target last tick (drawn there for one frame) — retire it now.
+            if (pr.Arrived) { e.DeleteEntity(); continue; }
+
             bool tracking = false;
             if (pr.WillHit
                 && Store.TryGetEntityById(pr.TargetEntityId, out var t)
@@ -3895,13 +3898,16 @@ public sealed class SimRuntime
             float step = pr.Speed * dt;
             if (dist <= step || dist < 1e-4f)
             {
+                // Snap onto the target and resolve, but keep the entity one
+                // more tick so it renders AT the target — the tracer visibly
+                // reaches it instead of vanishing a step short.
                 pr.X = pr.ToX; pr.Y = pr.ToY;
+                pr.Arrived = true;
                 if (tracking)
                 {
                     ResolveProjectileHit(in pr);
                     _bloodImpacts.Add((pr.X, pr.Y, BloodImpactSec)); // spray exactly where it landed
                 }
-                e.DeleteEntity();
                 continue;
             }
             pr.X += ddx / dist * step;

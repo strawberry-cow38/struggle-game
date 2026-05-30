@@ -646,6 +646,9 @@ public struct Projectile : IComponent
     public bool WillHit;           // accuracy already rolled at fire time
     public string AmmoPath;        // wound source on a hit
     public float Angle;            // travel heading, for the streak render
+    // Set the tick the round reaches its destination — it's drawn AT the
+    // target that tick (so the tracer visibly connects) and removed the next.
+    public bool Arrived;
 }
 
 // Queued bullet spawn emitted by DummyController during its query pass and
