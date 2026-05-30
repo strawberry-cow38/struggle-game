@@ -178,7 +178,7 @@ public partial class Selector : Node2D
         if (_fireAttackers.Length > 0)
         {
             _bpMenu.AddItem($"Fire at {name}", 6);
-            _bpMenu.SetItemDisabled(_bpMenu.ItemCount - 1, !AnyAttackerInRange(snap, _fireAttackers, targetId));
+            _bpMenu.SetItemDisabled(_bpMenu.ItemCount - 1, !AnyAttackerCanFire(snap, _fireAttackers, targetId));
         }
         _bpMenu.AddItem($"Melee attack {name}", 5);
         var screenPos = GetCanvasTransform() * world;
@@ -1040,8 +1040,9 @@ public partial class Selector : Node2D
         return false;
     }
 
-    // True if any of the attackers is within its weapon's range of the target.
-    private static bool AnyAttackerInRange(SimSnapshot snap, int[] attackers, int targetId)
+    // True if any of the attackers is both in range of the target AND has
+    // ammo (loaded or reloadable) — i.e. can actually open fire.
+    private static bool AnyAttackerCanFire(SimSnapshot snap, int[] attackers, int targetId)
     {
         float tx = 0, ty = 0; bool foundTarget = false;
         foreach (var d in snap.Dummies)
@@ -1051,6 +1052,7 @@ public partial class Selector : Node2D
         foreach (var d in snap.Dummies)
         {
             if (!set.Contains(d.EntityId)) continue;
+            if (!d.RangedHasAmmo) continue;
             float dx = d.X - tx, dy = d.Y - ty;
             if (Mathf.Sqrt(dx * dx + dy * dy) <= d.RangedRange) return true;
         }

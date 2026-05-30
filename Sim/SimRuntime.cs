@@ -1240,6 +1240,7 @@ public sealed class SimRuntime
             byte coverStance = 0;
             bool leaning = false;
             float peekX = p.X, peekY = p.Y;
+            bool rangedHasAmmo = false;
             if (ent.HasComponent<RangedCombat>() && TryGetEquippedRangedSpec(ent, out var rspec))
             {
                 var rc = ent.GetComponent<RangedCombat>();
@@ -1247,6 +1248,18 @@ public sealed class SimRuntime
                 coverStance = (byte)rc.Stance;
                 leaning = rc.Leaning;
                 peekX = rc.PeekX; peekY = rc.PeekY;
+                // Can it fire at all — loaded rounds, or spare ammo to reload?
+                rangedHasAmmo = rc.MagCount > 0;
+                if (!rangedHasAmmo && ent.HasComponent<Inventory>())
+                {
+                    var rinv = ent.GetComponent<Inventory>();
+                    if (rinv.Items is not null)
+                        foreach (var s in rinv.Items)
+                            if (s.Count > 0
+                                && Items.ItemCatalog.ItemsByPath.TryGetValue(s.ItemPath, out var ad)
+                                && ad.Ammo is not null && ad.Ammo.CategoryPath == rspec.AmmoCategoryPath)
+                            { rangedHasAmmo = true; break; }
+                }
                 rangedMag = rc.MagCount;
                 rangedMagSize = rspec.MagazineSize;
                 fireTargetId = rc.TargetEntityId;
@@ -1283,7 +1296,7 @@ public sealed class SimRuntime
                 swingT, missT, flinchT, meleeTargetId,
                 hasRanged, rangedMag, rangedMagSize, rangedMode, rangedModes,
                 fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea,
-                coverStance, leaning, peekX, peekY);
+                coverStance, leaning, peekX, peekY, rangedHasAmmo);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {

@@ -180,7 +180,9 @@ public readonly record struct DummyState(
     byte CoverStance,
     bool Leaning,
     float PeekX,
-    float PeekY);
+    float PeekY,
+    // Has rounds in the mag OR compatible ammo in inventory to reload with.
+    bool RangedHasAmmo);
 
 // What a ranged colonist is doing right now, for the overhead label.
 public enum RangedStatus : byte { None = 0, Firing = 1, Watching = 2, Reloading = 3, TooClose = 4 }

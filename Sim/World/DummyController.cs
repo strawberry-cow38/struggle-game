@@ -1899,34 +1899,44 @@ public sealed class DummyController
         return false;
     }
 
-    private static readonly (int dx, int dy)[] LeanOffsets =
-        { (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1) };
-
-    // RimWorld-style corner lean: when direct sight is blocked and the pawn is
-    // hugging a wall, find an adjacent open cell that CAN see the target. The
-    // pawn doesn't move there — it peeks (fires from / exposes the body at that
-    // cell while popped, tucks back behind the wall otherwise).
+    // RimWorld-style corner lean: when a wall directly in the target's
+    // direction blocks the shot, the pawn peeks ONE step sideways (along the
+    // wall face) to a single adjacent cell that can see the target. It doesn't
+    // move there — it just exposes the body at that cell while popped and tucks
+    // back behind the wall otherwise. Strictly a sideways peek against the wall
+    // it's hugging: no diagonal hops, no leaning when there's no wall to peek
+    // around.
     private bool TryFindLeanCell(MapView view, TilePos here, TilePos ttile, out TilePos leanCell)
     {
         leanCell = here;
         if (LosClear is null) return false;
-        // Must be hugging a wall (an orthogonal wall neighbor) — otherwise this
-        // is just sidestepping in the open, not peeking a corner.
-        bool huggingWall = false;
-        if (view.GetWall(here.X + 1, here.Y) != WallType.None
-            || view.GetWall(here.X - 1, here.Y) != WallType.None
-            || view.GetWall(here.X, here.Y + 1) != WallType.None
-            || view.GetWall(here.X, here.Y - 1) != WallType.None)
-            huggingWall = true;
-        if (!huggingWall) return false;
+        int dx = ttile.X - here.X, dy = ttile.Y - here.Y;
+        if (dx == 0 && dy == 0) return false;
+
+        // The wall we peek around sits one tile toward the target on its
+        // dominant axis; we step along the PERPENDICULAR axis to peek past it.
+        int wallX, wallY;
+        (int dx, int dy)[] perp;
+        if (Math.Abs(dx) >= Math.Abs(dy))
+        {
+            wallX = here.X + Math.Sign(dx); wallY = here.Y;
+            perp = new (int, int)[] { (0, 1), (0, -1) };
+        }
+        else
+        {
+            wallX = here.X; wallY = here.Y + Math.Sign(dy);
+            perp = new (int, int)[] { (1, 0), (-1, 0) };
+        }
+        // No wall blocking on the target axis → nothing to peek around, no lean.
+        if (view.GetWall(wallX, wallY) == WallType.None) return false;
 
         float best = float.MaxValue; bool found = false;
-        foreach (var (dx, dy) in LeanOffsets)
+        foreach (var (px, py) in perp)
         {
-            int cx = here.X + dx, cy = here.Y + dy;
+            int cx = here.X + px, cy = here.Y + py;
             if (!view.InBounds(cx, cy)) continue;
             if (view.GetWall(cx, cy) != WallType.None) continue; // can't peek into a wall
-            if (!(LosClear(cx, cy, ttile.X, ttile.Y))) continue;
+            if (!LosClear(cx, cy, ttile.X, ttile.Y)) continue;
             float ex = ttile.X - cx, ey = ttile.Y - cy;
             float d2 = ex * ex + ey * ey;
             if (d2 < best) { best = d2; leanCell = new TilePos(cx, cy); found = true; }
