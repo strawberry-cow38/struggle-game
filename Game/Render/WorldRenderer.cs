@@ -89,6 +89,10 @@ public partial class WorldRenderer : Node2D
     private static readonly Color SelectionRing = new(1.0f, 1.0f, 0.20f, 1.0f);
     private static readonly Color PathLineColor = new(1.0f, 0.92f, 0.10f, 0.85f);
     private static readonly Color PathTargetColor = new(1.0f, 0.92f, 0.10f, 1.0f);
+    // Dimmer line linking queued (not-yet-active) move/action waypoints.
+    private static readonly Color QueuedPathColor = new(1.0f, 0.92f, 0.10f, 0.45f);
+    // Max-range ring for a selected drafted ranged colonist.
+    private static readonly Color RangeCircleColor = new(1.0f, 0.45f, 0.30f, 0.35f);
     private static readonly Color DraftedRing = new(1.0f, 0.25f, 0.20f, 1.0f);
     private static readonly Color CoverCrouchColor = new(0.55f, 0.80f, 0.95f, 0.9f);
     private static readonly Color EquippedMarkerColor = new(0.30f, 0.85f, 1.0f, 1.0f);
@@ -715,6 +719,12 @@ public partial class WorldRenderer : Node2D
                 if (_selectedDummyIdsScratch.Contains(d.EntityId))
                 {
                     DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
+                    // Drafted + holding a ranged weapon → show its max range ring.
+                    if (d.Drafted && d.HasRangedWeapon && d.RangedRange > 0f)
+                    {
+                        float rr = d.RangedRange * PixelsPerTile;
+                        DrawArc(center, rr, 0f, Mathf.Tau, 96, RangeCircleColor, 1.5f, antialiased: true);
+                    }
                 }
                 string? labelText = d.Health.Unconscious ? "Unconscious"
                     : d.RangedStatus == Sim.Snapshots.RangedStatus.Reloading ? "Reloading"
@@ -852,43 +862,57 @@ public partial class WorldRenderer : Node2D
 
     private void DrawSelectedPath(Sim.Snapshots.SimSnapshot snap)
     {
-        if (snap.SelectedPath is not { Length: > 0 } path) return;
-        if (snap.SelectedDummyId is not int sel) return;
+        if (snap.SelectedPaths.Length == 0) return;
+        foreach (var pp in snap.SelectedPaths)
+            DrawPawnPath(snap, pp);
+    }
 
-        // Find live dummy world pos so the line starts at the colonist,
-        // not at the tile they've already left.
+    private void DrawPawnPath(Sim.Snapshots.SimSnapshot snap, Sim.Snapshots.PawnPathState pp)
+    {
+        // Find live dummy world pos so the line starts at the colonist, not the
+        // tile they've already left.
         Vector2? start = null;
         foreach (var d in snap.Dummies)
         {
-            if (d.EntityId != sel) continue;
+            if (d.EntityId != pp.EntityId) continue;
             start = new Vector2(d.X * PixelsPerTile, d.Y * PixelsPerTile);
             break;
         }
 
-        var points = new Vector2[path.Length + (start.HasValue ? 1 : 0)];
-        int idx = 0;
-        if (start is Vector2 s) points[idx++] = s;
-        for (int k = 0; k < path.Length; k++)
+        var path = pp.Path;
+        if (path.Length > 0)
         {
-            points[idx++] = new Vector2(
-                (path[k].X + 0.5f) * PixelsPerTile,
-                (path[k].Y + 0.5f) * PixelsPerTile);
+            var points = new Vector2[path.Length + (start.HasValue ? 1 : 0)];
+            int idx = 0;
+            if (start is Vector2 s) points[idx++] = s;
+            for (int k = 0; k < path.Length; k++)
+                points[idx++] = new Vector2(
+                    (path[k].X + 0.5f) * PixelsPerTile,
+                    (path[k].Y + 0.5f) * PixelsPerTile);
+            if (points.Length >= 2) DrawPolyline(points, PathLineColor, width: 2f, antialiased: true);
+
+            var target = path[^1];
+            float t = PixelsPerTile * 0.35f;
+            var tc = new Vector2((target.X + 0.5f) * PixelsPerTile, (target.Y + 0.5f) * PixelsPerTile);
+            DrawLine(tc + new Vector2(-t, -t), tc + new Vector2(t, t), PathTargetColor, width: 3f);
+            DrawLine(tc + new Vector2(-t, t), tc + new Vector2(t, -t), PathTargetColor, width: 3f);
         }
-        if (points.Length >= 2) DrawPolyline(points, PathLineColor, width: 2f, antialiased: true);
 
-        var target = path[^1];
-        float t = PixelsPerTile * 0.35f;
-        var tc = new Vector2((target.X + 0.5f) * PixelsPerTile, (target.Y + 0.5f) * PixelsPerTile);
-        DrawLine(tc + new Vector2(-t, -t), tc + new Vector2(t, t), PathTargetColor, width: 3f);
-        DrawLine(tc + new Vector2(-t, t), tc + new Vector2(t, -t), PathTargetColor, width: 3f);
-
-        if (snap.SelectedOrders is { Length: > 0 } orders)
+        // Queued move/action waypoints, connected in order from the path end
+        // (or the pawn) so the full queued route reads as one chain.
+        if (pp.Orders.Length > 0)
         {
+            var prev = path.Length > 0
+                ? new Vector2((path[^1].X + 0.5f) * PixelsPerTile, (path[^1].Y + 0.5f) * PixelsPerTile)
+                : start;
             float r = PixelsPerTile * 0.18f;
-            foreach (var o in orders)
+            foreach (var o in pp.Orders)
             {
                 var oc = new Vector2((o.X + 0.5f) * PixelsPerTile, (o.Y + 0.5f) * PixelsPerTile);
+                if (prev is Vector2 pv)
+                    DrawLine(pv, oc, QueuedPathColor, width: 1.5f, antialiased: true);
                 DrawCircle(oc, r, OrderMarker);
+                prev = oc;
             }
         }
     }

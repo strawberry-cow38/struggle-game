@@ -135,10 +135,17 @@ public sealed class SimSnapshot
     public int[] SelectedDummyIds { get; internal set; } = System.Array.Empty<int>();
     public TilePos[]? SelectedPath { get; internal set; }
     public TilePos[]? SelectedOrders { get; internal set; }
+    // Path + queued move/action tiles for EVERY selected pawn, so a whole
+    // drafted squad shows its lines and waypoints at once.
+    public PawnPathState[] SelectedPaths { get; internal set; } = System.Array.Empty<PawnPathState>();
     public int[] SelectedTreeIds { get; internal set; } = System.Array.Empty<int>();
     public int[] SelectedWoodIds { get; internal set; } = System.Array.Empty<int>();
     public int[] SelectedCropIds { get; internal set; } = System.Array.Empty<int>();
 }
+
+// A selected pawn's remaining path + queued order tiles, for drawing move
+// lines + waypoint markers for the whole selection.
+public readonly record struct PawnPathState(int EntityId, TilePos[] Path, TilePos[] Orders);
 
 public readonly record struct DummyState(
     int EntityId,

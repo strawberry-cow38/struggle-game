@@ -1096,6 +1096,9 @@ public sealed class SimRuntime
         snap.SelectedOrders = null;
         snap.CheckmarkMode = CheckmarkMode;
 
+        var selSet = (selectedDummyIds is { Length: > 0 }) ? new HashSet<int>(selectedDummyIds) : null;
+        List<PawnPathState>? selPaths = null;
+
         var dq = Store.Query<WorldPos, Wanderer>();
         EnsureCap(ref snap.DummiesBuf, dq.Count);
         var dummiesBuf = snap.DummiesBuf;
@@ -1298,8 +1301,11 @@ public sealed class SimRuntime
                 fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea,
                 coverStance, leaning, peekX, peekY, rangedHasAmmo);
 
-            if (selectedDummyId is int sel && ent.Id == sel)
+            // Capture path + queued tiles for every selected pawn, so the whole
+            // squad shows its move lines + waypoints (not just the first pawn).
+            if (selSet != null && selSet.Contains(ent.Id))
             {
+                TilePos[]? path = null, orders = null;
                 if (ent.HasComponent<PathFollower>())
                 {
                     var pf = ent.GetComponent<PathFollower>();
@@ -1308,24 +1314,27 @@ public sealed class SimRuntime
                         int remaining = pf.Waypoints.Count - pf.Index;
                         if (remaining > 0)
                         {
-                            var sp = new TilePos[remaining];
+                            path = new TilePos[remaining];
                             for (int k = 0; k < remaining; k++)
-                                sp[k] = pf.Waypoints[pf.Index + k];
-                            snap.SelectedPath = sp;
+                                path[k] = pf.Waypoints[pf.Index + k];
                         }
                     }
                 }
                 if (ent.HasComponent<OrderQueue>())
                 {
                     var oq = ent.GetComponent<OrderQueue>();
-                    if (oq.Tiles is { Count: > 0 })
-                    {
-                        snap.SelectedOrders = oq.Tiles.ToArray();
-                    }
+                    if (oq.Tiles is { Count: > 0 }) orders = oq.Tiles.ToArray();
+                }
+                if (path != null || orders != null)
+                {
+                    if (ent.Id == selectedDummyId) { snap.SelectedPath = path; snap.SelectedOrders = orders; }
+                    (selPaths ??= new List<PawnPathState>()).Add(
+                        new PawnPathState(ent.Id, path ?? Array.Empty<TilePos>(), orders ?? Array.Empty<TilePos>()));
                 }
             }
         });
         snap.DummiesCount = i;
+        snap.SelectedPaths = selPaths?.ToArray() ?? Array.Empty<PawnPathState>();
 
         EnsureCap(ref snap.PawnWorkBuf, dq.Count);
         var pwBuf = snap.PawnWorkBuf;
