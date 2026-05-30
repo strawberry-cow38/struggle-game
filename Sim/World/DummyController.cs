@@ -589,13 +589,15 @@ public sealed class DummyController
                     // ─── Cover assessment ─────────────────────────────────
                     // Crouch cover: a sandbag in the step toward the target.
                     bool crouchCover = directLos && HasSandbagToward(here, ttile);
-                    // Wall lean: direct sight blocked, but a hugged-wall corner
-                    // lets us peek to an adjacent cell that CAN see the target.
+                    // Wall lean: whenever a wall sits toward the target (so a
+                    // straight shot would graze/eat it), peek one cell sideways
+                    // to a spot with clear sight — even if Bresenham snuck a
+                    // diagonal gap through. Peeking out beats firing into the wall.
                     bool leaning = false;
                     WorldPos muzzle = pos;
                     var firePos = pos;
                     bool losFinal = directLos;
-                    if (!directLos && TryFindLeanCell(view, here, ttile, out var leanCell))
+                    if (TryFindLeanCell(view, here, ttile, out var leanCell))
                     {
                         leaning = true;
                         losFinal = true;
