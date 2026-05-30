@@ -78,6 +78,16 @@ public sealed class AmmoSpec
     public float PenBlunt;             // blunt/concussive penetration, MPa — banked for the armor system
 }
 
+// Worn-armor stat block. Defends the listed body parts: a round with sharp
+// penetration ≤ ArmorSharp is deflected (becomes a blunt bruise); above it,
+// the round penetrates with reduced damage. ArmorBlunt soaks the concussion.
+public sealed class ArmorSpec
+{
+    public float ArmorSharp;   // sharp defense, mmRHA
+    public float ArmorBlunt;   // blunt defense, MPa
+    public string[] Covers = System.Array.Empty<string>(); // protected body-part ids
+}
+
 // Leaf of the taxonomy. One per concrete item kind that can exist
 // in the world (wood, stone, raw meat, …). Stockpile filters and
 // haul jobs reference items by Def, not by string.
@@ -111,8 +121,11 @@ public sealed class ItemDef
     // Ammo stats when this item is a round of ammunition, else null.
     public AmmoSpec? Ammo { get; }
     public bool IsAmmo => Ammo is not null;
+    // Worn-armor stats when this item is apparel, else null.
+    public ArmorSpec? Armor { get; }
+    public bool IsArmor => Armor is not null;
 
-    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable, (ConditionKind, float)[]? meleeAttacks, bool defaultStockpileAllowed, RangedSpec? ranged, AmmoSpec? ammo, int maxStack)
+    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable, (ConditionKind, float)[]? meleeAttacks, bool defaultStockpileAllowed, RangedSpec? ranged, AmmoSpec? ammo, int maxStack, ArmorSpec? armor)
     {
         Id = id;
         DisplayName = displayName;
@@ -125,6 +138,7 @@ public sealed class ItemDef
         Ranged = ranged;
         Ammo = ammo;
         MaxStack = maxStack;
+        Armor = armor;
     }
 
     public string FullPath => $"{Category.FullPath}/{Id}";
@@ -161,6 +175,8 @@ public static class ItemCatalog
     public static readonly ItemDef Corpse;
     // First ranged weapon — ships with all three fire modes for testing.
     public static readonly ItemDef AssaultRifle;
+    // Torso armor. Stops most rounds (deflect → bruise); AP punches through.
+    public static readonly ItemDef KevlarVest;
     public static readonly ItemCategory Ammo;
     // Rifle ammo variants: AP penetrates (future), HP wounds harder, FMJ
     // balanced in between.
@@ -215,6 +231,12 @@ public static class ItemCatalog
                 CycleCooldownTicks = 8,
                 ReloadTicks = 120,
             });
+
+        // Kevlar vest — torso only. Sharp 8 mmRHA deflects HP (3) + FMJ (6)
+        // into bruises; AP (12) penetrates (reduced). Blunt 20 MPa soaks some
+        // of the deflected concussion.
+        KevlarVest = RegisterItem("KevlarVest", "Kevlar Vest", Equipment, weight: 6f, bulk: 4f, equippable: true,
+            armor: new ArmorSpec { ArmorSharp = 8f, ArmorBlunt = 20f, Covers = new[] { "Torso" } });
     }
 
     public static ItemCategory RegisterCategory(string id, string displayName, ItemCategory? parent = null)
@@ -229,9 +251,9 @@ public static class ItemCatalog
         return cat;
     }
 
-    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false, (ConditionKind, float)[]? meleeAttacks = null, bool defaultStockpileAllowed = true, RangedSpec? ranged = null, AmmoSpec? ammo = null, int maxStack = 75)
+    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false, (ConditionKind, float)[]? meleeAttacks = null, bool defaultStockpileAllowed = true, RangedSpec? ranged = null, AmmoSpec? ammo = null, int maxStack = 75, ArmorSpec? armor = null)
     {
-        var item = new ItemDef(id, displayName, category, weight, bulk, equippable, meleeAttacks, defaultStockpileAllowed, ranged, ammo, maxStack);
+        var item = new ItemDef(id, displayName, category, weight, bulk, equippable, meleeAttacks, defaultStockpileAllowed, ranged, ammo, maxStack, armor);
         if (!_itemsByPath.TryAdd(item.FullPath, item))
         {
             throw new InvalidOperationException($"Item already registered at path '{item.FullPath}'.");

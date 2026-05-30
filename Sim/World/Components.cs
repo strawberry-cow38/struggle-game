@@ -526,7 +526,8 @@ public struct Forbidden : IComponent
 // without reshaping the Inventory component or its consumers.
 public enum EquipSlot : byte
 {
-    Generic = 0,
+    Generic = 0,  // held weapons / misc
+    Apparel = 1,  // worn armor/clothing (torso for now)
 }
 
 // One equipped item. Count is almost always 1 today (equip pulls a

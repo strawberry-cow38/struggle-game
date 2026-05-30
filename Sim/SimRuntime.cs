@@ -4051,23 +4051,56 @@ public sealed class SimRuntime
             part = pool[_spawnRng.Next(pool.Length)];
         }
         var kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot;
-        float dmg = 12f, pen = 6f;
+        float dmg = 12f, pen = 6f, penBlunt = 0f;
         string? caliber = null;
         if (Items.ItemCatalog.ItemsByPath.TryGetValue(ammoPath, out var def) && def.Ammo is not null)
         {
             kind = def.Ammo.InjuryKind;
             dmg = def.Ammo.Damage;
             pen = def.Ammo.PenSharp;
+            penBlunt = def.Ammo.PenBlunt;
             caliber = def.DisplayName;
         }
         // High-penetration rounds (AP, ~12 mmRHA) punch through; expanding
         // ones (HP, ~3) lodge; FMJ (~6) is in between.
         float passChance = Math.Clamp(pen / 20f, 0.05f, 0.9f);
         bool passThrough = _spawnRng.NextDouble() < passChance;
+
+        // Armor: if the struck part is covered, the round either deflects
+        // (sharp pen ≤ armor → becomes a blunt bruise) or penetrates with the
+        // damage bled down by the armor it chewed through.
+        if (TryGetArmorCovering(t, part, out var armor))
+        {
+            if (pen <= armor.ArmorSharp)
+            {
+                kind = StruggleGame.Sim.Bodies.ConditionKind.Bruise;
+                caliber = null;
+                dmg *= Math.Clamp((penBlunt - armor.ArmorBlunt) / MathF.Max(penBlunt, 0.01f), 0.1f, 1f);
+                passThrough = false; // bounced — no exit wound
+            }
+            else
+            {
+                dmg *= Math.Clamp((pen - armor.ArmorSharp) / pen, 0.05f, 1f);
+            }
+        }
         ApplyInjury(targetId, part, kind, dmg, caliber, lodged: !passThrough);
         if (t.HasComponent<Combat>())
         { ref var tc = ref t.GetComponent<Combat>(); tc.FlinchTick = Tick; }
         return passThrough;
+    }
+
+    // First worn armor on the pawn that covers the given body part.
+    private static bool TryGetArmorCovering(Entity pawn, string part, out Items.ArmorSpec armor)
+    {
+        armor = null!;
+        if (!pawn.HasComponent<Inventory>()) return false;
+        var inv = pawn.GetComponent<Inventory>();
+        if (inv.Equipped is null) return false;
+        foreach (var eq in inv.Equipped)
+            if (Items.ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var d) && d.Armor is not null)
+                foreach (var c in d.Armor.Covers)
+                    if (c == part) { armor = d.Armor; return true; }
+        return false;
     }
 
     private void AgeBloodImpacts(float dt)
@@ -4235,7 +4268,8 @@ public sealed class SimRuntime
         if (stack.Count <= 0) inv.Items.RemoveAt(heldIndex);
         else inv.Items[heldIndex] = stack;
         inv.Equipped ??= new List<EquippedItemSlot>();
-        inv.Equipped.Add(new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = stack.ItemPath, Count = 1 });
+        var slot = def.IsArmor ? EquipSlot.Apparel : EquipSlot.Generic;
+        inv.Equipped.Add(new EquippedItemSlot { Slot = slot, ItemPath = stack.ItemPath, Count = 1 });
     }
 
     // Drop a general-inventory stack on the ground at the pawn's feet.

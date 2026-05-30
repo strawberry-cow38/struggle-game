@@ -436,6 +436,72 @@ public class RangedTests
         Assert.True(anyUpper, "head-aimed fire should land at least one upper-body wound");
     }
 
+    private static void EquipVest(SimRuntime sim, int id)
+    {
+        var e = sim.Store.GetEntityById(id);
+        e.AddComponent(new Inventory
+        {
+            Items = new List<InventoryStack>(),
+            Equipped = new List<EquippedItemSlot>
+            {
+                new EquippedItemSlot { Slot = EquipSlot.Apparel, ItemPath = ItemCatalog.KevlarVest.FullPath, Count = 1 },
+            },
+        });
+    }
+
+    // shooter fires `ammo` at a kevlar-wearing target aiming torso; returns
+    // (sawTorsoGunshot, sawTorsoBruise) observed over the fight.
+    private static (bool gun, bool bruise) ShootArmoredTorso(ItemDef ammo)
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, target) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        sim.Store.GetEntityById(target).AddComponent(new Drafted());
+        EquipVest(sim, target);
+        ArmWithRifle(sim, shooter, ammo, 200);
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
+        sim.SetTargetArea(shooter, TargetArea.Torso);
+        sim.SetFireMode(shooter, FireMode.Auto);
+        sim.SetFireTarget(shooter, target);
+
+        bool gun = false, bruise = false;
+        for (int i = 0; i < 1500; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f);
+            SetPos(sim, target, 24.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+            ref var th = ref sim.Store.GetEntityById(target).GetComponent<Health>();
+            foreach (var w in th.Injuries!)
+                if (w.PartId == "Torso")
+                {
+                    if (w.Kind == ConditionKind.Gunshot) gun = true;
+                    if (w.Kind == ConditionKind.Bruise) bruise = true;
+                }
+            // Keep the target alive + standing so torso hits keep coming.
+            th.Injuries!.Clear();
+            th.BloodLevel = 1f;
+            HealthSystem.Recompute(ref th);
+        }
+        return (gun, bruise);
+    }
+
+    [Fact]
+    public void Kevlar_DeflectsFmj_AsBruise_NotGunshot()
+    {
+        var (gun, bruise) = ShootArmoredTorso(ItemCatalog.RifleAmmoFmj);
+        Assert.False(gun, "FMJ should not penetrate the kevlar torso (deflected)");
+        Assert.True(bruise, "deflected FMJ should leave a blunt bruise on the armored torso");
+    }
+
+    [Fact]
+    public void Kevlar_PenetratedByAp_AsGunshot()
+    {
+        var (gun, _) = ShootArmoredTorso(ItemCatalog.RifleAmmoAp);
+        Assert.True(gun, "AP should punch through the kevlar torso (gunshot wound)");
+    }
+
     private static int InvCount(Entity e, string path)
     {
         int n = 0;

@@ -344,7 +344,9 @@ public sealed class DummyController
                 int got = CookConsumePile?.Invoke(eo.ItemTile, eo.ItemPath, 1) ?? 0;
                 if (got > 0)
                 {
-                    var equipSlot = new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = eo.ItemPath, Count = got };
+                    var eqSlot = Items.ItemCatalog.ItemsByPath.TryGetValue(eo.ItemPath, out var edef) && edef.IsArmor
+                        ? EquipSlot.Apparel : EquipSlot.Generic;
+                    var equipSlot = new EquippedItemSlot { Slot = eqSlot, ItemPath = eo.ItemPath, Count = got };
                     if (entity.HasComponent<Inventory>())
                     {
                         ref var inv = ref entity.GetComponent<Inventory>();
