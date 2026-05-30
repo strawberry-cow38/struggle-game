@@ -169,7 +169,7 @@ public sealed class SimRuntime
     private readonly Dictionary<TilePos, float> _roofFlashes = new();
     // Transient blood-impact sprays at bullet-hit points (world tile coords +
     // remaining seconds). Cosmetic; aged out each tick.
-    private readonly List<(float X, float Y, float Angle, float Scale, float Sec)> _bloodImpacts = new();
+    private readonly List<(float X, float Y, float Angle, float Scale, bool Dirt, float Sec)> _bloodImpacts = new();
     private const float BloodImpactSec = 0.45f;
     // Cached per-lamp disc bake. Each entry is the lamp's static
     // contribution pattern (relative to its tile) baked against the
@@ -1440,7 +1440,7 @@ public sealed class SimRuntime
         for (int bi = 0; bi < _bloodImpacts.Count; bi++)
         {
             var b = _bloodImpacts[bi];
-            biBuf[bi] = new BloodImpactState(b.X, b.Y, b.Angle, b.Scale, b.Sec / BloodImpactSec);
+            biBuf[bi] = new BloodImpactState(b.X, b.Y, b.Angle, b.Scale, b.Dirt, b.Sec / BloodImpactSec);
         }
         snap.BloodImpactsCount = _bloodImpacts.Count;
 
@@ -3945,17 +3945,24 @@ public sealed class SimRuntime
                 {
                     bool passThrough = ResolveProjectileHit(hitPawn, pr.AmmoPath, ih);
                     float cx = MathF.Cos(pr.Angle), cy = MathF.Sin(pr.Angle);
-                    _bloodImpacts.Add((ix - cx * 0.45f, iy - cy * 0.45f, pr.Angle + MathF.PI, 0.55f, BloodImpactSec));
+                    _bloodImpacts.Add((ix - cx * 0.45f, iy - cy * 0.45f, pr.Angle + MathF.PI, 0.55f, false, BloodImpactSec));
                     if (passThrough)
-                        _bloodImpacts.Add((ix + cx * 0.45f, iy + cy * 0.45f, pr.Angle, 1.0f, BloodImpactSec));
+                        _bloodImpacts.Add((ix + cx * 0.45f, iy + cy * 0.45f, pr.Angle, 1.0f, false, BloodImpactSec));
                 }
-                continue; // wall hit = just stop (no effect yet)
+                else
+                {
+                    // Struck a wall — kick up debris/dust at the impact point.
+                    _bloodImpacts.Add((ix, iy, pr.Angle, 0.6f, true, BloodImpactSec));
+                }
+                continue;
             }
 
             if (reaching)
             {
-                // Reached the aim point with nothing hit — a clean miss.
+                // Reached the aim point with nothing hit — a clean miss that
+                // kicks up dirt where the round struck the ground.
                 pr.X = pr.ToX; pr.Y = pr.ToY; pr.Height = nh; pr.Arrived = true;
+                _bloodImpacts.Add((pr.ToX, pr.ToY, pr.Angle, 0.6f, true, BloodImpactSec));
                 continue;
             }
 

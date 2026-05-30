@@ -1012,6 +1012,8 @@ public partial class WorldRenderer : Node2D
         (0.52f, 0.42f, 0.60f), (-0.50f, 0.45f, 0.60f), (0.00f, 0.35f, 1.15f),
     };
 
+    private static readonly Color DirtPuffColor = new(0.42f, 0.31f, 0.18f);
+
     private void DrawBloodImpact(Sim.Snapshots.BloodImpactState bi)
     {
         // bi.X/Y are world coords (like pawns/bullets) — no tile-center +0.5.
@@ -1020,20 +1022,24 @@ public partial class WorldRenderer : Node2D
         float prog = 1f - a; // 0 at the instant of impact → 1 at the end
         float sc = bi.Scale <= 0f ? 1f : bi.Scale; // entry pops are smaller than exit bursts
         var fdir = new Vector2(Mathf.Cos(bi.Angle), Mathf.Sin(bi.Angle));
-        var col = BloodSprayColor;
+        var col = bi.Dirt ? DirtPuffColor : BloodSprayColor;
         col.A = a;
-        // Velocity smear: a streak shooting forward out the exit side.
-        var smear = col; smear.A = a * 0.5f;
-        DrawLine(center, center + fdir * (PixelsPerTile * sc * (0.4f + 0.6f * prog)), smear,
-            PixelsPerTile * 0.18f * sc * a + 1f, antialiased: true);
-        // Core wound.
+        // Blood throws a directional velocity smear; a dirt puff doesn't.
+        if (!bi.Dirt)
+        {
+            var smear = col; smear.A = a * 0.5f;
+            DrawLine(center, center + fdir * (PixelsPerTile * sc * (0.4f + 0.6f * prog)), smear,
+                PixelsPerTile * 0.18f * sc * a + 1f, antialiased: true);
+        }
+        // Core burst.
         DrawCircle(center, PixelsPerTile * 0.14f * sc * a + 2f, col);
-        // Droplets launch forward along the heading, flying out as it ages.
+        // Droplets/clods fling outward as it ages. Blood fans forward along the
+        // heading; dirt sprays evenly around the impact.
         for (int i = 0; i < BloodDroplets.Length; i++)
         {
             var d = BloodDroplets[i];
-            float ang = bi.Angle + d.Ang;
-            float reach = PixelsPerTile * sc * (0.1f + d.Dist * prog);
+            float ang = bi.Dirt ? (i / (float)BloodDroplets.Length) * Mathf.Tau : bi.Angle + d.Ang;
+            float reach = PixelsPerTile * sc * (0.1f + d.Dist * prog) * (bi.Dirt ? 0.7f : 1f);
             var p = center + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * reach;
             DrawCircle(p, PixelsPerTile * 0.06f * d.Size * sc * a + 0.8f, col);
         }
