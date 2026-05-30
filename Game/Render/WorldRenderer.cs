@@ -674,6 +674,9 @@ public partial class WorldRenderer : Node2D
                     DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
                 }
                 string? labelText = d.Health.Unconscious ? "Unconscious"
+                    : d.RangedStatus == Sim.Snapshots.RangedStatus.Reloading ? "Reloading"
+                    : d.RangedStatus == Sim.Snapshots.RangedStatus.Firing ? $"Firing at Colonist {d.FireTargetId}"
+                    : d.RangedStatus == Sim.Snapshots.RangedStatus.Watching ? $"Watching for Colonist {d.FireTargetId}"
                     : d.MeleeTargetId != 0 ? $"Melee Attacking Colonist {d.MeleeTargetId}"
                     : d.Sleeping ? "Sleeping"
                     : (string.IsNullOrEmpty(d.Job) ? null : d.Job);

@@ -172,16 +172,15 @@ public partial class Selector : Node2D
         _meleeTargetId = targetId;
         _meleeAttackers = attackers;
         _bpMenu.Clear();
-        _bpMenu.AddItem($"Melee attack {name}", 5);
-        // Fire option for any selected attacker that holds a ranged weapon.
-        // Grayed out when no shooter is within its weapon's range of the target.
+        // Fire at X is the top option (grayed out when no shooter is in range);
+        // melee attack sits below it.
         _fireAttackers = FilterRangedHolders(snap, attackers);
         if (_fireAttackers.Length > 0)
         {
             _bpMenu.AddItem($"Fire at {name}", 6);
-            int fireIdx = _bpMenu.ItemCount - 1;
-            _bpMenu.SetItemDisabled(fireIdx, !AnyAttackerInRange(snap, _fireAttackers, targetId));
+            _bpMenu.SetItemDisabled(_bpMenu.ItemCount - 1, !AnyAttackerInRange(snap, _fireAttackers, targetId));
         }
+        _bpMenu.AddItem($"Melee attack {name}", 5);
         var screenPos = GetCanvasTransform() * world;
         _bpMenu.Position = new Vector2I((int)screenPos.X, (int)screenPos.Y);
         _bpMenu.Popup();

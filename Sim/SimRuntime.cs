@@ -1224,6 +1224,7 @@ public sealed class SimRuntime
             float rangedRange = 0f;
             Items.FireMode rangedMode = Items.FireMode.Single;
             Items.FireModeFlags rangedModes = Items.FireModeFlags.None;
+            var rangedStatus = Snapshots.RangedStatus.None;
             if (ent.HasComponent<RangedCombat>() && TryGetEquippedRangedSpec(ent, out var rspec))
             {
                 var rc = ent.GetComponent<RangedCombat>();
@@ -1235,6 +1236,18 @@ public sealed class SimRuntime
                 rangedMode = rc.Mode;
                 rangedModes = rspec.Modes;
                 rangedRange = rspec.Range;
+                // Overhead-label state: reloading > firing (in range + LoS) >
+                // watching (target there but blocked/out of range).
+                if (rc.Reloading) rangedStatus = Snapshots.RangedStatus.Reloading;
+                else if (rc.TargetEntityId != 0
+                    && Store.TryGetEntityById(rc.TargetEntityId, out var ftgt) && ftgt.HasComponent<WorldPos>())
+                {
+                    var ftp = ftgt.GetComponent<WorldPos>();
+                    float fdx = ftp.X - p.X, fdy = ftp.Y - p.Y;
+                    bool inRange = MathF.Sqrt(fdx * fdx + fdy * fdy) <= rspec.Range;
+                    bool los = RangedLosClear((int)p.X, (int)p.Y, (int)ftp.X, (int)ftp.Y);
+                    rangedStatus = (inRange && los) ? Snapshots.RangedStatus.Firing : Snapshots.RangedStatus.Watching;
+                }
             }
 
             dummiesBuf[i++] = new DummyState(
@@ -1245,7 +1258,7 @@ public sealed class SimRuntime
                 recLevel, atRecKind, equipped, held, healthState, wr.Facing,
                 swingT, missT, flinchT, meleeTargetId,
                 hasRanged, rangedMag, rangedMagSize, rangedMode, rangedModes,
-                fireTargetId, shotTick, rangedRange);
+                fireTargetId, shotTick, rangedRange, rangedStatus);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {
