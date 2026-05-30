@@ -225,6 +225,9 @@ public sealed class DummyController
             // stopped firing mid-reload (target lost) — otherwise the
             // "Reloading" label sticks forever.
             if (rc0.Reloading && _tick >= rc0.NextActionTick) rc0.Reloading = false;
+            // Recoil settles back down over time (fast between taps/bursts).
+            if (rc0.Recoil > 0f && hasRangedWeapon)
+                rc0.Recoil = MathF.Max(0f, rc0.Recoil - rangedWeaponDef.Ranged!.RecoilRecoverPerSec * dt);
             // Undrafting stops any fire order (mirrors melee being cleared).
             if (!drafted) { rc0.TargetEntityId = 0; rc0.BurstRemaining = 0; }
         }
@@ -1778,18 +1781,16 @@ public sealed class DummyController
         return false;
     }
 
-    // Max aim scatter (tiles) at zero accuracy — a placeholder dispersion
-    // until phase 4's full CE aim model. The round flies a FIXED line to the
-    // scattered aim point; whether it connects is then pure geometry (the
-    // collision pass in SimRuntime), so it can miss wide or clip a bystander.
-    private const float RangedMaxScatterTiles = 2.5f;
-
     private void FireOneShot(Entity entity, Entity tgt, Items.RangedSpec spec, ref RangedCombat rc, WorldPos pos, WorldPos tp, float dist)
     {
-        float acc = Math.Clamp(spec.Accuracy - dist * spec.AccuracyFalloff, 0.05f, 0.99f);
-        float scatter = (1f - acc) * RangedMaxScatterTiles;
+        // Dispersion cone = steady spread + current recoil. The scatter radius
+        // at the target is tan(cone) * distance; the round flies a FIXED line
+        // to a random point in that disc and connects (or not) purely by
+        // geometry in the collision pass.
+        float coneRad = (spec.SpreadDegrees + rc.Recoil) * (MathF.PI / 180f);
+        float radius = MathF.Tan(coneRad) * dist;
         double ang = _rng.NextDouble() * Math.PI * 2.0;
-        float r = (float)Math.Sqrt(_rng.NextDouble()) * scatter; // uniform in the disc
+        float r = (float)Math.Sqrt(_rng.NextDouble()) * radius; // uniform in the disc
         float toX = tp.X + (float)Math.Cos(ang) * r;
         float toY = tp.Y + (float)Math.Sin(ang) * r;
         // Aim at the target's real body height — low for a downed/prone target
@@ -1799,6 +1800,8 @@ public sealed class DummyController
         PendingProjectiles.Add(new ProjectileSpawn(
             pos.X, pos.Y, toX, toY, aimH, spec.ProjectileSpeed,
             entity.Id, tgt.Id, true, rc.LoadedAmmoPath ?? ""));
+        // Muzzle climb: this shot kicks the cone wider for the next.
+        rc.Recoil = MathF.Min(spec.MaxRecoilDegrees, rc.Recoil + spec.RecoilPerShot);
     }
 
     // Undrafted idle behavior: keep the equipped ranged weapon's magazine

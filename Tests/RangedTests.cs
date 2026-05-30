@@ -371,6 +371,40 @@ public class RangedTests
         Assert.False(bystanderGunshot, "a torso-height round should fly over the prone bystander");
     }
 
+    [Fact]
+    public void Recoil_ClimbsUnderAutoFire_ThenSettles()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, target) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        ArmWithRifle(sim, shooter, ItemCatalog.RifleAmmoFmj, 300);
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
+        // Down the target first so the order is a finish-off — the shooter
+        // keeps mag-dumping the prone target instead of stopping after a few
+        // hits, which is what lets the recoil cone actually build.
+        DownByPain(sim, target);
+        sim.SetFireMode(shooter, FireMode.Auto);
+        sim.SetFireTarget(shooter, target);
+
+        float peak = 0f;
+        for (int i = 0; i < 220; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f);
+            if (sim.Store.TryGetEntityById(target, out _)) SetPos(sim, target, 24.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+            peak = System.Math.Max(peak, sim.Store.GetEntityById(shooter).GetComponent<RangedCombat>().Recoil);
+        }
+        Assert.True(peak > 2f, $"sustained auto fire should build the recoil cone (peak={peak})");
+
+        // Stop firing (undraft clears the order); recoil should settle back down.
+        sim.QueueCommand(new StruggleGame.Sim.Commands.ToggleDraftCommand(shooter));
+        for (int i = 0; i < 180; i++) sim.Step(SimConstants.TickSeconds);
+        Assert.True(sim.Store.GetEntityById(shooter).GetComponent<RangedCombat>().Recoil < 0.5f,
+            "recoil should recover once the pawn stops firing");
+    }
+
     private static int InvCount(Entity e, string path)
     {
         int n = 0;

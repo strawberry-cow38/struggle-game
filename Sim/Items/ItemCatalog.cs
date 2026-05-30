@@ -51,8 +51,12 @@ public sealed class RangedSpec
     public FireModeFlags Modes;        // which fire modes the gun supports
     public int BurstShots;             // shots per pull in Burst mode
     public float ProjectileSpeed;      // tiles per second
-    public float Accuracy;             // base hit chance at point-blank (0..1)
-    public float AccuracyFalloff;      // hit chance lost per tile of distance
+    // Aim dispersion: shots scatter within a cone of (SpreadDegrees + recoil)
+    // half-angle; the radius at the target = tan(angle) * distance.
+    public float SpreadDegrees;        // inherent weapon spread (steady)
+    public float RecoilPerShot;        // degrees added to the cone each shot
+    public float RecoilRecoverPerSec;  // degrees the cone settles per second
+    public float MaxRecoilDegrees;     // recoil cap
     public long WarmupTicks;           // aim time before a burst's first shot
     public long ShotCooldownTicks;     // between shots inside a burst / auto
     public long CycleCooldownTicks;    // between bursts (and between single shots)
@@ -194,10 +198,13 @@ public static class ItemCatalog
                 // Fast round — snappy, not floaty. Tracer length scales with
                 // this so it reads as a continuous streak, not stepping dots.
                 ProjectileSpeed = 150f,
-                // Hit chance = Accuracy - distance*Falloff (clamped). Point
-                // blank ~0.95, ~0.6 at 25 tiles, ~0.25 at 50 — distance matters.
-                Accuracy = 0.95f,
-                AccuracyFalloff = 0.014f,
+                // Tight rifle: ~1.2° steady spread. Each shot kicks +1° (caps
+                // at 7°) and settles 9°/s — so taps stay accurate while a
+                // mag-dump walks the cone wide open.
+                SpreadDegrees = 1.2f,
+                RecoilPerShot = 1.0f,
+                RecoilRecoverPerSec = 9.0f,
+                MaxRecoilDegrees = 7.0f,
                 WarmupTicks = 12,
                 // ~720 rpm cyclic = a shot every ~5 ticks at 60 Hz.
                 ShotCooldownTicks = 5,
