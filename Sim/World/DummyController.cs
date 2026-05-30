@@ -1943,10 +1943,11 @@ public sealed class DummyController
             if (!view.InBounds(cx, cy)) continue;
             if (view.GetWall(cx, cy) != WallType.None) continue; // can't peek into a wall
             if (!LosClear(cx, cy, ttile.X, ttile.Y)) continue;
-            // Clamp the wedge: the shot from the peek cell must head FORWARD
-            // past the corner, not bend backward behind the wall. A corner peek
-            // opens ~90° on the open side (LosClear already blocks the wall
-            // side), so we only reject shots more than 90° off the firing axis.
+            // Clamp the wedge: the shot must run more ALONG the wall (the
+            // cover axis) than along the lean step. A shot near the axis is a
+            // genuine peek (body still behind the wall); one swinging toward
+            // perpendicular means the pawn has stepped into the open, fully
+            // exposed — that's not a lean. Cutoff = 45° off the axis.
             float ex = ttile.X - cx, ey = ttile.Y - cy;
             float d2 = ex * ex + ey * ey;
             float elen = MathF.Sqrt(d2);
@@ -1958,10 +1959,10 @@ public sealed class DummyController
         return found;
     }
 
-    // Cos of the widest angle a lean shot may sit off the corner's axis. 0 =
-    // 90°: the peek opens a forward quadrant (LosClear blocks the wall side);
-    // only shots bending BACKWARD behind the wall are rejected.
-    private const float LeanMaxOffAxisCos = 0f;
+    // Cos of the widest angle a lean shot may sit off the cover axis. 0.707 =
+    // 45°: the shot must run more along the wall than along the lean step, else
+    // the pawn has stepped into the open (full exposure) rather than peeked.
+    private const float LeanMaxOffAxisCos = 0.707f;
 
     // Undrafted idle behavior: keep the equipped ranged weapon's magazine
     // topped off, walking to fetch ammo from a pile when none is carried.
