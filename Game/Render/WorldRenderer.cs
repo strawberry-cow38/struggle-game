@@ -739,10 +739,13 @@ public partial class WorldRenderer : Node2D
                 {
                     DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
                     // Drafted + holding a ranged weapon → show its max range ring.
-                    if (d.Drafted && d.HasRangedWeapon && d.RangedRange > 0f)
+                    // ONLY for a lone selection — a big tessellated arc per frame
+                    // per pawn is costly (and N overlapping rings is just clutter).
+                    if (snap.SelectedDummyIds.Length == 1
+                        && d.Drafted && d.HasRangedWeapon && d.RangedRange > 0f)
                     {
                         float rr = d.RangedRange * PixelsPerTile;
-                        DrawArc(center, rr, 0f, Mathf.Tau, 96, RangeCircleColor, 1.5f, antialiased: true);
+                        DrawArc(center, rr, 0f, Mathf.Tau, 64, RangeCircleColor, 1.5f, antialiased: true);
                     }
                 }
                 // Combat labels embed a colonist id, so build+cache them once
