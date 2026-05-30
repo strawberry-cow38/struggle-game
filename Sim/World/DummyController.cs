@@ -1058,6 +1058,15 @@ public sealed class DummyController
             return;
         }
 
+        // 4b. Idle reload: top off an equipped ranged weapon's magazine,
+        //     fetching ammo from a nearby pile if the pawn isn't already
+        //     carrying some. Its own behavior, not a haul job. Runs only
+        //     when otherwise idle (after work jobs, before wander).
+        if (TryReloadBehavior(entity, ref path, view, here))
+        {
+            return;
+        }
+
         // 5. Wander.
         if (path.Waypoints is null || path.Index >= path.Waypoints.Count)
         {
@@ -1783,6 +1792,117 @@ public sealed class DummyController
         PendingProjectiles.Add(new ProjectileSpawn(
             pos.X, pos.Y, toX, toY, spec.ProjectileSpeed,
             entity.Id, tgt.Id, willHit, rc.LoadedAmmoPath ?? ""));
+    }
+
+    // Undrafted idle behavior: keep the equipped ranged weapon's magazine
+    // topped off, walking to fetch ammo from a pile when none is carried.
+    // Returns true if it took control of the pawn this tick.
+    private bool TryReloadBehavior(Entity entity, ref PathFollower path, MapView view, TilePos here)
+    {
+        if (!entity.HasComponent<RangedCombat>()) return false;
+        if (!TryGetRangedWeapon(entity, out var def)) return false;
+        var spec = def.Ranged!;
+        ref var rc = ref entity.GetComponent<RangedCombat>();
+
+        // Finish an in-progress reload (stand still until it completes).
+        if (rc.Reloading)
+        {
+            if (_tick >= rc.NextActionTick) rc.Reloading = false;
+            path.Waypoints = null; path.Index = 0;
+            return true;
+        }
+        if (rc.MagCount >= spec.MagazineSize) return false; // already full
+
+        // The ammo type we want: keep the loaded type when topping a partial
+        // mag, else the player-locked type, else anything compatible.
+        string? want = rc.MagCount > 0 ? rc.LoadedAmmoPath : rc.PreferredAmmoPath;
+
+        // Carrying compatible ammo → reload where we stand.
+        if (TopUpMagFromInventory(entity, ref rc, spec, want))
+        {
+            path.Waypoints = null; path.Index = 0;
+            return true;
+        }
+
+        // Otherwise go fetch some from the nearest matching pile.
+        if (!TryFindNearestAmmoPile(here, spec, want, out var pileTile, out var pilePath))
+            return false; // no ammo anywhere → resume normal life
+
+        bool adjacent = Math.Abs(pileTile.X - here.X) <= 1 && Math.Abs(pileTile.Y - here.Y) <= 1;
+        if (adjacent)
+        {
+            int got = CookConsumePile?.Invoke(pileTile, pilePath, spec.MagazineSize) ?? 0;
+            if (got > 0) AddInventoryAmmo(entity, pilePath, got);
+            path.Waypoints = null; path.Index = 0;
+            return true; // next tick: reload in place
+        }
+
+        if (path.PendingPathId == 0 && (path.Waypoints is null || path.Index >= path.Waypoints.Count))
+        {
+            if (view.Walkable(pileTile)) path.PendingPathId = _paths.Request(here, pileTile);
+            else if (TryPickNeighbor(view, here, pileTile, out var approach)) path.PendingPathId = _paths.Request(here, approach);
+            else return false;
+        }
+        return true;
+    }
+
+    // Pull rounds from inventory into the magazine (top-up, keeps the partial
+    // mag). `want` constrains the ammo type when set. Starts a timed reload.
+    private bool TopUpMagFromInventory(Entity entity, ref RangedCombat rc, Items.RangedSpec spec, string? want)
+    {
+        if (!entity.HasComponent<Inventory>()) return false;
+        ref var inv = ref entity.GetComponent<Inventory>();
+        if (inv.Items is null) return false;
+        int need = spec.MagazineSize - rc.MagCount;
+        if (need <= 0) return false;
+        for (int k = 0; k < inv.Items.Count; k++)
+        {
+            var stk = inv.Items[k];
+            if (!Items.ItemCatalog.ItemsByPath.TryGetValue(stk.ItemPath, out var d) || d.Ammo is null) continue;
+            if (d.Ammo.CategoryPath != spec.AmmoCategoryPath) continue;
+            if (want is not null && stk.ItemPath != want) continue;
+            int load = Math.Min(need, stk.Count);
+            if (load <= 0) continue;
+            stk.Count -= load;
+            if (stk.Count <= 0) inv.Items.RemoveAt(k); else inv.Items[k] = stk;
+            rc.MagCount += load;
+            rc.LoadedAmmoPath = stk.ItemPath;
+            rc.Reloading = true;
+            rc.NextActionTick = _tick + spec.ReloadTicks;
+            rc.BurstRemaining = 0;
+            return true;
+        }
+        return false;
+    }
+
+    private bool TryFindNearestAmmoPile(TilePos here, Items.RangedSpec spec, string? want, out TilePos tile, out string path)
+    {
+        tile = default; path = "";
+        if (CookFindNearestPile is null) return false;
+        int best = int.MaxValue;
+        foreach (var kv in Items.ItemCatalog.ItemsByPath)
+        {
+            var d = kv.Value;
+            if (d.Ammo is null || d.Ammo.CategoryPath != spec.AmmoCategoryPath) continue;
+            if (want is not null && kv.Key != want) continue;
+            if (CookFindNearestPile(here, kv.Key) is not TilePos t) continue;
+            int dist = Math.Abs(t.X - here.X) + Math.Abs(t.Y - here.Y);
+            if (dist < best) { best = dist; tile = t; path = kv.Key; }
+        }
+        return best != int.MaxValue;
+    }
+
+    private static void AddInventoryAmmo(Entity entity, string itemPath, int count)
+    {
+        if (count <= 0 || !entity.HasComponent<Inventory>()) return;
+        ref var inv = ref entity.GetComponent<Inventory>();
+        inv.Items ??= new List<InventoryStack>();
+        for (int i = 0; i < inv.Items.Count; i++)
+            if (inv.Items[i].ItemPath == itemPath)
+            {
+                var s = inv.Items[i]; s.Count += count; inv.Items[i] = s; return;
+            }
+        inv.Items.Add(new InventoryStack { ItemPath = itemPath, Count = count });
     }
 
     // Smoothly slide pos toward the center of the tile it's currently

@@ -231,6 +231,62 @@ public class RangedTests
             "downed-but-alive target should not have been finished off");
     }
 
+    [Fact]
+    public void UndraftedPawn_TopsOffMagFromInventory()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, _) = TwoPawns(sim);
+        // Equipped rifle + spare ammo, but NOT drafted and mag starts empty.
+        ArmWithRifle(sim, shooter, ItemCatalog.RifleAmmoFmj, 60);
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
+        var e = sim.Store.GetEntityById(shooter);
+        Assert.True(e.HasComponent<RangedCombat>());
+
+        // Left to its own devices, an undrafted pawn reloads from inventory.
+        for (int i = 0; i < 800; i++)
+        {
+            sim.Step(SimConstants.TickSeconds);
+            if (e.GetComponent<RangedCombat>().MagCount >= 30) break;
+        }
+        Assert.Equal(30, e.GetComponent<RangedCombat>().MagCount);
+        Assert.Equal(30, InvCount(e, ItemCatalog.RifleAmmoFmj.FullPath)); // 60 - 30 loaded
+    }
+
+    [Fact]
+    public void UndraftedPawn_FetchesAmmoFromPile_WhenInventoryEmpty()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, _) = TwoPawns(sim);
+        // Rifle equipped, NO ammo carried, not drafted.
+        var e = sim.Store.GetEntityById(shooter);
+        e.AddComponent(new Inventory
+        {
+            Items = new List<InventoryStack>(),
+            Equipped = new List<EquippedItemSlot>
+            {
+                new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = ItemCatalog.AssaultRifle.FullPath, Count = 1 },
+            },
+        });
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
+
+        // Drop an ammo pile on the pawn's tile so the fetch needs no pathing.
+        SetPos(sim, shooter, 40.5f, 40.5f);
+        sim.SpawnItemPile(new StruggleGame.Sim.Map.TilePos(40, 40), ItemCatalog.RifleAmmoFmj.FullPath, 100);
+
+        bool reloaded = false;
+        for (int i = 0; i < 1200; i++)
+        {
+            SetPos(sim, shooter, 40.5f, 40.5f);
+            sim.Step(SimConstants.TickSeconds);
+            if (e.GetComponent<RangedCombat>().MagCount > 0) { reloaded = true; break; }
+        }
+        Assert.True(reloaded, "undrafted pawn should fetch ammo from the pile and reload");
+    }
+
     private static int InvCount(Entity e, string path)
     {
         int n = 0;
