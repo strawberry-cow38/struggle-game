@@ -48,7 +48,10 @@ public sealed class SimHost : IDisposable
     {
         _sim = new SimRuntime(seed);
         _running = true;
-        _thread = new Thread(Loop) { IsBackground = true, Name = "Sim" };
+        // Below-normal priority so the render/main thread wins CPU under
+        // contention — during an intense fight we'd rather the sim fall a hair
+        // behind than have the renderer stutter.
+        _thread = new Thread(Loop) { IsBackground = true, Name = "Sim", Priority = ThreadPriority.BelowNormal };
         _thread.Start();
     }
 
@@ -386,9 +389,12 @@ public sealed class SimHost : IDisposable
             }
             else
             {
-                long sleepTicks = nextTick - now;
-                long sleepMs = sleepTicks * 1000 / Stopwatch.Frequency;
-                if (sleepMs > 1) Thread.Sleep(1); else Thread.SpinWait(64);
+                // Not yet time for the next tick — yield the core. We used to
+                // busy-spin (SpinWait) for the last sub-ms of precision, but
+                // that pins a core flat-out and starves the render thread during
+                // firefights. A 60 Hz sim doesn't need sub-ms tick precision
+                // (nextTick accrues + self-corrects), so just sleep and free CPU.
+                Thread.Sleep(1);
             }
 
             long elapsedMs = sw.ElapsedMilliseconds;
