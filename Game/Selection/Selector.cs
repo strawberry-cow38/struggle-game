@@ -66,7 +66,13 @@ public partial class Selector : Node2D
     {
         if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.None, ClearDrag);
         _bpMenu = new PopupMenu();
-        AddChild(_bpMenu);
+        // Parent the menu to a CanvasLayer, NOT this Node2D — an embedded
+        // popup under a world-space CanvasItem inherits the camera's canvas
+        // transform and scales with zoom (tiny zoomed out, huge zoomed in).
+        // A CanvasLayer renders in screen space, so the menu stays put.
+        var menuLayer = new CanvasLayer { Name = "MenuLayer", Layer = 110 };
+        AddChild(menuLayer);
+        menuLayer.AddChild(_bpMenu);
         _bpMenu.IdPressed += OnBlueprintMenuPressed;
         // PopupMenu only activates items on LMB by default. The menu is
         // opened with RMB, so let RMB activate the hovered item too — the
@@ -384,10 +390,12 @@ public partial class Selector : Node2D
             _pickupItemId = pile.EntityId;
             _pickupName = pileDef.DisplayName;
             // Prioritize Haul (id 2) — only for piles not already in a
-            // stockpile, and never while drafted (hauling is work).
+            // stockpile, and never while drafted (hauling is work). Grayed out
+            // when no stockpile would actually accept this item.
             if (!draftedMode && !IsInStockpile(snap, pile.Tile))
             {
                 _bpMenu.AddItem($"Prioritize Haul for {pawnName}", 2);
+                _bpMenu.SetItemDisabled(_bpMenu.ItemCount - 1, !AnyStockpileAccepts(snap, pile.ItemPath));
             }
             _pickupMax = PawnPickupMax(snap, pawnId, pileDef, pile.Count);
             if (_pickupMax > 0)
@@ -403,6 +411,19 @@ public partial class Selector : Node2D
         _bpMenu.Position = new Vector2I((int)screenPos.X, (int)screenPos.Y);
         _bpMenu.Popup();
         return true;
+    }
+
+    // True if any built stockpile accepts this item (so a haul has somewhere
+    // to go). Stockpiles allow by exact item path.
+    private static bool AnyStockpileAccepts(SimSnapshot snap, string itemPath)
+    {
+        foreach (var sp in snap.Stockpiles)
+        {
+            if (sp.Tiles.Length == 0) continue;
+            foreach (var p in sp.AllowedItemPaths)
+                if (p == itemPath) return true;
+        }
+        return false;
     }
 
     private static bool IsInStockpile(SimSnapshot snap, TilePos tile)
