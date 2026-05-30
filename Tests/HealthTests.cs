@@ -2,6 +2,7 @@ using Friflo.Engine.ECS;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Bodies;
 using StruggleGame.Sim.Items;
+using StruggleGame.Sim.Map;
 using StruggleGame.Sim.World;
 using Xunit;
 
@@ -206,14 +207,22 @@ public class HealthTests
         Assert.True(pawnGone, "dead pawn should be removed");
         // ...and a corpse exists holding the colonist's health data.
         int corpses = 0;
-        bool keptData = false;
-        sim.Store.Query<Corpse>().ForEachEntity((ref Corpse c, Entity _) =>
+        bool keptData = false, isItem = false;
+        sim.Store.Query<Corpse>().ForEachEntity((ref Corpse c, Entity e) =>
         {
             corpses++;
             if (c.Health.Injuries is { Count: > 0 }) keptData = true;
+            if (e.HasComponent<ItemPile>() && e.GetComponent<ItemPile>().ItemPath == ItemCatalog.Corpse.FullPath) isItem = true;
         });
         Assert.Equal(1, corpses);
         Assert.True(keptData, "corpse should retain the colonist's injuries");
+        Assert.True(isItem, "corpse should be a dropped item (ItemPile)");
+
+        // Fresh stockpiles reject corpses by default; wood is fine.
+        var sp = new StruggleGame.Sim.Stockpiles.Stockpile(0, "x", StruggleGame.Sim.Stockpiles.StockpilePriority.Normal,
+            new[] { new TilePos(1, 1) });
+        Assert.False(sp.Allows(ItemCatalog.Corpse));
+        Assert.True(sp.Allows(ItemCatalog.Wood));
     }
 
     [Fact]

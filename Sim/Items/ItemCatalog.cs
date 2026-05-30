@@ -53,8 +53,11 @@ public sealed class ItemDef
     // swing picks one at random. Empty = not a weapon (bare-fist bruise).
     public (ConditionKind Kind, float Severity)[] MeleeAttacks { get; }
     public bool IsWeapon => MeleeAttacks.Length > 0;
+    // Whether a freshly-created stockpile accepts this item. Corpses are
+    // off by default — the player opts in per stockpile.
+    public bool DefaultStockpileAllowed { get; }
 
-    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable, (ConditionKind, float)[]? meleeAttacks)
+    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable, (ConditionKind, float)[]? meleeAttacks, bool defaultStockpileAllowed)
     {
         Id = id;
         DisplayName = displayName;
@@ -63,6 +66,7 @@ public sealed class ItemDef
         Bulk = bulk;
         Equippable = equippable;
         MeleeAttacks = meleeAttacks ?? System.Array.Empty<(ConditionKind, float)>();
+        DefaultStockpileAllowed = defaultStockpileAllowed;
     }
 
     public string FullPath => $"{Category.FullPath}/{Id}";
@@ -93,6 +97,10 @@ public static class ItemCatalog
     // Dummy equippable. Placeholder until real apparel/weapons exist —
     // it does nothing but sit in an equipped slot and draw on the pawn.
     public static readonly ItemDef WoodenTrinket;
+    public static readonly ItemCategory Corpses;
+    // A dead colonist's body as a haulable item. Carries a Corpse data
+    // component for resurrection. Heavy; stockpiles reject it by default.
+    public static readonly ItemDef Corpse;
 
     static ItemCatalog()
     {
@@ -105,6 +113,8 @@ public static class ItemCatalog
         Equipment = RegisterCategory("Equipment", "Equipment");
         WoodenTrinket = RegisterItem("WoodenTrinket", "Wooden Trinket", Equipment, weight: 2f, bulk: 1f, equippable: true,
             meleeAttacks: new (ConditionKind, float)[] { (ConditionKind.Cut, 0.25f), (ConditionKind.Stab, 0.22f) });
+        Corpses = RegisterCategory("Corpses", "Corpses");
+        Corpse = RegisterItem("Colonist", "Corpse", Corpses, weight: 40f, bulk: 40f, defaultStockpileAllowed: false);
     }
 
     public static ItemCategory RegisterCategory(string id, string displayName, ItemCategory? parent = null)
@@ -119,9 +129,9 @@ public static class ItemCatalog
         return cat;
     }
 
-    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false, (ConditionKind, float)[]? meleeAttacks = null)
+    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false, (ConditionKind, float)[]? meleeAttacks = null, bool defaultStockpileAllowed = true)
     {
-        var item = new ItemDef(id, displayName, category, weight, bulk, equippable, meleeAttacks);
+        var item = new ItemDef(id, displayName, category, weight, bulk, equippable, meleeAttacks, defaultStockpileAllowed);
         if (!_itemsByPath.TryAdd(item.FullPath, item))
         {
             throw new InvalidOperationException($"Item already registered at path '{item.FullPath}'.");

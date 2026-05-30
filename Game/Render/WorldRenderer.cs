@@ -576,15 +576,6 @@ public partial class WorldRenderer : Node2D
         _selectedDummyIdsScratch ??= new HashSet<int>();
         _selectedDummyIdsScratch.Clear();
         foreach (var sid in snap.SelectedDummyIds) _selectedDummyIdsScratch.Add(sid);
-        using (FrameProfiler.Instance.BeginScope("Corpses"))
-        {
-            foreach (var cp in snap.Corpses)
-            {
-                if (cp.Tile.X < viewMinTileX || cp.Tile.X > viewMaxTileX
-                    || cp.Tile.Y < viewMinTileY || cp.Tile.Y > viewMaxTileY) continue;
-                DrawCorpse(cp.Tile);
-            }
-        }
         using (FrameProfiler.Instance.BeginScope("Dummies"))
         {
             foreach (var d in snap.Dummies)
@@ -951,9 +942,9 @@ public partial class WorldRenderer : Node2D
 
     private void DrawItemPile(Sim.Snapshots.ItemPileState p)
     {
-        // Wood draws as a log (rectangle); everything else as a small
-        // stacked dot. (Wood used to be its own component + render path;
-        // now it's just an ItemPile of the wood path.)
+        // Path-dispatch the look: wood = log, corpse = body + red X,
+        // everything else = a small stacked dot.
+        if (p.ItemPath == ItemCatalog.Corpse.FullPath) { DrawCorpse(p.Tile); return; }
         if (p.ItemPath == ItemCatalog.Wood.FullPath) { DrawWood(p.Tile); return; }
         var center = new Vector2((p.Tile.X + 0.5f) * PixelsPerTile, (p.Tile.Y + 0.5f) * PixelsPerTile);
         float r = PixelsPerTile * 0.16f;

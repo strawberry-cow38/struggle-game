@@ -1379,15 +1379,6 @@ public sealed class SimRuntime
         });
         snap.BloodPuddlesCount = bpi;
 
-        var corpseQuery = Store.Query<Corpse>();
-        EnsureCap(ref snap.CorpsesBuf, corpseQuery.Count);
-        var corpsesBuf = snap.CorpsesBuf;
-        int cpi = 0;
-        corpseQuery.ForEachEntity((ref Corpse cp, Entity _) =>
-        {
-            corpsesBuf[cpi++] = new CorpseState(cp.Tile);
-        });
-        snap.CorpsesCount = cpi;
 
         int[] selTreeArr = Array.Empty<int>();
         if (selectedTreeIds is { Count: > 0 })
@@ -3722,6 +3713,9 @@ public sealed class SimRuntime
         }
         var c = Store.CreateEntity();
         c.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
+        // The corpse is a real dropped item (selectable / haulable) that
+        // also carries the colonist's data for resurrection.
+        c.AddComponent(new ItemPile { Tile = tile, Count = 1, ItemPath = Items.ItemCatalog.Corpse.FullPath });
         c.AddComponent(new Corpse { Tile = tile, Health = corpseHealth });
         RemoveDummy(pawnId);
     }
@@ -3943,6 +3937,7 @@ public sealed class SimRuntime
         Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
         {
             if (e.HasComponent<HaulReserved>()) return;
+            if (e.HasComponent<Corpse>()) return; // unique — never merge corpses
             var key = (p.Tile, p.ItemPath);
             if (byKey.TryGetValue(key, out var existing))
             {
@@ -3984,6 +3979,7 @@ public sealed class SimRuntime
         Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity e) =>
         {
             if (e.HasComponent<HaulReserved>()) return; // in flight, don't move
+            if (e.HasComponent<Corpse>()) return;       // unique — never relocate/delete a corpse
             int c = _spillPileCount.GetValueOrDefault(p.Tile);
             _spillPileCount[p.Tile] = c + 1;
             if (c >= 1) _spillExtras.Add(e); // 2nd+ unreserved pile on this tile

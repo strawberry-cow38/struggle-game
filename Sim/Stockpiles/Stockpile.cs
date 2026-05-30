@@ -34,9 +34,10 @@ public sealed class Stockpile
         Priority = priority;
         Tiles = new HashSet<TilePos>(tiles);
         AllowedItemPaths = new HashSet<string>();
-        // Default-allow everything in the catalog — players opt OUT
-        // of categories from the tweak panel.
-        foreach (var def in ItemCatalog.ItemsByPath.Values) AllowedItemPaths.Add(def.FullPath);
+        // Default-allow everything except items flagged off (corpses) —
+        // players opt OUT of categories (or into corpses) from the panel.
+        foreach (var def in ItemCatalog.ItemsByPath.Values)
+            if (def.DefaultStockpileAllowed) AllowedItemPaths.Add(def.FullPath);
     }
 
     // True if the zone is willing to store this item.
