@@ -196,12 +196,20 @@ public partial class Selector : Node2D
                         return;
                     }
                     // Drafted: RMB on another pawn → "Melee attack X" menu.
-                    // Otherwise fall through to the move-order drag.
                     if (TryShowMeleeMenu(GetGlobalMousePosition(), drafted))
                     {
                         GetViewport().SetInputAsHandled();
                         return;
                     }
+                    // Drafted: RMB on an item pile → equip / pick-up menu
+                    // (no haul / prioritize-work). Single drafted pawn only.
+                    if (drafted.Length == 1
+                        && TryShowBlueprintMenu(GetGlobalMousePosition(), draftedMode: true))
+                    {
+                        GetViewport().SetInputAsHandled();
+                        return;
+                    }
+                    // Otherwise fall through to the move-order drag.
                     _rmbDragging = true;
                     _rmbStartWorld = _rmbEndWorld = SnapToTileCenter(GetGlobalMousePosition());
                     _rmbShift = mb.ShiftPressed;
@@ -278,7 +286,10 @@ public partial class Selector : Node2D
     // a screen click and pop the prioritize menu. Returns false if any
     // precondition fails (no single non-drafted pawn, no blueprint at
     // tile) so the caller can fall through to drafted-RMB logic.
-    private bool TryShowBlueprintMenu(Vector2 world)
+    // draftedMode: the selected pawn is drafted — equipping and picking up
+    // are still allowed, but "Prioritize work" (id 0) and "Prioritize Haul"
+    // (id 2) are hidden so draft never queues a work job.
+    private bool TryShowBlueprintMenu(Vector2 world, bool draftedMode = false)
     {
         if (Host is null || _bpMenu is null) return false;
         var snap = Host.LatestSnapshot;
@@ -288,14 +299,6 @@ public partial class Selector : Node2D
 
         int pawnId = selected[0];
         string pawnName = $"Colonist {pawnId}";
-        bool drafted = false;
-        foreach (var d in snap.Dummies)
-        {
-            if (d.EntityId != pawnId) continue;
-            drafted = d.Drafted;
-            break;
-        }
-        if (drafted) return false;
         foreach (var pw in snap.PawnWork)
         {
             if (pw.EntityId == pawnId) { pawnName = pw.Name; break; }
@@ -307,8 +310,9 @@ public partial class Selector : Node2D
 
         _bpMenuPawnId = pawnId;
         _bpMenu.Clear();
-        // Prioritize-blueprint entry (id 0) when a blueprint is under the cursor.
-        if (TryPickBlueprint(snap, clickTile, out var bpTile))
+        // Prioritize-blueprint entry (id 0) when a blueprint is under the
+        // cursor — counts as queuing work, so suppressed while drafted.
+        if (!draftedMode && TryPickBlueprint(snap, clickTile, out var bpTile))
         {
             _bpMenuTile = bpTile;
             _bpMenu.AddItem($"Prioritize for {pawnName}", 0);
@@ -325,8 +329,9 @@ public partial class Selector : Node2D
         {
             _pickupItemId = pile.EntityId;
             _pickupName = pileDef.DisplayName;
-            // Prioritize Haul (id 2) — only for piles not already in a stockpile.
-            if (!IsInStockpile(snap, pile.Tile))
+            // Prioritize Haul (id 2) — only for piles not already in a
+            // stockpile, and never while drafted (hauling is work).
+            if (!draftedMode && !IsInStockpile(snap, pile.Tile))
             {
                 _bpMenu.AddItem($"Prioritize Haul for {pawnName}", 2);
             }
