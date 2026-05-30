@@ -28,9 +28,14 @@ public sealed class HealthSystem
     private readonly SimRuntime _sim;
     private float _accumDt;
     private readonly List<Map.TilePos> _dripScratch = new();
+    private readonly List<int> _downedScratch = new();
+    private readonly List<int> _deadScratch = new();
 
-    // Wired by SimRuntime: drop/grow a blood puddle on a tile.
+    // Wired by SimRuntime: drop/grow a blood puddle on a tile; drop a
+    // freshly-downed colonist's gear; turn a dead colonist into a corpse.
     public Action<Map.TilePos>? SpawnBloodPuddle;
+    public Action<int>? OnDowned;
+    public Action<int>? OnDied;
 
     public HealthSystem(SimRuntime sim) { _sim = sim; }
 
@@ -42,11 +47,19 @@ public sealed class HealthSystem
         _accumDt = 0f;
 
         _dripScratch.Clear();
-        store.Query<Health, WorldPos>().ForEachEntity((ref Health h, ref WorldPos pos, Entity _) =>
+        _downedScratch.Clear();
+        _deadScratch.Clear();
+        store.Query<Health, WorldPos>().ForEachEntity((ref Health h, ref WorldPos pos, Entity e) =>
         {
             float bleed = TotalBleed(h);
             Advance(ref h, step);
             Recompute(ref h);
+            // Consciousness floored to zero = death (bled out / lost brain,
+            // heart, or both lungs). Pain shock only downs, never kills.
+            if (h.Consciousness <= 0f) { _deadScratch.Add(e.Id); h.WasDowned = true; return; }
+            // Down -> drop gear on the transition into unconsciousness.
+            if (h.Unconscious && !h.WasDowned) _downedScratch.Add(e.Id);
+            h.WasDowned = h.Unconscious;
             // Drip a puddle (at most one per tick) when enough blood pools.
             if (bleed > 0f)
             {
@@ -58,9 +71,13 @@ public sealed class HealthSystem
                 }
             }
         });
-        // Spawn outside the query — structural change.
+        // Structural work happens outside the query.
         if (SpawnBloodPuddle is not null)
             foreach (var t in _dripScratch) SpawnBloodPuddle(t);
+        if (OnDowned is not null)
+            foreach (var id in _downedScratch) OnDowned(id);
+        if (OnDied is not null)
+            foreach (var id in _deadScratch) OnDied(id);
     }
 
     private static float TotalBleed(in Health h)

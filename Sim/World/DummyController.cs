@@ -483,7 +483,10 @@ public sealed class DummyController
                 var mt = entity.GetComponent<MeleeTarget>();
                 bool valid = store.TryGetEntityById(mt.TargetEntityId, out var tgt)
                     && tgt.HasComponent<Health>() && tgt.HasComponent<WorldPos>()
-                    && !tgt.GetComponent<Health>().Unconscious;
+                    // Stop when the target's merely downed — UNLESS this is a
+                    // finishing attack, which presses on until they're dead
+                    // (target entity gone → TryGetEntityById fails above).
+                    && (!tgt.GetComponent<Health>().Unconscious || mt.FinishOff);
                 if (!valid)
                 {
                     cb.RemoveComponent<MeleeTarget>(entity.Id);

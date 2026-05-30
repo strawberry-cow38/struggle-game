@@ -600,6 +600,19 @@ public struct MeleeTarget : IComponent
 {
     public int TargetEntityId;
     public long LastHitTick;
+    // True if the order was issued on an already-downed target — a manual
+    // "finish him". Such an attack keeps going until the target dies
+    // instead of stopping when it's merely unconscious.
+    public bool FinishOff;
+}
+
+// A dead colonist's body, dropped on the ground where they fell. Stashes
+// the colonist's data (health/injuries) so future resurrection magic can
+// rebuild the pawn. Rendered with a big red X.
+public struct Corpse : IComponent
+{
+    public TilePos Tile;
+    public Health Health;
 }
 
 // One condition on one body part (a cut on the left hand, etc).
@@ -626,6 +639,7 @@ public struct Health : IComponent
     public float Breathing;
     public float Pain; // 0..1 summed across injuries; high pain -> shock
     public bool Unconscious;
+    public bool WasDowned; // last tick's Unconscious, for the down -> drop-items transition
     // Blood spilled but not yet dropped as a puddle. HealthSystem drips a
     // puddle each time this crosses a threshold.
     public float BleedAccum;

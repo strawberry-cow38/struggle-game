@@ -92,6 +92,19 @@ public partial class WorldRenderer : Node2D
     private static readonly Color DraftedRing = new(1.0f, 0.25f, 0.20f, 1.0f);
     private static readonly Color EquippedMarkerColor = new(0.30f, 0.85f, 1.0f, 1.0f);
     private static readonly Color FacingArrowColor = new(0.15f, 0.10f, 0.05f, 0.9f);
+    private static readonly Color CorpseColor = new(0.45f, 0.42f, 0.40f, 1f);
+    private static readonly Color CorpseXColor = new(0.95f, 0.10f, 0.10f, 1f);
+
+    // A dead colonist: a greyed-out body disc with a big red X over it.
+    private void DrawCorpse(TilePos tile)
+    {
+        var center = new Vector2((tile.X + 0.5f) * PixelsPerTile, (tile.Y + 0.5f) * PixelsPerTile);
+        float radius = PixelsPerTile * 0.32f;
+        DrawCircle(center, radius, CorpseColor);
+        float s = radius * 1.1f;
+        DrawLine(new Vector2(center.X - s, center.Y - s), new Vector2(center.X + s, center.Y + s), CorpseXColor, 3f, antialiased: true);
+        DrawLine(new Vector2(center.X - s, center.Y + s), new Vector2(center.X + s, center.Y - s), CorpseXColor, 3f, antialiased: true);
+    }
     private readonly Vector2[] _facingTri = new Vector2[3];
     // Reused polygon scratch so the per-pawn / per-crop draw loops don't
     // heap-allocate a fresh Vector2[] every frame. DrawColoredPolygon
@@ -563,6 +576,15 @@ public partial class WorldRenderer : Node2D
         _selectedDummyIdsScratch ??= new HashSet<int>();
         _selectedDummyIdsScratch.Clear();
         foreach (var sid in snap.SelectedDummyIds) _selectedDummyIdsScratch.Add(sid);
+        using (FrameProfiler.Instance.BeginScope("Corpses"))
+        {
+            foreach (var cp in snap.Corpses)
+            {
+                if (cp.Tile.X < viewMinTileX || cp.Tile.X > viewMaxTileX
+                    || cp.Tile.Y < viewMinTileY || cp.Tile.Y > viewMaxTileY) continue;
+                DrawCorpse(cp.Tile);
+            }
+        }
         using (FrameProfiler.Instance.BeginScope("Dummies"))
         {
             foreach (var d in snap.Dummies)

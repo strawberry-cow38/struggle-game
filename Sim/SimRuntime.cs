@@ -313,6 +313,8 @@ public sealed class SimRuntime
         _sleep = new SleepSystem();
         _health = new HealthSystem(this);
         _health.SpawnBloodPuddle = SpawnBloodPuddle;
+        _health.OnDowned = DropDownedItems;
+        _health.OnDied = KillColonist;
         _dummies.MeleeHit = MeleeStrike;
 
         // Trees go down before colonists so spawn can avoid landing on one.
@@ -1376,6 +1378,16 @@ public sealed class SimRuntime
             puddlesBuf[bpi++] = new BloodPuddleState(bp.Tile, bp.Amount);
         });
         snap.BloodPuddlesCount = bpi;
+
+        var corpseQuery = Store.Query<Corpse>();
+        EnsureCap(ref snap.CorpsesBuf, corpseQuery.Count);
+        var corpsesBuf = snap.CorpsesBuf;
+        int cpi = 0;
+        corpseQuery.ForEachEntity((ref Corpse cp, Entity _) =>
+        {
+            corpsesBuf[cpi++] = new CorpseState(cp.Tile);
+        });
+        snap.CorpsesCount = cpi;
 
         int[] selTreeArr = Array.Empty<int>();
         if (selectedTreeIds is { Count: > 0 })
@@ -3624,7 +3636,10 @@ public sealed class SimRuntime
         if (attackerId == targetId) return;
         if (!Store.TryGetEntityById(attackerId, out var a) || !a.HasComponent<Drafted>()) return;
         if (!Store.TryGetEntityById(targetId, out var t) || !t.HasComponent<Health>()) return;
-        a.AddComponent(new MeleeTarget { TargetEntityId = targetId, LastHitTick = 0 });
+        // Ordering an attack on an already-downed target = a deliberate
+        // finishing move that runs until they're dead.
+        bool finishOff = t.GetComponent<Health>().Unconscious;
+        a.AddComponent(new MeleeTarget { TargetEntityId = targetId, LastHitTick = 0, FinishOff = finishOff });
     }
 
     // Land one melee hit on a random outer (punchable) part. If the
@@ -3652,6 +3667,63 @@ public sealed class SimRuntime
                     }
         }
         ApplyInjury(targetId, part, kind, sev);
+    }
+
+    // Dump a downed colonist's equipped weapon + carried inventory onto
+    // free tiles around them. (Clothes would be excluded — none exist yet.)
+    public void DropDownedItems(int pawnId)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var p)) return;
+        if (!p.HasComponent<Inventory>() || !p.HasComponent<WorldPos>()) return;
+        var wp = p.GetComponent<WorldPos>();
+        var tile = new TilePos((int)wp.X, (int)wp.Y);
+        ref var inv = ref p.GetComponent<Inventory>();
+        if (inv.Equipped is not null)
+            foreach (var eq in inv.Equipped) DropAtFreeAdjacent(tile, eq.ItemPath, eq.Count);
+        if (inv.Items is not null)
+            foreach (var it in inv.Items) DropAtFreeAdjacent(tile, it.ItemPath, it.Count);
+        inv.Equipped?.Clear();
+        inv.Items?.Clear();
+    }
+
+    private static readonly (int dx, int dy)[] _adjacent8 =
+        { (1,0),(-1,0),(0,1),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1) };
+
+    private void DropAtFreeAdjacent(TilePos from, string path, int count)
+    {
+        var view = MapView;
+        TilePos target = from;
+        bool foundWalkable = false;
+        foreach (var (dx, dy) in _adjacent8)
+        {
+            var t = new TilePos(from.X + dx, from.Y + dy);
+            if (!view.Walkable(t)) continue;
+            if (!_itemIndex.AnyItemAt(t)) { target = t; foundWalkable = true; break; } // prefer empty
+            if (!foundWalkable) { target = t; foundWalkable = true; }
+        }
+        SpawnItemPile(target, path, count);
+    }
+
+    // Death: the colonist's consciousness hit zero. Drop any remaining
+    // gear, leave a corpse holding their data, and remove the pawn.
+    public void KillColonist(int pawnId)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var p)) return;
+        DropDownedItems(pawnId); // covers instant death with no down phase
+        var tile = p.HasComponent<WorldPos>()
+            ? new TilePos((int)p.GetComponent<WorldPos>().X, (int)p.GetComponent<WorldPos>().Y)
+            : default;
+        Health corpseHealth = default;
+        if (p.HasComponent<Health>())
+        {
+            var h = p.GetComponent<Health>();
+            corpseHealth = h;
+            corpseHealth.Injuries = h.Injuries is not null ? new List<PartInjury>(h.Injuries) : new List<PartInjury>();
+        }
+        var c = Store.CreateEntity();
+        c.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
+        c.AddComponent(new Corpse { Tile = tile, Health = corpseHealth });
+        RemoveDummy(pawnId);
     }
 
     // Drip blood on a tile — grows an existing puddle there or starts a

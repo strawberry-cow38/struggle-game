@@ -1,6 +1,7 @@
 using Friflo.Engine.ECS;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Bodies;
+using StruggleGame.Sim.Items;
 using StruggleGame.Sim.World;
 using Xunit;
 
@@ -122,6 +123,14 @@ public class HealthTests
         Assert.True(h.Manipulation < 1f && h.Manipulation > 0.9f); // small hit
     }
 
+    // Down a colonist without killing them: pile on bruises until pain
+    // shock. (Brain/heart loss + bleed-out are lethal now.)
+    private static void DownByPain(SimRuntime sim, int id)
+    {
+        foreach (var part in new[] { "ArmL", "ArmR", "LegL", "LegR", "Torso", "Head" })
+            sim.ApplyInjury(id, part, ConditionKind.Bruise, 1f);
+    }
+
     [Fact]
     public void UnconsciousPawn_CollapsesAndStopsMoving()
     {
@@ -131,8 +140,7 @@ public class HealthTests
         sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity e) =>
         { if (pawnId == 0) pawnId = e.Id; });
 
-        // Destroyed brain → zero consciousness → unconscious.
-        sim.ApplyInjury(pawnId, "Brain", ConditionKind.Missing, 1f);
+        DownByPain(sim, pawnId); // pain shock — downed but alive
         // Let the health tick flip the flag + the controller react.
         for (int i = 0; i < 120; i++) sim.Step(SimConstants.TickSeconds);
 
@@ -172,13 +180,72 @@ public class HealthTests
         int pawnId = 0;
         sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity e) =>
         { if (pawnId == 0) pawnId = e.Id; });
-        sim.ApplyInjury(pawnId, "Brain", ConditionKind.Missing, 1f); // unconscious now
+        DownByPain(sim, pawnId); // unconscious now (alive)
 
         sim.QueueCommand(new StruggleGame.Sim.Commands.ToggleDraftCommand(pawnId));
         sim.Step(SimConstants.TickSeconds);
 
         Assert.True(sim.Store.TryGetEntityById(pawnId, out var pawn));
         Assert.False(pawn.HasComponent<Drafted>());
+    }
+
+    [Fact]
+    public void ZeroConsciousness_KillsPawn_LeavesCorpse()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        int pawnId = 0;
+        sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity e) =>
+        { if (pawnId == 0) pawnId = e.Id; });
+
+        sim.ApplyInjury(pawnId, "Brain", ConditionKind.Missing, 1f); // consciousness 0
+        for (int i = 0; i < 120; i++) sim.Step(SimConstants.TickSeconds); // health tick processes death
+
+        // Pawn entity is gone...
+        bool pawnGone = !sim.Store.TryGetEntityById(pawnId, out var p) || !p.HasComponent<Wanderer>();
+        Assert.True(pawnGone, "dead pawn should be removed");
+        // ...and a corpse exists holding the colonist's health data.
+        int corpses = 0;
+        bool keptData = false;
+        sim.Store.Query<Corpse>().ForEachEntity((ref Corpse c, Entity _) =>
+        {
+            corpses++;
+            if (c.Health.Injuries is { Count: > 0 }) keptData = true;
+        });
+        Assert.Equal(1, corpses);
+        Assert.True(keptData, "corpse should retain the colonist's injuries");
+    }
+
+    [Fact]
+    public void DownedColonist_DropsGearOnTheGround()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        int pawnId = 0;
+        sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity e) =>
+        { if (pawnId == 0) pawnId = e.Id; });
+
+        Assert.True(sim.Store.TryGetEntityById(pawnId, out var pawn));
+        pawn.AddComponent(new Inventory
+        {
+            Items = new List<InventoryStack> { new InventoryStack { ItemPath = ItemCatalog.Carrot.FullPath, Count = 3 } },
+            Equipped = new List<EquippedItemSlot> { new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = ItemCatalog.WoodenTrinket.FullPath, Count = 1 } },
+        });
+
+        DownByPain(sim, pawnId);
+        for (int i = 0; i < 120; i++) sim.Step(SimConstants.TickSeconds); // health tick fires OnDowned
+
+        var inv = sim.Store.GetEntityById(pawnId).GetComponent<Inventory>();
+        Assert.True((inv.Items?.Count ?? 0) == 0 && (inv.Equipped?.Count ?? 0) == 0, "inventory should be emptied");
+        // The trinket + carrots are now on the ground.
+        int trinkets = 0, carrots = 0;
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity _) =>
+        {
+            if (p.ItemPath == ItemCatalog.WoodenTrinket.FullPath) trinkets += p.Count;
+            if (p.ItemPath == ItemCatalog.Carrot.FullPath) carrots += p.Count;
+        });
+        Assert.Equal(1, trinkets);
+        Assert.Equal(3, carrots);
     }
 
     [Fact]

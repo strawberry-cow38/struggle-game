@@ -47,6 +47,10 @@ public sealed class SimSnapshot
     internal int BloodPuddlesCount;
     public SnapshotList<BloodPuddleState> BloodPuddles => new(BloodPuddlesBuf, BloodPuddlesCount);
 
+    internal CorpseState[] CorpsesBuf = System.Array.Empty<CorpseState>();
+    internal int CorpsesCount;
+    public SnapshotList<CorpseState> Corpses => new(CorpsesBuf, CorpsesCount);
+
     internal DeconState[] DeconsBuf = System.Array.Empty<DeconState>();
     internal int DeconsCount;
     public SnapshotList<DeconState> Decons => new(DeconsBuf, DeconsCount);
@@ -200,6 +204,8 @@ public readonly record struct CropState(
 public readonly record struct ItemPileState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden);
 
 public readonly record struct BloodPuddleState(TilePos Tile, float Amount);
+
+public readonly record struct CorpseState(TilePos Tile);
 
 public readonly record struct DeconState(TilePos Tile, float Progress, bool Forbidden);
 

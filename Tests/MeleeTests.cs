@@ -8,6 +8,12 @@ namespace StruggleGame.Tests;
 
 public class MeleeTests
 {
+    private static void DownByPain(SimRuntime sim, int id)
+    {
+        foreach (var part in new[] { "ArmL", "ArmR", "LegL", "LegR", "Torso", "Head" })
+            sim.ApplyInjury(id, part, ConditionKind.Bruise, 1f);
+    }
+
     private static (int a, int b) TwoPawns(SimRuntime sim)
     {
         var ids = new List<int>();
@@ -59,8 +65,8 @@ public class MeleeTests
         atk.AddComponent(new Drafted());
         sim.SetMeleeTarget(attacker, target);
 
-        // Knock the attacker out.
-        sim.ApplyInjury(attacker, "Brain", ConditionKind.Missing, 1f);
+        // Knock the attacker out (non-lethally).
+        DownByPain(sim, attacker);
         for (int i = 0; i < 120; i++) sim.Step(SimConstants.TickSeconds);
 
         Assert.True(sim.Store.TryGetEntityById(attacker, out var a2));
@@ -103,7 +109,7 @@ public class MeleeTests
     }
 
     [Fact]
-    public void MeleeStops_WhenTargetDowned()
+    public void MeleeStops_WhenConsciousTargetGoesDown()
     {
         var sim = new SimRuntime();
         sim.Step(SimConstants.TickSeconds);
@@ -111,12 +117,47 @@ public class MeleeTests
         Assert.True(sim.Store.TryGetEntityById(attacker, out var atk));
         atk.AddComponent(new Drafted());
 
-        // Pre-down the target; the attack order should clear itself.
-        sim.ApplyInjury(target, "Brain", ConditionKind.Missing, 1f);
+        // Ordered on a CONSCIOUS target — not a finish-off — so it stops
+        // when the target drops (downed by pain here, still alive).
         sim.SetMeleeTarget(attacker, target);
+        DownByPain(sim, target);
         for (int i = 0; i < 200; i++) sim.Step(SimConstants.TickSeconds);
 
         Assert.True(sim.Store.TryGetEntityById(attacker, out var a2));
-        Assert.False(a2.HasComponent<MeleeTarget>());
+        Assert.False(a2.HasComponent<MeleeTarget>()); // attack stopped
+        Assert.True(sim.Store.TryGetEntityById(target, out var t) && t.HasComponent<Wanderer>(),
+            "target should still be alive (downed, not killed)"); // not a finish-off → not dead
+    }
+
+    [Fact]
+    public void FinishOff_KillsDownedTarget()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (attacker, target) = TwoPawns(sim);
+        Assert.True(sim.Store.TryGetEntityById(attacker, out var atk));
+        atk.AddComponent(new Drafted());
+        atk.AddComponent(new Inventory // armed so the strikes bleed the target out
+        {
+            Items = new List<InventoryStack>(),
+            Equipped = new List<EquippedItemSlot>
+            {
+                new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = StruggleGame.Sim.Items.ItemCatalog.WoodenTrinket.FullPath, Count = 1 },
+            },
+        });
+
+        DownByPain(sim, target);            // target downed, alive
+        sim.SetMeleeTarget(attacker, target); // ordered on a downed target → finish-off
+
+        bool dead = false;
+        for (int i = 0; i < 12000; i++)
+        {
+            sim.Step(SimConstants.TickSeconds);
+            if (!sim.Store.TryGetEntityById(target, out var t) || !t.HasComponent<Wanderer>()) { dead = true; break; }
+        }
+        Assert.True(dead, "finishing attack should kill the downed target");
+        int corpses = 0;
+        sim.Store.Query<Corpse>().ForEachEntity((ref Corpse _, Entity _) => corpses++);
+        Assert.Equal(1, corpses);
     }
 }
