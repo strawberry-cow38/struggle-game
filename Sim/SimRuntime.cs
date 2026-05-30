@@ -4123,11 +4123,27 @@ public sealed class SimRuntime
 
             if (bestT <= 1f)
             {
+                if (pawn != 0)
+                {
+                    // Snap the impact to the pawn's CENTER. The fine sub-stepping
+                    // reports the near edge of the hit radius (~0.45 ahead of the
+                    // body), which would push the entry wound out in front of the
+                    // pawn. Centering keeps entry/exit straddling the body.
+                    float pcx = cx, pcy = cy;
+                    foreach (var (id, ppx, ppy, _) in _projPawns)
+                        if (id == pawn) { pcx = ppx; pcy = ppy; break; }
+                    float hd = MathF.Sqrt((pcx - fromX) * (pcx - fromX) + (pcy - fromY) * (pcy - fromY));
+                    float ht = hd / MathF.Max(speed, 0.01f);
+                    hitX = pcx; hitY = pcy;
+                    hitH = MathF.Max(0f, muzzle + vVel * ht - 0.5f * g * ht * ht);
+                    hitId = pawn; hitWall = false;
+                    return;
+                }
+                // Wall / sandbag — impact at the crossing point.
                 hitX = px + (cx - px) * bestT;
                 hitY = py + (cy - py) * bestT;
                 hitH = ph + (ch - ph) * bestT;
-                hitId = pawn;
-                hitWall = pawn == 0; // wall/sandbag stopped it
+                hitId = 0; hitWall = true;
                 return;
             }
             px = cx; py = cy; ph = ch;
