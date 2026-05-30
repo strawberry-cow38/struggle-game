@@ -131,6 +131,8 @@ public sealed class DummyController
     public Action<int, int>? MeleeHit;
     // Wired by SimRuntime: line-of-sight test for bullets (x0,y0,x1,y1).
     public Func<int, int, int, int, bool>? LosClear;
+    // Wired by SimRuntime: is there a built sandbag at this tile? (cover)
+    public Func<int, int, bool>? HasSandbag;
     // Bullet-spawn requests emitted this tick, drained by SimRuntime after
     // the query pass (entity creation can't happen mid-iteration).
     public readonly List<ProjectileSpawn> PendingProjectiles = new();
@@ -230,6 +232,10 @@ public sealed class DummyController
                 rc0.Recoil = MathF.Max(0f, rc0.Recoil - rangedWeaponDef.Ranged!.RecoilRecoverPerSec * dt);
             // Undrafting stops any fire order (mirrors melee being cleared).
             if (!drafted) { rc0.TargetEntityId = 0; rc0.BurstRemaining = 0; }
+            // Default to no cover stance each tick; the firing block below
+            // re-asserts Tucked/Popped when actually engaging from cover.
+            rc0.Stance = CoverStance.None;
+            rc0.Leaning = false;
         }
 
         // 1. Resolve in-flight request.
@@ -572,18 +578,49 @@ public sealed class DummyController
                     // In range, but not point-blank — too close and the gun
                     // can't be brought to bear (melee/back off instead).
                     bool inRange = distTiles <= spec.Range && distTiles >= SimConstants.RangedMinFireRange;
-                    bool los = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
+                    bool directLos = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
 
-                    if (los)
+                    // ─── Cover assessment ─────────────────────────────────
+                    // Crouch cover: a sandbag in the step toward the target.
+                    bool crouchCover = directLos && HasSandbagToward(here, ttile);
+                    // Wall lean: direct sight blocked, but a hugged-wall corner
+                    // lets us peek to an adjacent cell that CAN see the target.
+                    bool leaning = false;
+                    WorldPos muzzle = pos;
+                    var firePos = pos;
+                    bool losFinal = directLos;
+                    if (!directLos && TryFindLeanCell(view, here, ttile, out var leanCell))
                     {
-                        // Visible: snap-aim at the target, fire if in range.
-                        if (ddx * ddx + ddy * ddy > 1e-9f) w.Facing = MathF.Atan2(ddy, ddx);
-                        if (inRange) HandleRangedFire(entity, tgt, spec, pos, tp, distTiles);
+                        leaning = true;
+                        losFinal = true;
+                        muzzle = new WorldPos { X = leanCell.X + 0.5f, Y = leanCell.Y + 0.5f };
+                        firePos = muzzle;
+                    }
+                    bool hasCover = crouchCover || leaning;
+
+                    ref var rcS = ref entity.GetComponent<RangedCombat>();
+                    if (hasCover)
+                    {
+                        bool reloadingOrEmpty = rcS.Reloading || rcS.MagCount <= 0;
+                        // Pop up only to fire; tuck while reloading or waiting.
+                        rcS.Stance = (losFinal && inRange && !reloadingOrEmpty)
+                            ? CoverStance.Popped : CoverStance.Tucked;
+                        rcS.Leaning = leaning;
+                        rcS.PeekX = firePos.X; rcS.PeekY = firePos.Y;
+                    }
+
+                    if (losFinal)
+                    {
+                        // Visible (directly or by leaning): aim from the firing
+                        // position toward the target, fire if in range.
+                        float adx = tp.X - muzzle.X, ady = tp.Y - muzzle.Y;
+                        if (adx * adx + ady * ady > 1e-9f) w.Facing = MathF.Atan2(ady, adx);
+                        if (inRange) HandleRangedFire(entity, tgt, spec, muzzle, tp, distTiles);
                     }
                     else
                     {
-                        // Lost sight: don't keep staring through the wall —
-                        // stand ready and wait for them to reappear.
+                        // Lost sight, no lean available: don't stare through the
+                        // wall — hunker down (tuck if behind cover) and wait.
                         w.Facing = SouthFacing;
                     }
                     return;
@@ -1827,6 +1864,55 @@ public sealed class DummyController
             entity.Id, tgt.Id, true, rc.LoadedAmmoPath ?? ""));
         // Muzzle climb: this shot kicks the cone wider for the next.
         rc.Recoil = MathF.Min(spec.MaxRecoilDegrees, rc.Recoil + spec.RecoilPerShot);
+    }
+
+    // True if a sandbag sits in the immediate step from `here` toward the
+    // target — the pawn can crouch behind it (directional, low cover).
+    private bool HasSandbagToward(TilePos here, TilePos ttile)
+    {
+        if (HasSandbag is null) return false;
+        int sgx = Math.Sign(ttile.X - here.X);
+        int sgy = Math.Sign(ttile.Y - here.Y);
+        if (sgx == 0 && sgy == 0) return false;
+        if (sgx != 0 && HasSandbag(here.X + sgx, here.Y)) return true;
+        if (sgy != 0 && HasSandbag(here.X, here.Y + sgy)) return true;
+        if (sgx != 0 && sgy != 0 && HasSandbag(here.X + sgx, here.Y + sgy)) return true;
+        return false;
+    }
+
+    private static readonly (int dx, int dy)[] LeanOffsets =
+        { (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1) };
+
+    // RimWorld-style corner lean: when direct sight is blocked and the pawn is
+    // hugging a wall, find an adjacent open cell that CAN see the target. The
+    // pawn doesn't move there — it peeks (fires from / exposes the body at that
+    // cell while popped, tucks back behind the wall otherwise).
+    private bool TryFindLeanCell(MapView view, TilePos here, TilePos ttile, out TilePos leanCell)
+    {
+        leanCell = here;
+        if (LosClear is null) return false;
+        // Must be hugging a wall (an orthogonal wall neighbor) — otherwise this
+        // is just sidestepping in the open, not peeking a corner.
+        bool huggingWall = false;
+        if (view.GetWall(here.X + 1, here.Y) != WallType.None
+            || view.GetWall(here.X - 1, here.Y) != WallType.None
+            || view.GetWall(here.X, here.Y + 1) != WallType.None
+            || view.GetWall(here.X, here.Y - 1) != WallType.None)
+            huggingWall = true;
+        if (!huggingWall) return false;
+
+        float best = float.MaxValue; bool found = false;
+        foreach (var (dx, dy) in LeanOffsets)
+        {
+            int cx = here.X + dx, cy = here.Y + dy;
+            if (!view.InBounds(cx, cy)) continue;
+            if (view.GetWall(cx, cy) != WallType.None) continue; // can't peek into a wall
+            if (!(LosClear(cx, cy, ttile.X, ttile.Y))) continue;
+            float ex = ttile.X - cx, ey = ttile.Y - cy;
+            float d2 = ex * ex + ey * ey;
+            if (d2 < best) { best = d2; leanCell = new TilePos(cx, cy); found = true; }
+        }
+        return found;
     }
 
     // Undrafted idle behavior: keep the equipped ranged weapon's magazine

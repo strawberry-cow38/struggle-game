@@ -633,6 +633,14 @@ public struct MeleeTarget : IComponent
 // Attached/removed by DummyController to mirror the equipped weapon. Holds
 // the magazine (loaded count + which ammo is chambered), the selected fire
 // mode, the forced target, and the cooldown/burst bookkeeping.
+// Cover stance for a ranged pawn engaging from behind cover.
+//   None   — no usable cover toward the threat; stand and fight normally.
+//   Tucked — fully protected: crouched below a sandbag, or hugging a wall
+//            behind cover. Held while reloading / waiting for a target.
+//   Popped — exposed to return fire: standing tall above the sandbag, or
+//            leaned out around the wall corner. Held only while firing.
+public enum CoverStance : byte { None = 0, Tucked = 1, Popped = 2 }
+
 public struct RangedCombat : IComponent
 {
     public int TargetEntityId;     // forced fire target, 0 = none
@@ -650,6 +658,11 @@ public struct RangedCombat : IComponent
     // retarget) — keeps firing until death. Otherwise fire stops when a
     // conscious target goes down, mirroring melee.
     public bool FinishOff;
+    // ─── Cover stance (phase 7) ───────────────────────────────────────
+    public CoverStance Stance;     // None / Tucked / Popped
+    public bool Leaning;           // true = lateral wall-lean (7c); false = crouch (7b)
+    public float PeekX, PeekY;     // world pos to fire from + place the hitbox when Popped
+                                   // (== the pawn's tile for a crouch; the lean cell for a lean)
 }
 
 // A bullet in flight. Created from a DummyController fire request, advanced

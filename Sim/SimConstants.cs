@@ -34,6 +34,9 @@ public static class SimConstants
     // below this (and coming from the covered side) eat the sandbag; a
     // crouched pawn tucks below it. The cover/peeking systems read this.
     public const float SandbagCoverHeight = 0.5f;
+    // A crouched (tucked) pawn drops below the sandbag so high rounds clear
+    // them — kept just under SandbagCoverHeight so the bag fully shields them.
+    public const float CrouchBodyHeight = 0.45f;
 
     // Inventory caps for a colonist. Either one being exceeded stops them
     // adding more to their carry. Both default to 75 so a single wood

@@ -90,6 +90,7 @@ public partial class WorldRenderer : Node2D
     private static readonly Color PathLineColor = new(1.0f, 0.92f, 0.10f, 0.85f);
     private static readonly Color PathTargetColor = new(1.0f, 0.92f, 0.10f, 1.0f);
     private static readonly Color DraftedRing = new(1.0f, 0.25f, 0.20f, 1.0f);
+    private static readonly Color CoverCrouchColor = new(0.55f, 0.80f, 0.95f, 0.9f);
     private static readonly Color EquippedMarkerColor = new(0.30f, 0.85f, 1.0f, 1.0f);
     private static readonly Color FacingArrowColor = new(0.15f, 0.10f, 0.05f, 0.9f);
     private static readonly Color CorpseColor = new(0.45f, 0.42f, 0.40f, 1f);
@@ -639,7 +640,24 @@ public partial class WorldRenderer : Node2D
                     if (d.SwingTick > 0 && sinceSwing >= 0 && sinceSwing < LungeTicks)
                         center += fdir * (Mathf.Sin(sinceSwing / (float)LungeTicks * Mathf.Pi) * PixelsPerTile * 0.30f);
                 }
-                DrawCircle(center, radius, DummyColor);
+                // Cover stance visual: a popped lean peeks toward the corner
+                // cell; a tucked crouch hunkers down small behind the sandbag.
+                float bodyR = radius;
+                if (d.CoverStance == 2 && d.Leaning)
+                {
+                    var peek = new Vector2(d.PeekX * PixelsPerTile, d.PeekY * PixelsPerTile);
+                    center = center.Lerp(peek, 0.6f);
+                }
+                else if (d.CoverStance == 1 && !d.Leaning)
+                {
+                    bodyR = radius * 0.6f;
+                }
+                DrawCircle(center, bodyR, DummyColor);
+                if (d.CoverStance == 1)
+                {
+                    // Hunkered-in-cover cue: a low shield arc beneath the pawn.
+                    DrawArc(center, bodyR + 3f, Mathf.Pi * 0.15f, Mathf.Pi * 0.85f, 16, CoverCrouchColor, 2.5f, antialiased: true);
+                }
                 // Facing arrow: a small triangle on the rim pointing the
                 // way the colonist last moved.
                 {

@@ -328,6 +328,7 @@ public sealed class SimRuntime
         _health.OnDied = KillColonist;
         _dummies.MeleeHit = MeleeStrike;
         _dummies.LosClear = RangedLosClear;
+        _dummies.HasSandbag = (x, y) => _sandbagMap.ContainsKey(new TilePos(x, y));
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
@@ -1236,10 +1237,16 @@ public sealed class SimRuntime
             Items.FireModeFlags rangedModes = Items.FireModeFlags.None;
             var rangedStatus = Snapshots.RangedStatus.None;
             var rangedArea = Items.TargetArea.Auto;
+            byte coverStance = 0;
+            bool leaning = false;
+            float peekX = p.X, peekY = p.Y;
             if (ent.HasComponent<RangedCombat>() && TryGetEquippedRangedSpec(ent, out var rspec))
             {
                 var rc = ent.GetComponent<RangedCombat>();
                 hasRanged = true;
+                coverStance = (byte)rc.Stance;
+                leaning = rc.Leaning;
+                peekX = rc.PeekX; peekY = rc.PeekY;
                 rangedMag = rc.MagCount;
                 rangedMagSize = rspec.MagazineSize;
                 fireTargetId = rc.TargetEntityId;
@@ -1272,7 +1279,8 @@ public sealed class SimRuntime
                 recLevel, atRecKind, equipped, held, healthState, wr.Facing,
                 swingT, missT, flinchT, meleeTargetId,
                 hasRanged, rangedMag, rangedMagSize, rangedMode, rangedModes,
-                fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea);
+                fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea,
+                coverStance, leaning, peekX, peekY);
 
             if (selectedDummyId is int sel && ent.Id == sel)
             {
@@ -4032,11 +4040,42 @@ public sealed class SimRuntime
         if (_projScratch.Count == 0) return;
 
         // Gather live pawns once (corpses have no Health component). Downed
-        // pawns lie prone → a much shorter hitbox.
+        // pawns lie prone → a much shorter hitbox. Pawns in cover shrink/relocate
+        // their hitbox by stance: a tucked crouch drops below the sandbag; a
+        // popped lean relocates the exposed body to the peek (lean) cell.
         _projPawns.Clear();
         Store.Query<WorldPos, Health>().ForEachEntity((ref WorldPos wp, ref Health h, Entity pe) =>
-            _projPawns.Add((pe.Id, wp.X, wp.Y,
-                h.Unconscious ? SimConstants.DownedBodyHeight : SimConstants.PawnBodyHeight)));
+        {
+            float px = wp.X, py = wp.Y, bh;
+            if (h.Unconscious)
+            {
+                bh = SimConstants.DownedBodyHeight;
+            }
+            else if (pe.HasComponent<RangedCombat>())
+            {
+                var rc = pe.GetComponent<RangedCombat>();
+                switch (rc.Stance)
+                {
+                    case CoverStance.Tucked:
+                        // Crouch: hitbox drops below the sandbag (high rounds fly
+                        // over). Lean-tuck: stay on-tile — the wall does the blocking.
+                        bh = rc.Leaning ? SimConstants.PawnBodyHeight : SimConstants.CrouchBodyHeight;
+                        break;
+                    case CoverStance.Popped:
+                        bh = SimConstants.PawnBodyHeight;
+                        if (rc.Leaning) { px = rc.PeekX; py = rc.PeekY; } // exposed at the corner
+                        break;
+                    default:
+                        bh = SimConstants.PawnBodyHeight;
+                        break;
+                }
+            }
+            else
+            {
+                bh = SimConstants.PawnBodyHeight;
+            }
+            _projPawns.Add((pe.Id, px, py, bh));
+        });
 
         foreach (var e in _projScratch)
         {
@@ -4057,6 +4096,11 @@ public sealed class SimRuntime
             float bestT = float.MaxValue;
             int hitPawn = 0;
             if (SegmentFirstWall(pr.X, pr.Y, nx, ny, out float wallT)) bestT = wallT;
+            // A sandbag eats only the low rounds passing through its tile — high
+            // shots clear it. This is the geometric, directional cover: shots
+            // that don't cross the sandbag tile (e.g. from behind) aren't blocked.
+            if (SegmentFirstSandbag(pr.X, pr.Y, nx, ny, pr.Height, nh, out float sbT) && sbT < bestT)
+            { bestT = sbT; hitPawn = 0; }
             if (nh >= 0f
                 && SegmentFirstPawn(pr.X, pr.Y, nx, ny, nh, pr.ShooterEntityId, out int pid, out float pawnT)
                 && pawnT < bestT)
@@ -4112,6 +4156,30 @@ public sealed class SimRuntime
             float f = (float)k / samples;
             int cx = (int)(ax + dx * f), cy = (int)(ay + dy * f);
             if (Map.GetWall(cx, cy) != WallType.None) { t = f; return true; }
+        }
+        return false;
+    }
+
+    // First sandbag tile crossed by segment A→B at a height at/below the
+    // sandbag's cover height. Bullet height is interpolated along the segment
+    // (hA→hB) so an arcing round is judged at its height over the bag's tile.
+    private bool SegmentFirstSandbag(float ax, float ay, float bx, float by, float hA, float hB, out float t)
+    {
+        t = 0f;
+        if (_sandbagMap.Count == 0) return false;
+        float dx = bx - ax, dy = by - ay;
+        float len = MathF.Sqrt(dx * dx + dy * dy);
+        if (len < 1e-4f) return false;
+        int samples = Math.Max(2, (int)(len / 0.2f));
+        for (int k = 1; k <= samples; k++)
+        {
+            float f = (float)k / samples;
+            int cx = (int)(ax + dx * f), cy = (int)(ay + dy * f);
+            if (_sandbagMap.ContainsKey(new TilePos(cx, cy)))
+            {
+                float h = hA + (hB - hA) * f;
+                if (h <= SimConstants.SandbagCoverHeight) { t = f; return true; }
+            }
         }
         return false;
     }

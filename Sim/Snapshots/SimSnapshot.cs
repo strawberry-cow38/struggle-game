@@ -175,7 +175,12 @@ public readonly record struct DummyState(
     long ShotTick,
     float RangedRange,
     RangedStatus RangedStatus,
-    StruggleGame.Sim.Items.TargetArea RangedTargetArea);
+    StruggleGame.Sim.Items.TargetArea RangedTargetArea,
+    // Cover stance for the crouch/lean visual. 0 = none, 1 = tucked, 2 = popped.
+    byte CoverStance,
+    bool Leaning,
+    float PeekX,
+    float PeekY);
 
 // What a ranged colonist is doing right now, for the overhead label.
 public enum RangedStatus : byte { None = 0, Firing = 1, Watching = 2, Reloading = 3, TooClose = 4 }
