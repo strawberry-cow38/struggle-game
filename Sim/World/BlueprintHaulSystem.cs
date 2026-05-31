@@ -37,6 +37,13 @@ public sealed class BlueprintHaulSystem
 
     public void Step(EntityStore store, float dt)
     {
+        // Mirror HaulSystem's cadence — posting a blueprint haul a few ticks
+        // late is invisible, and the full ItemPile + BlueprintCost scans plus
+        // the O(demand x wood) nearest-match don't need to run at 60 Hz. Use
+        // the SAME interval (and phase) as HaulSystem so on every scan tick
+        // this runs first and blueprint demand still wins the wood race.
+        if (_sim.Tick % HaulSystem.ScanIntervalTicks != 0) return;
+
         _wood.Clear();
         _demand.Clear();
 
