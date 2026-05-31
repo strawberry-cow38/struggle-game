@@ -5,9 +5,10 @@ using StruggleGame.Sim.Map;
 
 namespace StruggleGame.Game.Designation;
 
-// Cursor previews a 1-tile sandbag footprint (red when blocked). LMB
-// places via PlaceSandbagCommand. See HoverPlaceDesignator.
-public partial class SandbagDesignator : HoverPlaceDesignator
+// LMB-drag places a cardinal line of sandbags (one per tile); each tile's
+// preview shows the 1-tile bag footprint, red when blocked. On release
+// every tile is queued as a PlaceSandbagCommand. See LineDragDesignator.
+public partial class SandbagDesignator : LineDragDesignator
 {
     private static readonly Color OkFill   = new(0.55f, 0.50f, 0.30f, 0.45f);
     private static readonly Color OkBorder = new(0.80f, 0.72f, 0.45f, 0.95f);
@@ -19,18 +20,17 @@ public partial class SandbagDesignator : HoverPlaceDesignator
     protected override ToolMode Mode => ToolMode.Sandbag;
     protected override int ZOrder => 55;
 
-    protected override void Place(TilePos tile)
+    protected override void CommitTile(TilePos tile)
         => Host!.QueueCommand(new PlaceSandbagCommand(tile));
 
-    public override void _Draw()
+    protected override void DrawTilePreview(TilePos t)
     {
-        if (!Hovering || Host is null) return;
-        bool ok = Host.CanPlaceSandbag(HoverTile);
+        bool ok = Host is null || Host.CanPlaceSandbag(t);
         var fill = ok ? OkFill : BadFill;
         var border = ok ? OkBorder : BadBorder;
         var inlay = ok ? InlayOk : InlayBad;
 
-        var rect = TileRect(HoverTile);
+        var rect = new Rect2(t.X * PixelsPerTile, t.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
         DrawRect(rect, fill, filled: true);
         // Two stacked bag rows to read as a low barricade.
         float inset = PixelsPerTile * 0.14f;
