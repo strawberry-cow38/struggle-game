@@ -13,6 +13,7 @@ public sealed class SimSnapshot
 {
     public long Tick { get; internal set; }
     public long MapVersion { get; internal set; }
+    public long WallVersion { get; internal set; }
     public long RoomVersion { get; internal set; }
     public int RoomCount { get; internal set; }
     public long RoofVersion { get; internal set; }

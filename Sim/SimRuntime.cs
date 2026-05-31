@@ -31,6 +31,11 @@ public sealed class SimRuntime
     private float _needAccumDt;
     public long Tick { get; private set; }
     public long MapVersion { get; private set; }
+    // Bumps only when the WALL layer mutates (not floors/etc). The renderer
+    // rebuilds the wall overlay + wall sprites off this, so placing floors
+    // doesn't trigger a full wall-sprite rescan every tick.
+    public long WallVersion { get; private set; }
+    private bool _wallLayerDirty;
     public long RoomVersion { get; private set; }
     public int RoomCount { get; private set; }
     private int[] _roomTiles = Array.Empty<int>();
@@ -1151,6 +1156,7 @@ public sealed class SimRuntime
 
         snap.Tick = Tick;
         snap.MapVersion = MapVersion;
+        snap.WallVersion = WallVersion;
         snap.RoomVersion = RoomVersion;
         snap.RoomCount = RoomCount;
         snap.RoofVersion = RoofVersion;
@@ -1828,6 +1834,7 @@ public sealed class SimRuntime
             if (Map.GetWall(tile) != WallType.None)
             {
                 Map.SetWall(tile, WallType.None);
+                _wallLayerDirty = true;
                 _playerWalls.Remove(tile);
             }
         }
@@ -2424,6 +2431,7 @@ public sealed class SimRuntime
         lock (_mapLock)
         {
             Map.SetWall(tile, WallType.Stone);
+            _wallLayerDirty = true;
             _playerWalls.Add(tile);
         }
         RefreshDoorOrientationsAround(tile);
@@ -2472,6 +2480,7 @@ public sealed class SimRuntime
             lock (_mapLock)
             {
                 Map.SetWall(tile, WallType.Stone);
+                _wallLayerDirty = true;
                 _playerWalls.Add(tile);
             }
             RefreshDoorOrientationsAround(tile);
@@ -2749,6 +2758,7 @@ public sealed class SimRuntime
             {
                 // Wall layer only — terrain underneath stays put.
                 Map.SetWall(tile, WallType.None);
+                _wallLayerDirty = true;
                 _playerWalls.Remove(tile);
             }
             RefreshDoorOrientationsAround(tile);
@@ -5100,6 +5110,7 @@ public sealed class SimRuntime
         lock (_mapLock)
         {
             MapVersion++;
+            if (_wallLayerDirty) { WallVersion++; _wallLayerDirty = false; }
             var treeTiles = new TilePos[_trees.Count];
             int idx = 0;
             foreach (var t in _trees.Keys) treeTiles[idx++] = t;

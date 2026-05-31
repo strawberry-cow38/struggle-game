@@ -33,6 +33,7 @@ public partial class WorldRenderer : Node2D
     private int _mapWidth;
     private int _mapHeight;
     private long _lastMapVersion = -1;
+    private long _lastWallVersion = -1;
     private long _lastRoofVersion = -1;
     private byte[]? _lastWallBytes;
     private ImageTexture? _noRoofOverlayTex;
@@ -252,16 +253,24 @@ public partial class WorldRenderer : Node2D
         // when the wall geometry itself changes (MapVersion). Sun ticks
         // during dawn/dusk previously thrashed FPS by re-baking every
         // texel — now they're free on the renderer side too.
-        if (snap is not null && snap.MapVersion != _lastMapVersion)
+        // Wall overlay + sprites only rebuild when the WALL layer changed
+        // (WallVersion), not on every MapVersion bump — placing floors used
+        // to trigger a full wall-sprite rescan + HashSet alloc every tick.
+        if (snap is not null && snap.WallVersion != _lastWallVersion)
         {
             _lastWallBytes = Host!.CopyLayerForRender(MapLayer.Wall);
-            _floorBytes = Host!.CopyLayerForRender(MapLayer.Flooring);
-            _lastMapVersion = snap.MapVersion;
+            _lastWallVersion = snap.WallVersion;
             if (_lastWallBytes is not null)
             {
                 _wallOverlayTex = BuildWallOverlay(_lastWallBytes, _mapWidth, _mapHeight);
                 UpdateWallSprites(_lastWallBytes, _mapWidth, _mapHeight);
             }
+        }
+        // Flooring bytes refresh on any map mutation (floors bump MapVersion).
+        if (snap is not null && snap.MapVersion != _lastMapVersion)
+        {
+            _floorBytes = Host!.CopyLayerForRender(MapLayer.Flooring);
+            _lastMapVersion = snap.MapVersion;
         }
         if (snap is not null && snap.RoofVersion != _lastRoofVersion)
         {
