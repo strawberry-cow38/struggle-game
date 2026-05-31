@@ -2792,7 +2792,7 @@ public sealed class SimRuntime
             {
                 Map.SetFlooring(tile, FlooringType.Wood);
             }
-            RebuildMapView();
+            RebuildMapView(roomsToo: false);
         }
         else if (kind == JobKind.FloorDeconstruct)
         {
@@ -2801,7 +2801,7 @@ public sealed class SimRuntime
             {
                 Map.SetFlooring(tile, FlooringType.None);
             }
-            RebuildMapView();
+            RebuildMapView(roomsToo: false);
         }
         else if (kind == JobKind.DoorBuild)
         {
@@ -5097,11 +5097,14 @@ public sealed class SimRuntime
 
     // Mark the map view as needing a rebuild this tick. Cheap; the actual
     // clone-and-publish runs once at end of Step().
-    private void RebuildMapView()
+    private void RebuildMapView(bool roomsToo = true)
     {
         _mapDirty = true;
-        // Rooms also need to refresh whenever walls change.
-        _roomsDirty = true;
+        // Rooms are bounded by walls + doors, so most map mutations also
+        // refresh the room layer. Floors don't bound rooms — they pass
+        // roomsToo:false to skip the O(map) room flood-fill + auto-roof pass
+        // that would otherwise fire on every floor tile placed.
+        if (roomsToo) _roomsDirty = true;
     }
 
     private void DoRebuildMapView()
