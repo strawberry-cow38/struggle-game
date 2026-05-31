@@ -45,8 +45,8 @@ public enum TargetArea : byte { Auto = 0, Torso = 1, Head = 2, Legs = 3 }
 public enum FireModeFlags : byte { None = 0, Single = 1, Burst = 2, Auto = 4 }
 
 // Ranged-weapon stat block. Attached to an ItemDef that fires
-// projectiles. Vertical coordinate / cover math is intentionally absent
-// for now — projectiles fly flat from muzzle to aim point.
+// projectiles. Rounds fly a real ballistic arc (height + gravity) and
+// resolve against height-aware cover (sandbags / crouch / lean).
 public sealed class RangedSpec
 {
     public float Range;                // max firing distance, tiles

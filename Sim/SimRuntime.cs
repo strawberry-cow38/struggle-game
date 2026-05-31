@@ -2521,10 +2521,8 @@ public sealed class SimRuntime
             }
             _crops.Remove(tile);
             entity.DeleteEntity();
-            // Generic ItemPile drop. Carrots aren't haulable yet (haul +
-            // stockpile machinery still hardcodes the Wood component);
-            // the pile just sits on the ground for now and reads via the
-            // ItemPile snapshot.
+            // Generic ItemPile drop — haul + stockpiles handle any ItemPile
+            // by ItemDef, so the yield gets hauled/stored like anything else.
             string itemPath = crop.Kind switch
             {
                 CropKind.Carrot => Items.ItemCatalog.Carrot.FullPath,
@@ -5015,10 +5013,9 @@ public sealed class SimRuntime
         return !id.IsNone;
     }
 
-    // Tile is "outdoors" (light = 100%) when it's not enclosed by any
-    // player-built room. RoomMap leaves outdoor / barrier tiles at room
-    // id 0; indoor rooms get ids 1..N. Light stub: outdoor = grow,
-    // indoor = no grow. Real per-tile light comes later.
+    // Tile is "outdoors" when it's not enclosed by any player-built room.
+    // RoomMap leaves outdoor / barrier tiles at room id 0; indoor rooms get
+    // ids 1..N. (Crop growth gates on the real per-tile LightAt, not this.)
     public bool IsTileOutdoor(TilePos tile)
     {
         if (!Map.InBounds(tile)) return false;

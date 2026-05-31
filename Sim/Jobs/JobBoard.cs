@@ -8,9 +8,9 @@ namespace StruggleGame.Sim.Jobs;
 // BlueprintRegistry. WallBuild is the first JobKind; eat/sleep/haul/etc
 // slot in as new kinds without touching consumers.
 //
-// Today: dictionaries by id + tile. Tomorrow: tier buckets (priority
-// classes), spatial hash for "jobs in rect" queries, and a dirty-flag
-// bus consumers subscribe to via Version.
+// Indexed by id + tile, plus a per-(work-type, chunk) spatial index of open
+// jobs for the pawn claim ring-search. Still flat: InRect scans all jobs, and
+// there are no priority tier-buckets / dirty-flag bus yet.
 public sealed class JobBoard
 {
     private readonly Dictionary<JobId, Job> _byId = new();

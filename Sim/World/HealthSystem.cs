@@ -10,7 +10,8 @@ namespace StruggleGame.Sim.World;
 //     scars/missing are permanent.
 //   • Recomputes body capacities from part efficiencies + blood, and flips
 //     the Unconscious flag below the consciousness threshold.
-// No death yet: blood floors at 0 and the colonist just stays passed out.
+// Death: losing a vital part or dropping consciousness to zero kills the
+// colonist (SimRuntime.KillColonist drops a corpse + their gear).
 public sealed class HealthSystem
 {
     public const float UnconsciousThreshold = 0.30f;

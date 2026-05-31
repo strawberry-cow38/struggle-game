@@ -349,8 +349,8 @@ public static class BedOrientations
 }
 
 // A placed bed. Origin = "head" tile; Foot tile is derived from
-// Orientation. Pure decoration for now — no sleep behavior, but the
-// 2-tile footprint blocks pathing the same way trees do.
+// Orientation. Tired pawns path here and sleep (SleepSystem); the 2-tile
+// footprint blocks pathing the same way trees do.
 public struct Bed : IComponent
 {
     public TilePos Origin;

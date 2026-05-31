@@ -15,9 +15,8 @@ public sealed class GrowthSystem
 {
     // 1 in-game day = 24 real minutes @ 1x speed = 1440 sim-seconds.
     public const float SecondsToFullGrow = 24f * 60f;
-    // Minimum light fraction (0..1) for plants to grow. Half-lit or
-    // brighter passes; anything under a roof (light = 0 with the current
-    // stub) fails.
+    // Minimum light fraction (0..1) for plants to grow. Half-lit or brighter
+    // passes; a roofed tile with no lamp (light = 0) fails.
     public const float GrowLightThreshold = 0.51f;
 
     // RimWorld-style "rare tick": plants don't need 60 Hz resolution. Each
