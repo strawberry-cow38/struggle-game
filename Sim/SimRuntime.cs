@@ -93,6 +93,12 @@ public sealed class SimRuntime
     // long enough to look like a hard freeze on the render thread.
     private bool _mapDirty;
     private bool _roomsDirty;
+    // Lamp lighting recompute is expensive (rescans lamps + re-bakes LOS
+    // discs). Coalesce it like the map/room rebuilds: mutation paths set
+    // this flag (after InvalidateLampBakesNear marks which bakes are
+    // stale) and RecomputeLampLight runs once per tick, not once per
+    // wall/door completed.
+    private bool _lightDirty;
 
     public PathService PathService { get; }
     public SimWatcher Watcher { get; } = new();
@@ -423,6 +429,7 @@ public sealed class SimRuntime
         // even if N walls/doors mutated this tick.
         if (_mapDirty) { DoRebuildMapView(); _mapDirty = false; }
         if (_roomsDirty) { DoRecomputeRooms(); _roomsDirty = false; }
+        if (_lightDirty) { RecomputeLampLight(); _lightDirty = false; }
         if (_sunDirty) { _lastSunR = sR; _lastSunG = sG; _lastSunB = sB; LightVersion++; _sunDirty = false; }
         Tick++;
         Watcher.Observe(Tick, Store, Jobs);
@@ -1071,6 +1078,7 @@ public sealed class SimRuntime
         if (!any) return false;
         if (_mapDirty) { DoRebuildMapView(); _mapDirty = false; }
         if (_roomsDirty) { DoRecomputeRooms(); _roomsDirty = false; }
+        if (_lightDirty) { RecomputeLampLight(); _lightDirty = false; }
         // Bump Tick so info panels (which dedupe re-renders on snap.Tick)
         // pick up the new decon marks / blueprints / forbid flags while
         // the sim is paused. No systems ran, so no gameplay timer advances.
@@ -1841,7 +1849,7 @@ public sealed class SimRuntime
         // Door blocks LOS for lamp light; relight (instant-place
         // bypasses the job pipeline that normally handles this).
         InvalidateLampBakesNear(tile);
-        RecomputeLampLight();
+        _lightDirty = true;
         return true;
     }
 
@@ -1857,7 +1865,7 @@ public sealed class SimRuntime
         e.AddComponent(new Lamp { Tile = tile, PoweredOn = true, Color = color });
         _lampMap[tile] = e;
         EnsureLampBaked(tile);
-        RecomputeLampLight();
+        _lightDirty = true;
         return true;
     }
 
@@ -2421,7 +2429,7 @@ public sealed class SimRuntime
         // Wall blocks LOS for lamp light; relight (instant-place
         // bypasses the job pipeline that normally handles this).
         InvalidateLampBakesNear(tile);
-        RecomputeLampLight();
+        _lightDirty = true;
         return true;
     }
 
@@ -2468,7 +2476,7 @@ public sealed class SimRuntime
             RebuildMapView();
             // Wall now blocks LOS for nearby lamps; rebake those discs.
             InvalidateLampBakesNear(tile);
-            RecomputeLampLight();
+            _lightDirty = true;
         }
         else if (kind == JobKind.ChopTree)
         {
@@ -2607,7 +2615,7 @@ public sealed class SimRuntime
             entity.AddComponent(new Lamp { Tile = tile, PoweredOn = true, Color = bpColor });
             _lampMap[tile] = entity;
             EnsureLampBaked(tile);
-            RecomputeLampLight();
+            _lightDirty = true;
             // Auto-roof pass on the lamp's own tile: while the lamp
             // build job was active Jobs.HasTile blocked the original
             // auto-roof from posting here, leaving an uncovered hole.
@@ -2627,7 +2635,7 @@ public sealed class SimRuntime
                 _lampMap.Remove(tile);
                 lampEnt.DeleteEntity();
                 DropLampBake(tile);
-                RecomputeLampLight();
+                _lightDirty = true;
             }
         }
         else if (kind == JobKind.BedBuild)
@@ -2752,7 +2760,7 @@ public sealed class SimRuntime
             // Wall gone = light can flow through that tile again; rebake
             // nearby lamps that were previously LOS-blocked by it.
             InvalidateLampBakesNear(tile);
-            RecomputeLampLight();
+            _lightDirty = true;
             // Chain: a door blueprint was parked waiting on this decon.
             // Post its DoorBuild job now that the wall is gone.
             if (_pendingDoorAfterDecon.TryGetValue(tile, out var pendingBp))
@@ -2812,7 +2820,7 @@ public sealed class SimRuntime
             // Doors are LOS-opaque for lamp light; relight so neighbors
             // stop bleeding through the new door tile immediately.
             InvalidateLampBakesNear(tile);
-            RecomputeLampLight();
+            _lightDirty = true;
         }
         else if (kind == JobKind.DoorDeconstruct)
         {
@@ -2834,7 +2842,7 @@ public sealed class SimRuntime
             RebuildMapView();
             // Door gone = light can flow through that tile again. Relight.
             InvalidateLampBakesNear(tile);
-            RecomputeLampLight();
+            _lightDirty = true;
         }
     }
 
@@ -3127,7 +3135,7 @@ public sealed class SimRuntime
         if (lamp.PoweredOn == on) return;
         lamp.PoweredOn = on;
         MarkLampChunksDirty(tile);
-        RecomputeLampLight();
+        _lightDirty = true;
     }
 
     // Recolor a built lamp + re-stamp the light layer so the new tint
@@ -3141,7 +3149,7 @@ public sealed class SimRuntime
         if (lamp.PoweredOn)
         {
             MarkLampChunksDirty(tile);
-            RecomputeLampLight();
+            _lightDirty = true;
         }
     }
 
