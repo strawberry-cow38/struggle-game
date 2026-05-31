@@ -2792,7 +2792,7 @@ public sealed class SimRuntime
             {
                 Map.SetFlooring(tile, FlooringType.Wood);
             }
-            RebuildMapView(roomsToo: false);
+            RebuildMapView();
         }
         else if (kind == JobKind.FloorDeconstruct)
         {
@@ -2801,7 +2801,7 @@ public sealed class SimRuntime
             {
                 Map.SetFlooring(tile, FlooringType.None);
             }
-            RebuildMapView(roomsToo: false);
+            RebuildMapView();
         }
         else if (kind == JobKind.DoorBuild)
         {
@@ -2852,6 +2852,8 @@ public sealed class SimRuntime
                 wood.AddComponent(new ItemPile { Tile = tile, Count = WallDeconWoodReturn, ItemPath = ItemCatalog.Wood.FullPath });
             }
             RebuildMapView();
+            // Door removed = a room boundary changed; recompute enclosure.
+            _roomsDirty = true;
             // Door gone = light can flow through that tile again. Relight.
             InvalidateLampBakesNear(tile);
             _lightDirty = true;
@@ -5097,14 +5099,15 @@ public sealed class SimRuntime
 
     // Mark the map view as needing a rebuild this tick. Cheap; the actual
     // clone-and-publish runs once at end of Step().
-    private void RebuildMapView(bool roomsToo = true)
+    private void RebuildMapView()
     {
         _mapDirty = true;
-        // Rooms are bounded by walls + doors, so most map mutations also
-        // refresh the room layer. Floors don't bound rooms — they pass
-        // roomsToo:false to skip the O(map) room flood-fill + auto-roof pass
-        // that would otherwise fire on every floor tile placed.
-        if (roomsToo) _roomsDirty = true;
+        // Rooms are NOT dirtied here. RoomMap is bounded only by player walls
+        // + doors + the border, so room recompute is driven off wall changes
+        // (DoRebuildMapView, via _wallLayerDirty) and door events (explicit
+        // _roomsDirty at door build/decon). Everything else that rebuilds the
+        // map view — floors, furniture, lamps, trees — leaves rooms alone and
+        // skips the O(map) flood-fill + auto-roof pass.
     }
 
     private void DoRebuildMapView()
@@ -5113,7 +5116,10 @@ public sealed class SimRuntime
         lock (_mapLock)
         {
             MapVersion++;
-            if (_wallLayerDirty) { WallVersion++; _wallLayerDirty = false; }
+            // A wall change is the only map mutation (besides doors, handled
+            // explicitly) that alters room enclosure — so bump WallVersion
+            // AND dirty the room layer here.
+            if (_wallLayerDirty) { WallVersion++; _roomsDirty = true; _wallLayerDirty = false; }
             var treeTiles = new TilePos[_trees.Count];
             int idx = 0;
             foreach (var t in _trees.Keys) treeTiles[idx++] = t;
