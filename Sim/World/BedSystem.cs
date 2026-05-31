@@ -34,6 +34,12 @@ public sealed class BedSystem : BuildableSystem
     protected override ref float BuildProgress(Entity blueprint)
         => ref blueprint.GetComponent<BedBlueprint>().ProgressSec;
 
+    protected override bool FootprintBlocked(Job buildJob)
+    {
+        var bp = buildJob.Entity.GetComponent<BedBlueprint>();
+        return TileBlocked(bp.Origin) || TileBlocked(BedOrientations.Foot(bp.Origin, bp.Orientation));
+    }
+
     private static bool AdjacentToFootprint(Map.TilePos origin, BedOrientation orientation, float px, float py)
     {
         var foot = BedOrientations.Foot(origin, orientation);

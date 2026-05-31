@@ -124,6 +124,11 @@ public sealed class SimRuntime
     private readonly SafetySystem _safety;
     private readonly SleepSystem _sleep;
     private readonly HealthSystem _health;
+    // Pawn tiles, rebuilt once per tick before the build phase. Buildable
+    // systems read this to gate construction (don't spawn under a pawn)
+    // instead of each rescanning every Wanderer.
+    public readonly HashSet<TilePos> OccupiedPawnTiles = new();
+    private ArchetypeQuery<WorldPos, Wanderer>? _occupiedPawnsQ;
     // Stockpile tiles currently promised to an in-flight haul job. Posting
     // a new haul avoids these so two carriers can't target the same cell.
     private readonly HashSet<TilePos> _reservedHaulDests = new();
@@ -374,6 +379,7 @@ public sealed class SimRuntime
         }
         SpawnPendingProjectiles();
         StepProjectiles(dt);
+        RebuildOccupiedPawnTiles();
         _builds.Step(Store, dt);
         _chops.Step(Store, dt);
         _growth.Step(Store, dt);
@@ -4098,6 +4104,17 @@ public sealed class SimRuntime
     // is resolved NOW (hitscan along the ballistic arc, height-aware so cover
     // still works); the spawned Projectile is a cosmetic tracer flying that
     // same arc to the locked impact point, applying the wound on arrival.
+    // Rebuild the shared pawn-occupancy set once per tick (after movement,
+    // before build systems). BuildableSystem reads it to gate construction.
+    private void RebuildOccupiedPawnTiles()
+    {
+        OccupiedPawnTiles.Clear();
+        (_occupiedPawnsQ ??= Store.Query<WorldPos, Wanderer>()).ForEachEntity((ref WorldPos p, ref Wanderer _, Entity _) =>
+        {
+            OccupiedPawnTiles.Add(new TilePos((int)p.X, (int)p.Y));
+        });
+    }
+
     private void SpawnPendingProjectiles()
     {
         if (_dummies.PendingProjectiles.Count == 0) return;

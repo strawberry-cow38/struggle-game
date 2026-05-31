@@ -35,6 +35,16 @@ public sealed class StoveSystem : BuildableSystem
     protected override ref float BuildProgress(Entity blueprint)
         => ref blueprint.GetComponent<StoveBlueprint>().ProgressSec;
 
+    protected override bool FootprintBlocked(Job buildJob)
+    {
+        var bp = buildJob.Entity.GetComponent<StoveBlueprint>();
+        foreach (var t in StoveOrientations.BodyTiles(bp.Origin, bp.Orientation))
+        {
+            if (TileBlocked(t)) return true;
+        }
+        return false;
+    }
+
     private static bool AdjacentToFootprint(TilePos origin, StoveOrientation orientation, float px, float py)
     {
         foreach (var t in StoveOrientations.BodyTiles(origin, orientation))

@@ -26,4 +26,6 @@ public sealed class LampSystem : BuildableSystem
 
     protected override ref float BuildProgress(Entity blueprint)
         => ref blueprint.GetComponent<LampBlueprint>().ProgressSec;
+
+    protected override bool FootprintBlocked(Job buildJob) => TileBlocked(buildJob.Tile);
 }

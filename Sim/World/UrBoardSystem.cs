@@ -29,4 +29,7 @@ public sealed class UrBoardSystem : BuildableSystem
 
     protected override ref float BuildProgress(Entity blueprint)
         => ref blueprint.GetComponent<UrBoardBlueprint>().ProgressSec;
+
+    protected override bool FootprintBlocked(Job buildJob)
+        => TileBlocked(buildJob.Entity.GetComponent<UrBoardBlueprint>().Tile);
 }

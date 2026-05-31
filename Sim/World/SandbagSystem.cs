@@ -29,4 +29,7 @@ public sealed class SandbagSystem : BuildableSystem
 
     protected override ref float BuildProgress(Entity blueprint)
         => ref blueprint.GetComponent<SandbagBlueprint>().ProgressSec;
+
+    protected override bool FootprintBlocked(Job buildJob)
+        => TileBlocked(buildJob.Entity.GetComponent<SandbagBlueprint>().Tile);
 }
