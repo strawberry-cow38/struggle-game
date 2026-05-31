@@ -5247,8 +5247,9 @@ public sealed class SimRuntime
         if (tiles.Count == 0) return false;
         var anchor = PickRoofChunkAnchor(tiles);
         var e = Store.CreateEntity();
-        e.AddComponent(new RoofBlueprint { Tiles = tiles.ToArray(), Build = true });
-        var extras = tiles.Count > 1 ? tiles.ToArray() : null;
+        var arr = tiles.ToArray(); // one array, shared as both Tiles + extras (read-only)
+        e.AddComponent(new RoofBlueprint { Tiles = arr, Build = true });
+        var extras = tiles.Count > 1 ? arr : null;
         var id = Jobs.Post(JobKind.RoofBuild, anchor, e, extras);
         if (id.IsNone) { e.DeleteEntity(); return false; }
         return true;
@@ -5397,8 +5398,9 @@ public sealed class SimRuntime
         if (tiles.Count == 0) return false;
         var anchor = PickRoofChunkAnchor(tiles);
         var e = Store.CreateEntity();
-        e.AddComponent(new RoofBlueprint { Tiles = tiles.ToArray(), Build = false });
-        var extras = tiles.Count > 1 ? tiles.ToArray() : null;
+        var arr = tiles.ToArray(); // one array, shared as both Tiles + extras (read-only)
+        e.AddComponent(new RoofBlueprint { Tiles = arr, Build = false });
+        var extras = tiles.Count > 1 ? arr : null;
         var id = Jobs.Post(JobKind.RoofRemove, anchor, e, extras);
         if (id.IsNone) { e.DeleteEntity(); return false; }
         return true;

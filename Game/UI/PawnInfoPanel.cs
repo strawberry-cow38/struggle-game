@@ -91,7 +91,8 @@ public partial class PawnInfoPanel : CanvasLayer
 
         _bioLabel = new Label
         {
-            Text = "(no bio yet)",
+            // Static placeholder — set once here, not rebuilt every frame.
+            Text = "Stub bio. Name, traits, mood, skills go here later.",
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
         _bioLabel.AddThemeFontSizeOverride("font_size", 11);
@@ -234,7 +235,6 @@ public partial class PawnInfoPanel : CanvasLayer
         string draftTag = p.Drafted ? "  [DRAFTED]" : "";
         string sleepTag = p.Sleeping ? "  [SLEEPING]" : "";
         _stateLabel.Text = $"State: {p.Job}{draftTag}{sleepTag}";
-        _bioLabel.Text = "Stub bio. Name, traits, mood, skills go here later.";
 
         _sleepBar.Value = p.SleepLevel;
         _sleepLabel.Text = $"Sleep: {p.SleepLevel * 100f:0}%" + (p.Sleeping ? "  (asleep)" : "");

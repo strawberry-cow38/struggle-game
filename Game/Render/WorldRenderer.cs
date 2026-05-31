@@ -826,7 +826,6 @@ public partial class WorldRenderer : Node2D
     // Combat anim windows (sim ticks).
     private const long MuzzleFlashTicks = 5;
     private const long LungeTicks = 8;
-    private const long FlinchTicks = 8;
     private const long MissTextTicks = 45;
     private const int MissedFontSize = 24;
     private static readonly Color MissedColor = new(0.85f, 0.85f, 0.9f, 1f);
@@ -1233,22 +1232,25 @@ public partial class WorldRenderer : Node2D
         return new Color(baseFill.R, baseFill.G, baseFill.B, baseFill.A * (0.25f + 0.75f * f));
     }
 
-    private void DrawBlueprint(TilePos tile, float progress, float funding)
+    // Single-tile blueprint footprint: funded-tinted fill, border, bottom-up
+    // progress bar. Every 1x1 buildable's blueprint draws through this — only
+    // the fill/border colors differ. (Bed/Stove are multi-tile + oriented, so
+    // they keep their own draws.)
+    private void DrawTileBlueprint(TilePos tile, float progress, float funding, Color fill, Color border)
     {
         var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        DrawRect(rect, FundedFill(BlueprintFill, funding), filled: true);
-        DrawRect(rect, BlueprintBorder, filled: false, width: 2f);
+        DrawRect(rect, FundedFill(fill, funding), filled: true);
+        DrawRect(rect, border, filled: false, width: 2f);
         if (progress > 0f)
         {
             float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
-            var bar = new Rect2(
-                rect.Position.X,
-                rect.Position.Y + (PixelsPerTile - h),
-                PixelsPerTile,
-                h);
+            var bar = new Rect2(rect.Position.X, rect.Position.Y + (PixelsPerTile - h), PixelsPerTile, h);
             DrawRect(bar, BlueprintProgress, filled: true);
         }
     }
+
+    private void DrawBlueprint(TilePos tile, float progress, float funding)
+        => DrawTileBlueprint(tile, progress, funding, BlueprintFill, BlueprintBorder);
 
     // Tileable noisy dirt PNG, repeated across the whole map. Nearest
     // filter on the renderer keeps the texel grit crisp.
@@ -1261,21 +1263,7 @@ public partial class WorldRenderer : Node2D
     }
 
     private void DrawDoorBlueprint(TilePos tile, float progress, float funding)
-    {
-        var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        DrawRect(rect, FundedFill(DoorBlueprintFill, funding), filled: true);
-        DrawRect(rect, DoorBlueprintBorder, filled: false, width: 2f);
-        if (progress > 0f)
-        {
-            float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
-            var bar = new Rect2(
-                rect.Position.X,
-                rect.Position.Y + (PixelsPerTile - h),
-                PixelsPerTile,
-                h);
-            DrawRect(bar, BlueprintProgress, filled: true);
-        }
-    }
+        => DrawTileBlueprint(tile, progress, funding, DoorBlueprintFill, DoorBlueprintBorder);
 
     private void DrawDoor(StruggleGame.Sim.Snapshots.DoorRenderState door)
     {
@@ -1687,17 +1675,7 @@ public partial class WorldRenderer : Node2D
     }
 
     private void DrawUrBoardBlueprint(TilePos tile, float progress, float funding)
-    {
-        var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        DrawRect(rect, FundedFill(UrBoardBpFill, funding), filled: true);
-        DrawRect(rect, UrBoardBpBorder, filled: false, width: 2f);
-        if (progress > 0f)
-        {
-            float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
-            var bar = new Rect2(rect.Position.X, rect.Position.Y + (PixelsPerTile - h), PixelsPerTile, h);
-            DrawRect(bar, BlueprintProgress, filled: true);
-        }
-    }
+        => DrawTileBlueprint(tile, progress, funding, UrBoardBpFill, UrBoardBpBorder);
 
     // Low barricade: two stacked rows of bags. Reads as ~half-tile cover.
     private void DrawSandbag(TilePos tile)
@@ -1729,17 +1707,7 @@ public partial class WorldRenderer : Node2D
     }
 
     private void DrawSandbagBlueprint(TilePos tile, float progress, float funding)
-    {
-        var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        DrawRect(rect, FundedFill(SandbagBpFill, funding), filled: true);
-        DrawRect(rect, SandbagBpBorder, filled: false, width: 2f);
-        if (progress > 0f)
-        {
-            float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
-            var bar = new Rect2(rect.Position.X, rect.Position.Y + (PixelsPerTile - h), PixelsPerTile, h);
-            DrawRect(bar, BlueprintProgress, filled: true);
-        }
-    }
+        => DrawTileBlueprint(tile, progress, funding, SandbagBpFill, SandbagBpBorder);
 
     private void DrawLamp(TilePos tile, bool poweredOn, LightColor color)
     {
@@ -1772,38 +1740,10 @@ public partial class WorldRenderer : Node2D
     }
 
     private void DrawLampBlueprint(TilePos tile, float progress, float funding)
-    {
-        var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        DrawRect(rect, FundedFill(LampBpFill, funding), filled: true);
-        DrawRect(rect, LampBpBorder, filled: false, width: 2f);
-        if (progress > 0f)
-        {
-            float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
-            var bar = new Rect2(
-                rect.Position.X,
-                rect.Position.Y + (PixelsPerTile - h),
-                PixelsPerTile,
-                h);
-            DrawRect(bar, BlueprintProgress, filled: true);
-        }
-    }
+        => DrawTileBlueprint(tile, progress, funding, LampBpFill, LampBpBorder);
 
     private void DrawFloorBlueprint(TilePos tile, float progress, float funding)
-    {
-        var rect = new Rect2(tile.X * PixelsPerTile, tile.Y * PixelsPerTile, PixelsPerTile, PixelsPerTile);
-        DrawRect(rect, FundedFill(FloorBlueprintFill, funding), filled: true);
-        DrawRect(rect, FloorBlueprintBorder, filled: false, width: 2f);
-        if (progress > 0f)
-        {
-            float h = PixelsPerTile * Mathf.Clamp(progress, 0f, 1f);
-            var bar = new Rect2(
-                rect.Position.X,
-                rect.Position.Y + (PixelsPerTile - h),
-                PixelsPerTile,
-                h);
-            DrawRect(bar, BlueprintProgress, filled: true);
-        }
-    }
+        => DrawTileBlueprint(tile, progress, funding, FloorBlueprintFill, FloorBlueprintBorder);
 
     // Draws floored tiles as per-tile wood rects with two darker plank
     // lines. Iterates the cached _floorBytes; skips empty tiles. Cheap
