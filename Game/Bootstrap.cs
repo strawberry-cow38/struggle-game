@@ -24,6 +24,12 @@ public partial class Bootstrap : Node2D
         // rate mouse stays collated to one motion event per frame.
         Input.UseAccumulatedInput = true;
 
+        // Force VSync on at runtime. The project.godot vsync_mode wasn't
+        // actually capping the framerate (seen running ~720fps), so set it
+        // explicitly on the window — caps to refresh, frees the CPU core the
+        // uncapped renderer was burning, and kills the move-order-spam jitter.
+        DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Enabled);
+
         // Fresh world every launch. Harness still gets the deterministic
         // SimHost() default via --harness wiring elsewhere.
         _host = new SimHost(System.Environment.TickCount);

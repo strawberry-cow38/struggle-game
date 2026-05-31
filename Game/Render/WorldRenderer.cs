@@ -908,14 +908,20 @@ public partial class WorldRenderer : Node2D
         var path = pp.Path;
         if (path.Length > 0)
         {
-            var points = new Vector2[path.Length + (start.HasValue ? 1 : 0)];
-            int idx = 0;
-            if (start is Vector2 s) points[idx++] = s;
-            for (int k = 0; k < path.Length; k++)
-                points[idx++] = new Vector2(
-                    (path[k].X + 0.5f) * PixelsPerTile,
-                    (path[k].Y + 0.5f) * PixelsPerTile);
-            if (points.Length >= 2) DrawPolyline(points, PathLineColor, width: 2f, antialiased: true);
+            // Draw the route as connected segments — NOT a fresh Vector2[] +
+            // DrawPolyline. This runs per selected pawn per frame; at high fps
+            // (uncapped/spamming move orders) the array alloc was real render
+            // -thread garbage. DrawLine takes scalars → zero managed alloc.
+            Vector2 prevPt;
+            int startK;
+            if (start is Vector2 s) { prevPt = s; startK = 0; }
+            else { prevPt = new Vector2((path[0].X + 0.5f) * PixelsPerTile, (path[0].Y + 0.5f) * PixelsPerTile); startK = 1; }
+            for (int k = startK; k < path.Length; k++)
+            {
+                var pt = new Vector2((path[k].X + 0.5f) * PixelsPerTile, (path[k].Y + 0.5f) * PixelsPerTile);
+                DrawLine(prevPt, pt, PathLineColor, width: 2f, antialiased: true);
+                prevPt = pt;
+            }
 
             var target = path[^1];
             float t = PixelsPerTile * 0.35f;
