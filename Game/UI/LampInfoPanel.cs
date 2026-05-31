@@ -1,5 +1,4 @@
 using Godot;
-using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
@@ -7,64 +6,29 @@ using StruggleGame.Sim.World;
 
 namespace StruggleGame.Game.UI;
 
-// Right-side panel for a selected lamp. Shows tile + power state and
-// exposes the Power cheat toggle (until a real power network ships)
-// plus a Deconstruct button. Multi-select toggles power across every
-// selected lamp; "majority on" determines the target state.
-public partial class LampInfoPanel : CanvasLayer
+// Right-side panel for a selected lamp. Shows tile + power state, exposes
+// the Power cheat toggle (until a real power network ships), a color
+// picker + preset swatches, and a Deconstruct button. Multi-select bulk-
+// applies across every selected lamp. See TileInfoPanel.
+public partial class LampInfoPanel : TileInfoPanel
 {
-    public SimHost? Host { get; set; }
-
-    private const int PanelWidth = 280;
-    private const int MarginRight = 16;
-    private const int MarginTop = 16;
-
-    private Panel _root = null!;
-    private Label _nameLabel = null!;
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
     private CheckBox _poweredChk = null!;
     private ColorPickerButton _colorBtn = null!;
     private Button _deconBtn = null!;
-
-    private TilePos[] _shownTiles = Array.Empty<TilePos>();
-    private long _lastSnapshotTick = -1;
     private bool _suppressToggle;
 
-    public override void _Ready()
+    protected override TilePos[] SelectedTiles
     {
-        Layer = 95;
+        get => Host!.SelectedLampTiles;
+        set => Host!.SelectedLampTiles = value;
+    }
+    protected override string Title => "Lamp";
+    protected override int MinHeight => 180;
 
-        _root = new Panel
-        {
-            Name = "Root",
-            CustomMinimumSize = new Vector2(PanelWidth, 180),
-            MouseFilter = Control.MouseFilterEnum.Stop,
-            Visible = false,
-        };
-        AddChild(_root);
-
-        var vbox = new VBoxContainer
-        {
-            AnchorRight = 1, AnchorBottom = 1,
-            OffsetLeft = 10, OffsetTop = 10, OffsetRight = -10, OffsetBottom = -10,
-            MouseFilter = Control.MouseFilterEnum.Pass,
-        };
-        vbox.AddThemeConstantOverride("separation", 6);
-        _root.AddChild(vbox);
-
-        var headerRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        _nameLabel = new Label { Text = "Lamp", CustomMinimumSize = new Vector2(0, 24) };
-        _nameLabel.AddThemeFontSizeOverride("font_size", 18);
-        _nameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        headerRow.AddChild(_nameLabel);
-        var closeBtn = new Button { Text = "X", CustomMinimumSize = new Vector2(28, 24) };
-        closeBtn.Pressed += () => Host!.SelectedLampTiles = Array.Empty<TilePos>();
-        headerRow.AddChild(closeBtn);
-        vbox.AddChild(headerRow);
-
-        vbox.AddChild(new HSeparator());
-
+    protected override void BuildBody(VBoxContainer vbox)
+    {
         _tileLabel = new Label { Text = "" };
         vbox.AddChild(_tileLabel);
 
@@ -87,9 +51,8 @@ public partial class LampInfoPanel : CanvasLayer
         colorRow.AddChild(_colorBtn);
         vbox.AddChild(colorRow);
 
-        // Color wheel presets — 12-step hue ring at full saturation plus
-        // a white reset. Quick-pick row above the freeform picker so
-        // common colors are one click away.
+        // Color wheel presets — 12-step hue ring at full saturation plus a
+        // white reset. Quick-pick row above the freeform picker.
         var presetRow1 = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         var presetRow2 = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         presetRow1.AddThemeConstantOverride("separation", 2);
@@ -114,50 +77,9 @@ public partial class LampInfoPanel : CanvasLayer
         _deconBtn = new Button { Text = "Deconstruct", CustomMinimumSize = new Vector2(0, 28) };
         _deconBtn.Pressed += OnDeconPressed;
         vbox.AddChild(_deconBtn);
-
-        GetTree().Root.SizeChanged += Reposition;
-        CallDeferred(nameof(Reposition));
     }
 
-    public override void _ExitTree()
-    {
-        if (IsInsideTree()) GetTree().Root.SizeChanged -= Reposition;
-    }
-
-    public override void _Process(double delta)
-    {
-        if (Host is null) return;
-        var tiles = Host.SelectedLampTiles;
-        var snap = Host.LatestSnapshot;
-        if (tiles.Length == 0 || snap is null)
-        {
-            if (_root.Visible) { _root.Visible = false; _shownTiles = Array.Empty<TilePos>(); }
-            return;
-        }
-        if (!_root.Visible) _root.Visible = true;
-        if (!TilesEqual(tiles, _shownTiles) || snap.Tick != _lastSnapshotTick)
-        {
-            Render(snap, tiles);
-            _shownTiles = tiles;
-            _lastSnapshotTick = snap.Tick;
-        }
-    }
-
-    private static bool TilesEqual(TilePos[] a, TilePos[] b)
-    {
-        if (a.Length != b.Length) return false;
-        for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
-        return true;
-    }
-
-    private void Reposition()
-    {
-        var vp = GetViewport().GetVisibleRect().Size;
-        _root.Position = new Vector2(vp.X - PanelWidth - MarginRight, MarginTop);
-        _root.Size = new Vector2(PanelWidth, _root.Size.Y);
-    }
-
-    private void Render(SimSnapshot snap, TilePos[] tiles)
+    protected override void Render(SimSnapshot snap, TilePos[] tiles)
     {
         var live = new List<LampState>(tiles.Length);
         var liveTiles = new List<TilePos>(tiles.Length);
@@ -170,12 +92,12 @@ public partial class LampInfoPanel : CanvasLayer
         }
         if (live.Count == 0)
         {
-            Host!.SelectedLampTiles = Array.Empty<TilePos>();
+            SelectedTiles = Array.Empty<TilePos>();
             return;
         }
         if (live.Count != tiles.Length)
         {
-            Host!.SelectedLampTiles = liveTiles.ToArray();
+            SelectedTiles = liveTiles.ToArray();
         }
 
         int onCount = 0;
@@ -183,13 +105,13 @@ public partial class LampInfoPanel : CanvasLayer
 
         if (live.Count == 1)
         {
-            _nameLabel.Text = "Lamp";
+            NameLabel.Text = "Lamp";
             _tileLabel.Text = $"Tile: ({liveTiles[0].X}, {liveTiles[0].Y})";
             _stateLabel.Text = live[0].PoweredOn ? "Power: ON" : "Power: OFF";
         }
         else
         {
-            _nameLabel.Text = $"Lamps ({live.Count})";
+            NameLabel.Text = $"Lamps ({live.Count})";
             _tileLabel.Text = $"First: ({liveTiles[0].X}, {liveTiles[0].Y})";
             _stateLabel.Text = $"Power on: {onCount}/{live.Count}";
         }
@@ -222,8 +144,7 @@ public partial class LampInfoPanel : CanvasLayer
 
     // Preset swatch — small square tinted to the color. Click bulk-sets
     // every selected lamp via the same SetLampColorCommand path the
-    // freeform picker uses, and syncs the picker swatch too so the
-    // panel reflects the active color.
+    // freeform picker uses, and syncs the picker swatch too.
     private void AddPreset(HBoxContainer row, string tooltip, LightColor color)
     {
         var btn = new Button

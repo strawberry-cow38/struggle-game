@@ -1,26 +1,17 @@
 using Godot;
-using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
-using StruggleGame.Sim.World;
 
 namespace StruggleGame.Game.UI;
 
 // Right-side panel for a selected stove. Shows origin tile, orientation,
-// cook progress, and a Deconstruct button + Bills button (opens BillsPanel).
-// Multi-select applies decon across every selected stove.
-public partial class StoveInfoPanel : CanvasLayer
+// cook progress, and a Deconstruct + Bills button (opens BillsPanel).
+// Multi-select applies decon across every selected stove. See TileInfoPanel.
+public partial class StoveInfoPanel : TileInfoPanel
 {
-    public SimHost? Host { get; set; }
     public BillsPanel? Bills { get; set; }
 
-    private const int PanelWidth = 280;
-    private const int MarginRight = 16;
-    private const int MarginTop = 16;
-
-    private Panel _root = null!;
-    private Label _nameLabel = null!;
     private Label _tileLabel = null!;
     private Label _orientLabel = null!;
     private Label _progressLabel = null!;
@@ -28,42 +19,16 @@ public partial class StoveInfoPanel : CanvasLayer
     private Button _billsBtn = null!;
     private Button _deconBtn = null!;
 
-    private TilePos[] _shownTiles = Array.Empty<TilePos>();
-    private long _lastSnapshotTick = -1;
-
-    public override void _Ready()
+    protected override TilePos[] SelectedTiles
     {
-        Layer = 95;
-        _root = new Panel
-        {
-            Name = "Root",
-            CustomMinimumSize = new Vector2(PanelWidth, 180),
-            MouseFilter = Control.MouseFilterEnum.Stop,
-            Visible = false,
-        };
-        AddChild(_root);
+        get => Host!.SelectedStoveTiles;
+        set => Host!.SelectedStoveTiles = value;
+    }
+    protected override string Title => "Stove";
+    protected override int MinHeight => 180;
 
-        var vbox = new VBoxContainer
-        {
-            AnchorRight = 1, AnchorBottom = 1,
-            OffsetLeft = 10, OffsetTop = 10, OffsetRight = -10, OffsetBottom = -10,
-            MouseFilter = Control.MouseFilterEnum.Pass,
-        };
-        vbox.AddThemeConstantOverride("separation", 6);
-        _root.AddChild(vbox);
-
-        var headerRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        _nameLabel = new Label { Text = "Stove", CustomMinimumSize = new Vector2(0, 24) };
-        _nameLabel.AddThemeFontSizeOverride("font_size", 18);
-        _nameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        headerRow.AddChild(_nameLabel);
-        var closeBtn = new Button { Text = "X", CustomMinimumSize = new Vector2(28, 24) };
-        closeBtn.Pressed += () => Host!.SelectedStoveTiles = Array.Empty<TilePos>();
-        headerRow.AddChild(closeBtn);
-        vbox.AddChild(headerRow);
-
-        vbox.AddChild(new HSeparator());
-
+    protected override void BuildBody(VBoxContainer vbox)
+    {
         _tileLabel = new Label { Text = "" };
         vbox.AddChild(_tileLabel);
         _orientLabel = new Label { Text = "" };
@@ -80,50 +45,9 @@ public partial class StoveInfoPanel : CanvasLayer
         _deconBtn = new Button { Text = "Deconstruct", CustomMinimumSize = new Vector2(0, 28) };
         _deconBtn.Pressed += OnDeconPressed;
         vbox.AddChild(_deconBtn);
-
-        GetTree().Root.SizeChanged += Reposition;
-        CallDeferred(nameof(Reposition));
     }
 
-    public override void _ExitTree()
-    {
-        if (IsInsideTree()) GetTree().Root.SizeChanged -= Reposition;
-    }
-
-    public override void _Process(double delta)
-    {
-        if (Host is null) return;
-        var tiles = Host.SelectedStoveTiles;
-        var snap = Host.LatestSnapshot;
-        if (tiles.Length == 0 || snap is null)
-        {
-            if (_root.Visible) { _root.Visible = false; _shownTiles = Array.Empty<TilePos>(); }
-            return;
-        }
-        if (!_root.Visible) _root.Visible = true;
-        if (!TilesEqual(tiles, _shownTiles) || snap.Tick != _lastSnapshotTick)
-        {
-            Render(snap, tiles);
-            _shownTiles = tiles;
-            _lastSnapshotTick = snap.Tick;
-        }
-    }
-
-    private static bool TilesEqual(TilePos[] a, TilePos[] b)
-    {
-        if (a.Length != b.Length) return false;
-        for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
-        return true;
-    }
-
-    private void Reposition()
-    {
-        var vp = GetViewport().GetVisibleRect().Size;
-        _root.Position = new Vector2(vp.X - PanelWidth - MarginRight, MarginTop);
-        _root.Size = new Vector2(PanelWidth, _root.Size.Y);
-    }
-
-    private void Render(SimSnapshot snap, TilePos[] tiles)
+    protected override void Render(SimSnapshot snap, TilePos[] tiles)
     {
         var live = new List<StoveState>(tiles.Length);
         var liveTiles = new List<TilePos>(tiles.Length);
@@ -136,17 +60,17 @@ public partial class StoveInfoPanel : CanvasLayer
         }
         if (live.Count == 0)
         {
-            Host!.SelectedStoveTiles = Array.Empty<TilePos>();
+            SelectedTiles = Array.Empty<TilePos>();
             return;
         }
         if (live.Count != tiles.Length)
         {
-            Host!.SelectedStoveTiles = liveTiles.ToArray();
+            SelectedTiles = liveTiles.ToArray();
         }
         if (live.Count == 1)
         {
             var s = live[0];
-            _nameLabel.Text = "Stove";
+            NameLabel.Text = "Stove";
             _tileLabel.Text = $"Tile: ({s.Origin.X}, {s.Origin.Y})";
             _orientLabel.Text = $"Facing: {s.Orientation}";
             if (s.CurrentBillIndex >= 0)
@@ -162,7 +86,7 @@ public partial class StoveInfoPanel : CanvasLayer
         }
         else
         {
-            _nameLabel.Text = $"Stoves ({live.Count})";
+            NameLabel.Text = $"Stoves ({live.Count})";
             _tileLabel.Text = $"First: ({liveTiles[0].X}, {liveTiles[0].Y})";
             _orientLabel.Text = "";
             _progressLabel.Text = "";
