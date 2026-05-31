@@ -3,65 +3,30 @@ using StruggleGame.Sim.Jobs;
 
 namespace StruggleGame.Sim.World;
 
-// Build / decon advancer for Ur boards. 1x1 footprint — worker stands
-// on any 4-adjacent walkable tile (Chebyshev 1). SimRuntime.CompleteJob
-// handles the actual blueprint→board entity promotion.
-public sealed class UrBoardSystem
+// Build / decon advancer for Ur boards. 1x1 footprint — worker stands on
+// any 4-adjacent walkable tile (Chebyshev 1). See BuildableSystem.
+public sealed class UrBoardSystem : BuildableSystem
 {
     public const float BuildTimeSec = 2.5f;
     public const float DeconTimeSec = 1.5f;
 
-    private readonly JobBoard _jobs;
-    private readonly SimRuntime _sim;
-    private readonly List<JobId> _completed = new();
+    public UrBoardSystem(SimRuntime sim, JobBoard jobs) : base(sim, jobs) { }
 
-    private ArchetypeQuery<WorldPos, BuildTarget, Wanderer>? _workersQ;
+    protected override JobKind BuildKind => JobKind.UrBoardBuild;
+    protected override JobKind DeconKind => JobKind.UrBoardDeconstruct;
+    protected override float BuildSeconds => BuildTimeSec;
+    protected override float DeconSeconds => DeconTimeSec;
 
-    public UrBoardSystem(SimRuntime sim, JobBoard jobs)
+    protected override bool BuildReady(Job job, float px, float py)
     {
-        _sim = sim;
-        _jobs = jobs;
+        var t = job.Entity.GetComponent<UrBoardBlueprint>().Tile;
+        return BuildAdjacency.InRange(px, py, t.X, t.Y);
     }
 
-    public void Step(EntityStore store, float dt)
-    {
-        _completed.Clear();
-        var workers = _workersQ ??= store.Query<WorldPos, BuildTarget, Wanderer>();
-        workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
-        {
-            var job = _jobs.Get(target.JobId);
-            if (job is null) return;
-            if (job.Kind != JobKind.UrBoardBuild && job.Kind != JobKind.UrBoardDeconstruct) return;
-            if (job.State != JobState.Open && job.State != JobState.Claimed) return;
+    protected override bool DeconReady(Job job, float px, float py)
+        => Sim.UrBoardMap.ContainsKey(job.Tile)
+        && BuildAdjacency.InRange(px, py, job.Tile.X, job.Tile.Y);
 
-            Map.TilePos t;
-            if (job.Kind == JobKind.UrBoardBuild)
-            {
-                var bp = job.Entity.GetComponent<UrBoardBlueprint>();
-                t = bp.Tile;
-            }
-            else
-            {
-                if (!_sim.UrBoardMap.TryGetValue(job.Tile, out _)) return;
-                t = job.Tile;
-            }
-
-            if (!BuildAdjacency.InRange(pos.X, pos.Y, t.X, t.Y)) return;
-
-            if (job.Kind == JobKind.UrBoardBuild)
-            {
-                if (!_sim.IsBlueprintFunded(job.Entity)) return;
-                ref var bp = ref job.Entity.GetComponent<UrBoardBlueprint>();
-                bp.ProgressSec += dt * HealthMods.WorkSpeed(worker);
-                if (bp.ProgressSec >= BuildTimeSec) _completed.Add(job.Id);
-            }
-            else
-            {
-                ref var decon = ref job.Entity.GetComponent<Decon>();
-                decon.ProgressSec += dt * HealthMods.WorkSpeed(worker);
-                if (decon.ProgressSec >= DeconTimeSec) _completed.Add(job.Id);
-            }
-        });
-        foreach (var id in _completed) _sim.CompleteJob(id);
-    }
+    protected override ref float BuildProgress(Entity blueprint)
+        => ref blueprint.GetComponent<UrBoardBlueprint>().ProgressSec;
 }

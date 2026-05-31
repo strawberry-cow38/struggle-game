@@ -3,54 +3,27 @@ using StruggleGame.Sim.Jobs;
 
 namespace StruggleGame.Sim.World;
 
-// Build / decon advancer for lamps. Mirror of FloorSystem / RoofSystem:
-// the worker stands on (or 4-adjacent to) the tile, ProgressSec ticks
-// up while present, and SimRuntime.CompleteJob handles the actual entity
-// promotion + light recompute.
-public sealed class LampSystem
+// Build / decon advancer for lamps. Worker stands on (or 4-adjacent to)
+// the tile; lamps are free (no funding gate). See BuildableSystem.
+public sealed class LampSystem : BuildableSystem
 {
     public const float LampBuildTimeSec = 1.5f;
     public const float LampDeconTimeSec = 0.8f;
 
-    private readonly JobBoard _jobs;
-    private readonly SimRuntime _sim;
+    public LampSystem(SimRuntime sim, JobBoard jobs) : base(sim, jobs) { }
 
-    public LampSystem(SimRuntime sim, JobBoard jobs)
-    {
-        _sim = sim;
-        _jobs = jobs;
-    }
+    protected override JobKind BuildKind => JobKind.LampBuild;
+    protected override JobKind DeconKind => JobKind.LampDeconstruct;
+    protected override float BuildSeconds => LampBuildTimeSec;
+    protected override float DeconSeconds => LampDeconTimeSec;
+    protected override bool RequiresFunding => false;
 
-    private readonly List<JobId> _completed = new();
+    protected override bool BuildReady(Job job, float px, float py)
+        => BuildAdjacency.InRangeOrOnTile(px, py, job.Tile.X, job.Tile.Y);
 
-    // Cached queries — Store.Query<>() allocates a query object per call.
-    private ArchetypeQuery<WorldPos, BuildTarget, Wanderer>? _workersQ;
+    protected override bool DeconReady(Job job, float px, float py)
+        => BuildAdjacency.InRangeOrOnTile(px, py, job.Tile.X, job.Tile.Y);
 
-    public void Step(EntityStore store, float dt)
-    {
-        _completed.Clear();
-        var workers = _workersQ ??= store.Query<WorldPos, BuildTarget, Wanderer>();
-        workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
-        {
-            var job = _jobs.Get(target.JobId);
-            if (job is null) return;
-            if (job.Kind != JobKind.LampBuild && job.Kind != JobKind.LampDeconstruct) return;
-            if (job.State != JobState.Open && job.State != JobState.Claimed) return;
-            if (!BuildAdjacency.InRangeOrOnTile(pos.X, pos.Y, job.Tile.X, job.Tile.Y)) return;
-
-            if (job.Kind == JobKind.LampBuild)
-            {
-                ref var bp = ref job.Entity.GetComponent<LampBlueprint>();
-                bp.ProgressSec += dt * HealthMods.WorkSpeed(worker);
-                if (bp.ProgressSec >= LampBuildTimeSec) _completed.Add(job.Id);
-            }
-            else
-            {
-                ref var decon = ref job.Entity.GetComponent<Decon>();
-                decon.ProgressSec += dt * HealthMods.WorkSpeed(worker);
-                if (decon.ProgressSec >= LampDeconTimeSec) _completed.Add(job.Id);
-            }
-        });
-        foreach (var id in _completed) _sim.CompleteJob(id);
-    }
+    protected override ref float BuildProgress(Entity blueprint)
+        => ref blueprint.GetComponent<LampBlueprint>().ProgressSec;
 }

@@ -4,80 +4,44 @@ using StruggleGame.Sim.Map;
 
 namespace StruggleGame.Sim.World;
 
-// Build / decon advancer for stoves. Worker is adjacent to any of the
-// 4 footprint tiles (3 body + 1 standing). Cook progress is advanced by
-// CookSystem, not this one.
-public sealed class StoveSystem
+// Build / decon advancer for stoves. Worker is adjacent to any of the 4
+// footprint tiles (3 body + 1 standing). Cook progress is advanced by
+// CookSystem, not this one. See BuildableSystem.
+public sealed class StoveSystem : BuildableSystem
 {
     public const float StoveBuildTimeSec = 4.0f;
     public const float StoveDeconTimeSec = 2.5f;
 
-    private readonly JobBoard _jobs;
-    private readonly SimRuntime _sim;
+    public StoveSystem(SimRuntime sim, JobBoard jobs) : base(sim, jobs) { }
 
-    public StoveSystem(SimRuntime sim, JobBoard jobs)
+    protected override JobKind BuildKind => JobKind.StoveBuild;
+    protected override JobKind DeconKind => JobKind.StoveDeconstruct;
+    protected override float BuildSeconds => StoveBuildTimeSec;
+    protected override float DeconSeconds => StoveDeconTimeSec;
+
+    protected override bool BuildReady(Job job, float px, float py)
     {
-        _sim = sim;
-        _jobs = jobs;
+        var bp = job.Entity.GetComponent<StoveBlueprint>();
+        return AdjacentToFootprint(bp.Origin, bp.Orientation, px, py);
     }
 
-    private readonly List<JobId> _completed = new();
-
-    private ArchetypeQuery<WorldPos, BuildTarget, Wanderer>? _workersQ;
-
-    public void Step(EntityStore store, float dt)
+    protected override bool DeconReady(Job job, float px, float py)
     {
-        _completed.Clear();
-        var workers = _workersQ ??= store.Query<WorldPos, BuildTarget, Wanderer>();
-        workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
+        if (!Sim.StoveMap.TryGetValue(job.Tile, out var stoveEnt)) return false;
+        var s = stoveEnt.GetComponent<Stove>();
+        return AdjacentToFootprint(s.Origin, s.Orientation, px, py);
+    }
+
+    protected override ref float BuildProgress(Entity blueprint)
+        => ref blueprint.GetComponent<StoveBlueprint>().ProgressSec;
+
+    private static bool AdjacentToFootprint(TilePos origin, StoveOrientation orientation, float px, float py)
+    {
+        foreach (var t in StoveOrientations.BodyTiles(origin, orientation))
         {
-            var job = _jobs.Get(target.JobId);
-            if (job is null) return;
-            if (job.Kind != JobKind.StoveBuild && job.Kind != JobKind.StoveDeconstruct) return;
-            if (job.State != JobState.Open && job.State != JobState.Claimed) return;
-
-            TilePos origin;
-            StoveOrientation orientation;
-            if (job.Kind == JobKind.StoveBuild)
-            {
-                var bp = job.Entity.GetComponent<StoveBlueprint>();
-                origin = bp.Origin;
-                orientation = bp.Orientation;
-            }
-            else
-            {
-                if (!_sim.StoveMap.TryGetValue(job.Tile, out var stoveEnt)) return;
-                var s = stoveEnt.GetComponent<Stove>();
-                origin = s.Origin;
-                orientation = s.Orientation;
-            }
-
-            bool adjacent = false;
-            foreach (var t in StoveOrientations.BodyTiles(origin, orientation))
-            {
-                if (BuildAdjacency.InRange(pos.X, pos.Y, t.X, t.Y)) { adjacent = true; break; }
-            }
-            if (!adjacent)
-            {
-                var st = StoveOrientations.StandingTile(origin, orientation);
-                if (BuildAdjacency.InRange(pos.X, pos.Y, st.X, st.Y)) adjacent = true;
-            }
-            if (!adjacent) return;
-
-            if (job.Kind == JobKind.StoveBuild)
-            {
-                if (!_sim.IsBlueprintFunded(job.Entity)) return;
-                ref var bp = ref job.Entity.GetComponent<StoveBlueprint>();
-                bp.ProgressSec += dt * HealthMods.WorkSpeed(worker);
-                if (bp.ProgressSec >= StoveBuildTimeSec) _completed.Add(job.Id);
-            }
-            else
-            {
-                ref var decon = ref job.Entity.GetComponent<Decon>();
-                decon.ProgressSec += dt * HealthMods.WorkSpeed(worker);
-                if (decon.ProgressSec >= StoveDeconTimeSec) _completed.Add(job.Id);
-            }
-        });
-        foreach (var id in _completed) _sim.CompleteJob(id);
+            if (BuildAdjacency.InRange(px, py, t.X, t.Y)) return true;
+        }
+        var st = StoveOrientations.StandingTile(origin, orientation);
+        return BuildAdjacency.InRange(px, py, st.X, st.Y);
     }
 }

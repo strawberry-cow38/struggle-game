@@ -4,69 +4,40 @@ using StruggleGame.Sim.Jobs;
 namespace StruggleGame.Sim.World;
 
 // Build / decon advancer for beds. Worker must be adjacent (Chebyshev 1)
-// to either tile of the 2-tile footprint; standing on a footprint tile
-// is impossible since the bed (or blueprint) blocks both. Completion +
-// the actual entity promotion / removal happen in SimRuntime.CompleteJob.
-public sealed class BedSystem
+// to either tile of the 2-tile footprint; standing on a footprint tile is
+// impossible since the bed (or blueprint) blocks both. See BuildableSystem.
+public sealed class BedSystem : BuildableSystem
 {
     public const float BedBuildTimeSec = 2.5f;
     public const float BedDeconTimeSec = 1.5f;
 
-    private readonly JobBoard _jobs;
-    private readonly SimRuntime _sim;
+    public BedSystem(SimRuntime sim, JobBoard jobs) : base(sim, jobs) { }
 
-    public BedSystem(SimRuntime sim, JobBoard jobs)
+    protected override JobKind BuildKind => JobKind.BedBuild;
+    protected override JobKind DeconKind => JobKind.BedDeconstruct;
+    protected override float BuildSeconds => BedBuildTimeSec;
+    protected override float DeconSeconds => BedDeconTimeSec;
+
+    protected override bool BuildReady(Job job, float px, float py)
     {
-        _sim = sim;
-        _jobs = jobs;
+        var bp = job.Entity.GetComponent<BedBlueprint>();
+        return AdjacentToFootprint(bp.Origin, bp.Orientation, px, py);
     }
 
-    private readonly List<JobId> _completed = new();
-    private ArchetypeQuery<WorldPos, BuildTarget, Wanderer>? _workersQ;
-
-    public void Step(EntityStore store, float dt)
+    protected override bool DeconReady(Job job, float px, float py)
     {
-        _completed.Clear();
-        var workers = _workersQ ??= store.Query<WorldPos, BuildTarget, Wanderer>();
-        workers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
-        {
-            var job = _jobs.Get(target.JobId);
-            if (job is null) return;
-            if (job.Kind != JobKind.BedBuild && job.Kind != JobKind.BedDeconstruct) return;
-            if (job.State != JobState.Open && job.State != JobState.Claimed) return;
+        if (!Sim.BedMap.TryGetValue(job.Tile, out var bedEnt)) return false;
+        var bed = bedEnt.GetComponent<Bed>();
+        return AdjacentToFootprint(bed.Origin, bed.Orientation, px, py);
+    }
 
-            Map.TilePos origin, foot;
-            if (job.Kind == JobKind.BedBuild)
-            {
-                var bp = job.Entity.GetComponent<BedBlueprint>();
-                origin = bp.Origin;
-                foot = BedOrientations.Foot(bp.Origin, bp.Orientation);
-            }
-            else
-            {
-                if (!_sim.BedMap.TryGetValue(job.Tile, out var bedEnt)) return;
-                var bed = bedEnt.GetComponent<Bed>();
-                origin = bed.Origin;
-                foot = BedOrientations.Foot(bed.Origin, bed.Orientation);
-            }
+    protected override ref float BuildProgress(Entity blueprint)
+        => ref blueprint.GetComponent<BedBlueprint>().ProgressSec;
 
-            if (!BuildAdjacency.InRange(pos.X, pos.Y, origin.X, origin.Y)
-             && !BuildAdjacency.InRange(pos.X, pos.Y, foot.X, foot.Y)) return;
-
-            if (job.Kind == JobKind.BedBuild)
-            {
-                if (!_sim.IsBlueprintFunded(job.Entity)) return;
-                ref var bp = ref job.Entity.GetComponent<BedBlueprint>();
-                bp.ProgressSec += dt * HealthMods.WorkSpeed(worker);
-                if (bp.ProgressSec >= BedBuildTimeSec) _completed.Add(job.Id);
-            }
-            else
-            {
-                ref var decon = ref job.Entity.GetComponent<Decon>();
-                decon.ProgressSec += dt * HealthMods.WorkSpeed(worker);
-                if (decon.ProgressSec >= BedDeconTimeSec) _completed.Add(job.Id);
-            }
-        });
-        foreach (var id in _completed) _sim.CompleteJob(id);
+    private static bool AdjacentToFootprint(Map.TilePos origin, BedOrientation orientation, float px, float py)
+    {
+        var foot = BedOrientations.Foot(origin, orientation);
+        return BuildAdjacency.InRange(px, py, origin.X, origin.Y)
+            || BuildAdjacency.InRange(px, py, foot.X, foot.Y);
     }
 }
