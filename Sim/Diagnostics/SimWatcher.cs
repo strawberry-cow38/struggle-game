@@ -66,12 +66,16 @@ public sealed class SimWatcher
         Interlocked.Increment(ref _rescuedTotal);
     }
 
+    private readonly HashSet<int> _seenScratch = new();
+    private ArchetypeQuery<WorldPos, PathFollower, Wanderer>? _pawnsQ;
+
     public void Observe(long tick, EntityStore store, JobBoard jobs)
     {
         if (tick % SampleEveryTicks != 0) return;
 
-        var seen = new HashSet<int>();
-        var query = store.Query<WorldPos, PathFollower, Wanderer>();
+        var seen = _seenScratch;
+        seen.Clear();
+        var query = _pawnsQ ??= store.Query<WorldPos, PathFollower, Wanderer>();
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity ent) =>
         {
             seen.Add(ent.Id);

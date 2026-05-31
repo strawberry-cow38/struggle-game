@@ -449,7 +449,9 @@ public sealed class DummyController
                     {
                         ref var inv = ref entity.GetComponent<Inventory>();
                         inv.Items ??= new List<InventoryStack>();
-                        int idx = inv.Items.FindIndex(s => s.ItemPath == po.ItemPath);
+                        int idx = -1; // plain loop, not FindIndex (no predicate closure alloc)
+                        for (int k = 0; k < inv.Items.Count; k++)
+                            if (inv.Items[k].ItemPath == po.ItemPath) { idx = k; break; }
                         if (idx >= 0) { var s = inv.Items[idx]; s.Count += got; inv.Items[idx] = s; }
                         else inv.Items.Add(new InventoryStack { ItemPath = po.ItemPath, Count = got });
                     }
