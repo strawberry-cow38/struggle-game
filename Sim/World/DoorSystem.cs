@@ -60,7 +60,7 @@ public sealed class DoorSystem
                 {
                     door.State = DoorState.Closing;
                 }
-                if (door.State == DoorState.Open)
+                else if (door.State == DoorState.Open)
                 {
                     door.State = DoorState.Closing;
                     door.ProgressSec = OpenTimeSec;

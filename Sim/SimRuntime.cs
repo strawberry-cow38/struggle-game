@@ -2523,11 +2523,8 @@ public sealed class SimRuntime
             entity.DeleteEntity();
             // Generic ItemPile drop — haul + stockpiles handle any ItemPile
             // by ItemDef, so the yield gets hauled/stored like anything else.
-            string itemPath = crop.Kind switch
-            {
-                CropKind.Carrot => Items.ItemCatalog.Carrot.FullPath,
-                _ => Items.ItemCatalog.Carrot.FullPath,
-            };
+            // Only one crop kind today; harvest always yields carrots.
+            string itemPath = Items.ItemCatalog.Carrot.FullPath;
             var drop = Store.CreateEntity();
             drop.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
             drop.AddComponent(new ItemPile { Tile = tile, Count = yield, ItemPath = itemPath });
@@ -5471,16 +5468,6 @@ public sealed class SimRuntime
             LightVersion++;
         }
         EnsureLightChunkArrays(w, h);
-    }
-
-    // Single-tile roof toggle. Roof state is composition-only (it gates
-    // whether sun reaches this tile at read time); the lamp buffer is
-    // unaffected by roof flips. Just bump LightVersion so the renderer
-    // recomposites.
-    private void RecomputeLightAt(int idx)
-    {
-        if (idx < 0 || idx >= _lampR.Length) return;
-        LightVersion++;
     }
 
     // Day/night sun. Hour-of-day drives intensity (smoothstep ramps over

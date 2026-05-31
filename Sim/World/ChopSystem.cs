@@ -20,6 +20,7 @@ public sealed class ChopSystem
     private readonly JobBoard _jobs;
     private readonly SimRuntime _sim;
     private readonly List<JobId> _completed = new();
+    private ArchetypeQuery<WorldPos, BuildTarget, Wanderer>? _choppersQ;
 
     public ChopSystem(SimRuntime sim, JobBoard jobs)
     {
@@ -30,7 +31,7 @@ public sealed class ChopSystem
     public void Step(EntityStore store, float dt)
     {
         _completed.Clear();
-        var choppers = store.Query<WorldPos, BuildTarget, Wanderer>();
+        var choppers = _choppersQ ??= store.Query<WorldPos, BuildTarget, Wanderer>();
         choppers.ForEachEntity((ref WorldPos pos, ref BuildTarget target, ref Wanderer _w, Entity worker) =>
         {
             var job = _jobs.Get(target.JobId);

@@ -757,10 +757,10 @@ public sealed class DummyController
             return;
         }
 
-        bool tired = entity.HasComponent<SleepNeed>()
-            && entity.GetComponent<SleepNeed>().Level < SleepStartThreshold;
-        bool passedOut = entity.HasComponent<SleepNeed>()
-            && entity.GetComponent<SleepNeed>().Level <= 0f;
+        float sleepLvl = entity.HasComponent<SleepNeed>()
+            ? entity.GetComponent<SleepNeed>().Level : 1f;
+        bool tired = sleepLvl < SleepStartThreshold;
+        bool passedOut = sleepLvl <= 0f;
 
         // Passed out: 0% sleep forces the pawn to drop in-flight work
         // so others (or themselves after waking) can pick it up. Voluntary

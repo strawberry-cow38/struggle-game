@@ -1250,7 +1250,7 @@ public partial class Selector : Node2D
             Host!.SelectedDummyId = null;
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
-            Host.SelectedCropIds = Array.Empty<int>();
+            // NOT SelectedCropIds — WriteCropSelection just set it.
             Host.SelectedStockpileId = null;
             Host.SelectedGrowZoneId = null;
         }

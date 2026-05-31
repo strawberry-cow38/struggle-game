@@ -186,7 +186,7 @@ public sealed class MapView
     }
 
     public bool HasFurniture(TilePos p) => _furnitureSet.Contains(p) || _blockingFurnitureSet.Contains(p);
-    public bool HasFurniture(int x, int y) { var p = new TilePos(x, y); return _furnitureSet.Contains(p) || _blockingFurnitureSet.Contains(p); }
+    public bool HasFurniture(int x, int y) => HasFurniture(new TilePos(x, y));
     public bool Walkable(TilePos p) => Walkable(p.X, p.Y);
 
     private byte RawTerrainByte(int x, int y) => TerrainChunks[MapChunks.ChunkIndex(x, y, ChunksAcross)][MapChunks.LocalIndex(x, y)];
