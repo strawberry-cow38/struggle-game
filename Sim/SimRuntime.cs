@@ -99,6 +99,8 @@ public sealed class SimRuntime
     // stale) and RecomputeLampLight runs once per tick, not once per
     // wall/door completed.
     private bool _lightDirty;
+    // Reused output buffer for CopyLightRgbForRender (render thread only).
+    private byte[]? _lightRgbScratch;
 
     public PathService PathService { get; }
     public SimWatcher Watcher { get; } = new();
@@ -6007,7 +6009,11 @@ public sealed class SimRuntime
             int w = Map.Width;
             int h = Map.Height;
             int n = _lampR.Length;
-            var rgb = new byte[n * 3];
+            // Reused scratch — render thread is the only caller and consumes
+            // the buffer immediately, so a persistent array avoids a fresh
+            // n*3 byte alloc (192 KB at 256x256) on every light rebuild.
+            if (_lightRgbScratch is null || _lightRgbScratch.Length != n * 3) _lightRgbScratch = new byte[n * 3];
+            var rgb = _lightRgbScratch;
             byte sR = _lastSunR, sG = _lastSunG, sB = _lastSunB;
             int cn = _lightChunkDirty.Length;
             for (int chunkId = 0; chunkId < cn; chunkId++)

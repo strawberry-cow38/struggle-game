@@ -52,6 +52,11 @@ public partial class VisualLighting : Node2D
     private SimSnapshot? _lastLampSnap;
 
     private ImageTexture? _lightTex;
+    // Reused staging buffer + Image so a LightVersion bump (every wall/door
+    // completed) doesn't alloc a fresh n*4 byte array + Image object each
+    // frame while building.
+    private byte[]? _lightData;
+    private Image? _lightImg;
     // Exposed for the wall sprite's ShaderMaterial — wall shader bilinear-
     // samples this same per-tile RGB texture so wall lighting tracks ground
     // lighting exactly without a CPU bake per LightVersion bump.
@@ -109,7 +114,8 @@ public partial class VisualLighting : Node2D
         if (_lightOverlay is null) return;
         var rgb = Host!.CopyLightRgbForRender();
         int n = MapWidth * MapHeight;
-        var data = new byte[n * 4];
+        if (_lightData is null || _lightData.Length != n * 4) _lightData = new byte[n * 4];
+        var data = _lightData;
         float floor = AmbientMin;
         float range = 1f - AmbientMin;
         for (int i = 0; i < n; i++)
@@ -120,17 +126,24 @@ public partial class VisualLighting : Node2D
             data[o + 2] = Curve(rgb[i * 3 + 2], floor, range);
             data[o + 3] = 255;
         }
-        var img = Image.CreateFromData(MapWidth, MapHeight, false, Image.Format.Rgba8, data);
+        if (_lightImg is null || _lightImg.GetWidth() != MapWidth || _lightImg.GetHeight() != MapHeight)
+        {
+            _lightImg = Image.CreateFromData(MapWidth, MapHeight, false, Image.Format.Rgba8, data);
+        }
+        else
+        {
+            _lightImg.SetData(MapWidth, MapHeight, false, Image.Format.Rgba8, data);
+        }
         if (_lightTex is null)
         {
-            _lightTex = ImageTexture.CreateFromImage(img);
+            _lightTex = ImageTexture.CreateFromImage(_lightImg);
             _lightOverlay.Texture = _lightTex;
             _lightOverlay.Scale = new Vector2(PixelsPerTile, PixelsPerTile);
             _lightOverlay.Position = Vector2.Zero;
         }
         else
         {
-            _lightTex.Update(img);
+            _lightTex.Update(_lightImg);
         }
     }
 

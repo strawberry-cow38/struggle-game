@@ -1856,16 +1856,20 @@ public partial class WorldRenderer : Node2D
         return tex;
     }
 
-    private ImageTexture BuildWallOverlay(byte[] tiles, int width, int height)
+    private ImageTexture? BuildWallOverlay(byte[] tiles, int width, int height)
     {
         int w = width * WallSubpx;
         int h = height * WallSubpx;
-        // Raw RGBA8 byte buffer + Image.CreateFromData. SetPixel-per-pixel
-        // at this resolution (e.g. 100x100 tiles = 1600x1600 = 2.56M
-        // calls) freezes the main thread for ~1s per wall placement —
-        // unacceptable when building. Default-zero bytes are already
-        // transparent, so non-wall tiles cost nothing.
-        var data = new byte[w * h * 4];
+        // The fallback brick buffer is huge (w*h*4 = up to 67 MB at 256x256
+        // tiles x WallSubpx=16) and was rebuilt + GPU-uploaded on every
+        // MapVersion bump — i.e. every wall completed, every frame while
+        // building. But it's only needed for wall masks that DON'T have a
+        // dedicated sprite (UpdateWallSprites handles the rest). When every
+        // wall on the map has a sprite — the normal case — this buffer is
+        // pure waste. So allocate it lazily on the first un-sprited wall and
+        // return null (no overlay) when there are none. Default-zero bytes
+        // are already transparent, so non-wall tiles cost nothing.
+        byte[]? data = null;
 
         var wtex = EnsureWallBaseTex();
         const int TexMask = WallTexSize - 1;
@@ -1877,6 +1881,7 @@ public partial class WorldRenderer : Node2D
                 if (tiles[ty * width + tx] == 0) continue;
                 int mask = WallNeighborMask(tiles, tx, ty, width, height);
                 if (_wallTextures[mask] is not null) continue;
+                data ??= new byte[w * h * 4];
                 int baseX = tx * WallSubpx;
                 int baseY = ty * WallSubpx;
                 for (int sy = 0; sy < WallSubpx; sy++)
@@ -1896,6 +1901,7 @@ public partial class WorldRenderer : Node2D
                 }
             }
         }
+        if (data is null) return null; // no un-sprited walls — nothing to draw
         var img = Image.CreateFromData(w, h, false, Image.Format.Rgba8, data);
         return ImageTexture.CreateFromImage(img);
     }
@@ -1980,17 +1986,30 @@ public partial class WorldRenderer : Node2D
     private static readonly Color NoRoofTintB = new(1.00f, 0.85f, 0.20f, 0.15f);
     private static ImageTexture BuildNoRoofOverlay(byte[] tiles, int width, int height)
     {
-        var img = Image.CreateEmpty(width, height, false, Image.Format.Rgba8);
-        var transparent = new Color(0f, 0f, 0f, 0f);
+        // Raw RGBA8 buffer instead of per-pixel SetPixel — SetPixel marshals
+        // across the Godot native boundary per call (O(W*H) calls), which
+        // hitched the frame on every RoofVersion bump (each wall completed
+        // while auto-roofing). Default-zero bytes are already transparent.
+        var data = new byte[width * height * 4];
+        byte r = (byte)Math.Round(NoRoofTintA.R * 255f);
+        byte g = (byte)Math.Round(NoRoofTintA.G * 255f);
+        byte b = (byte)Math.Round(NoRoofTintA.B * 255f);
+        byte aOn = (byte)Math.Round(NoRoofTintA.A * 255f);
+        byte aOff = (byte)Math.Round(NoRoofTintB.A * 255f);
         for (int y = 0; y < height; y++)
         {
             int row = y * width;
             for (int x = 0; x < width; x++)
             {
-                if (tiles[row + x] == 0) { img.SetPixel(x, y, transparent); continue; }
-                img.SetPixel(x, y, ((x + y) & 1) == 0 ? NoRoofTintA : NoRoofTintB);
+                if (tiles[row + x] == 0) continue;
+                int idx = (row + x) * 4;
+                data[idx + 0] = r;
+                data[idx + 1] = g;
+                data[idx + 2] = b;
+                data[idx + 3] = ((x + y) & 1) == 0 ? aOn : aOff;
             }
         }
+        var img = Image.CreateFromData(width, height, false, Image.Format.Rgba8, data);
         return ImageTexture.CreateFromImage(img);
     }
 
