@@ -1,101 +1,19 @@
 using Godot;
 using StruggleGame.Game.Tools;
-using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Map;
 
 namespace StruggleGame.Game.Designation;
 
-// Active only when ToolMode == Cancel. LMB-drag draws a rect; on release
-// a CancelJobsInRectCommand queues for the sim, which cancels every job
-// (currently WallBuild only) whose tile lies inside.
-public partial class CancelDesignator : Node2D
+// LMB-drag a rect; on release posts CancelJobsInRectCommand which cancels
+// every designated job/blueprint in the rect. See RectDragDesignator.
+public partial class CancelDesignator : RectDragDesignator
 {
-    private const int PixelsPerTile = SimConstants.PixelsPerTile;
+    protected override ToolMode Mode => ToolMode.Cancel;
+    protected override int ZOrder => 51;
+    protected override Color FillColor => new(0.95f, 0.20f, 0.20f, 0.25f);
+    protected override Color BorderColor => new(1.0f, 0.30f, 0.30f, 0.85f);
 
-    private static readonly Color FillColor = new(0.95f, 0.20f, 0.20f, 0.25f);
-    private static readonly Color BorderColor = new(1.0f, 0.30f, 0.30f, 0.85f);
-
-    public SimHost? Host { get; set; }
-    public ToolService? Tools { get; set; }
-
-    private bool _dragging;
-    private TilePos _startTile;
-    private TilePos _currentTile;
-
-    public override void _Ready()
-    {
-        ZIndex = 51;
-        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.Cancel, ClearPreview);
-    }
-
-    public override void _UnhandledInput(InputEvent @event)
-    {
-        if (Host is null) return;
-        if (Tools is null || Tools.Mode != ToolMode.Cancel)
-        {
-            if (_dragging) { _dragging = false; QueueRedraw(); }
-            return;
-        }
-
-        if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
-        {
-            if (mb.Pressed)
-            {
-                _startTile = MouseToTile();
-                _currentTile = _startTile;
-                _dragging = true;
-                QueueRedraw();
-                GetViewport().SetInputAsHandled();
-            }
-            else if (_dragging)
-            {
-                _currentTile = MouseToTile();
-                Host.QueueCommand(new CancelJobsInRectCommand(_startTile, _currentTile));
-                _dragging = false;
-                QueueRedraw();
-                GetViewport().SetInputAsHandled();
-            }
-        }
-        else if (@event is InputEventMouseMotion && _dragging)
-        {
-            var t = MouseToTile();
-            if (t != _currentTile)
-            {
-                _currentTile = t;
-                QueueRedraw();
-            }
-        }
-    }
-
-    public override void _Draw()
-    {
-        if (!_dragging) return;
-        int xmin = Math.Min(_startTile.X, _currentTile.X);
-        int ymin = Math.Min(_startTile.Y, _currentTile.Y);
-        int xmax = Math.Max(_startTile.X, _currentTile.X);
-        int ymax = Math.Max(_startTile.Y, _currentTile.Y);
-        var rect = new Rect2(
-            xmin * PixelsPerTile,
-            ymin * PixelsPerTile,
-            (xmax - xmin + 1) * PixelsPerTile,
-            (ymax - ymin + 1) * PixelsPerTile);
-        DrawRect(rect, FillColor, filled: true);
-        DrawRect(rect, BorderColor, filled: false, width: 2f);
-    }
-
-    private void ClearPreview()
-    {
-        if (!_dragging) return;
-        _dragging = false;
-        QueueRedraw();
-    }
-
-    private TilePos MouseToTile()
-    {
-        var world = GetGlobalMousePosition();
-        return new TilePos(
-            Mathf.FloorToInt(world.X / PixelsPerTile),
-            Mathf.FloorToInt(world.Y / PixelsPerTile));
-    }
+    protected override void Commit(TilePos start, TilePos current)
+        => Host!.QueueCommand(new CancelJobsInRectCommand(start, current));
 }
