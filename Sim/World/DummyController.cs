@@ -1214,100 +1214,122 @@ public sealed class DummyController
         }
         _lastJobSeek[entity.Id] = (jobVersion, _tick);
 
-        // Per-priority-bucket nearest job. Bucket 0 = player-pinned to
-        // this pawn (RMB "Prioritize for X" beats every WorkType priority).
-        // Buckets 1..8 are the work-tab priorities. Iterate 0..8 in order
-        // — within a bucket we still pick the closest, but we never spill
-        // into a lower-priority bucket while a higher one has work.
-        Span<JobId> bestId = stackalloc JobId[9];
-        Span<TilePos> bestApproach = stackalloc TilePos[9];
-        Span<int> bestDist = stackalloc int[9];
-        for (int i = 0; i < 9; i++) { bestId[i] = JobId.None; bestDist[i] = int.MaxValue; }
-
-        // Only the claimable set (Open + unforbidden), not every job — most
-        // jobs are Claimed mid-work in a busy colony. (State/Forbidden re-checks
-        // kept as a cheap belt-and-suspenders.)
-        foreach (var job in _jobs.OpenJobs)
+        // Spatial local-priority-window claim. Ring out over the job index's
+        // chunks from the pawn, collecting a small window of nearby open jobs
+        // it's allowed to do; once the window fills, scan one more ring for
+        // margin and stop. Then pick the best by (priority, distance) and claim
+        // the first reachable one. Priorities are honoured WITHIN the local
+        // window (a near important job beats a near trivial one), but a far
+        // higher-priority job won't drag the pawn across the map — flat O(local)
+        // cost vs scanning every job. Player-pinned jobs win if in the window.
+        Span<byte> pri = stackalloc byte[WorkTypes.Count];
+        bool anyAllowed = false;
+        for (int wt = 0; wt < WorkTypes.Count; wt++)
         {
-            if (job.State != JobState.Open) continue;
-            if (job.Forbidden) continue;
-            if (!WorkTypes.TryGet(job.Kind, out var wt)) continue;
-            byte pr = _getPriority(entity, wt);
-            if (pr == 0 || pr > 8) continue;
-            // Player-pinned blueprint filter: if this job targets a
-            // blueprint somebody else owns, skip it; if the owner is us,
-            // promote to bucket 0 so this beats every other priority.
-            int pinnedBpId = _getJobBlueprintId(job);
-            if (pinnedBpId != 0)
+            byte p = _getPriority(entity, (WorkType)wt);
+            if (p > 8) p = 8;
+            pri[wt] = p;
+            if (p > 0) anyAllowed = true;
+        }
+        if (!anyAllowed) return false;
+
+        bool carrying = entity.HasComponent<Carrying>();
+        var cands = _claimCandidates;
+        cands.Clear();
+
+        int shift = JobBoard.ChunkShift;
+        int pcx = from.X >> shift, pcy = from.Y >> shift;
+        int maxRing = (view.Width >> shift) + 2; // covers the map → never stuck
+        for (int r = 0; r <= maxRing; r++)
+        {
+            bool windowFilledBefore = cands.Count >= ClaimWindow;
+            for (int cx = pcx - r; cx <= pcx + r; cx++)
+            for (int cy = pcy - r; cy <= pcy + r; cy++)
             {
-                int owner = _getBlueprintClaimant(pinnedBpId);
-                if (owner != 0)
+                if (r > 0 && Math.Abs(cx - pcx) != r && Math.Abs(cy - pcy) != r) continue; // shell only
+                for (int wt = 0; wt < WorkTypes.Count; wt++)
                 {
-                    if (owner != entity.Id) continue;
-                    pr = 0;
+                    if (pri[wt] == 0) continue;
+                    var list = _jobs.OpenJobsInChunk((WorkType)wt, cx, cy);
+                    if (list is null) continue;
+                    for (int k = 0; k < list.Count; k++)
+                    {
+                        var job = list[k];
+                        int prio = pri[wt];
+                        int bpId = _getJobBlueprintId(job);
+                        if (bpId != 0)
+                        {
+                            int owner = _getBlueprintClaimant(bpId);
+                            if (owner != 0)
+                            {
+                                if (owner != entity.Id) continue;  // pinned to someone else
+                                prio = 0;                           // pinned to me → top
+                            }
+                        }
+                        if (job.Kind == JobKind.Haul && carrying) continue;
+                        int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
+                        cands.Add((job, prio, d));
+                    }
                 }
             }
-            // A pawn still hauling (forbidden cargo retained from a prior
-            // delivery, mid-flight cargo, etc.) must not pick up another
-            // haul — HandleHaul would treat the old Carrying as the active
-            // job and walk to its stale DestTile.
-            if (job.Kind == JobKind.Haul && entity.HasComponent<Carrying>()) continue;
-            // Build-kind jobs gated on funded blueprints. Pawns must not
-            // walk over and idle next to an unfunded wall — the haul
-            // pipeline needs to land materials first.
-            if ((job.Kind == JobKind.WallBuild
-                 || job.Kind == JobKind.FloorBuild
-                 || job.Kind == JobKind.DoorBuild
-                 || job.Kind == JobKind.BedBuild)
-                && !_isBlueprintFunded(job.Entity)) continue;
-            // Don't try to build over a wood pile — clearance system
-            // posts a haul to relocate it; pawn should pick the haul up
-            // (or take a different job) rather than spin on the wall.
-            if ((job.Kind == JobKind.WallBuild
-                 || job.Kind == JobKind.DoorBuild
-                 || job.Kind == JobKind.BedBuild)
-                && _anyItemAt(job.Tile)) continue;
-            int d = Math.Abs(job.Tile.X - from.X) + Math.Abs(job.Tile.Y - from.Y);
-            if (d >= bestDist[pr]) continue;
-            TilePos approach;
-            bool isHaul = job.Kind == JobKind.Haul;
-            bool isFloor = job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct;
-            bool isRoof = job.Kind == JobKind.RoofBuild || job.Kind == JobKind.RoofRemove;
-            bool isLamp = job.Kind == JobKind.LampBuild || job.Kind == JobKind.LampDeconstruct;
-            bool isCook = job.Kind == JobKind.Cook;
-            if (isHaul || isFloor || isLamp || isCook)
-            {
-                if (!view.Walkable(job.Tile)) continue;
-                approach = job.Tile;
-            }
-            else if (isRoof)
-            {
-                if (view.Walkable(job.Tile)) approach = job.Tile;
-                else if (TryPickNeighbor(view, from, job.Tile, out var neighbor)) approach = neighbor;
-                else continue;
-            }
-            else
-            {
-                if (!TryPickNeighbor(view, from, job.Tile, out var neighbor)) continue;
-                approach = neighbor;
-            }
-            bestId[pr] = job.Id;
-            bestApproach[pr] = approach;
-            bestDist[pr] = d;
+            if (windowFilledBefore) break; // filled last ring; this one was the margin
         }
+        if (cands.Count == 0) return false;
 
-        for (int level = 0; level <= 8; level++)
+        cands.Sort(_claimByPriorityThenDist);
+        foreach (var c in cands)
         {
-            if (bestId[level].IsNone) continue;
-            if (!_jobs.TryClaim(bestId[level], entity)) continue;
-            cb.AddComponent(entity.Id, new BuildTarget { JobId = bestId[level] });
-            if (bestApproach[level] != from)
-            {
-                path.PendingPathId = _paths.Request(from, bestApproach[level]);
-            }
+            if (!TryFinalizeJob(view, from, c.Job, out var approach)) continue;
+            if (!_jobs.TryClaim(c.Job.Id, entity)) continue;
+            cb.AddComponent(entity.Id, new BuildTarget { JobId = c.Job.Id });
+            if (approach != from) path.PendingPathId = _paths.Request(from, approach);
             return true;
         }
         return false;
+    }
+
+    private const int ClaimWindow = 8;
+    private readonly List<(Jobs.Job Job, int Priority, int Dist)> _claimCandidates = new();
+    private static readonly Comparison<(Jobs.Job Job, int Priority, int Dist)> _claimByPriorityThenDist
+        = (a, b) => a.Priority != b.Priority ? a.Priority - b.Priority : a.Dist - b.Dist;
+
+    // Final per-candidate validity + standing tile. Funded/item-block gates +
+    // the pathable approach. (Pinned-to-other + haul-while-carrying were already
+    // filtered during the ring collect.)
+    private bool TryFinalizeJob(MapView view, TilePos from, Jobs.Job job, out TilePos approach)
+    {
+        approach = default;
+        if ((job.Kind == JobKind.WallBuild
+             || job.Kind == JobKind.FloorBuild
+             || job.Kind == JobKind.DoorBuild
+             || job.Kind == JobKind.BedBuild)
+            && !_isBlueprintFunded(job.Entity)) return false;
+        if ((job.Kind == JobKind.WallBuild
+             || job.Kind == JobKind.DoorBuild
+             || job.Kind == JobKind.BedBuild)
+            && _anyItemAt(job.Tile)) return false;
+        bool isHaul = job.Kind == JobKind.Haul;
+        bool isFloor = job.Kind == JobKind.FloorBuild || job.Kind == JobKind.FloorDeconstruct;
+        bool isRoof = job.Kind == JobKind.RoofBuild || job.Kind == JobKind.RoofRemove;
+        bool isLamp = job.Kind == JobKind.LampBuild || job.Kind == JobKind.LampDeconstruct;
+        bool isCook = job.Kind == JobKind.Cook;
+        if (isHaul || isFloor || isLamp || isCook)
+        {
+            if (!view.Walkable(job.Tile)) return false;
+            approach = job.Tile;
+        }
+        else if (isRoof)
+        {
+            if (view.Walkable(job.Tile)) approach = job.Tile;
+            else if (TryPickNeighbor(view, from, job.Tile, out var neighbor)) approach = neighbor;
+            else return false;
+        }
+        else
+        {
+            if (!TryPickNeighbor(view, from, job.Tile, out var neighbor)) return false;
+            approach = neighbor;
+        }
+        return true;
     }
 
     // Cook flow. job.Entity = the stove. job.Tile = standing tile.

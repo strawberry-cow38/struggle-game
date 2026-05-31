@@ -1,5 +1,6 @@
 using Friflo.Engine.ECS;
 using StruggleGame.Sim.Map;
+using StruggleGame.Sim.Work;
 
 namespace StruggleGame.Sim.Jobs;
 
@@ -21,11 +22,39 @@ public sealed class JobBoard
     private readonly HashSet<Job> _open = new();
     private long _nextId;
 
+    // Spatial index of OPEN jobs by (work type, chunk) so a pawn can ring-search
+    // nearby claimable jobs instead of walking the whole open set. 16x16 chunks.
+    public const int ChunkShift = 4;
+    private readonly Dictionary<(int wt, int cx, int cy), List<Job>> _openChunks = new();
+
     private void RefreshOpen(Job job)
     {
-        if (job.State == JobState.Open && !job.Forbidden) _open.Add(job);
-        else _open.Remove(job);
+        bool want = job.State == JobState.Open && !job.Forbidden;
+        bool have = _open.Contains(job);
+        if (want && !have) { _open.Add(job); ChunkIndex(job, true); }
+        else if (!want && have) { _open.Remove(job); ChunkIndex(job, false); }
     }
+
+    private void ChunkIndex(Job job, bool add)
+    {
+        if (!WorkTypes.TryGet(job.Kind, out var wt)) return; // unclaimable kind
+        var key = ((int)wt, job.Tile.X >> ChunkShift, job.Tile.Y >> ChunkShift);
+        if (add)
+        {
+            if (!_openChunks.TryGetValue(key, out var list)) { list = new List<Job>(); _openChunks[key] = list; }
+            list.Add(job);
+        }
+        else if (_openChunks.TryGetValue(key, out var list))
+        {
+            list.Remove(job);
+            if (list.Count == 0) _openChunks.Remove(key);
+        }
+    }
+
+    // Open jobs of a work type in one chunk (null if none). For the pawn-side
+    // ring search. The returned list is live — read it, don't mutate.
+    public List<Job>? OpenJobsInChunk(WorkType wt, int cx, int cy)
+        => _openChunks.TryGetValue(((int)wt, cx, cy), out var l) ? l : null;
 
     public long Version { get; private set; }
     public int Count => _byId.Count;
@@ -142,7 +171,7 @@ public sealed class JobBoard
     {
         if (!_byId.TryGetValue(id, out var job)) return;
         job.State = JobState.Completed;
-        _open.Remove(job);
+        if (_open.Remove(job)) ChunkIndex(job, false);
         RemoveTileIndexIfOwned(job.Tile, id);
         if (job.ExtraTiles is not null)
             foreach (var t in job.ExtraTiles) if (t != job.Tile) RemoveTileIndexIfOwned(t, id);
@@ -154,7 +183,7 @@ public sealed class JobBoard
     {
         if (!_byId.TryGetValue(id, out var job)) return;
         job.State = JobState.Cancelled;
-        _open.Remove(job);
+        if (_open.Remove(job)) ChunkIndex(job, false);
         RemoveTileIndexIfOwned(job.Tile, id);
         if (job.ExtraTiles is not null)
             foreach (var t in job.ExtraTiles) if (t != job.Tile) RemoveTileIndexIfOwned(t, id);
