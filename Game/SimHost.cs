@@ -46,7 +46,7 @@ public sealed class SimHost : IDisposable
 
     public SimHost(int seed)
     {
-        _sim = new SimRuntime(seed);
+        _sim = new SimRuntime(seed, asyncPathfinding: true);
         _running = true;
         // Below-normal priority so the render/main thread wins CPU under
         // contention — during an intense fight we'd rather the sim fall a hair
@@ -63,7 +63,7 @@ public sealed class SimHost : IDisposable
     {
         lock (_swapLock)
         {
-            _sim = new SimRuntime(seed);
+            _sim = new SimRuntime(seed, asyncPathfinding: true);
             Volatile.Write(ref _selectedDummyId, -1);
             Volatile.Write(ref _selectedDummyIds, Array.Empty<int>());
             Volatile.Write(ref _selectedTreeIds, Array.Empty<int>());

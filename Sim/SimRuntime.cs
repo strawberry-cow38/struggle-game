@@ -281,14 +281,16 @@ public sealed class SimRuntime
     public const int CarrotMinYield = 1;
     public const int CarrotMaxYield = 4;
 
-    public SimRuntime(int seed = 1337)
+    // asyncPathfinding: true in the live game (A* off the sim thread); default
+    // false for tests/harness so path results land same-tick + deterministically.
+    public SimRuntime(int seed = 1337, bool asyncPathfinding = false)
     {
         // Start at 08:00 on Jan 1 2000 — first daylight tick of the
         // epoch day so the world spawns under full sun, not midnight.
         _worldTimeSec = 8 * 3600;
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
         _spawnRng = new Random(seed + 7);
-        PathService = new PathService(Map.Width, Map.Height, () => MapView);
+        PathService = new PathService(Map.Width, Map.Height, () => MapView, asyncPathfinding);
         // Keep the item index in lockstep with the ECS. These fire at the
         // real structural-change moment (incl. CommandBuffer playback), so
         // deferred haul pickup/deliver are covered without per-site hooks.
