@@ -600,6 +600,35 @@ public partial class HarnessController : Node2D
                 _schedule.Add((0.6, h => h.SetupEnemyDemo(c - 6, c, c + 9, c), "spawn defender + hunting enemy"));
                 _schedule.Add((14.0, h => h.Finish("enemy complete"), "finish"));
                 break;
+            case "enemy-wall":
+                // Same as "enemy" but a tall wall sits between the two, so the
+                // hostile must path AROUND it (long protected approach) and
+                // only takes fire once it rounds the end — long enough to get
+                // chewed up gradually and flee instead of getting deleted.
+                if (MovieMode)
+                {
+                    _screenshotEverySec = double.PositiveInfinity;
+                }
+                else
+                {
+                    _screenshotEverySec = 1.0 / 60.0;
+                    _screenshotScale = 1.0f;
+                }
+                _warmupSec = 2.0;
+                _manualSim = true;
+                _schedule.Add((0.1, h => h.RemoveLowest(), "remove default 1"));
+                _schedule.Add((0.15, h => h.RemoveLowest(), "remove default 2"));
+                _schedule.Add((0.2, h => h.RemoveLowest(), "remove default 3"));
+                _schedule.Add((0.3, h => h.SetCameraZoom(0.8f), "zoom out"));
+                // 13-tile vertical wall at x=c between defender (west) + enemy (east).
+                for (int wy = c - 6; wy <= c + 6; wy++)
+                {
+                    int y = wy;
+                    _schedule.Add((0.4, h => h.InstantWall(c, y), $"wall y={y}"));
+                }
+                _schedule.Add((0.6, h => h.SetupEnemyDemo(c - 9, c, c + 9, c), "spawn defender + hunting enemy"));
+                _schedule.Add((24.0, h => h.Finish("enemy-wall complete"), "finish"));
+                break;
             case "stress":
                 for (int r = 2; r <= 6; r++)
                 {
