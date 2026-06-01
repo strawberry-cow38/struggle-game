@@ -148,6 +148,10 @@ public sealed class SimSnapshot
     public int[] SelectedTreeIds { get; internal set; } = System.Array.Empty<int>();
     public int[] SelectedWoodIds { get; internal set; } = System.Array.Empty<int>();
     public int[] SelectedCropIds { get; internal set; } = System.Array.Empty<int>();
+    // Mirrors the other selections so a paused republish fires when the
+    // selected blueprint changes (its per-resource Costs are only snapshotted
+    // for the selection — see SimRuntime.CostsIfSelected).
+    public TilePos[] SelectedBlueprintTiles { get; internal set; } = System.Array.Empty<TilePos>();
 }
 
 // A selected pawn's remaining path + queued order tiles, for drawing move

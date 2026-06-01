@@ -110,7 +110,8 @@ public sealed class SimHost : IDisposable
             var ids = Volatile.Read(ref _selectedDummyIds);
             var trees = Volatile.Read(ref _selectedTreeIds);
             var woods = Volatile.Read(ref _selectedWoodIds);
-            Volatile.Write(ref _latest, _sim.BuildSnapshot(ids.Length == 1 ? ids[0] : (int?)null, ids.Length > 0 ? ids : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null));
+            var bps = Volatile.Read(ref _selectedBlueprintTiles);
+            Volatile.Write(ref _latest, _sim.BuildSnapshot(ids.Length == 1 ? ids[0] : (int?)null, ids.Length > 0 ? ids : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null, selectedBlueprintTiles: bps.Length > 0 ? bps : null));
         }
     }
 
@@ -304,6 +305,13 @@ public sealed class SimHost : IDisposable
         return true;
     }
 
+    private static bool SelectionArrayEquals(TilePos[] a, TilePos[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
+        return true;
+    }
+
     public void Dispose()
     {
         _running = false;
@@ -343,9 +351,10 @@ public sealed class SimHost : IDisposable
                     var trees = Volatile.Read(ref _selectedTreeIds);
                     var woods = Volatile.Read(ref _selectedWoodIds);
                     var crops = Volatile.Read(ref _selectedCropIds);
+                    var bps = Volatile.Read(ref _selectedBlueprintTiles);
                     // Also republish if selection changed while paused so
-                    // pawn rings + tree/wood/crop rings + selected-path
-                    // update without needing a tick to fire.
+                    // pawn rings + tree/wood/crop rings + selected-path +
+                    // selected-blueprint costs update without a tick firing.
                     var cur = Volatile.Read(ref _latest);
                     if (!needPublish && cur is not null)
                     {
@@ -354,14 +363,15 @@ public sealed class SimHost : IDisposable
                             || !SelectionArrayEquals(cur.SelectedDummyIds, ids)
                             || !SelectionArrayEquals(cur.SelectedTreeIds, trees)
                             || !SelectionArrayEquals(cur.SelectedWoodIds, woods)
-                            || !SelectionArrayEquals(cur.SelectedCropIds, crops))
+                            || !SelectionArrayEquals(cur.SelectedCropIds, crops)
+                            || !SelectionArrayEquals(cur.SelectedBlueprintTiles, bps))
                         {
                             needPublish = true;
                         }
                     }
                     if (needPublish)
                     {
-                        Volatile.Write(ref _latest, _sim.BuildSnapshot(ids.Length == 1 ? ids[0] : (int?)null, ids.Length > 0 ? ids : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null, crops.Length > 0 ? crops : null));
+                        Volatile.Write(ref _latest, _sim.BuildSnapshot(ids.Length == 1 ? ids[0] : (int?)null, ids.Length > 0 ? ids : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null, crops.Length > 0 ? crops : null, bps.Length > 0 ? bps : null));
                     }
                 }
                 Thread.Sleep(5);
@@ -380,7 +390,8 @@ public sealed class SimHost : IDisposable
                     var trees = Volatile.Read(ref _selectedTreeIds);
                     var woods = Volatile.Read(ref _selectedWoodIds);
                     var crops = Volatile.Read(ref _selectedCropIds);
-                    Volatile.Write(ref _latest, _sim.BuildSnapshot(ids.Length == 1 ? ids[0] : (int?)null, ids.Length > 0 ? ids : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null, crops.Length > 0 ? crops : null));
+                    var bps = Volatile.Read(ref _selectedBlueprintTiles);
+                    Volatile.Write(ref _latest, _sim.BuildSnapshot(ids.Length == 1 ? ids[0] : (int?)null, ids.Length > 0 ? ids : null, trees.Length > 0 ? trees : null, woods.Length > 0 ? woods : null, crops.Length > 0 ? crops : null, bps.Length > 0 ? bps : null));
                 }
                 ticksThisWindow++;
                 nextTick += tickStride;

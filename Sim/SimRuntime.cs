@@ -1149,10 +1149,24 @@ public sealed class SimRuntime
         return n;
     }
 
-    public SimSnapshot BuildSnapshot(int? selectedDummyId = null, int[]? selectedDummyIds = null, IReadOnlyCollection<int>? selectedTreeIds = null, IReadOnlyCollection<int>? selectedWoodIds = null, IReadOnlyCollection<int>? selectedCropIds = null)
+    // Per-blueprint resource-cost arrays are only read by the info panel for
+    // the SELECTED blueprint — the world renderer never touches Costs. So
+    // only snapshot the cost array for selected tiles; everyone else gets the
+    // shared empty singleton (zero alloc). Avoids N little array allocs/tick.
+    private readonly HashSet<TilePos> _selBpTiles = new();
+    private ResourceCostState[] CostsIfSelected(Entity ent, TilePos tile)
+        => _selBpTiles.Count > 0 && _selBpTiles.Contains(tile)
+            ? BlueprintCostOps.SnapshotEntries(ent)
+            : System.Array.Empty<ResourceCostState>();
+
+    public SimSnapshot BuildSnapshot(int? selectedDummyId = null, int[]? selectedDummyIds = null, IReadOnlyCollection<int>? selectedTreeIds = null, IReadOnlyCollection<int>? selectedWoodIds = null, IReadOnlyCollection<int>? selectedCropIds = null, IReadOnlyCollection<TilePos>? selectedBlueprintTiles = null)
     {
         _useSlotA = !_useSlotA;
         var snap = _useSlotA ? _snapSlotA : _snapSlotB;
+
+        _selBpTiles.Clear();
+        if (selectedBlueprintTiles != null) foreach (var t in selectedBlueprintTiles) _selBpTiles.Add(t);
+        snap.SelectedBlueprintTiles = selectedBlueprintTiles as TilePos[] ?? System.Array.Empty<TilePos>();
 
         snap.Tick = Tick;
         snap.MapVersion = MapVersion;
@@ -1454,7 +1468,7 @@ public sealed class SimRuntime
         {
             if (job.Kind != JobKind.WallBuild) continue;
             var bp = job.Entity.GetComponent<Blueprint>();
-            bpsBuf[j++] = new BlueprintState(job.Tile, bp.ProgressSec / BuildSystem.BuildTimeSec, job.Forbidden, BlueprintCostOps.FundingFraction(job.Entity), BlueprintCostOps.SnapshotEntries(job.Entity));
+            bpsBuf[j++] = new BlueprintState(job.Tile, bp.ProgressSec / BuildSystem.BuildTimeSec, job.Forbidden, BlueprintCostOps.FundingFraction(job.Entity), CostsIfSelected(job.Entity, job.Tile));
         }
         snap.BlueprintsCount = j;
 
@@ -1465,7 +1479,7 @@ public sealed class SimRuntime
         {
             if (job.Kind != JobKind.FloorBuild) continue;
             var bp = job.Entity.GetComponent<FloorBlueprint>();
-            floorBuf[fj++] = new BlueprintState(job.Tile, bp.ProgressSec / FloorSystem.FloorTimeSec, job.Forbidden, BlueprintCostOps.FundingFraction(job.Entity), BlueprintCostOps.SnapshotEntries(job.Entity));
+            floorBuf[fj++] = new BlueprintState(job.Tile, bp.ProgressSec / FloorSystem.FloorTimeSec, job.Forbidden, BlueprintCostOps.FundingFraction(job.Entity), CostsIfSelected(job.Entity, job.Tile));
         }
         snap.FloorBlueprintsCount = fj;
 
@@ -1639,7 +1653,7 @@ public sealed class SimRuntime
         doorBpQuery.ForEachEntity((ref DoorBlueprint bp, Entity ent) =>
         {
             bool forbidden = Jobs.GetByTile(bp.Tile)?.Forbidden ?? false;
-            doorBpBuf[dbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / DoorBuildSystem.DoorTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent), BlueprintCostOps.SnapshotEntries(ent));
+            doorBpBuf[dbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / DoorBuildSystem.DoorTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent), CostsIfSelected(ent, bp.Tile));
         });
         snap.DoorBlueprintsCount = dbi;
 
@@ -1709,7 +1723,7 @@ public sealed class SimRuntime
         lampBpQuery.ForEachEntity((ref LampBlueprint bp, Entity ent) =>
         {
             bool forbidden = Jobs.GetByTile(bp.Tile)?.Forbidden ?? false;
-            lampBpBuf[lbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / LampSystem.LampBuildTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent), BlueprintCostOps.SnapshotEntries(ent));
+            lampBpBuf[lbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / LampSystem.LampBuildTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent), CostsIfSelected(ent, bp.Tile));
         });
         snap.LampBlueprintsCount = lbi;
 
@@ -1720,7 +1734,7 @@ public sealed class SimRuntime
         bedBpQuery.ForEachEntity((ref BedBlueprint bp, Entity ent) =>
         {
             bool forbidden = Jobs.GetByTile(bp.Origin)?.Forbidden ?? false;
-            bedBpBuf[bbi++] = new BedBlueprintState(bp.Origin, bp.Orientation, bp.ProgressSec / BedSystem.BedBuildTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent), BlueprintCostOps.SnapshotEntries(ent));
+            bedBpBuf[bbi++] = new BedBlueprintState(bp.Origin, bp.Orientation, bp.ProgressSec / BedSystem.BedBuildTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent), CostsIfSelected(ent, bp.Origin));
         });
         snap.BedBlueprintsCount = bbi;
 
@@ -1741,7 +1755,7 @@ public sealed class SimRuntime
         urBpQuery.ForEachEntity((ref UrBoardBlueprint bp, Entity ent) =>
         {
             bool forbidden = Jobs.GetByTile(bp.Tile)?.Forbidden ?? false;
-            urBpBuf[ubbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / UrBoardSystem.BuildTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent), BlueprintCostOps.SnapshotEntries(ent));
+            urBpBuf[ubbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / UrBoardSystem.BuildTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent), CostsIfSelected(ent, bp.Tile));
         });
         snap.UrBoardBlueprintsCount = ubbi;
 
@@ -1759,7 +1773,7 @@ public sealed class SimRuntime
         sbBpQuery.ForEachEntity((ref SandbagBlueprint bp, Entity ent) =>
         {
             bool forbidden = Jobs.GetByTile(bp.Tile)?.Forbidden ?? false;
-            sbBpBuf[sbbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / SandbagSystem.BuildTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent), BlueprintCostOps.SnapshotEntries(ent));
+            sbBpBuf[sbbi++] = new BlueprintState(bp.Tile, bp.ProgressSec / SandbagSystem.BuildTimeSec, forbidden, BlueprintCostOps.FundingFraction(ent), CostsIfSelected(ent, bp.Tile));
         });
         snap.SandbagBlueprintsCount = sbbi;
 
@@ -1808,7 +1822,7 @@ public sealed class SimRuntime
                 bp.ProgressSec / StoveSystem.StoveBuildTimeSec,
                 forbidden,
                 BlueprintCostOps.FundingFraction(ent),
-                BlueprintCostOps.SnapshotEntries(ent));
+                CostsIfSelected(ent, bp.Origin));
         });
         snap.StoveBlueprintsCount = stoveBpIdx;
 
