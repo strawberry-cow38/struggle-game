@@ -743,6 +743,11 @@ public struct RangedCombat : IComponent
     // retarget) — keeps firing until death. Otherwise fire stops when a
     // conscious target goes down, mirroring melee.
     public bool FinishOff;
+    // True when the target was auto-acquired (idle drafted pawn engaging the
+    // nearest enemy) rather than player-forced. Auto-targets drop when the
+    // enemy leaves the engagement envelope so the pawn re-acquires; forced
+    // targets hold (the player chose to watch that spot).
+    public bool AutoTarget;
     // ─── Cover stance (phase 7) ───────────────────────────────────────
     public CoverStance Stance;     // None / Tucked / Popped
     public bool Leaning;           // true = lateral wall-lean (7c); false = crouch (7b)

@@ -201,11 +201,12 @@ public sealed class DummyController
         // conscious non-enemy pawn) so the enemy brain can perceive without
         // nesting an ECS query inside the per-pawn loop below.
         _colonistTargets.Clear();
+        _enemyTargets.Clear();
         (_colonistTargetsQ ??= store.Query<WorldPos, Wanderer, Health>()).ForEachEntity((ref WorldPos p, ref Wanderer _, ref Health h, Entity e) =>
         {
-            if (e.HasComponent<Enemy>()) return;
             if (h.Unconscious) return;
-            _colonistTargets.Add((e.Id, p.X, p.Y));
+            if (e.HasComponent<Enemy>()) _enemyTargets.Add((e.Id, p.X, p.Y)); // for colonist auto-engage
+            else _colonistTargets.Add((e.Id, p.X, p.Y));                      // for enemy perception
         });
         var query = _wandererQ ??= store.Query<WorldPos, PathFollower, Wanderer>();
         // Tick-start crowding: count pawns per tile and pick the ONE mover to
@@ -629,6 +630,19 @@ public sealed class DummyController
                     && tgt.HasComponent<Health>() && tgt.HasComponent<WorldPos>()
                     && (!tgt.GetComponent<Health>().Unconscious
                         || entity.GetComponent<RangedCombat>().FinishOff);
+                // Auto-acquired targets drop once they leave the engagement
+                // envelope (out of range, or no LoS and no lean) so the pawn
+                // re-acquires a fresh one; player-forced targets hold.
+                if (valid && entity.GetComponent<RangedCombat>().AutoTarget)
+                {
+                    var tpw = tgt.GetComponent<WorldPos>();
+                    var tt = new TilePos((int)tpw.X, (int)tpw.Y);
+                    float ex = tpw.X - pos.X, ey = tpw.Y - pos.Y;
+                    bool los = LosClear?.Invoke(here.X, here.Y, tt.X, tt.Y) ?? true;
+                    if (MathF.Sqrt(ex * ex + ey * ey) > spec.Range
+                        || (!los && !TryFindLeanCell(view, here, tt, out _)))
+                        valid = false;
+                }
                 if (!valid)
                 {
                     ref var rc = ref entity.GetComponent<RangedCombat>();
@@ -723,6 +737,23 @@ public sealed class DummyController
                     oq.Tiles.RemoveAt(0);
                     if (!view.Walkable(next) || next == here) continue;
                     path.PendingPathId = _paths.Request(here, next);
+                    return;
+                }
+            }
+            // Idle drafted + armed: auto-engage the nearest enemy it can see or
+            // lean-peek (ExecuteRangedFire handles the crouch/lean + firing).
+            // Marked AutoTarget so it re-acquires when that enemy slips away.
+            if (entity.HasComponent<RangedCombat>() && TryGetRangedWeapon(entity, out var autoWdef))
+            {
+                var autoSpec = autoWdef.Ranged!;
+                int foe = PerceiveNearestEnemy(here, autoSpec.Range, view);
+                if (foe != 0 && store.TryGetEntityById(foe, out var foeEnt))
+                {
+                    ref var rcAuto = ref entity.GetComponent<RangedCombat>();
+                    rcAuto.TargetEntityId = foe;
+                    rcAuto.AutoTarget = true;
+                    rcAuto.FinishOff = false;
+                    ExecuteRangedFire(entity, foeEnt, autoSpec, ref pos, ref path, ref w, dt, view, here);
                     return;
                 }
             }
@@ -1823,6 +1854,9 @@ public sealed class DummyController
 
     // (id, x, y) of every conscious non-enemy pawn, rebuilt once per Step.
     private readonly List<(int Id, float X, float Y)> _colonistTargets = new();
+    // Conscious enemies (id + pos), rebuilt each Step for drafted-colonist
+    // auto-engagement (the mirror of _colonistTargets, which enemies perceive).
+    private readonly List<(int Id, float X, float Y)> _enemyTargets = new();
     private ArchetypeQuery<WorldPos, Wanderer, Health>? _colonistTargetsQ;
 
     // The hostile brain. Selects a goal on a stagger (perception is the
@@ -2084,6 +2118,26 @@ public sealed class DummyController
             // enemy only "sees" a colonist it has a clear line to (reuses the
             // same LoS the firing code uses).
             if (LosClear is not null && !LosClear(here.X, here.Y, (int)t.X, (int)t.Y)) continue;
+            bestD2 = d2; best = t.Id;
+        }
+        return best;
+    }
+
+    // Nearest conscious enemy within `sight` that an idle drafted colonist can
+    // engage — direct LoS OR a lean-peek opens a shot. For auto-engagement.
+    private int PerceiveNearestEnemy(TilePos here, float sight, MapView view)
+    {
+        int best = 0;
+        float bestD2 = sight * sight;
+        float hx = here.X + 0.5f, hy = here.Y + 0.5f;
+        foreach (var t in _enemyTargets)
+        {
+            float dx = t.X - hx, dy = t.Y - hy;
+            float d2 = dx * dx + dy * dy;
+            if (d2 >= bestD2) continue;
+            var et = new TilePos((int)t.X, (int)t.Y);
+            bool los = LosClear?.Invoke(here.X, here.Y, et.X, et.Y) ?? true;
+            if (!los && !TryFindLeanCell(view, here, et, out _)) continue; // can't see or peek it
             bestD2 = d2; best = t.Id;
         }
         return best;

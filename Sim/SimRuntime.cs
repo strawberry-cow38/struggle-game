@@ -4110,6 +4110,7 @@ public sealed class SimRuntime
         if (!Store.TryGetEntityById(targetId, out var t) || !t.HasComponent<Health>()) return;
         ref var rc = ref s.GetComponent<RangedCombat>();
         rc.TargetEntityId = targetId;
+        rc.AutoTarget = false; // player-forced — hold this target, don't auto-drop
         rc.BurstRemaining = 0;
         // Ordering fire on an already-downed pawn = a deliberate finish-off
         // that keeps shooting until death (mirrors melee).

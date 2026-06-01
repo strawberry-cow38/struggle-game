@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using Friflo.Engine.ECS;
 using StruggleGame.Sim;
+using StruggleGame.Sim.Items;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.World;
 using Xunit;
@@ -252,6 +254,39 @@ public class EnemyAiTests
         Assert.Equal(EnemyGoalKind.Hunt, brain.Goal);
         Assert.True(System.Math.Abs(brain.GoalTileX - 20) <= 3 && System.Math.Abs(brain.GoalTileY - 20) <= 3,
             $"hunt goal tile {brain.GoalTileX},{brain.GoalTileY} should be the last-seen spot ~20,20");
+    }
+
+    [Fact]
+    public void DraftedColonist_AutoEngagesNearbyEnemy()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+
+        int colonist = FirstColonist(sim);
+        var ce = sim.Store.GetEntityById(colonist);
+        ce.AddComponent(new Inventory
+        {
+            Items = new List<InventoryStack> { new InventoryStack { ItemPath = ItemCatalog.RifleAmmoFmj.FullPath, Count = 120 } },
+            Equipped = new List<EquippedItemSlot> { new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = ItemCatalog.AssaultRifle.FullPath, Count = 1 } },
+        });
+        ce.AddComponent(new Drafted());
+        SetPos(sim, colonist, 20.5f, 20.5f);
+        for (int i = 0; i < 5; i++) sim.Step(SimConstants.TickSeconds); // attach RangedCombat + settle
+
+        // Enemy 8 tiles away in the open — well within rifle range + clear LoS.
+        var enemy = sim.SpawnEnemy(28, 20);
+        SetPos(sim, enemy.Id, 28.5f, 20.5f);
+
+        // Drop any stale wander path so the colonist is genuinely idle (else it
+        // returns before the idle auto-acquire).
+        ref var cpf = ref ce.GetComponent<PathFollower>();
+        cpf.Waypoints = null; cpf.Index = 0; cpf.PendingPathId = 0;
+
+        for (int i = 0; i < 12; i++) sim.Step(SimConstants.TickSeconds);
+
+        ref var rc = ref ce.GetComponent<RangedCombat>();
+        Assert.Equal(enemy.Id, rc.TargetEntityId);
+        Assert.True(rc.AutoTarget, "idle drafted colonist should auto-acquire the enemy");
     }
 
     [Fact]
