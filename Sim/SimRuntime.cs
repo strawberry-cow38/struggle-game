@@ -2029,24 +2029,29 @@ public sealed class SimRuntime
     {
         if (wanted <= 0) return 0;
         int taken = 0;
-        var query = _itemPileQ ??= Store.Query<ItemPile>();
+        // Index lookup of the tile's stacks instead of scanning every item.
+        _itemIndex.GetEntitiesAt(tile, _tileEntScratch);
         Entity? toDelete = null;
-        query.ForEachEntity((ref ItemPile p, Entity ent) =>
+        foreach (var id in _tileEntScratch)
         {
-            if (taken >= wanted) return;
-            if (p.Tile != tile) return;
-            if (p.ItemPath != itemPath) return;
+            if (taken >= wanted) break;
+            if (!Store.TryGetEntityById(id, out var ent) || !ent.HasComponent<ItemPile>()) continue;
+            ref var p = ref ent.GetComponent<ItemPile>();
+            if (p.ItemPath != itemPath) continue;
             // Don't consume a stack a hauler has already claimed — deleting
             // it would leave that haul job pointing at a dead entity.
-            if (ent.HasComponent<HaulReserved>()) return;
+            if (ent.HasComponent<HaulReserved>()) continue;
             int can = Math.Min(p.Count, wanted - taken);
             p.Count -= can;
             taken += can;
             if (p.Count <= 0) toDelete = ent;
-        });
+        }
         if (toDelete is Entity te) { _itemIndex.OnEntityGone(te.Id); te.DeleteEntity(); }
         return taken;
     }
+
+    // Reused scratch for per-tile item lookups (sim thread, non-nested).
+    private readonly List<int> _tileEntScratch = new();
 
     // Find the nearest tile holding a matching ItemPile reachable via
     // simple Manhattan distance. Returns null if nothing matches.
@@ -4712,10 +4717,13 @@ public sealed class SimRuntime
     {
         int total = 0;
         string woodPath = ItemCatalog.Wood.FullPath;
-        (_itemPileQ ??= Store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity ent) =>
+        _itemIndex.GetEntitiesAt(tile, _tileEntScratch);
+        foreach (var id in _tileEntScratch)
         {
-            if (p.Tile == tile && p.ItemPath == woodPath) total += p.Count;
-        });
+            if (!Store.TryGetEntityById(id, out var ent) || !ent.HasComponent<ItemPile>()) continue;
+            ref var p = ref ent.GetComponent<ItemPile>();
+            if (p.ItemPath == woodPath) total += p.Count;
+        }
         return total;
     }
 

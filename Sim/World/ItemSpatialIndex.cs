@@ -130,6 +130,18 @@ public sealed class ItemSpatialIndex
     // condition (a reserved stack is about to be hauled away).
     public bool AnyUnreservedItemAt(TilePos tile) => _unreservedItemTileCount.ContainsKey(tile);
 
+    // Entity ids of item stacks sitting on exactly `tile`, written into
+    // `into` (cleared first). Reads only the tile's 16x16 chunk bucket
+    // instead of scanning every item, so callers that ask "what's on this
+    // tile?" are O(items-in-chunk) not O(all-items).
+    public void GetEntitiesAt(TilePos tile, List<int> into)
+    {
+        into.Clear();
+        if (!_chunks.TryGetValue(ChunkOf(tile), out var list)) return;
+        foreach (var id in list)
+            if (_byEntity[id].Tile == tile) into.Add(id);
+    }
+
     // Nearest (Manhattan) item entity whose path matches, searched chunk
     // ring by chunk ring out from `from`. Returns false if none exist.
     public bool TryGetNearest(TilePos from, string path, out TilePos tile)
