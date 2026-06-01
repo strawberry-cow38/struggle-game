@@ -69,6 +69,36 @@ public struct Drafted : IComponent
 {
 }
 
+// Marker — this pawn is a hostile (not player-controlled). Enemies skip
+// the entire colonist Plan path (jobs/wander/sleep/needs/player-orders);
+// their behavior is driven by the goal-oriented brain in
+// DummyController.PlanEnemy. They still share the mover (AdvanceAlongPath)
+// and the projectile/cover pipeline. FactionId left for future multi-
+// faction work; 0 = generic hostile.
+public struct Enemy : IComponent
+{
+    public int FactionId;
+}
+
+// What an enemy currently wants. New intents (StealItem, DestroyBuilding,
+// etc.) drop in as new kinds + a selection rule + a Tick handler — the
+// brain is goal-dispatched, not hardcoded to "shoot nearest".
+public enum EnemyGoalKind : byte
+{
+    None = 0,
+    Engage,   // close to weapon range + fire from cover
+    Retreat,  // hurt — fall back toward the map edge, away from threats
+}
+
+// Per-enemy brain state. Perception + goal selection run on a stagger
+// (NextThinkTick); the chosen goal executes every tick.
+public struct EnemyBrain : IComponent
+{
+    public int TargetEntityId;   // current perceived threat (0 = none)
+    public long NextThinkTick;   // next tick to re-perceive + re-select goal
+    public EnemyGoalKind Goal;
+}
+
 // Per-colonist priority table for each WorkType. Priorities[i] = 0
 // means "disabled" — pawn refuses jobs of that work type. 1 is highest,
 // 8 is lowest. Allowed[i] is the parallel checkmark-mode state: true

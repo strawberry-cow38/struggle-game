@@ -188,6 +188,16 @@ public sealed class DummyController
         var view = _viewProvider();
         var cb = store.GetCommandBuffer();
         _topoffReservedThisTick.Clear();
+        // Snapshot live colonist targets once per tick (id + pos of every
+        // conscious non-enemy pawn) so the enemy brain can perceive without
+        // nesting an ECS query inside the per-pawn loop below.
+        _colonistTargets.Clear();
+        (_colonistTargetsQ ??= store.Query<WorldPos, Wanderer, Health>()).ForEachEntity((ref WorldPos p, ref Wanderer _, ref Health h, Entity e) =>
+        {
+            if (e.HasComponent<Enemy>()) return;
+            if (h.Unconscious) return;
+            _colonistTargets.Add((e.Id, p.X, p.Y));
+        });
         var query = _wandererQ ??= store.Query<WorldPos, PathFollower, Wanderer>();
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer w, Entity entity) =>
         {
@@ -208,6 +218,16 @@ public sealed class DummyController
     private void Plan(ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, Entity entity, CommandBuffer cb, MapView view, EntityStore store)
     {
         var here = new TilePos((int)pos.X, (int)pos.Y);
+
+        // Hostiles run an entirely separate goal-oriented brain — no jobs,
+        // wander, sleep, needs or player orders. AdvanceAlongPath (after this
+        // returns) still moves them along any path the brain requested.
+        if (entity.HasComponent<Enemy>())
+        {
+            PlanEnemy(ref pos, ref path, ref w, dt, entity, view, store, here);
+            return;
+        }
+
         bool drafted = entity.HasComponent<Drafted>();
 
         // Drafted + next to a sandbag → stay crouched (head down) while
@@ -583,64 +603,7 @@ public sealed class DummyController
                 }
                 else
                 {
-                    // Hold ground: drop any path, snap smoothly to the tile.
-                    if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
-                    path.Waypoints = null; path.Index = 0;
-                    SnapToNearestTile(ref pos, dt, out _, out _);
-
-                    var tp = tgt.GetComponent<WorldPos>();
-                    float ddx = tp.X - pos.X, ddy = tp.Y - pos.Y;
-                    float distTiles = MathF.Sqrt(ddx * ddx + ddy * ddy);
-                    var ttile = new TilePos((int)tp.X, (int)tp.Y);
-                    // In range, but not point-blank — too close and the gun
-                    // can't be brought to bear (melee/back off instead).
-                    bool inRange = distTiles <= spec.Range && distTiles >= SimConstants.RangedMinFireRange;
-                    bool directLos = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
-
-                    // ─── Cover assessment ─────────────────────────────────
-                    // Crouch cover: a sandbag in the step toward the target.
-                    bool crouchCover = directLos && HasSandbagToward(here, ttile);
-                    // Wall lean: when the direct shot is blocked (incl. grazing
-                    // a wall corner — RangedLosClear no longer cuts corners),
-                    // peek one cell sideways to a spot that opens a clear lane.
-                    bool leaning = false;
-                    WorldPos muzzle = pos;
-                    var firePos = pos;
-                    bool losFinal = directLos;
-                    if (!directLos && TryFindLeanCell(view, here, ttile, out var leanCell))
-                    {
-                        leaning = true;
-                        losFinal = true;
-                        muzzle = new WorldPos { X = leanCell.X + 0.5f, Y = leanCell.Y + 0.5f };
-                        firePos = muzzle;
-                    }
-                    bool hasCover = crouchCover || leaning;
-
-                    ref var rcS = ref entity.GetComponent<RangedCombat>();
-                    if (hasCover)
-                    {
-                        bool reloadingOrEmpty = rcS.Reloading || rcS.MagCount <= 0;
-                        // Pop up only to fire; tuck while reloading or waiting.
-                        rcS.Stance = (losFinal && inRange && !reloadingOrEmpty)
-                            ? CoverStance.Popped : CoverStance.Tucked;
-                        rcS.Leaning = leaning;
-                        rcS.PeekX = firePos.X; rcS.PeekY = firePos.Y;
-                    }
-
-                    if (losFinal)
-                    {
-                        // Visible (directly or by leaning): aim from the firing
-                        // position toward the target, fire if in range.
-                        float adx = tp.X - muzzle.X, ady = tp.Y - muzzle.Y;
-                        if (adx * adx + ady * ady > 1e-9f) w.Facing = MathF.Atan2(ady, adx);
-                        if (inRange) HandleRangedFire(entity, tgt, spec, muzzle, tp, distTiles);
-                    }
-                    else
-                    {
-                        // Lost sight, no lean available: don't stare through the
-                        // wall — hunker down (tuck if behind cover) and wait.
-                        w.Facing = SouthFacing;
-                    }
+                    ExecuteRangedFire(entity, tgt, spec, ref pos, ref path, ref w, dt, view, here);
                     return;
                 }
             }
@@ -1806,6 +1769,261 @@ public sealed class DummyController
 
     // Run one tick of the firing state machine: reload when dry, gate on
     // cooldowns, run the warmup + burst cadence, emit a bullet per shot.
+    // ─── Enemy AI (goal-oriented hostile brain) ──────────────────────────
+    private const long EnemyThinkInterval = 15;     // ticks between re-perceive/re-plan
+    private const float EnemySightRange = 28f;        // tiles
+    private const float EnemyRetreatBloodThreshold = 0.45f;
+    private const float EnemyRetreatMovingThreshold = 0.40f;
+    private const int EnemyFleeDist = 12;             // tiles toward the edge when retreating
+
+    // (id, x, y) of every conscious non-enemy pawn, rebuilt once per Step.
+    private readonly List<(int Id, float X, float Y)> _colonistTargets = new();
+    private ArchetypeQuery<WorldPos, Wanderer, Health>? _colonistTargetsQ;
+
+    // The hostile brain. Selects a goal on a stagger (perception is the
+    // expensive bit) then executes it every tick. Goals are dispatched by
+    // kind so new intents (steal, destroy, …) slot in as a new kind + a
+    // selection rule + a handler — no rewrite of the firing/movement core.
+    private void PlanEnemy(ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, Entity entity, MapView view, EntityStore store, TilePos here)
+    {
+        // Resolve any in-flight path request first (mirrors the colonist path).
+        if (path.PendingPathId != 0)
+        {
+            if (!_paths.TryConsume(path.PendingPathId, out var result)) return; // still pending
+            path.PendingPathId = 0;
+            if (result.Status == PathStatus.Found && result.Path is { Count: > 0 })
+            {
+                path.Waypoints = result.Path;
+                path.Index = result.Path[0] == here ? 1 : 0;
+            }
+            else { path.Waypoints = null; path.Index = 0; }
+        }
+
+        if (!entity.HasComponent<EnemyBrain>()) return;
+
+        // Downed hostiles freeze (mirrors the colonist unconscious gate).
+        if (entity.HasComponent<Health>() && entity.GetComponent<Health>().Unconscious)
+        {
+            ClearPath(ref path);
+            return;
+        }
+
+        ref var brain = ref entity.GetComponent<EnemyBrain>();
+
+        // Per-tick ranged housekeeping (the colonist Plan does this for drafted
+        // pawns; enemies skip that path, so do it here): finish reloads, settle
+        // recoil, clear the stance until the fire step re-asserts it.
+        if (entity.HasComponent<RangedCombat>())
+        {
+            ref var rc0 = ref entity.GetComponent<RangedCombat>();
+            if (rc0.Reloading && _tick >= rc0.NextActionTick) rc0.Reloading = false;
+            if (rc0.Recoil > 0f && TryGetRangedWeapon(entity, out var wd0))
+                rc0.Recoil = MathF.Max(0f, rc0.Recoil - wd0.Ranged!.RecoilRecoverPerSec * dt);
+            rc0.Stance = CoverStance.None;
+            rc0.Leaning = false;
+        }
+
+        // ── Think (staggered): perceive + select goal + issue movement ──
+        if (_tick >= brain.NextThinkTick)
+        {
+            brain.NextThinkTick = _tick + EnemyThinkInterval;
+
+            bool hurt = entity.HasComponent<Health>()
+                && (entity.GetComponent<Health>().BloodLevel < EnemyRetreatBloodThreshold
+                    || entity.GetComponent<Health>().Moving < EnemyRetreatMovingThreshold);
+            int targetId = PerceiveNearestColonist(here);
+            brain.TargetEntityId = targetId;
+
+            // Priority: survive (retreat) > fight (engage) > nothing.
+            if (hurt) brain.Goal = EnemyGoalKind.Retreat;
+            else if (targetId != 0) brain.Goal = EnemyGoalKind.Engage;
+            else brain.Goal = EnemyGoalKind.None;
+
+            switch (brain.Goal)
+            {
+                case EnemyGoalKind.Retreat:
+                    RequestFlee(ref path, here, store, targetId, view);
+                    break;
+                case EnemyGoalKind.Engage:
+                    RequestApproachIfNeeded(ref path, here, store, targetId, entity, view);
+                    break;
+                default:
+                    ClearPath(ref path);
+                    break;
+            }
+        }
+
+        // ── Execute every tick: fire when engaging + in range with a shot ──
+        if (brain.Goal == EnemyGoalKind.Engage
+            && brain.TargetEntityId != 0
+            && TryGetRangedWeapon(entity, out var wdef)
+            && entity.HasComponent<RangedCombat>()
+            && store.TryGetEntityById(brain.TargetEntityId, out var tgt)
+            && tgt.HasComponent<Health>() && tgt.HasComponent<WorldPos>()
+            && !tgt.GetComponent<Health>().Unconscious)
+        {
+            var spec = wdef.Ranged!;
+            var tp = tgt.GetComponent<WorldPos>();
+            float dx = tp.X - pos.X, dy = tp.Y - pos.Y;
+            float dist = MathF.Sqrt(dx * dx + dy * dy);
+            var ttile = new TilePos((int)tp.X, (int)tp.Y);
+            bool directLos = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
+            bool canShoot = directLos || TryFindLeanCell(view, here, ttile, out _);
+            bool inRange = dist <= spec.Range && dist >= SimConstants.RangedMinFireRange;
+            if (inRange && canShoot)
+            {
+                entity.GetComponent<RangedCombat>().TargetEntityId = brain.TargetEntityId;
+                ExecuteRangedFire(entity, tgt, spec, ref pos, ref path, ref w, dt, view, here);
+            }
+        }
+    }
+
+    // Nearest conscious non-enemy pawn within sight (squared compare), or 0.
+    private int PerceiveNearestColonist(TilePos here)
+    {
+        int best = 0;
+        float bestD2 = EnemySightRange * EnemySightRange;
+        float hx = here.X + 0.5f, hy = here.Y + 0.5f;
+        foreach (var t in _colonistTargets)
+        {
+            float dx = t.X - hx, dy = t.Y - hy;
+            float d2 = dx * dx + dy * dy;
+            if (d2 < bestD2) { bestD2 = d2; best = t.Id; }
+        }
+        return best;
+    }
+
+    // Engage: if we can already fire from here, hold (firing handles it);
+    // otherwise path toward the target so we close into range/LoS.
+    private void RequestApproachIfNeeded(ref PathFollower path, TilePos here, EntityStore store, int targetId, Entity entity, MapView view)
+    {
+        if (!store.TryGetEntityById(targetId, out var tgt) || !tgt.HasComponent<WorldPos>()) { ClearPath(ref path); return; }
+        var tp = tgt.GetComponent<WorldPos>();
+        var ttile = new TilePos((int)tp.X, (int)tp.Y);
+        if (TryGetRangedWeapon(entity, out var wdef))
+        {
+            float dx = tp.X - (here.X + 0.5f), dy = tp.Y - (here.Y + 0.5f);
+            float dist = MathF.Sqrt(dx * dx + dy * dy);
+            bool los = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
+            bool inRange = dist <= wdef.Ranged!.Range && dist >= SimConstants.RangedMinFireRange;
+            if (inRange && los) { ClearPath(ref path); return; } // good firing spot — hold
+        }
+        if (ttile != here)
+        {
+            if (path.PendingPathId != 0) _paths.Discard(path.PendingPathId);
+            path.PendingPathId = _paths.Request(here, ttile);
+        }
+    }
+
+    // Retreat: head EnemyFleeDist tiles away from the threat (toward open
+    // ground / the edge), snapping the flee target to the nearest walkable.
+    private void RequestFlee(ref PathFollower path, TilePos here, EntityStore store, int threatId, MapView view)
+    {
+        float ax = 0f, ay = 0f;
+        if (threatId != 0 && store.TryGetEntityById(threatId, out var th) && th.HasComponent<WorldPos>())
+        {
+            var tp = th.GetComponent<WorldPos>();
+            ax = (here.X + 0.5f) - tp.X; ay = (here.Y + 0.5f) - tp.Y;
+        }
+        float len = MathF.Sqrt(ax * ax + ay * ay);
+        if (len < 1e-3f) { ax = 0f; ay = -1f; } else { ax /= len; ay /= len; }
+        int fx = here.X + (int)MathF.Round(ax * EnemyFleeDist);
+        int fy = here.Y + (int)MathF.Round(ay * EnemyFleeDist);
+        if (TryNearestWalkable(view, fx, fy, out var fleeTile) && fleeTile != here)
+        {
+            if (path.PendingPathId != 0) _paths.Discard(path.PendingPathId);
+            path.PendingPathId = _paths.Request(here, fleeTile);
+        }
+    }
+
+    private void ClearPath(ref PathFollower path)
+    {
+        if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
+        path.Waypoints = null; path.Index = 0;
+    }
+
+    // Spiral out from (x,y) for the first walkable tile within radius 8.
+    private static bool TryNearestWalkable(MapView view, int x, int y, out TilePos tile)
+    {
+        for (int r = 0; r <= 8; r++)
+        {
+            for (int dy = -r; dy <= r; dy++)
+            for (int dx = -r; dx <= r; dx++)
+            {
+                if (r > 0 && Math.Abs(dx) != r && Math.Abs(dy) != r) continue;
+                var t = new TilePos(x + dx, y + dy);
+                if (view.Walkable(t.X, t.Y)) { tile = t; return true; }
+            }
+        }
+        tile = default;
+        return false;
+    }
+
+    // Hold-and-fire at a validated target from the current tile: snap onto
+    // the tile, assess crouch/lean cover, face + fire if in range with LoS.
+    // Shared by the drafted-colonist combat path and the enemy brain
+    // (PlanEnemy) so both get identical cover + firing behavior.
+    private void ExecuteRangedFire(Entity entity, Entity tgt, Items.RangedSpec spec, ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, MapView view, TilePos here)
+    {
+        // Hold ground: drop any path, snap smoothly to the tile.
+        if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
+        path.Waypoints = null; path.Index = 0;
+        SnapToNearestTile(ref pos, dt, out _, out _);
+
+        var tp = tgt.GetComponent<WorldPos>();
+        float ddx = tp.X - pos.X, ddy = tp.Y - pos.Y;
+        float distTiles = MathF.Sqrt(ddx * ddx + ddy * ddy);
+        var ttile = new TilePos((int)tp.X, (int)tp.Y);
+        // In range, but not point-blank — too close and the gun can't be
+        // brought to bear (melee/back off instead).
+        bool inRange = distTiles <= spec.Range && distTiles >= SimConstants.RangedMinFireRange;
+        bool directLos = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
+
+        // ─── Cover assessment ─────────────────────────────────
+        // Crouch cover: a sandbag in the step toward the target.
+        bool crouchCover = directLos && HasSandbagToward(here, ttile);
+        // Wall lean: when the direct shot is blocked (incl. grazing a wall
+        // corner), peek one cell sideways to a spot that opens a clear lane.
+        bool leaning = false;
+        WorldPos muzzle = pos;
+        var firePos = pos;
+        bool losFinal = directLos;
+        if (!directLos && TryFindLeanCell(view, here, ttile, out var leanCell))
+        {
+            leaning = true;
+            losFinal = true;
+            muzzle = new WorldPos { X = leanCell.X + 0.5f, Y = leanCell.Y + 0.5f };
+            firePos = muzzle;
+        }
+        bool hasCover = crouchCover || leaning;
+
+        ref var rcS = ref entity.GetComponent<RangedCombat>();
+        if (hasCover)
+        {
+            bool reloadingOrEmpty = rcS.Reloading || rcS.MagCount <= 0;
+            // Pop up only to fire; tuck while reloading or waiting.
+            rcS.Stance = (losFinal && inRange && !reloadingOrEmpty)
+                ? CoverStance.Popped : CoverStance.Tucked;
+            rcS.Leaning = leaning;
+            rcS.PeekX = firePos.X; rcS.PeekY = firePos.Y;
+        }
+
+        if (losFinal)
+        {
+            // Visible (directly or by leaning): aim from the firing position
+            // toward the target, fire if in range.
+            float adx = tp.X - muzzle.X, ady = tp.Y - muzzle.Y;
+            if (adx * adx + ady * ady > 1e-9f) w.Facing = MathF.Atan2(ady, adx);
+            if (inRange) HandleRangedFire(entity, tgt, spec, muzzle, tp, distTiles);
+        }
+        else
+        {
+            // Lost sight, no lean available: don't stare through the wall —
+            // hunker down (tuck if behind cover) and wait.
+            w.Facing = SouthFacing;
+        }
+    }
+
     private void HandleRangedFire(Entity entity, Entity tgt, Items.RangedSpec spec, WorldPos pos, WorldPos tp, float dist)
     {
         ref var rc = ref entity.GetComponent<RangedCombat>();

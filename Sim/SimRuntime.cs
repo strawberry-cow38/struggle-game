@@ -6260,4 +6260,74 @@ public sealed class SimRuntime
         });
         return occupied;
     }
+
+    // Spawn a hostile: a rifle-armed pawn driven by the goal-oriented brain
+    // in DummyController.PlanEnemy. Shares the mover + projectile/cover
+    // pipeline with colonists but carries the Enemy marker so it skips all
+    // colonist behavior. Pre-loaded mag so it can open fire immediately.
+    public Entity SpawnEnemy(int tileX, int tileY)
+    {
+        var view = MapView;
+        for (int r = 0; r < SimConstants.MapSize; r++)
+        {
+            for (int dy = -r; dy <= r; dy++)
+            {
+                for (int dx = -r; dx <= r; dx++)
+                {
+                    int x = tileX + dx;
+                    int y = tileY + dy;
+                    if (!view.Walkable(x, y)) continue;
+                    if (IsOccupied(x, y)) continue;
+
+                    var rifle = Items.ItemCatalog.AssaultRifle;
+                    var e = Store.CreateEntity();
+                    e.AddComponent(new WorldPos { X = x + 0.5f, Y = y + 0.5f });
+                    e.AddComponent(new PathFollower());
+                    e.AddComponent(new Wanderer());
+                    EnsureHealth(e);
+                    EnsureCombat(e);
+                    e.AddComponent(new Inventory
+                    {
+                        Items = new List<InventoryStack>
+                        {
+                            new InventoryStack { ItemPath = Items.ItemCatalog.RifleAmmoFmj.FullPath, Count = 120 },
+                        },
+                        Equipped = new List<EquippedItemSlot>
+                        {
+                            new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = rifle.FullPath, Count = 1 },
+                        },
+                    });
+                    e.AddComponent(new RangedCombat
+                    {
+                        Mode = Items.FireMode.Auto,
+                        MagCount = rifle.Ranged!.MagazineSize,
+                        LoadedAmmoPath = Items.ItemCatalog.RifleAmmoFmj.FullPath,
+                    });
+                    e.AddComponent(new Enemy());
+                    e.AddComponent(new EnemyBrain());
+                    return e;
+                }
+            }
+        }
+        throw new InvalidOperationException("No walkable tile found for enemy spawn.");
+    }
+
+    // Spawn a hostile at the first walkable tile just inside a random map
+    // edge — the entry point for a future raid system.
+    public Entity SpawnEnemyAtEdge()
+    {
+        int n = SimConstants.MapSize;
+        // pick the inner ring (x==1 / y==1 / x==n-2 / y==n-2) deterministically
+        // off the sim rng so tests/replays stay stable.
+        int side = _spawnRng.Next(4);
+        int span = _spawnRng.Next(1, n - 1);
+        var (sx, sy) = side switch
+        {
+            0 => (1, span),
+            1 => (n - 2, span),
+            2 => (span, 1),
+            _ => (span, n - 2),
+        };
+        return SpawnEnemy(sx, sy);
+    }
 }

@@ -38,6 +38,20 @@ public sealed class InstantPlaceDoorCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.InstantPlaceDoor(Tile);
 }
 
+// Debug: drop a hostile at a tile (spirals to nearest walkable).
+public sealed class SpawnEnemyCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public SpawnEnemyCommand(TilePos tile) { Tile = tile; }
+    public void Apply(SimRuntime sim) => sim.SpawnEnemy(Tile.X, Tile.Y);
+}
+
+// Debug: drop a hostile just inside a random map edge (raid entry).
+public sealed class SpawnEnemyAtEdgeCommand : ISimCommand
+{
+    public void Apply(SimRuntime sim) => sim.SpawnEnemyAtEdge();
+}
+
 public sealed class InstantPlaceLampCommand : ISimCommand
 {
     public TilePos Tile { get; }
