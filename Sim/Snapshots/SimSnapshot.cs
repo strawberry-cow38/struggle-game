@@ -138,6 +138,10 @@ public sealed class SimSnapshot
     internal bool[][] PawnWorkAllowedPool = System.Array.Empty<bool[]>();
     internal byte[][] PawnWorkSchedPool = System.Array.Empty<byte[]>();
 
+    // The single selected drafted ranged pawn whose hit chances are published
+    // on each DummyState.AimHit (0 = none / not exactly one ranged shooter).
+    public int AimShooterId { get; internal set; }
+
     public int? SelectedDummyId { get; internal set; }
     public int[] SelectedDummyIds { get; internal set; } = System.Array.Empty<int>();
     public TilePos[]? SelectedPath { get; internal set; }
@@ -204,7 +208,11 @@ public readonly record struct DummyState(
     // Hostile — drawn with a red tint so it reads as an enemy, not a colonist.
     bool IsEnemy,
     // Current enemy goal (EnemyGoalKind value) for the overhead debug label.
-    byte EnemyGoal);
+    byte EnemyGoal,
+    // Single-shot hit chance FROM the currently selected drafted shooter to
+    // this pawn (null unless exactly one ranged shooter is selected). Drives
+    // the hover hit-chance readout.
+    StruggleGame.Sim.Gunnery.HitChanceResult? AimHit);
 
 // What a ranged colonist is doing right now, for the overhead label.
 public enum RangedStatus : byte { None = 0, Firing = 1, Watching = 2, Reloading = 3, TooClose = 4 }

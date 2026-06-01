@@ -1209,6 +1209,38 @@ public sealed class SimRuntime
         var selSet = (selectedDummyIds is { Length: > 0 }) ? new HashSet<int>(selectedDummyIds) : null;
         List<PawnPathState>? selPaths = null;
 
+        // Hover hit-chance: resolve the single selected drafted ranged pawn (if
+        // exactly one is selected and armed). Its per-target single-shot odds
+        // are published on each DummyState.AimHit below for the hover readout.
+        float aimFromX = 0f, aimFromY = 0f, aimRecoil = 0f;
+        float aimHeightSel = SimConstants.AimAutoHeight;
+        Items.RangedSpec? aimSpec = null;
+        int aimShooterId = 0;
+        if (selectedDummyIds is { Length: 1 }
+            && Store.TryGetEntityById(selectedDummyIds[0], out var shEnt)
+            && shEnt.HasComponent<Drafted>() && shEnt.HasComponent<WorldPos>()
+            && shEnt.HasComponent<RangedCombat>() && TryGetEquippedRangedSpec(shEnt, out var shSpec))
+        {
+            var shPos = shEnt.GetComponent<WorldPos>();
+            var shRc = shEnt.GetComponent<RangedCombat>();
+            aimFromX = shPos.X; aimFromY = shPos.Y;
+            aimRecoil = shRc.Recoil;
+            aimSpec = shSpec;
+            aimShooterId = shEnt.Id;
+            aimHeightSel = shRc.TargetArea switch
+            {
+                Items.TargetArea.Head => SimConstants.AimHeadHeight,
+                Items.TargetArea.Torso => SimConstants.BodyAimHeight,
+                Items.TargetArea.Legs => SimConstants.AimLegsHeight,
+                _ => SimConstants.AimAutoHeight,
+            };
+        }
+        snap.AimShooterId = aimShooterId;
+        Func<int, int, bool> aimIsWall = (x, y) => Map.GetWall(x, y) != WallType.None;
+        Func<int, int, bool> aimIsSandbag = _sandbagMap.Count > 0
+            ? (x, y) => _sandbagMap.ContainsKey(new TilePos(x, y))
+            : (x, y) => false;
+
         var dq = _wandererQ ??= Store.Query<WorldPos, Wanderer>();
         EnsureCap(ref snap.DummiesBuf, dq.Count);
         var dummiesBuf = snap.DummiesBuf;
@@ -1400,6 +1432,19 @@ public sealed class SimRuntime
             // head-down crouch (covers melee/unarmed drafted pawns too).
             if (coverStance == 0 && wr.Crouched) coverStance = 1;
 
+            // Hit chance FROM the selected shooter TO this pawn (skip the
+            // shooter itself; needs a body to aim at).
+            StruggleGame.Sim.Gunnery.HitChanceResult? aimHit = null;
+            if (aimSpec is not null && ent.Id != aimShooterId && ent.HasComponent<Health>())
+            {
+                bool tDowned = ent.GetComponent<Health>().Unconscious;
+                float tBodyH = tDowned ? SimConstants.DownedBodyHeight : SimConstants.PawnBodyHeight;
+                float tAimH = tDowned ? SimConstants.DownedAimHeight : aimHeightSel;
+                aimHit = StruggleGame.Sim.Gunnery.HitChanceEstimator.Estimate(
+                    aimSpec, aimRecoil, aimFromX, aimFromY, p.X, p.Y,
+                    tBodyH, tAimH, aimIsWall, aimIsSandbag);
+            }
+
             dummiesBuf[i++] = new DummyState(
                 ent.Id, p.X, p.Y, label, drafted, carrying,
                 inventory, carryW, carryB,
@@ -1411,7 +1456,8 @@ public sealed class SimRuntime
                 fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea,
                 coverStance, leaning, peekX, peekY, rangedHasAmmo,
                 ent.HasComponent<Enemy>(),
-                (byte)(ent.HasComponent<EnemyBrain>() ? ent.GetComponent<EnemyBrain>().Goal : EnemyGoalKind.None));
+                (byte)(ent.HasComponent<EnemyBrain>() ? ent.GetComponent<EnemyBrain>().Goal : EnemyGoalKind.None),
+                aimHit);
 
             // Capture path + queued tiles for every selected pawn, so the whole
             // squad shows its move lines + waypoints (not just the first pawn).

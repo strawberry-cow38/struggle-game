@@ -822,6 +822,11 @@ public partial class WorldRenderer : Node2D
             DrawSelectedPath(snap);
         }
 
+        // Hover hit-chance readout: a drafted ranged colonist selected + the
+        // cursor over a pawn shows the single-shot odds + the factors at play.
+        if (snap.AimShooterId != 0)
+            DrawHoverHitChance(snap, cursorTileX, cursorTileY);
+
         FrameProfiler.Instance.EndFrame();
     }
 
@@ -863,6 +868,79 @@ public partial class WorldRenderer : Node2D
         float rise = (1f - fade) * PixelsPerTile * 0.5f;
         var p = new Vector2(center.X - PixelsPerTile * 0.35f, center.Y - radius - 4f - rise);
         DrawString(font, p, "Missed!", HorizontalAlignment.Left, -1f, MissedFontSize, col);
+    }
+
+    // Hover hit-chance panel styling.
+    private static readonly Color HitPanelBg = new(0.05f, 0.05f, 0.08f, 0.82f);
+    private static readonly Color HitGood = new(0.45f, 0.9f, 0.45f, 1f);
+    private static readonly Color HitMid = new(0.95f, 0.85f, 0.35f, 1f);
+    private static readonly Color HitPoor = new(0.95f, 0.55f, 0.3f, 1f);
+    private static readonly Color HitBad = new(0.95f, 0.35f, 0.35f, 1f);
+    private static readonly Color HitFactor = new(0.85f, 0.88f, 0.95f, 0.95f);
+    private static readonly Color HitFactorDim = new(0.7f, 0.73f, 0.8f, 0.9f);
+    private readonly List<(string Text, int Size, Color Col)> _hitLines = new();
+
+    // Floating panel: single-shot odds from the selected shooter to the pawn
+    // under the cursor, plus the factors that produced them (distance, cone =
+    // weapon spread + accumulated recoil, cover on the line, and the split into
+    // horizontal/vertical connect probabilities). Mirrors HitChanceEstimator.
+    private void DrawHoverHitChance(Sim.Snapshots.SimSnapshot snap, int cursorTileX, int cursorTileY)
+    {
+        var font = _fallbackFont;
+        if (font is null) return;
+        bool found = false;
+        Sim.Snapshots.DummyState hovered = default;
+        foreach (var d in snap.Dummies)
+        {
+            if (d.EntityId == snap.AimShooterId || !d.AimHit.HasValue) continue;
+            if ((int)d.X == cursorTileX && (int)d.Y == cursorTileY) { hovered = d; found = true; break; }
+        }
+        if (!found) return;
+        var hc = hovered.AimHit!.Value;
+
+        const int headSize = 18, bodySize = 13;
+        _hitLines.Clear();
+        if (!hc.InRange)
+            _hitLines.Add(("OUT OF RANGE", headSize, HitBad));
+        else
+        {
+            int pct = Mathf.RoundToInt(hc.Chance * 100f);
+            var pctCol = hc.Chance >= 0.66f ? HitGood : hc.Chance >= 0.33f ? HitMid
+                : hc.Chance > 0f ? HitPoor : HitBad;
+            _hitLines.Add(($"Hit: {pct}%", headSize, pctCol));
+        }
+        if (hc.Cover == Sim.Gunnery.HitCover.WallBlocked)
+            _hitLines.Add(("Wall blocks the shot", bodySize, HitBad));
+        _hitLines.Add(($"Distance  {hc.Distance:0.0}t", bodySize, HitFactor));
+        _hitLines.Add(($"Cone  {hc.ConeDeg:0.0}°  (spread+recoil)", bodySize, HitFactor));
+        if (hc.Cover == Sim.Gunnery.HitCover.Sandbag)
+            _hitLines.Add(("Sandbag cover (low rounds eaten)", bodySize, HitMid));
+        if (hc.InRange && hc.Cover != Sim.Gunnery.HitCover.WallBlocked)
+            _hitLines.Add(($"Horiz {Mathf.RoundToInt(hc.PHorizontal * 100f)}%   Vert {Mathf.RoundToInt(hc.PVertical * 100f)}%",
+                bodySize, HitFactorDim));
+
+        float maxW = 0f, totalH = 0f;
+        const float lineGap = 3f, pad = 7f;
+        foreach (var (text, size, _) in _hitLines)
+        {
+            var sz = font.GetStringSize(text, HorizontalAlignment.Left, -1f, size);
+            if (sz.X > maxW) maxW = sz.X;
+            totalH += sz.Y + lineGap;
+        }
+        totalH -= lineGap;
+
+        // Anchor above-right of the hovered pawn.
+        var center = new Vector2(hovered.X * PixelsPerTile, hovered.Y * PixelsPerTile);
+        var origin = new Vector2(center.X + PixelsPerTile * 0.5f, center.Y - PixelsPerTile * 0.7f - totalH);
+        DrawRect(new Rect2(origin.X - pad, origin.Y - pad, maxW + pad * 2f, totalH + pad * 2f), HitPanelBg, filled: true);
+
+        float y = origin.Y;
+        foreach (var (text, size, col) in _hitLines)
+        {
+            var sz = font.GetStringSize(text, HorizontalAlignment.Left, -1f, size);
+            DrawString(font, new Vector2(origin.X, y + sz.Y * 0.8f), text, HorizontalAlignment.Left, -1f, size, col);
+            y += sz.Y + lineGap;
+        }
     }
 
     // Alarm "!" glyphs streaming up from a downed colonist's head — the
