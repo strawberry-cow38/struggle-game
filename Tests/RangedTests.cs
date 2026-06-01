@@ -1,7 +1,9 @@
 using Friflo.Engine.ECS;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Bodies;
+using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Items;
+using StruggleGame.Sim.Map;
 using StruggleGame.Sim.World;
 using Xunit;
 
@@ -44,6 +46,42 @@ public class RangedTests
                 new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = ItemCatalog.AssaultRifle.FullPath, Count = 1 },
             },
         });
+    }
+
+    [Fact]
+    public void ReloadCancelledByMoveOrder_GrantsNoAmmo()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, target) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        sim.Store.GetEntityById(target).AddComponent(new Drafted());
+        ArmWithRifle(sim, shooter, ItemCatalog.RifleAmmoFmj, 60);
+        sim.Step(SimConstants.TickSeconds); sim.Step(SimConstants.TickSeconds);
+        SetPos(sim, shooter, 20.5f, 20.5f); SetPos(sim, target, 24.5f, 20.5f);
+        sim.SetFireTarget(shooter, target);
+
+        // Mag starts empty, so the shooter reloads before it can fire — catch it
+        // mid-reload (the rifle's reload is 120 ticks).
+        var e = sim.Store.GetEntityById(shooter);
+        for (int i = 0; i < 60 && !e.GetComponent<RangedCombat>().Reloading; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f); SetPos(sim, target, 24.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+        }
+        Assert.True(e.GetComponent<RangedCombat>().Reloading, "shooter should be mid-reload");
+        Assert.Equal(0, e.GetComponent<RangedCombat>().MagCount);
+        int ammoBefore = InvCount(e, ItemCatalog.RifleAmmoFmj.FullPath);
+
+        // Interrupt with a fresh move order — reload aborts, and because the
+        // rounds only load on completion, the mag stays empty + ammo untouched
+        // (no free instant reload from interrupting).
+        sim.QueueCommand(new IssueMoveOrderCommand(shooter, new TilePos(30, 20), false));
+        sim.Step(SimConstants.TickSeconds);
+
+        Assert.False(e.GetComponent<RangedCombat>().Reloading, "move order should cancel the reload");
+        Assert.Equal(0, e.GetComponent<RangedCombat>().MagCount);
+        Assert.Equal(ammoBefore, InvCount(e, ItemCatalog.RifleAmmoFmj.FullPath));
     }
 
     [Fact]

@@ -298,9 +298,11 @@ public sealed class DummyController
         {
             ref var rc0 = ref entity.GetComponent<RangedCombat>();
             // Always finish a reload once its timer elapses, even if the pawn
-            // stopped firing mid-reload (target lost) — otherwise the
-            // "Reloading" label sticks forever.
-            if (rc0.Reloading && _tick >= rc0.NextActionTick) rc0.Reloading = false;
+            // stopped firing mid-reload (target lost) — this is the insert-mag
+            // phase that actually fills the mag (else the reload would just keep
+            // restarting and never load).
+            if (rc0.Reloading && _tick >= rc0.NextActionTick && hasRangedWeapon)
+                CompleteReload(entity, ref rc0, rangedWeaponDef.Ranged!);
             // Recoil settles back down over time (fast between taps/bursts).
             if (rc0.Recoil > 0f && hasRangedWeapon)
                 rc0.Recoil = MathF.Max(0f, rc0.Recoil - rangedWeaponDef.Ranged!.RecoilRecoverPerSec * dt);
@@ -707,6 +709,29 @@ public sealed class DummyController
                     else cb.RemoveComponent<MeleeTarget>(entity.Id);
                 }
                 return;
+            }
+
+            // Reloading pins the pawn: snap onto the tile + hold until the mag's
+            // in, suppressing queued movement. A FRESH move order cancels the
+            // reload (IssueMoveOrderCommand clears Reloading) so it repositions
+            // instead — and since the rounds only load on completion, that
+            // abort can't grant a free reload.
+            if (entity.HasComponent<RangedCombat>())
+            {
+                ref var rcReload = ref entity.GetComponent<RangedCombat>();
+                if (rcReload.Reloading)
+                {
+                    if (_tick >= rcReload.NextActionTick && TryGetRangedWeapon(entity, out var rwPin))
+                        CompleteReload(entity, ref rcReload, rwPin.Ranged!); // done — fall through
+                    else
+                    {
+                        if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
+                        path.Waypoints = null; path.Index = 0;
+                        if (SnapToNearestTile(ref pos, dt, out float rdx, out float rdy)) w.Facing = SouthFacing;
+                        else if (rdx * rdx + rdy * rdy > 1e-9f) w.Facing = MathF.Atan2(rdy, rdx);
+                        return; // hold while reloading
+                    }
+                }
             }
 
             if (path.Waypoints is not null && path.Index < path.Waypoints.Count) return;
@@ -1888,7 +1913,8 @@ public sealed class DummyController
         if (entity.HasComponent<RangedCombat>())
         {
             ref var rc0 = ref entity.GetComponent<RangedCombat>();
-            if (rc0.Reloading && _tick >= rc0.NextActionTick) rc0.Reloading = false;
+            if (rc0.Reloading && _tick >= rc0.NextActionTick && TryGetRangedWeapon(entity, out var rwReload))
+                CompleteReload(entity, ref rc0, rwReload.Ranged!); // insert-mag phase
             if (rc0.Recoil > 0f && TryGetRangedWeapon(entity, out var wd0))
                 rc0.Recoil = MathF.Max(0f, rc0.Recoil - wd0.Ranged!.RecoilRecoverPerSec * dt);
             rc0.Stance = CoverStance.None;
@@ -2532,7 +2558,7 @@ public sealed class DummyController
         if (rc.Reloading)
         {
             if (_tick < rc.NextActionTick) return;
-            rc.Reloading = false; // reload finished — fall through and fire
+            CompleteReload(entity, ref rc, spec); // insert-mag phase: now fill the mag
         }
 
         if (rc.MagCount <= 0)
@@ -2558,28 +2584,52 @@ public sealed class DummyController
         rc.NextActionTick = _tick + (rc.BurstRemaining > 0 ? spec.ShotCooldownTicks : spec.CycleCooldownTicks);
     }
 
-    // Pull the first matching ammo stack from inventory into the magazine.
+    // Begin a reload: drop the spent mag now (MagCount -> 0) and start the
+    // timer, but DON'T pull the new rounds yet — the ammo is only inserted when
+    // the reload COMPLETES (CompleteReload), so interrupting a reload can't
+    // grant a free instant reload. Returns false (no reload) if no matching
+    // ammo is on hand.
     private bool TryStartReload(Entity entity, ref RangedCombat rc, Items.RangedSpec spec)
     {
+        if (!TryFindReloadStack(entity, ref rc, spec, out _)) return false;
+        rc.Reloading = true;
+        rc.MagCount = 0;            // mag dropped
+        rc.NextActionTick = _tick + spec.ReloadTicks;
+        rc.BurstRemaining = 0;
+        return true;
+    }
+
+    // Finish a reload: NOW pull the rounds from inventory into the mag (the
+    // "insert mag" phase). Called only when the reload timer elapses.
+    private void CompleteReload(Entity entity, ref RangedCombat rc, Items.RangedSpec spec)
+    {
+        rc.Reloading = false;
+        if (!TryFindReloadStack(entity, ref rc, spec, out int k)) return; // ammo gone meanwhile
+        ref var inv = ref entity.GetComponent<Inventory>();
+        var stk = inv.Items![k];
+        int load = Math.Min(spec.MagazineSize, stk.Count);
+        stk.Count -= load;
+        if (stk.Count <= 0) inv.Items.RemoveAt(k); else inv.Items[k] = stk;
+        rc.MagCount = load;
+        rc.LoadedAmmoPath = stk.ItemPath;
+    }
+
+    // Index of the first inventory stack of compatible (and, if set, preferred)
+    // ammo with rounds in it. No mutation.
+    private static bool TryFindReloadStack(Entity entity, ref RangedCombat rc, Items.RangedSpec spec, out int index)
+    {
+        index = -1;
         if (!entity.HasComponent<Inventory>()) return false;
         ref var inv = ref entity.GetComponent<Inventory>();
         if (inv.Items is null) return false;
         for (int k = 0; k < inv.Items.Count; k++)
         {
             var stk = inv.Items[k];
+            if (stk.Count <= 0) continue;
             if (!Items.ItemCatalog.ItemsByPath.TryGetValue(stk.ItemPath, out var d) || d.Ammo is null) continue;
             if (d.Ammo.CategoryPath != spec.AmmoCategoryPath) continue;
-            // If the player locked an ammo type, only reload from that one.
             if (rc.PreferredAmmoPath is not null && stk.ItemPath != rc.PreferredAmmoPath) continue;
-            int load = Math.Min(spec.MagazineSize, stk.Count);
-            if (load <= 0) continue;
-            stk.Count -= load;
-            if (stk.Count <= 0) inv.Items.RemoveAt(k); else inv.Items[k] = stk;
-            rc.MagCount = load;
-            rc.LoadedAmmoPath = stk.ItemPath;
-            rc.Reloading = true;
-            rc.NextActionTick = _tick + spec.ReloadTicks;
-            rc.BurstRemaining = 0;
+            index = k;
             return true;
         }
         return false;

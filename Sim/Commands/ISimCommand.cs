@@ -311,6 +311,10 @@ public sealed class IssueMoveOrderCommand : ISimCommand
         {
             ref var rc = ref ent.GetComponent<RangedCombat>();
             rc.TargetEntityId = 0; rc.BurstRemaining = 0;
+            // A fresh move order aborts an in-progress reload so the pawn can
+            // reposition now. The mag only fills on reload COMPLETION, so the
+            // dropped mag stays empty — no free instant reload from interrupting.
+            rc.Reloading = false;
         }
 
         if (!ent.HasComponent<OrderQueue>())
