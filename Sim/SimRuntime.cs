@@ -1445,12 +1445,23 @@ public sealed class SimRuntime
                 // live fire). Lean: a popped-out leaning target is a smaller hit.
                 float tLight = LightAt(new TilePos((int)p.X, (int)p.Y));
                 float tSpreadMul = 1f + SimConstants.DarknessSpreadBonus * (1f - Math.Clamp(tLight, 0f, 1f));
+                // Aim at the target's EFFECTIVE position — its peek cell while
+                // leaning — so a peeking (visible) target isn't reported BLOCKED
+                // just because its body tile sits behind the wall. Mirrors the
+                // live-fire aim + the hitbox shift.
                 bool tLean = ent.HasComponent<RangedCombat>()
                     && ent.GetComponent<RangedCombat>().Stance == CoverStance.Popped
                     && ent.GetComponent<RangedCombat>().Leaning;
+                float tgtX = p.X, tgtY = p.Y;
+                if (tLean)
+                {
+                    var trc = ent.GetComponent<RangedCombat>();
+                    tgtX = p.X + (trc.PeekX - p.X) * SimConstants.LeanPeekFraction;
+                    tgtY = p.Y + (trc.PeekY - p.Y) * SimConstants.LeanPeekFraction;
+                }
                 float tHitR = tLean ? ProjectileHitRadius * LeanHitFraction : ProjectileHitRadius;
                 aimHit = StruggleGame.Sim.Gunnery.HitChanceEstimator.Estimate(
-                    aimSpec, aimRecoil, aimFromX, aimFromY, p.X, p.Y,
+                    aimSpec, aimRecoil, aimFromX, aimFromY, tgtX, tgtY,
                     tBodyH, tAimH, aimIsWall, aimIsSandbag, tSpreadMul, tHitR);
                 // A wall on the direct line isn't really "blocked" if the
                 // shooter could lean-peek the target — recompute from the peek
@@ -1458,10 +1469,10 @@ public sealed class SimRuntime
                 if (aimHit.Value.Cover == StruggleGame.Sim.Gunnery.HitCover.WallBlocked)
                 {
                     var shooterTile = new TilePos((int)aimFromX, (int)aimFromY);
-                    var tgtTile = new TilePos((int)p.X, (int)p.Y);
+                    var tgtTile = new TilePos((int)tgtX, (int)tgtY);
                     if (_dummies.TryGetLeanCell(MapView, shooterTile, tgtTile, out var lean))
                         aimHit = StruggleGame.Sim.Gunnery.HitChanceEstimator.Estimate(
-                            aimSpec, aimRecoil, lean.X + 0.5f, lean.Y + 0.5f, p.X, p.Y,
+                            aimSpec, aimRecoil, lean.X + 0.5f, lean.Y + 0.5f, tgtX, tgtY,
                             tBodyH, tAimH, aimIsWall, aimIsSandbag, tSpreadMul, tHitR);
                 }
             }
