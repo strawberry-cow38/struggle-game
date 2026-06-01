@@ -157,17 +157,19 @@ public partial class WorldRenderer : Node2D
     // re-interpolate "Firing at Colonist N" every pawn every frame.
     private readonly Dictionary<long, string> _combatLabelCache = new();
 
-    // Visual-only pawn separation ("bump"). Within BumpRadius tiles, a pawn is
-    // shoved away from each overlapping neighbour; the summed push is capped at
-    // BumpMaxOffset so it stays a subtle brush. Both pawns of a passing pair get
-    // pushed (each sees the other), so they part symmetrically on screen.
-    private const float BumpRadius = 0.85f;     // tiles — within this, push apart
+    // Visual-only pawn separation ("bump"). Within BumpRadius a pawn sidesteps
+    // PERPENDICULAR to its travel direction (its facing), toward the side the
+    // neighbour isn't — so it steps around as it passes rather than repelling
+    // like a bubble. Strength scales with closeness, capped at BumpMaxOffset.
+    // Render-only; both pawns of a pair sidestep (each sees the other).
+    private const float BumpRadius = 0.85f;     // tiles — within this, sidestep
     private const float BumpMaxOffset = 0.28f;  // tiles — max on-screen displacement
     private readonly List<Vector2> _dummyBumpPos = new();
 
-    private Vector2 BumpOffset(int selfIndex, float selfX, float selfY)
+    private Vector2 BumpOffset(int selfIndex, float selfX, float selfY, float facing)
     {
-        Vector2 push = Vector2.Zero;
+        // Accumulate a radial "away from neighbours" vector (closeness-weighted).
+        Vector2 away = Vector2.Zero;
         float r2 = BumpRadius * BumpRadius;
         for (int j = 0; j < _dummyBumpPos.Count; j++)
         {
@@ -180,16 +182,20 @@ public partial class WorldRenderer : Node2D
             Vector2 dir;
             if (dist < 1e-3f)
             {
-                // Exact overlap: spread deterministically by index (golden angle).
-                float a = selfIndex * 2.39996323f;
+                float a = selfIndex * 2.39996323f; // exact overlap: spread by index
                 dir = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
             }
             else dir = new Vector2(ox / dist, oy / dist);
-            push += dir * (1f - dist / BumpRadius); // closer = stronger
+            away += dir * (1f - dist / BumpRadius); // closer = stronger
         }
-        if (push == Vector2.Zero) return Vector2.Zero;
-        if (push.Length() > 1f) push = push.Normalized();
-        return push * BumpMaxOffset;
+        if (away == Vector2.Zero) return Vector2.Zero;
+
+        // Project onto the perpendicular of travel: sidestep, not push-back.
+        float mag = Mathf.Min(away.Length(), 1f) * BumpMaxOffset;
+        var perp = new Vector2(-Mathf.Sin(facing), Mathf.Cos(facing)); // 90° off facing
+        float side = away.X * perp.X + away.Y * perp.Y; // which side is "away"
+        float sign = side >= 0f ? 1f : -1f; // head-on tie → +perp (opposing pawns split)
+        return perp * (sign * mag);
     }
 
     // Overhead debug label for an enemy's current goal (EnemyGoalKind value).
@@ -735,7 +741,7 @@ public partial class WorldRenderer : Node2D
                 // Visual bump: shove away from any pawn we're overlapping so two
                 // pawns passing through each other brush apart on screen instead
                 // of perfectly stacking. Render-only — sim positions untouched.
-                center += BumpOffset(di, drawX, drawY) * PixelsPerTile;
+                center += BumpOffset(di, drawX, drawY, d.Facing) * PixelsPerTile;
                 // Combat juice: lunge forward on a swing. (No victim flinch.)
                 {
                     var fdir = new Vector2(Mathf.Cos(d.Facing), Mathf.Sin(d.Facing));
