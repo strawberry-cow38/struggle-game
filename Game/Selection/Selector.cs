@@ -163,6 +163,34 @@ public partial class Selector : Node2D
         }
     }
 
+    // Drafted RMB on a pawn. An UN-DOWNED target: directly set each attacker's
+    // target by its weapon — ranged pawns get a shoot target, melee/unarmed get
+    // a melee target — no menu. A DOWNED target falls through to the menu (which
+    // carries Fire / Melee / Move here / finish-off). Returns false (→ move-order
+    // drag) if the cursor isn't on a different pawn.
+    private bool TryDirectTargetOrMenu(Vector2 world, int[] attackers)
+    {
+        if (Host?.LatestSnapshot is not { } snap) return false;
+        if (!TryPickPawn(snap, world, out int targetId)) return false;
+        if (System.Array.IndexOf(attackers, targetId) >= 0) return false; // not self
+
+        bool downed = false;
+        foreach (var d in snap.Dummies)
+            if (d.EntityId == targetId) { downed = d.Health.Unconscious; break; }
+        if (downed) return TryShowMeleeMenu(world, attackers); // keep the menu for downed
+
+        foreach (int a in attackers)
+        {
+            bool hasGun = false;
+            foreach (var d in snap.Dummies)
+                if (d.EntityId == a) { hasGun = d.HasRangedWeapon; break; }
+            Host!.QueueCommand(hasGun
+                ? new SetFireTargetCommand(a, targetId)
+                : new MeleeAttackCommand(a, targetId));
+        }
+        return true;
+    }
+
     // Drafted pawn(s) RMB on another pawn → "Melee attack X". Returns
     // false (→ move-order drag) if the cursor isn't on a different pawn.
     private bool TryShowMeleeMenu(Vector2 world, int[] attackers)
@@ -277,8 +305,10 @@ public partial class Selector : Node2D
                         }
                         return;
                     }
-                    // Drafted: RMB on another pawn → "Melee attack X" menu.
-                    if (TryShowMeleeMenu(GetGlobalMousePosition(), drafted))
+                    // Drafted: RMB on another pawn → directly set the right
+                    // target (gun = shoot, else melee). A DOWNED pawn still pops
+                    // the menu (Fire / Melee / Move here / finish-off).
+                    if (TryDirectTargetOrMenu(GetGlobalMousePosition(), drafted))
                     {
                         GetViewport().SetInputAsHandled();
                         return;

@@ -25,6 +25,7 @@ public partial class DraftActionBar : CanvasLayer
     private HBoxContainer _bar = null!;
     private Label _magLabel = null!;
     private Button _forceTargetBtn = null!;
+    private Button _meleeBtn = null!;
     private Button _fireAtWillBtn = null!;
     private PopupMenu _reloadMenu = null!;
     private readonly List<string> _reloadAmmoPaths = new();
@@ -102,10 +103,13 @@ public partial class DraftActionBar : CanvasLayer
         AddChild(_reloadMenu);
         _reloadMenu.IdPressed += OnReloadMenuPick;
 
+        // Weapon-name button = ranged target mode: click it, then a pawn, to
+        // set a shoot target. (Text is set to the equipped weapon each frame.)
         _forceTargetBtn = new Button
         {
-            Text = "Force Target",
+            Text = "Fire",
             ToggleMode = true,
+            TooltipText = "Click, then a pawn, to set a shoot target.",
             CustomMinimumSize = new Vector2(0, ButtonHeight),
             FocusMode = Control.FocusModeEnum.None,
         };
@@ -115,6 +119,22 @@ public partial class DraftActionBar : CanvasLayer
             Tools.Mode = _forceTargetBtn.ButtonPressed ? ToolMode.ForceFireTarget : ToolMode.None;
         };
         _bar.AddChild(_forceTargetBtn);
+
+        // Melee target mode: click, then a pawn, to set a melee attack target.
+        _meleeBtn = new Button
+        {
+            Text = "Melee Attack",
+            ToggleMode = true,
+            TooltipText = "Click, then a pawn, to melee it.",
+            CustomMinimumSize = new Vector2(0, ButtonHeight),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        _meleeBtn.Pressed += () =>
+        {
+            if (Tools is null) return;
+            Tools.Mode = _meleeBtn.ButtonPressed ? ToolMode.MeleeAttackTarget : ToolMode.None;
+        };
+        _bar.AddChild(_meleeBtn);
 
         // Global "fire at will" toggle — off = colonists only fire at forced
         // (RMB) targets, no auto-acquire/peek.
@@ -178,8 +198,18 @@ public partial class DraftActionBar : CanvasLayer
         _shownArea = p.RangedTargetArea;
         _targetAreaBtn.Text = $"Aim: {p.RangedTargetArea}";
 
+        // Name the ranged button after the equipped weapon.
+        string weaponName = "Fire";
+        foreach (var eq in p.Equipped)
+            if (ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var wd) && wd.Ranged is not null)
+            { weaponName = wd.DisplayName; break; }
+        _forceTargetBtn.Text = weaponName;
+
         if (Tools is not null)
+        {
             _forceTargetBtn.SetPressedNoSignal(Tools.Mode == ToolMode.ForceFireTarget);
+            _meleeBtn.SetPressedNoSignal(Tools.Mode == ToolMode.MeleeAttackTarget);
+        }
 
         _fireAtWillBtn.SetPressedNoSignal(snap.FireAtWill);
         _fireAtWillBtn.Text = snap.FireAtWill ? "Fire at Will: On" : "Fire at Will: Off";

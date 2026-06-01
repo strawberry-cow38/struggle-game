@@ -21,12 +21,15 @@ public partial class ForceTargetDesignator : Node2D
     public override void _Ready()
     {
         ZIndex = 56;
-        if (Tools is not null) this.BindInputToMode(Tools, m => m == ToolMode.ForceFireTarget, () => { });
+        if (Tools is not null)
+            this.BindInputToMode(Tools, m => m == ToolMode.ForceFireTarget || m == ToolMode.MeleeAttackTarget, () => { });
     }
 
     public override void _UnhandledInput(InputEvent @event)
     {
-        if (Host is null || Tools is null || Tools.Mode != ToolMode.ForceFireTarget) return;
+        if (Host is null || Tools is null) return;
+        bool melee = Tools.Mode == ToolMode.MeleeAttackTarget;
+        if (!melee && Tools.Mode != ToolMode.ForceFireTarget) return;
         if (@event is not InputEventMouseButton mb || mb.ButtonIndex != MouseButton.Left || !mb.Pressed) return;
 
         var snap = Host.LatestSnapshot;
@@ -38,14 +41,16 @@ public partial class ForceTargetDesignator : Node2D
         float bestSq = PickRadiusPx * PickRadiusPx;
         foreach (var d in snap.Dummies)
         {
-            if (d.EntityId == shooter.Value) continue; // don't shoot self
+            if (d.EntityId == shooter.Value) continue; // don't target self
             float dx = d.X * PixelsPerTile - world.X;
             float dy = d.Y * PixelsPerTile - world.Y;
             float d2 = dx * dx + dy * dy;
             if (d2 < bestSq) { bestSq = d2; bestId = d.EntityId; }
         }
         if (bestId >= 0)
-            Host.QueueCommand(new SetFireTargetCommand(shooter.Value, bestId));
+            Host.QueueCommand(melee
+                ? new MeleeAttackCommand(shooter.Value, bestId)
+                : new SetFireTargetCommand(shooter.Value, bestId));
 
         Tools.Mode = ToolMode.None;
         GetViewport().SetInputAsHandled();
