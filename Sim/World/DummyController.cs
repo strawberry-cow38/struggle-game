@@ -1851,7 +1851,7 @@ public sealed class DummyController
             brain.TargetEntityId = PerceiveNearestColonist(here);
             if (hurt) brain.Goal = EnemyGoalKind.Retreat;
             else if (brain.TargetEntityId != 0) brain.Goal = EnemyGoalKind.Engage;
-            else brain.Goal = EnemyGoalKind.None;
+            else brain.Goal = EnemyGoalKind.Advance; // no target → march in, hunting
 
             // For Engage, hold a committed firing position chosen by exposure
             // (cover) scoring. Re-pick only when we lack one or it went stale.
@@ -1870,10 +1870,25 @@ public sealed class DummyController
             case EnemyGoalKind.Retreat:
                 TickRetreat(ref path, here, store, view, brain.TargetEntityId);
                 break;
+            case EnemyGoalKind.Advance:
+                TickAdvance(ref path, here, in brain);
+                break;
             default:
                 ClearPath(ref path);
                 break;
         }
+    }
+
+    // Advance: no target in sight — march toward the goal destination (the
+    // brain's assigned tile, else map centre), dodging colonist LOS via the
+    // weighted path. Perception flips us to Engage the moment a colonist
+    // comes into view. Holds once arrived.
+    private void TickAdvance(ref PathFollower path, TilePos here, in EnemyBrain brain)
+    {
+        int center = SimConstants.MapSize / 2;
+        var dest = brain.HasGoalTile ? new TilePos(brain.GoalTileX, brain.GoalTileY) : new TilePos(center, center);
+        if (Math.Abs(here.X - dest.X) <= 2 && Math.Abs(here.Y - dest.Y) <= 2) { ClearPath(ref path); return; }
+        EnsurePathTo(ref path, here, dest);
     }
 
     // Nearest conscious non-enemy pawn within sight (squared compare), or 0.

@@ -88,6 +88,7 @@ public enum EnemyGoalKind : byte
     None = 0,
     Engage,   // close to weapon range + fire from cover
     Retreat,  // hurt — fall back toward the map edge, away from threats
+    Advance,  // no target — march toward the goal destination (default map center)
 }
 
 // Per-enemy brain state. Perception + goal selection run on a stagger
@@ -104,6 +105,11 @@ public struct EnemyBrain : IComponent
     public int FireCellX;
     public int FireCellY;
     public bool HasFireCell;
+    // Destination for the Advance goal (march-to point). Defaults to map
+    // centre when unset; a future "go to X" / objective can stamp it.
+    public int GoalTileX;
+    public int GoalTileY;
+    public bool HasGoalTile;
 }
 
 // Per-colonist priority table for each WorkType. Priorities[i] = 0
