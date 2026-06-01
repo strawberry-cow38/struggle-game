@@ -1904,8 +1904,17 @@ public sealed class DummyController
             var fc = new TilePos(brain.FireCellX, brain.FireCellY);
             if (here == fc)
             {
-                // Posted up — fire (leans around cover if tucked). If the shot
-                // is gone, the next think re-picks a position.
+                // Settle onto the cell CENTER before peeking. The pawn arrives
+                // at the tile edge off the path; firing immediately would pop
+                // the lean/peek (a ~tile shift) before it's actually in place —
+                // that's the "snaps a distance" bug. Ease in first, facing the
+                // target, and only fire once centered.
+                if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
+                path.Waypoints = null; path.Index = 0;
+                var tpw = tgt.GetComponent<WorldPos>();
+                float fdx = tpw.X - pos.X, fdy = tpw.Y - pos.Y;
+                if (fdx * fdx + fdy * fdy > 1e-9f) w.Facing = MathF.Atan2(fdy, fdx);
+                if (!SnapToNearestTile(ref pos, dt, out _, out _)) return; // still easing in
                 entity.GetComponent<RangedCombat>().TargetEntityId = targetId;
                 ExecuteRangedFire(entity, tgt, spec, ref pos, ref path, ref w, dt, view, here);
             }
