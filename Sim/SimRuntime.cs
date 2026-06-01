@@ -4134,29 +4134,26 @@ public sealed class SimRuntime
         if (!Store.TryGetEntityById(pawnId, out var p)) return;
         if (!p.HasComponent<RangedCombat>()) return;
         if (!TryGetEquippedRangedSpec(p, out var spec)) return;
-        UnloadMagazine(pawnId); // bank the current mag before refilling
+        UnloadMagazine(pawnId); // bank the partial mag (rounds returned, MagCount -> 0)
+        // Two-phase: only START the timed reload here — the rounds are inserted
+        // when it COMPLETES (the controller's per-tick CompleteReload), so the
+        // mag shows empty during the reload and interrupting it grants nothing.
         if (!p.HasComponent<Inventory>()) return;
-        ref var inv = ref p.GetComponent<Inventory>();
+        var inv = p.GetComponent<Inventory>();
         if (inv.Items is null) return;
         string? preferred = p.GetComponent<RangedCombat>().PreferredAmmoPath;
-        for (int k = 0; k < inv.Items.Count; k++)
-        {
-            var stk = inv.Items[k];
-            if (!Items.ItemCatalog.ItemsByPath.TryGetValue(stk.ItemPath, out var d) || d.Ammo is null) continue;
-            if (d.Ammo.CategoryPath != spec.AmmoCategoryPath) continue;
-            if (preferred is not null && stk.ItemPath != preferred) continue;
-            int load = Math.Min(spec.MagazineSize, stk.Count);
-            if (load <= 0) continue;
-            stk.Count -= load;
-            if (stk.Count <= 0) inv.Items.RemoveAt(k); else inv.Items[k] = stk;
-            ref var rc = ref p.GetComponent<RangedCombat>();
-            rc.MagCount = load;
-            rc.LoadedAmmoPath = stk.ItemPath;
-            rc.Reloading = true;
-            rc.NextActionTick = Tick + spec.ReloadTicks;
-            rc.BurstRemaining = 0;
-            return;
-        }
+        bool hasAmmo = false;
+        foreach (var stk in inv.Items)
+            if (stk.Count > 0
+                && Items.ItemCatalog.ItemsByPath.TryGetValue(stk.ItemPath, out var d) && d.Ammo is not null
+                && d.Ammo.CategoryPath == spec.AmmoCategoryPath
+                && (preferred is null || stk.ItemPath == preferred))
+            { hasAmmo = true; break; }
+        if (!hasAmmo) return;
+        ref var rc = ref p.GetComponent<RangedCombat>();
+        rc.Reloading = true;
+        rc.NextActionTick = Tick + spec.ReloadTicks;
+        rc.BurstRemaining = 0;
     }
 
     // Empty the magazine, returning its rounds to inventory.

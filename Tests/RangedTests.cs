@@ -229,9 +229,11 @@ public class RangedTests
         sim.Step(SimConstants.TickSeconds);
         Assert.True(e.HasComponent<RangedCombat>());
 
-        // Lock to HP + force-reload: mag fills with HP, HP inventory empties,
-        // FMJ is untouched.
+        // Lock to HP + force-reload. Two-phase: the rounds only load when the
+        // reload COMPLETES (~120 ticks), so step it out, then mag fills with HP,
+        // HP inventory empties, FMJ is untouched.
         sim.SetPreferredAmmoAndReload(shooter, ItemCatalog.RifleAmmoHp.FullPath);
+        for (int i = 0; i < 160; i++) sim.Step(SimConstants.TickSeconds);
         var rc = e.GetComponent<RangedCombat>();
         Assert.Equal(ItemCatalog.RifleAmmoHp.FullPath, rc.LoadedAmmoPath);
         Assert.Equal(30, rc.MagCount);
