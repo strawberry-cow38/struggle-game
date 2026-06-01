@@ -43,8 +43,10 @@ public sealed class PathService
         public readonly TilePos From;
         public readonly TilePos To;
         public readonly MapView View;
-        public WorkItem(long id, TilePos from, TilePos to, MapView view)
-        { Id = id; From = from; To = to; View = view; }
+        public readonly IReadOnlySet<TilePos>? Avoid;
+        public readonly float AvoidPenalty;
+        public WorkItem(long id, TilePos from, TilePos to, MapView view, IReadOnlySet<TilePos>? avoid, float avoidPenalty)
+        { Id = id; From = from; To = to; View = view; Avoid = avoid; AvoidPenalty = avoidPenalty; }
     }
 
     public PathService(int width, int height, Func<MapView> viewProvider, bool async = false)
@@ -71,18 +73,20 @@ public sealed class PathService
     }
 
     // Sim-thread only. Async: queue for a worker. Sync: compute inline now.
-    public long Request(TilePos from, TilePos to)
+    // avoid/avoidPenalty: tiles to route around (extra step cost) — must be an
+    // IMMUTABLE set; a worker may read it on another thread.
+    public long Request(TilePos from, TilePos to, IReadOnlySet<TilePos>? avoid = null, float avoidPenalty = 0f)
     {
         long id = ++_nextId;
         _pending[id] = 0;
         var view = _viewProvider();
         if (_async)
         {
-            _queue.Add(new WorkItem(id, from, to, view));
+            _queue.Add(new WorkItem(id, from, to, view, avoid, avoidPenalty));
         }
         else
         {
-            var path = _syncAstar!.FindPath(view, from, to);
+            var path = _syncAstar!.FindPath(view, from, to, avoid, avoidPenalty);
             _ready[id] = new PathResult(
                 path is null ? PathStatus.NoPath : PathStatus.Found, path, view.Version);
         }
@@ -95,7 +99,7 @@ public sealed class PathService
         {
             if (!_pending.ContainsKey(item.Id)) continue; // discarded before we ran
             List<TilePos>? path;
-            try { path = astar.FindPath(item.View, item.From, item.To); }
+            try { path = astar.FindPath(item.View, item.From, item.To, item.Avoid, item.AvoidPenalty); }
             catch { path = null; }
             var result = new PathResult(
                 path is null ? PathStatus.NoPath : PathStatus.Found, path, item.View.Version);

@@ -142,6 +142,18 @@ public sealed class SimRuntime
     // instead of each rescanning every Wanderer.
     public readonly HashSet<TilePos> OccupiedPawnTiles = new();
     private ArchetypeQuery<WorldPos, Wanderer>? _occupiedPawnsQ;
+    // Tiles a conscious colonist can see (LOS). Enemies weight their A* to
+    // avoid these (don't run through colonist sightlines) and abandon cover to
+    // open fire when caught standing in one near a target. Rebuilt on a
+    // throttle and published as a fresh immutable set so path worker threads
+    // read a captured reference safely (same discipline as MapView). Null
+    // until first built.
+    private volatile IReadOnlySet<TilePos>? _colonistLosTiles;
+    private long _colonistLosNextTick;
+    private ArchetypeQuery<WorldPos, Wanderer, Health>? _colonistLosQ;
+    private const long ColonistLosRebuildInterval = 60; // throttle (~1s @ 60Hz)
+    private const int ColonistLosRadius = 18;            // tiles a colonist's LOS reaches
+    public IReadOnlySet<TilePos>? ColonistLosTiles => _colonistLosTiles;
     // Stockpile tiles currently promised to an in-flight haul job. Posting
     // a new haul avoids these so two carriers can't target the same cell.
     private readonly HashSet<TilePos> _reservedHaulDests = new();
@@ -352,6 +364,7 @@ public sealed class SimRuntime
         _dummies.MeleeHit = MeleeStrike;
         _dummies.LosClear = RangedLosClear;
         _dummies.HasSandbag = (x, y) => _sandbagMap.ContainsKey(new TilePos(x, y));
+        _dummies.ColonistLosProvider = () => _colonistLosTiles;
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
@@ -379,6 +392,14 @@ public sealed class SimRuntime
         _worldTimeSec += SimSecondsPerRealSecond * dt;
         ComputeSun(_worldTimeSec, out var sR, out var sG, out var sB);
         if (sR != _lastSunR || sG != _lastSunG || sB != _lastSunB) _sunDirty = true;
+        // Refresh the colonist-LOS threat field on a throttle, before the
+        // pawn brains run (enemies read it for path weighting + the caught-in-
+        // the-open override).
+        if (Tick >= _colonistLosNextTick)
+        {
+            _colonistLosNextTick = Tick + ColonistLosRebuildInterval;
+            RebuildColonistLosTiles();
+        }
         _dummies.Step(Store, dt, Tick);
         // Drain auto-bed-claim requests posted by Plan(). Safe to do
         // structural changes here — outside the controller's query loop.
@@ -4162,6 +4183,34 @@ public sealed class SimRuntime
         {
             OccupiedPawnTiles.Add(new TilePos((int)p.X, (int)p.Y));
         });
+    }
+
+    // Rebuild the colonist-LOS threat field (throttled). For each conscious
+    // colonist, mark every tile within ColonistLosRadius it has a clear line
+    // to. Publishes a FRESH set (atomic ref swap) so any path worker holding
+    // the previous reference keeps reading valid immutable data.
+    private void RebuildColonistLosTiles()
+    {
+        var set = new HashSet<TilePos>();
+        int r = ColonistLosRadius;
+        int w = Map.Width, h = Map.Height;
+        (_colonistLosQ ??= Store.Query<WorldPos, Wanderer, Health>()).ForEachEntity((ref WorldPos p, ref Wanderer _, ref Health hp, Entity e) =>
+        {
+            if (e.HasComponent<Enemy>()) return;     // enemies aren't the threat
+            if (hp.Unconscious) return;              // downed colonists can't see
+            int cx = (int)p.X, cy = (int)p.Y;
+            for (int dy = -r; dy <= r; dy++)
+            for (int dx = -r; dx <= r; dx++)
+            {
+                if (dx * dx + dy * dy > r * r) continue;
+                int tx = cx + dx, ty = cy + dy;
+                if ((uint)tx >= (uint)w || (uint)ty >= (uint)h) continue;
+                var t = new TilePos(tx, ty);
+                if (set.Contains(t)) continue;       // another colonist already sees it
+                if (RangedLosClear(cx, cy, tx, ty)) set.Add(t);
+            }
+        });
+        _colonistLosTiles = set;
     }
 
     private void SpawnPendingProjectiles()

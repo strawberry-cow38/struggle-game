@@ -35,7 +35,11 @@ public sealed class AStar
         _generation = new int[cells];
     }
 
-    public List<TilePos>? FindPath(MapView view, TilePos start, TilePos goal)
+    // avoid/avoidPenalty: tiles in `avoid` cost an extra `avoidPenalty` to
+    // step onto, so the route prefers going around them (e.g. enemies routing
+    // out of colonist sightlines) while still passing through if there's no
+    // alternative. Null/0 = legacy behaviour.
+    public List<TilePos>? FindPath(MapView view, TilePos start, TilePos goal, IReadOnlySet<TilePos>? avoid = null, float avoidPenalty = 0f)
     {
         if (view.Width != _width || view.Height != _height)
         {
@@ -84,7 +88,10 @@ public sealed class AStar
                 // Weight the edge by the destination tile's cost — wood
                 // floor is cheap, doors are pricey, default is 1.0 so
                 // legacy behavior is unchanged outside built tiles.
-                float tentativeG = _gScore[currentIdx] + cost * view.CostAt(nx, ny);
+                float step = cost * view.CostAt(nx, ny);
+                if (avoidPenalty > 0f && avoid is not null && avoid.Contains(new TilePos(nx, ny)))
+                    step += avoidPenalty;
+                float tentativeG = _gScore[currentIdx] + step;
                 if (_generation[nIdx] != _runId || tentativeG < _gScore[nIdx])
                 {
                     _generation[nIdx] = _runId;

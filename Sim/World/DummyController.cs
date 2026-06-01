@@ -1777,6 +1777,13 @@ public sealed class DummyController
     private const int EnemyFleeDist = 12;             // tiles toward the edge when retreating
     private const int EnemyCoverSearchRadius = 12;    // tiles around the target to scan for firing cells
     private const float EnemyOpenExposurePenalty = 1000f; // open cells score far worse than covered ones
+    private const float EnemyLosAvoidPenalty = 6f;    // extra A* step cost for a tile in colonist LOS
+    private const float EnemyCaughtInOpenDist = 12f;  // exposed + target within this → drop cover, shoot
+
+    // Tiles colonists can see (threat field), supplied by SimRuntime. Enemies
+    // weight their pathing to avoid these + open fire if caught in one near a
+    // target. Immutable snapshot — safe to hand to the path workers.
+    public System.Func<IReadOnlySet<TilePos>?>? ColonistLosProvider;
 
     // (id, x, y) of every conscious non-enemy pawn, rebuilt once per Step.
     private readonly List<(int Id, float X, float Y)> _colonistTargets = new();
@@ -1899,6 +1906,27 @@ public sealed class DummyController
             return; // nothing valid to fight (downed targets ignored for now)
         }
         var spec = wdef.Ranged!;
+
+        // Caught in the open: if we're standing in a colonist sightline and a
+        // target is close with a clear shot, frick the cover-seek and just
+        // open fire from here.
+        var los = ColonistLosProvider?.Invoke();
+        if (los is not null && los.Contains(here))
+        {
+            var tpw = tgt.GetComponent<WorldPos>();
+            float ex = tpw.X - pos.X, ey = tpw.Y - pos.Y;
+            float edist = MathF.Sqrt(ex * ex + ey * ey);
+            var et = new TilePos((int)tpw.X, (int)tpw.Y);
+            if (edist <= EnemyCaughtInOpenDist && edist >= SimConstants.RangedMinFireRange && edist <= spec.Range
+                && (LosClear?.Invoke(here.X, here.Y, et.X, et.Y) ?? true))
+            {
+                brain.HasFireCell = false;
+                entity.GetComponent<RangedCombat>().TargetEntityId = targetId;
+                ExecuteRangedFire(entity, tgt, spec, ref pos, ref path, ref w, dt, view, here);
+                return;
+            }
+        }
+
         if (brain.HasFireCell)
         {
             var fc = new TilePos(brain.FireCellX, brain.FireCellY);
@@ -2034,7 +2062,7 @@ public sealed class DummyController
         int fx = here.X + (int)MathF.Round(ax * EnemyFleeDist);
         int fy = here.Y + (int)MathF.Round(ay * EnemyFleeDist);
         if (TryNearestWalkable(view, fx, fy, out var fleeTile) && fleeTile != here)
-            path.PendingPathId = _paths.Request(here, fleeTile);
+            path.PendingPathId = _paths.Request(here, fleeTile, ColonistLosProvider?.Invoke(), EnemyLosAvoidPenalty);
     }
 
     // Request a route to `dest` ONLY if the pawn isn't already following one
@@ -2043,7 +2071,9 @@ public sealed class DummyController
     {
         bool hasActivePath = path.Waypoints is { Count: > 0 } && path.Index < path.Waypoints.Count;
         if (hasActivePath || path.PendingPathId != 0 || dest == here) return;
-        path.PendingPathId = _paths.Request(here, dest);
+        // Weight the route to dodge colonist sightlines (still passes through
+        // if there's no way around).
+        path.PendingPathId = _paths.Request(here, dest, ColonistLosProvider?.Invoke(), EnemyLosAvoidPenalty);
     }
 
     private void ClearPath(ref PathFollower path)
