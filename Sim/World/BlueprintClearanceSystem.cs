@@ -43,6 +43,13 @@ public sealed class BlueprintClearanceSystem
 
     public void Step(EntityStore store, float dt)
     {
+        // Same cadence as HaulSystem/BlueprintHaulSystem — a relocate haul
+        // posted a few ticks late is invisible (the build was already waiting
+        // on the tile). Gating on the shared interval also keeps this running
+        // on the same ticks as, and ahead of, the haul passes so it still
+        // reserves the wood first.
+        if (_sim.Tick % HaulSystem.ScanIntervalTicks != 0) return;
+
         _blockingBpTiles.Clear();
         _itemTiles.Clear();
 
@@ -61,20 +68,16 @@ public sealed class BlueprintClearanceSystem
         });
         if (_blockingBpTiles.Count == 0) return;
 
-        // Tiles holding any item stack, used by the safe-tile scorer to
-        // prefer empty tiles over ones that'd cause an immediate merge.
-        (_itemPileQ ??= store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity _) =>
-        {
-            _itemTiles.Add(p.Tile);
-        });
-
         var view = _sim.MapView;
 
-        // Any dropped item on a blueprint tile must move — relocate it,
-        // carrying its own kind.
+        // One pass over item piles: record every occupied tile (the safe-tile
+        // scorer prefers empty tiles to avoid immediate merges) AND collect
+        // the unreserved stacks sitting on a blueprint tile that must move.
+        // Previously this was two full ItemPile scans.
         _candidates.Clear();
         (_itemPileQ ??= store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity ent) =>
         {
+            _itemTiles.Add(p.Tile);
             if (ent.HasComponent<HaulReserved>()) return;
             if (ent.HasComponent<Forbidden>()) return;
             if (!_blockingBpTiles.Contains(p.Tile)) return;
