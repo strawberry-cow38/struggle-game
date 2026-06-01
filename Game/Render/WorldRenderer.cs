@@ -157,6 +157,15 @@ public partial class WorldRenderer : Node2D
     // re-interpolate "Firing at Colonist N" every pawn every frame.
     private readonly Dictionary<long, string> _combatLabelCache = new();
 
+    // Overhead debug label for an enemy's current goal (EnemyGoalKind value).
+    private static string EnemyGoalLabel(byte goal) => goal switch
+    {
+        (byte)EnemyGoalKind.Engage => "Engaging",
+        (byte)EnemyGoalKind.Retreat => "Retreating",
+        (byte)EnemyGoalKind.Advance => "Advancing",
+        _ => "Idle",
+    };
+
     private string CombatLabel(int kind, int id)
     {
         long key = ((long)kind << 32) | (uint)id;
@@ -767,7 +776,8 @@ public partial class WorldRenderer : Node2D
                 // per (kind,id) instead of allocating a fresh interpolated
                 // string every pawn every frame — that per-frame garbage was
                 // what spiked GC (and a random render scope) during firefights.
-                string? labelText = d.Health.Unconscious ? "Unconscious"
+                string? labelText = d.IsEnemy ? (d.Health.Unconscious ? "Unconscious" : EnemyGoalLabel(d.EnemyGoal))
+                    : d.Health.Unconscious ? "Unconscious"
                     : d.RangedStatus == Sim.Snapshots.RangedStatus.Reloading ? "Reloading"
                     : d.RangedStatus == Sim.Snapshots.RangedStatus.Firing ? CombatLabel(0, d.FireTargetId)
                     : d.RangedStatus == Sim.Snapshots.RangedStatus.TooClose ? "Too close to fire"
