@@ -1775,8 +1775,10 @@ public sealed class DummyController
     private const float EnemyRetreatBloodThreshold = 0.45f;
     private const float EnemyRetreatMovingThreshold = 0.40f;
     private const int EnemyFleeDist = 12;             // tiles toward the edge when retreating
-    private const int EnemyCoverSearchRadius = 12;    // tiles around the target to scan for firing cells
+    private const int EnemyCoverSearchRadius = 7;     // tiles around the standoff point to scan for firing cells
     private const float EnemyOpenExposurePenalty = 1000f; // open cells score far worse than covered ones
+    private const float EngagePreferredFraction = 0.7f;   // preferred standoff = weapon range x this (short gun → push, long → hold)
+    private const float EnemyRangePreferenceWeight = 2f;  // how hard to prefer cells near the standoff distance
     private const float EnemyLosAvoidPenalty = 6f;    // extra A* step cost for a tile in colonist LOS
     private const float EnemyCaughtInOpenDist = 12f;  // exposed + target within this → drop cover, shoot
 
@@ -1972,19 +1974,42 @@ public sealed class DummyController
         var spec = wdef.Ranged!;
         var tw = tgt.GetComponent<WorldPos>();
         var ttile = new TilePos((int)tw.X, (int)tw.Y);
+        float dx = tw.X - (here.X + 0.5f), dy = tw.Y - (here.Y + 0.5f);
+        float dist = MathF.Sqrt(dx * dx + dy * dy);
 
+        // Already able to shoot from here → fire in place. Don't relocate to
+        // hunt for cover (no sprinting across open gaps when you can already
+        // engage — only reposition when you CAN'T shoot from here).
+        bool losHere = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
+        if (dist <= spec.Range && dist >= SimConstants.RangedMinFireRange && losHere)
+        {
+            brain.FireCellX = here.X; brain.FireCellY = here.Y; brain.HasFireCell = true;
+            return;
+        }
+
+        // Can't shoot from here → reposition. Aim for the weapon's preferred
+        // standoff distance (short range → push in close, long range → hold
+        // far), and look for cover AT that standoff point on our side of the
+        // target rather than anywhere near it.
         if (brain.HasFireCell
             && FiringCellValid(new TilePos(brain.FireCellX, brain.FireCellY), ttile, spec, view))
         {
-            return; // current spot still good — commit to it
+            return; // committed cell still valid
         }
-        if (FindBestFiringCell(here, ttile, spec, view, out var cell))
+        float preferred = MathF.Max(SimConstants.RangedMinFireRange + 1f, spec.Range * EngagePreferredFraction);
+        float ux = (here.X + 0.5f) - tw.X, uy = (here.Y + 0.5f) - tw.Y;
+        float ulen = MathF.Sqrt(ux * ux + uy * uy);
+        if (ulen < 1e-3f) { ux = 1f; uy = 0f; ulen = 1f; }
+        var standoff = new TilePos(
+            (int)(tw.X + ux / ulen * preferred),
+            (int)(tw.Y + uy / ulen * preferred));
+        if (FindBestFiringCell(here, ttile, standoff, preferred, spec, view, out var cell))
         {
             brain.FireCellX = cell.X; brain.FireCellY = cell.Y; brain.HasFireCell = true;
         }
         else
         {
-            brain.HasFireCell = false; // nothing in reach yet — close in
+            brain.HasFireCell = false; // nothing reachable yet — close in
         }
     }
 
@@ -2003,7 +2028,12 @@ public sealed class DummyController
     // sandbag between the cell and the threat) beat open ones by a large
     // margin; travel distance from the pawn tie-breaks. Returns false when no
     // in-range cell with a shot exists in the search window (→ close in).
-    private bool FindBestFiringCell(TilePos here, TilePos target, Items.RangedSpec spec, MapView view, out TilePos best)
+    // Lowest-exposure firing cell around `searchCenter` (the standoff point at
+    // the weapon's preferred distance, on the pawn's side of the target).
+    // Score: cover beats open by a big margin, then nearness to the preferred
+    // engagement distance, then travel from the pawn. Cells must be in weapon
+    // range with a direct or toward-target corner-lean shot.
+    private bool FindBestFiringCell(TilePos here, TilePos target, TilePos searchCenter, float preferred, Items.RangedSpec spec, MapView view, out TilePos best)
     {
         best = here;
         float bestScore = float.MaxValue;
@@ -2012,22 +2042,18 @@ public sealed class DummyController
         for (int dy = -r; dy <= r; dy++)
         for (int dx = -r; dx <= r; dx++)
         {
-            int cx = target.X + dx, cy = target.Y + dy;
+            int cx = searchCenter.X + dx, cy = searchCenter.Y + dy;
             if (!view.Walkable(cx, cy)) continue;
             var c = new TilePos(cx, cy);
             float tdx = target.X - cx, tdy = target.Y - cy;
             float dist = MathF.Sqrt(tdx * tdx + tdy * tdy);
             if (dist > spec.Range || dist < SimConstants.RangedMinFireRange) continue;
-            // Valid if there's a direct line OR a toward-the-target corner
-            // peek (TryFindLeanCell only returns peeks that edge out toward
-            // the enemy now, so wall cover with a clean peek is fine; a target
-            // dead-behind a long wall has no toward-target peek → that cell is
-            // rejected and the pawn flanks for a direct line instead).
             bool directLos = LosClear?.Invoke(cx, cy, target.X, target.Y) ?? true;
             if (!directLos && !TryFindLeanCell(view, c, target, out _)) continue;
             float exposure = CoverToward(c, target, view) ? 0f : EnemyOpenExposurePenalty;
+            float rangeMiss = MathF.Abs(dist - preferred) * EnemyRangePreferenceWeight;
             float travel = Math.Abs(cx - here.X) + Math.Abs(cy - here.Y);
-            float score = exposure + travel;
+            float score = exposure + rangeMiss + travel;
             if (score < bestScore) { bestScore = score; best = c; found = true; }
         }
         return found;
