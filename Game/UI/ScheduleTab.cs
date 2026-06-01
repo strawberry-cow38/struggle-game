@@ -260,9 +260,11 @@ public partial class ScheduleTab : CanvasLayer
         _suppressEvents = false;
     }
 
-    private static string BuildGridSignature(int curHour, PawnWorkState[] rows)
+    private readonly System.Text.StringBuilder _sigSb = new();
+    private string BuildGridSignature(int curHour, PawnWorkState[] rows)
     {
-        var sb = new System.Text.StringBuilder();
+        var sb = _sigSb;
+        sb.Clear();
         sb.Append(curHour).Append('|');
         foreach (var r in rows)
         {

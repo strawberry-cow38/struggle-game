@@ -295,10 +295,19 @@ public partial class PawnInfoPanel : CanvasLayer
         string PartId, StruggleGame.Sim.Bodies.ConditionKind Kind, int Count, float MaxSeverity,
         string? Caliber, bool Lodged);
 
-    private static List<InjuryGroup> GroupInjuries(InjuryState[] injuries)
+    // Reused scratch — Render calls these every tick while a pawn is
+    // selected, so fresh Dictionary/List/StringBuilder allocations each tick
+    // were steady garbage. GroupInjuries is called then fully consumed before
+    // the next call, so a single reused result list is safe.
+    private readonly Dictionary<(string, StruggleGame.Sim.Bodies.ConditionKind, string?, bool), (int n, float maxSev)> _injMap = new();
+    private readonly List<(string, StruggleGame.Sim.Bodies.ConditionKind, string?, bool)> _injOrder = new();
+    private readonly List<InjuryGroup> _injGroups = new();
+    private readonly System.Text.StringBuilder _injSigSb = new();
+
+    private List<InjuryGroup> GroupInjuries(InjuryState[] injuries)
     {
-        var map = new Dictionary<(string, StruggleGame.Sim.Bodies.ConditionKind, string?, bool), (int n, float maxSev)>();
-        var order = new List<(string, StruggleGame.Sim.Bodies.ConditionKind, string?, bool)>();
+        var map = _injMap; map.Clear();
+        var order = _injOrder; order.Clear();
         foreach (var inj in injuries)
         {
             var key = (inj.PartId, inj.Kind, inj.Caliber, inj.Lodged);
@@ -306,14 +315,14 @@ public partial class PawnInfoPanel : CanvasLayer
                 map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity));
             else { map[key] = (1, inj.Severity); order.Add(key); }
         }
-        var list = new List<InjuryGroup>(order.Count);
+        var list = _injGroups; list.Clear();
         foreach (var key in order) { var v = map[key]; list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4)); }
         return list;
     }
 
-    private static string BuildInjurySignature(InjuryState[] injuries)
+    private string BuildInjurySignature(InjuryState[] injuries)
     {
-        var sb = new System.Text.StringBuilder();
+        var sb = _injSigSb; sb.Clear();
         foreach (var g in GroupInjuries(injuries))
             sb.Append(g.PartId).Append((int)g.Kind).Append('x').Append(g.Count).Append((int)(g.MaxSeverity * 100))
               .Append(g.Caliber).Append(g.Lodged ? 'L' : 'T').Append(';');

@@ -207,9 +207,11 @@ public partial class WorkTab : CanvasLayer
         _suppressEvents = false;
     }
 
-    private static string BuildGridSignature(bool checkmark, PawnWorkState[] rows)
+    private readonly System.Text.StringBuilder _sigSb = new();
+    private string BuildGridSignature(bool checkmark, PawnWorkState[] rows)
     {
-        var sb = new System.Text.StringBuilder();
+        var sb = _sigSb;
+        sb.Clear();
         sb.Append(checkmark ? '1' : '0').Append('|');
         foreach (var r in rows)
         {
