@@ -57,6 +57,25 @@ public class EnemyAiTests
     }
 
     [Fact]
+    public void Enemy_BuildSnapshotDoesNotThrowAndFlagsEnemy()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var enemy = sim.SpawnEnemy(30, 30);
+
+        // Enemies lack WorkPriorities/Schedule/needs; the snapshot must not
+        // try to lazily add them inside its query loop (regression: that
+        // threw StructuralChangeException, only reachable via BuildSnapshot
+        // which the sim-only tests never call).
+        var snap = sim.BuildSnapshot();
+
+        bool found = false;
+        foreach (var d in snap.Dummies)
+            if (d.EntityId == enemy.Id) { found = true; Assert.True(d.IsEnemy); }
+        Assert.True(found, "enemy should appear in the snapshot, flagged IsEnemy");
+    }
+
+    [Fact]
     public void Enemy_RetreatsWhenHurt()
     {
         var sim = new SimRuntime();

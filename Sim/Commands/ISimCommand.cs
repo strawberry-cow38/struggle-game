@@ -1013,6 +1013,14 @@ public sealed class SetupGunfightCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetupGunfight(ShooterTile, TargetTile);
 }
 
+public sealed class SetupEnemyDemoCommand : ISimCommand
+{
+    public TilePos DefenderTile { get; }
+    public TilePos EnemyTile { get; }
+    public SetupEnemyDemoCommand(TilePos defenderTile, TilePos enemyTile) { DefenderTile = defenderTile; EnemyTile = enemyTile; }
+    public void Apply(SimRuntime sim) => sim.SetupEnemyDemo(DefenderTile, EnemyTile);
+}
+
 public sealed class SetAllRecreationLevelCommand : ISimCommand
 {
     public float Level { get; }

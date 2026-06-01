@@ -577,6 +577,29 @@ public partial class HarnessController : Node2D
                 _schedule.Add((0.6, h => h.SetupGunfight(c - 3, c, c + 3, c), "spawn shooter + target, open fire"));
                 _schedule.Add((5.0, h => h.Finish("gunfight complete"), "finish"));
                 break;
+            case "enemy":
+                // Enemy AI demo: a drafted, rifle-armed defender (orange) holds
+                // center; a hostile (red) spawns to the east, hunts the
+                // defender, closes to range + opens fire, and falls back when
+                // its blood drops. Manual-sim + 60fps capture for a smooth clip.
+                if (MovieMode)
+                {
+                    _screenshotEverySec = double.PositiveInfinity;
+                }
+                else
+                {
+                    _screenshotEverySec = 1.0 / 60.0;
+                    _screenshotScale = 1.0f;
+                }
+                _warmupSec = 2.0;
+                _manualSim = true;
+                _schedule.Add((0.1, h => h.RemoveLowest(), "remove default 1"));
+                _schedule.Add((0.15, h => h.RemoveLowest(), "remove default 2"));
+                _schedule.Add((0.2, h => h.RemoveLowest(), "remove default 3"));
+                _schedule.Add((0.3, h => h.SetCameraZoom(1.7f), "zoom to frame both"));
+                _schedule.Add((0.6, h => h.SetupEnemyDemo(c - 6, c, c + 10, c), "spawn defender + hunting enemy"));
+                _schedule.Add((14.0, h => h.Finish("enemy complete"), "finish"));
+                break;
             case "stress":
                 for (int r = 2; r <= 6; r++)
                 {
@@ -736,6 +759,11 @@ public partial class HarnessController : Node2D
     private void SetupGunfight(int sx, int sy, int tx, int ty)
     {
         Host.QueueCommand(new SetupGunfightCommand(new TilePos(sx, sy), new TilePos(tx, ty)));
+    }
+
+    private void SetupEnemyDemo(int dx, int dy, int ex, int ey)
+    {
+        Host.QueueCommand(new SetupEnemyDemoCommand(new TilePos(dx, dy), new TilePos(ex, ey)));
     }
 
     private void DrainAllRecreation()

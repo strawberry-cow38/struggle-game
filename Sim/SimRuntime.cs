@@ -1446,6 +1446,10 @@ public sealed class SimRuntime
         int pwi = 0;
         (_wandererQ ??= Store.Query<WorldPos, Wanderer>()).ForEachEntity((ref WorldPos _, ref Wanderer _, Entity ent) =>
         {
+            // Enemies aren't colonists — they have no work tab / schedule and
+            // lack those components, so EnsureXxx here would do a structural
+            // AddComponent inside the query loop (StructuralChangeException).
+            if (ent.HasComponent<Enemy>()) return;
             EnsureWorkPriorities(ent);
             EnsureSchedule(ent);
             EnsureSleepNeed(ent);
@@ -6247,6 +6251,36 @@ public sealed class SimRuntime
             Mode = Items.FireMode.Auto,
             TargetEntityId = target.Id,
             FinishOff = true,
+            MagCount = rifle.Ranged!.MagazineSize,
+            LoadedAmmoPath = Items.ItemCatalog.RifleAmmoFmj.FullPath,
+        });
+    }
+
+    // Harness: an armed, drafted colonist (defender) holds position and fires
+    // at a hostile that hunts it — shows the full enemy loop on camera
+    // (acquire, close to range, fire, retreat when hurt). The defender is the
+    // only armed colonist; the enemy auto-acquires it via perception.
+    public void SetupEnemyDemo(TilePos defenderTile, TilePos enemyTile)
+    {
+        var rifle = Items.ItemCatalog.AssaultRifle;
+        var defender = SpawnDummy(defenderTile.X, defenderTile.Y);
+        defender.AddComponent(new Inventory
+        {
+            Items = new List<InventoryStack>
+            {
+                new InventoryStack { ItemPath = Items.ItemCatalog.RifleAmmoFmj.FullPath, Count = 240 },
+            },
+            Equipped = new List<EquippedItemSlot>
+            {
+                new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = rifle.FullPath, Count = 1 },
+            },
+        });
+        defender.AddComponent(new Drafted());
+        var enemy = SpawnEnemy(enemyTile.X, enemyTile.Y);
+        defender.AddComponent(new RangedCombat
+        {
+            Mode = Items.FireMode.Auto,
+            TargetEntityId = enemy.Id,
             MagCount = rifle.Ranged!.MagazineSize,
             LoadedAmmoPath = Items.ItemCatalog.RifleAmmoFmj.FullPath,
         });
