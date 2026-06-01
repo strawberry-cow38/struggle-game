@@ -89,7 +89,27 @@ public enum EnemyGoalKind : byte
     Engage,   // close to weapon range + fire from cover
     Retreat,  // hurt — fall back toward the map edge, away from threats
     Advance,  // no target — march toward the goal destination (default map center)
+    Hold,     // posted up at the objective tile, standing watch (mission Hold step)
+    Exfil,    // mission done / ordered out — flee to the nearest edge and despawn
 }
+
+// One step of an enemy's MISSION — the strategic queue it works through when
+// not interrupted by combat (Engage/Retreat reflexes override it). Goals are
+// data so new mission steps slot in without touching the brain core: the
+// future "destroy building X" / "steal item Y" objectives drop in here.
+public enum EnemyObjectiveKind : byte
+{
+    None = 0,
+    AdvanceTo,  // march to (TileX,TileY); completes on arrival
+    Hold,       // hold (TileX,TileY) for Param ticks (0 = forever); completes when elapsed
+    Patrol,     // loop marker — restart the mission from the top
+    Exfil,      // leave the map (flee to nearest edge + despawn)
+    // Future: DestroyBuilding, Steal — add a kind + a resolver branch.
+}
+
+// A single mission step. TileX/TileY is the target tile (unused for Patrol);
+// Param is step-specific (Hold = duration in ticks).
+public readonly record struct EnemyObjective(EnemyObjectiveKind Kind, int TileX, int TileY, int Param);
 
 // Per-enemy brain state. Perception + goal selection run on a stagger
 // (NextThinkTick); the chosen goal executes every tick.
@@ -106,10 +126,18 @@ public struct EnemyBrain : IComponent
     public int FireCellY;
     public bool HasFireCell;
     // Destination for the Advance goal (march-to point). Defaults to map
-    // centre when unset; a future "go to X" / objective can stamp it.
+    // centre when unset; the mission stamps it from the current objective.
     public int GoalTileX;
     public int GoalTileY;
     public bool HasGoalTile;
+    // The strategic mission: an ordered objective queue the brain works
+    // through when not in combat. Null/empty → the default "advance + hunt"
+    // fallback. MissionIndex is the current step; PhaseStartTick timestamps a
+    // Hold so its duration can elapse. Held by reference on the component
+    // (like PathFollower.Waypoints) so it lives and dies with the entity.
+    public List<EnemyObjective>? Mission;
+    public int MissionIndex;
+    public long PhaseStartTick;
 }
 
 // Per-colonist priority table for each WorkType. Priorities[i] = 0

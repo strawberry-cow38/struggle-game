@@ -75,6 +75,83 @@ public class EnemyAiTests
         Assert.True(found, "enemy should appear in the snapshot, flagged IsEnemy");
     }
 
+    // Park every colonist in the far corner so a test raider never perceives
+    // one (keeps the mission running uninterrupted by the Engage reflex).
+    private static void StashColonistsFarAway(SimRuntime sim)
+    {
+        int far = SimConstants.MapSize - 2;
+        sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos p, ref Wanderer _, Entity e) =>
+        {
+            if (!e.HasComponent<Enemy>()) { p.X = far + 0.5f; p.Y = far + 0.5f; }
+        });
+    }
+
+    [Fact]
+    public void Enemy_MissionAdvancesThroughHoldToExfil()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        StashColonistsFarAway(sim);
+
+        int c = SimConstants.MapSize / 2;
+        var mission = new System.Collections.Generic.List<EnemyObjective>
+        {
+            new EnemyObjective(EnemyObjectiveKind.AdvanceTo, c, c, 0),
+            new EnemyObjective(EnemyObjectiveKind.Hold, c, c, 20),
+            new EnemyObjective(EnemyObjectiveKind.Exfil, 0, 0, 0),
+        };
+        var enemy = sim.SpawnEnemy(c, c, mission);
+        SetPos(sim, enemy.Id, c + 0.5f, c + 0.5f);
+
+        // Spawned on the AdvanceTo tile → it completes immediately and the brain
+        // settles into the Hold step.
+        for (int i = 0; i < 20; i++) sim.Step(SimConstants.TickSeconds);
+        Assert.Equal(EnemyGoalKind.Hold, enemy.GetComponent<EnemyBrain>().Goal);
+
+        // Once the hold duration elapses the queue advances to Exfil.
+        for (int i = 0; i < 60; i++) sim.Step(SimConstants.TickSeconds);
+        ref var brain = ref enemy.GetComponent<EnemyBrain>();
+        Assert.Equal(EnemyGoalKind.Exfil, brain.Goal);
+        Assert.Equal(2, brain.MissionIndex);
+    }
+
+    [Fact]
+    public void Enemy_ExfilReachesEdgeAndDespawns()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        StashColonistsFarAway(sim);
+
+        var mission = new System.Collections.Generic.List<EnemyObjective>
+        {
+            new EnemyObjective(EnemyObjectiveKind.Exfil, 0, 0, 0),
+        };
+        var enemy = sim.SpawnEnemy(4, 4, mission);
+        int id = enemy.Id;
+        SetPos(sim, id, 4.5f, 4.5f);
+
+        // It heads for the nearest edge and despawns on the perimeter.
+        bool gone = false;
+        for (int i = 0; i < 400 && !gone; i++)
+        {
+            sim.Step(SimConstants.TickSeconds);
+            gone = !sim.Store.TryGetEntityById(id, out _);
+        }
+        Assert.True(gone, "exfil should have walked the raider off the edge + despawned it");
+    }
+
+    [Fact]
+    public void Enemy_NoMission_FallsBackToAdvance()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        StashColonistsFarAway(sim);
+
+        var enemy = sim.SpawnEnemy(30, 30); // null mission
+        for (int i = 0; i < 20; i++) sim.Step(SimConstants.TickSeconds);
+        Assert.Equal(EnemyGoalKind.Advance, enemy.GetComponent<EnemyBrain>().Goal);
+    }
+
     [Fact]
     public void Enemy_RetreatsWhenHurt()
     {

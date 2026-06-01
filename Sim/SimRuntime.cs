@@ -6401,7 +6401,24 @@ public sealed class SimRuntime
     // in DummyController.PlanEnemy. Shares the mover + projectile/cover
     // pipeline with colonists but carries the Enemy marker so it skips all
     // colonist behavior. Pre-loaded mag so it can open fire immediately.
-    public Entity SpawnEnemy(int tileX, int tileY)
+    // Ticks an enemy holds an objective tile in the demo raid mission.
+    private const int RaiderHoldTicks = 300; // ~5s at 60 TPS
+
+    // A demonstrable raid arc: march to map centre, hold the ground a few
+    // seconds, then exfil off the nearest edge (despawning). Combat reflexes
+    // still interrupt each step. Shows the full mission lifecycle.
+    public static List<EnemyObjective> RaiderMission()
+    {
+        int c = SimConstants.MapSize / 2;
+        return new List<EnemyObjective>
+        {
+            new EnemyObjective(EnemyObjectiveKind.AdvanceTo, c, c, 0),
+            new EnemyObjective(EnemyObjectiveKind.Hold, c, c, RaiderHoldTicks),
+            new EnemyObjective(EnemyObjectiveKind.Exfil, 0, 0, 0),
+        };
+    }
+
+    public Entity SpawnEnemy(int tileX, int tileY, List<EnemyObjective>? mission = null)
     {
         var view = MapView;
         for (int r = 0; r < SimConstants.MapSize; r++)
@@ -6440,7 +6457,7 @@ public sealed class SimRuntime
                         LoadedAmmoPath = Items.ItemCatalog.RifleAmmoFmj.FullPath,
                     });
                     e.AddComponent(new Enemy());
-                    e.AddComponent(new EnemyBrain());
+                    e.AddComponent(new EnemyBrain { Mission = mission });
                     return e;
                 }
             }

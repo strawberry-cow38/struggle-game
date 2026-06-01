@@ -224,7 +224,7 @@ public sealed class DummyController
         // returns) still moves them along any path the brain requested.
         if (entity.HasComponent<Enemy>())
         {
-            PlanEnemy(ref pos, ref path, ref w, dt, entity, view, store, here);
+            PlanEnemy(ref pos, ref path, ref w, dt, entity, cb, view, store, here);
             return;
         }
 
@@ -1795,7 +1795,7 @@ public sealed class DummyController
     // expensive bit) then executes it every tick. Goals are dispatched by
     // kind so new intents (steal, destroy, …) slot in as a new kind + a
     // selection rule + a handler — no rewrite of the firing/movement core.
-    private void PlanEnemy(ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, Entity entity, MapView view, EntityStore store, TilePos here)
+    private void PlanEnemy(ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, Entity entity, CommandBuffer cb, MapView view, EntityStore store, TilePos here)
     {
         // Resolve any in-flight path request first (mirrors the colonist path).
         if (path.PendingPathId != 0)
@@ -1849,9 +1849,12 @@ public sealed class DummyController
                 && (entity.GetComponent<Health>().BloodLevel < EnemyRetreatBloodThreshold
                     || entity.GetComponent<Health>().Moving < EnemyRetreatMovingThreshold);
             brain.TargetEntityId = PerceiveNearestColonist(here);
+            // Combat reflexes (Retreat when hurt, Engage on sight) INTERRUPT the
+            // mission; otherwise resolve the current objective into a goal,
+            // advancing the queue as steps complete.
             if (hurt) brain.Goal = EnemyGoalKind.Retreat;
             else if (brain.TargetEntityId != 0) brain.Goal = EnemyGoalKind.Engage;
-            else brain.Goal = EnemyGoalKind.Advance; // no target → march in, hunting
+            else brain.Goal = StepMission(ref brain, here);
 
             // For Engage, hold a committed firing position chosen by exposure
             // (cover) scoring. Re-pick only when we lack one or it went stale.
@@ -1873,10 +1876,105 @@ public sealed class DummyController
             case EnemyGoalKind.Advance:
                 TickAdvance(ref path, here, in brain);
                 break;
+            case EnemyGoalKind.Hold:
+                ClearPath(ref path); // posted up — stand watch (Engage interrupts if a target appears)
+                break;
+            case EnemyGoalKind.Exfil:
+                TickExfil(ref path, here, entity, cb);
+                break;
             default:
                 ClearPath(ref path);
                 break;
         }
+    }
+
+    // Resolve the current mission objective into a concrete goal for this
+    // think, advancing the queue as steps complete. Runs only when no combat
+    // reflex is active. A null/empty mission falls back to the legacy "advance
+    // toward map centre + hunt" behaviour. The loop (not recursion) drains any
+    // already-satisfied steps in one think; capped so a Patrol of co-located
+    // points can't spin forever.
+    private EnemyGoalKind StepMission(ref EnemyBrain brain, TilePos here)
+    {
+        var mission = brain.Mission;
+        if (mission is null || mission.Count == 0)
+        {
+            brain.HasGoalTile = false; // no objective tile → TickAdvance uses map centre
+            return EnemyGoalKind.Advance;
+        }
+
+        int guard = mission.Count * 2 + 2;
+        while (guard-- > 0)
+        {
+            if (brain.MissionIndex >= mission.Count)
+                return EnemyGoalKind.None; // mission complete → idle
+
+            var obj = mission[brain.MissionIndex];
+            switch (obj.Kind)
+            {
+                case EnemyObjectiveKind.AdvanceTo:
+                    brain.GoalTileX = obj.TileX; brain.GoalTileY = obj.TileY; brain.HasGoalTile = true;
+                    if (Arrived(here, obj.TileX, obj.TileY)) { AdvanceMission(ref brain); continue; }
+                    return EnemyGoalKind.Advance;
+
+                case EnemyObjectiveKind.Hold:
+                    brain.GoalTileX = obj.TileX; brain.GoalTileY = obj.TileY; brain.HasGoalTile = true;
+                    if (!Arrived(here, obj.TileX, obj.TileY)) return EnemyGoalKind.Advance; // walk there first
+                    if (brain.PhaseStartTick == 0) brain.PhaseStartTick = _tick;
+                    if (obj.Param > 0 && _tick - brain.PhaseStartTick >= obj.Param)
+                    { brain.PhaseStartTick = 0; AdvanceMission(ref brain); continue; }
+                    return EnemyGoalKind.Hold;
+
+                case EnemyObjectiveKind.Patrol:
+                    brain.MissionIndex = 0; brain.PhaseStartTick = 0;
+                    // If the first step is already satisfied the guard stops the spin.
+                    continue;
+
+                case EnemyObjectiveKind.Exfil:
+                    return EnemyGoalKind.Exfil;
+
+                default:
+                    AdvanceMission(ref brain); continue;
+            }
+        }
+        // Couldn't settle (e.g. degenerate patrol) — just hold where we are.
+        return EnemyGoalKind.Hold;
+    }
+
+    private void AdvanceMission(ref EnemyBrain brain)
+    {
+        brain.MissionIndex++;
+        brain.PhaseStartTick = 0;
+        brain.HasFireCell = false;
+    }
+
+    private const int EnemyArriveRadius = 2;
+    private static bool Arrived(TilePos here, int x, int y)
+        => Math.Abs(here.X - x) <= EnemyArriveRadius && Math.Abs(here.Y - y) <= EnemyArriveRadius;
+
+    // Exfil: head for the nearest map edge along the LOS-avoiding path; once on
+    // the perimeter, despawn (deferred via the command buffer — a structural
+    // change can't happen inside the controller's query loop).
+    private void TickExfil(ref PathFollower path, TilePos here, Entity entity, CommandBuffer cb)
+    {
+        // The map border (tile 0 / MapSize-1) is non-walkable, so the outermost
+        // reachable ring is tile 1 / MapSize-2 — that's "the edge" for exfil.
+        const int lo = 1;
+        int hi = SimConstants.MapSize - 2;
+        if (here.X <= lo || here.Y <= lo || here.X >= hi || here.Y >= hi)
+        {
+            ClearPath(ref path);
+            cb.DeleteEntity(entity.Id);
+            return;
+        }
+        // Head for the nearest edge tile on the same row/column.
+        int distLeft = here.X - lo, distRight = hi - here.X, distTop = here.Y - lo, distBottom = hi - here.Y;
+        int min = Math.Min(Math.Min(distLeft, distRight), Math.Min(distTop, distBottom));
+        TilePos dest = min == distLeft ? new TilePos(lo, here.Y)
+            : min == distRight ? new TilePos(hi, here.Y)
+            : min == distTop ? new TilePos(here.X, lo)
+            : new TilePos(here.X, hi);
+        EnsurePathTo(ref path, here, dest);
     }
 
     // Advance: no target in sight — march toward the goal destination (the

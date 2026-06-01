@@ -39,6 +39,7 @@ public partial class DebugBar : CanvasLayer
         AddButton(_hbox, ToolMode.RemovePawn, "Remove Pawn");
         AddButton(_hbox, ToolMode.DebugAddInjury, "Add Injury");
         AddOneShotButton(_hbox, "Spawn Enemy", SpawnEnemyAtCamera);
+        AddOneShotButton(_hbox, "Spawn Raider", SpawnRaiderAtCamera);
         AddSpawnItemControls(_hbox);
         AddOneShotButton(_hbox, "Reroll Map", () => Host?.Reroll(System.Environment.TickCount));
         AddOneShotButton(_hbox, "-1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(-3600)));
@@ -132,6 +133,17 @@ public partial class DebugBar : CanvasLayer
         int tx = (int)(p.X / StruggleGame.Sim.SimConstants.PixelsPerTile);
         int ty = (int)(p.Y / StruggleGame.Sim.SimConstants.PixelsPerTile);
         Host?.QueueCommand(new SpawnEnemyCommand(new StruggleGame.Sim.Map.TilePos(tx, ty)));
+    }
+
+    // Drop a hostile running the demo raid mission (advance → hold → exfil) at
+    // the camera centre, to watch the goal-queue lifecycle play out.
+    private void SpawnRaiderAtCamera()
+    {
+        var cam = GetViewport()?.GetCamera2D();
+        var p = cam?.GlobalPosition ?? Vector2.Zero;
+        int tx = (int)(p.X / StruggleGame.Sim.SimConstants.PixelsPerTile);
+        int ty = (int)(p.Y / StruggleGame.Sim.SimConstants.PixelsPerTile);
+        Host?.QueueCommand(new SpawnRaiderCommand(new StruggleGame.Sim.Map.TilePos(tx, ty)));
     }
 
     private static void AddOneShotButton(HBoxContainer parent, string label, Action onPress)
