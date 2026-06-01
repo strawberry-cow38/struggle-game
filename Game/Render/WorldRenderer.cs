@@ -171,21 +171,23 @@ public partial class WorldRenderer : Node2D
         _ => "Idle",
     };
 
-    private string CombatLabel(int kind, int id)
+    private string CombatLabel(int kind, int id, bool targetIsEnemy)
     {
-        long key = ((long)kind << 32) | (uint)id;
+        long key = ((long)kind << 33) | ((long)(targetIsEnemy ? 1 : 0) << 32) | (uint)id;
         if (!_combatLabelCache.TryGetValue(key, out var s))
         {
+            string who = targetIsEnemy ? "Raider" : "Colonist";
             s = kind switch
             {
-                0 => $"Firing at Colonist {id}",
-                1 => $"Watching for Colonist {id}",
-                _ => $"Melee Attacking Colonist {id}",
+                0 => $"Firing at {who} {id}",
+                1 => $"Watching for {who} {id}",
+                _ => $"Melee Attacking {who} {id}",
             };
             _combatLabelCache[key] = s;
         }
         return s;
     }
+    private readonly HashSet<int> _enemyIdScratch = new();
     private readonly HashSet<TilePos> _zoneScratch = new();
     private readonly Vector2[] _doorPts = new Vector2[4];
 
@@ -669,6 +671,9 @@ public partial class WorldRenderer : Node2D
         _selectedDummyIdsScratch ??= new HashSet<int>();
         _selectedDummyIdsScratch.Clear();
         foreach (var sid in snap.SelectedDummyIds) _selectedDummyIdsScratch.Add(sid);
+        // Enemy ids, so combat labels can name a target "Raider" vs "Colonist".
+        _enemyIdScratch.Clear();
+        foreach (var d in snap.Dummies) if (d.IsEnemy) _enemyIdScratch.Add(d.EntityId);
         using (FrameProfiler.Instance.BeginScope("Dummies"))
         {
             foreach (var d in snap.Dummies)
@@ -784,10 +789,10 @@ public partial class WorldRenderer : Node2D
                 string? labelText = d.IsEnemy ? (d.Health.Unconscious ? "Unconscious" : EnemyGoalLabel(d.EnemyGoal))
                     : d.Health.Unconscious ? "Unconscious"
                     : d.RangedStatus == Sim.Snapshots.RangedStatus.Reloading ? "Reloading"
-                    : d.RangedStatus == Sim.Snapshots.RangedStatus.Firing ? CombatLabel(0, d.FireTargetId)
+                    : d.RangedStatus == Sim.Snapshots.RangedStatus.Firing ? CombatLabel(0, d.FireTargetId, _enemyIdScratch.Contains(d.FireTargetId))
                     : d.RangedStatus == Sim.Snapshots.RangedStatus.TooClose ? "Too close to fire"
-                    : d.RangedStatus == Sim.Snapshots.RangedStatus.Watching ? CombatLabel(1, d.FireTargetId)
-                    : d.MeleeTargetId != 0 ? CombatLabel(2, d.MeleeTargetId)
+                    : d.RangedStatus == Sim.Snapshots.RangedStatus.Watching ? CombatLabel(1, d.FireTargetId, _enemyIdScratch.Contains(d.FireTargetId))
+                    : d.MeleeTargetId != 0 ? CombatLabel(2, d.MeleeTargetId, _enemyIdScratch.Contains(d.MeleeTargetId))
                     : d.Sleeping ? "Sleeping"
                     : (string.IsNullOrEmpty(d.Job) ? null : d.Job);
                 if (labelFont is not null && labelText is not null)

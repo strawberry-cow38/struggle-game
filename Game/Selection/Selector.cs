@@ -173,15 +173,16 @@ public partial class Selector : Node2D
         if (!TryPickPawn(snap, world, out int targetId)) return false;
         if (System.Array.IndexOf(attackers, targetId) >= 0) return false; // don't punch self
 
-        string name = $"Colonist {targetId}";
-        foreach (var pw in snap.PawnWork)
-            if (pw.EntityId == targetId) { name = pw.Name; break; }
-
-        // Downed state + tile of the target, for a possible Move-here entry.
-        bool targetDowned = false;
+        // Downed state + tile + faction of the target.
+        bool targetDowned = false, targetIsEnemy = false;
         TilePos targetTile = default;
         foreach (var d in snap.Dummies)
-            if (d.EntityId == targetId) { targetDowned = d.Health.Unconscious; targetTile = new TilePos((int)d.X, (int)d.Y); break; }
+            if (d.EntityId == targetId) { targetDowned = d.Health.Unconscious; targetIsEnemy = d.IsEnemy; targetTile = new TilePos((int)d.X, (int)d.Y); break; }
+
+        string name = targetIsEnemy ? $"Raider {targetId}" : $"Colonist {targetId}";
+        if (!targetIsEnemy)
+            foreach (var pw in snap.PawnWork)
+                if (pw.EntityId == targetId) { name = pw.Name; break; }
 
         _meleeTargetId = targetId;
         _meleeAttackers = attackers;
@@ -665,9 +666,14 @@ public partial class Selector : Node2D
             // through to normal single-click selection. Without the guard
             // a double-click on empty ground (or a wall) was silently
             // selecting every tree in view.
-            if (TryPickItemPile(snap, world, out _))
+            if (TryPickItemPile(snap, world, out int clickedPileId))
             {
-                SelectAllItemsInView(snap);
+                // Only "all of THIS item" — match the clicked pile's type, not
+                // every dropped item regardless of what it is.
+                string itemPath = "";
+                foreach (var pp in snap.ItemPiles)
+                    if (pp.EntityId == clickedPileId) { itemPath = pp.ItemPath; break; }
+                SelectAllItemsInView(snap, itemPath);
                 return;
             }
             if (TryPickTree(snap, world, out _))
@@ -1270,7 +1276,7 @@ public partial class Selector : Node2D
         }
     }
 
-    private void SelectAllItemsInView(SimSnapshot snap)
+    private void SelectAllItemsInView(SimSnapshot snap, string itemPath)
     {
         var vp = GetViewport().GetVisibleRect();
         var canvasXform = GetCanvasTransform().AffineInverse();
@@ -1284,6 +1290,7 @@ public partial class Selector : Node2D
         var set = new HashSet<int>();
         foreach (var p in snap.ItemPiles)
         {
+            if (p.ItemPath != itemPath) continue; // same item type only
             float px = (p.Tile.X + 0.5f) * PixelsPerTile;
             float py = (p.Tile.Y + 0.5f) * PixelsPerTile;
             if (px < minX || px > maxX) continue;
