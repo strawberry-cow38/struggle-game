@@ -205,8 +205,12 @@ public sealed class DummyController
         (_colonistTargetsQ ??= store.Query<WorldPos, Wanderer, Health>()).ForEachEntity((ref WorldPos p, ref Wanderer _, ref Health h, Entity e) =>
         {
             if (h.Unconscious) return;
-            if (e.HasComponent<Enemy>()) _enemyTargets.Add((e.Id, p.X, p.Y)); // for colonist auto-engage
-            else _colonistTargets.Add((e.Id, p.X, p.Y));                      // for enemy perception
+            // Use the EFFECTIVE position — the peek cell when leaning — so a
+            // pawn peeking around cover is perceived (and aimed at) where its
+            // hitbox actually is, not at its body tile behind the wall.
+            EffectivePos(e, p.X, p.Y, out float ex, out float ey);
+            if (e.HasComponent<Enemy>()) _enemyTargets.Add((e.Id, ex, ey)); // for colonist auto-engage
+            else _colonistTargets.Add((e.Id, ex, ey));                      // for enemy perception
         });
         var query = _wandererQ ??= store.Query<WorldPos, PathFollower, Wanderer>();
         // Tick-start crowding: count pawns per tile and pick the ONE mover to
@@ -1860,10 +1864,13 @@ public sealed class DummyController
 
         if (!entity.HasComponent<EnemyBrain>()) return;
 
-        // Downed hostiles freeze (mirrors the colonist unconscious gate).
+        // Downed hostiles freeze (mirrors the colonist unconscious gate) —
+        // including sliding onto the nearest tile as they collapse, so the body
+        // lands on a tile centre instead of frozen mid-step.
         if (entity.HasComponent<Health>() && entity.GetComponent<Health>().Unconscious)
         {
             ClearPath(ref path);
+            SnapToNearestTile(ref pos, dt, out _, out _);
             return;
         }
 
@@ -2404,6 +2411,20 @@ public sealed class DummyController
         path.PendingPathId = _paths.Request(here, dest, ColonistLosProvider?.Invoke(), EnemyLosAvoidPenalty);
     }
 
+    // A pawn's effective hitbox/aim position: the peek cell while it's popped
+    // out leaning around cover, otherwise its body position. Mirrors the
+    // hitbox shift in SimRuntime.GatherProjPawns so perception + aim line up
+    // with where rounds actually connect.
+    private static void EffectivePos(Entity e, float bodyX, float bodyY, out float x, out float y)
+    {
+        x = bodyX; y = bodyY;
+        if (e.HasComponent<RangedCombat>())
+        {
+            var rc = e.GetComponent<RangedCombat>();
+            if (rc.Stance == CoverStance.Popped && rc.Leaning) { x = rc.PeekX; y = rc.PeekY; }
+        }
+    }
+
     private void ClearPath(ref PathFollower path)
     {
         if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
@@ -2438,7 +2459,11 @@ public sealed class DummyController
         path.Waypoints = null; path.Index = 0;
         SnapToNearestTile(ref pos, dt, out _, out _);
 
-        var tp = tgt.GetComponent<WorldPos>();
+        // Aim at the target's EFFECTIVE position (its peek cell while leaning),
+        // so a target peeking around cover gets shot where its hitbox is.
+        var tgtWp = tgt.GetComponent<WorldPos>();
+        EffectivePos(tgt, tgtWp.X, tgtWp.Y, out float tpx, out float tpy);
+        var tp = new WorldPos { X = tpx, Y = tpy };
         float ddx = tp.X - pos.X, ddy = tp.Y - pos.Y;
         float distTiles = MathF.Sqrt(ddx * ddx + ddy * ddy);
         var ttile = new TilePos((int)tp.X, (int)tp.Y);

@@ -4319,7 +4319,7 @@ public sealed class SimRuntime
         _projPawns.Clear();
         (_worldPosHealthQ ??= Store.Query<WorldPos, Health>()).ForEachEntity((ref WorldPos wp, ref Health h, Entity pe) =>
         {
-            float px = wp.X, py = wp.Y, bh;
+            float px = wp.X, py = wp.Y, bh, hitR = ProjectileHitRadius;
             if (h.Unconscious)
             {
                 bh = SimConstants.DownedBodyHeight;
@@ -4345,14 +4345,14 @@ public sealed class SimRuntime
                         break;
                     case CoverStance.Popped:
                         bh = SimConstants.PawnBodyHeight;
-                        if (leaning) { px = pkx; py = pky; }
+                        if (leaning) { px = pkx; py = pky; hitR = ProjectileHitRadius * LeanHitFraction; }
                         break;
                     default:
                         bh = SimConstants.PawnBodyHeight;
                         break;
                 }
             }
-            _projPawns.Add((pe.Id, px, py, bh));
+            _projPawns.Add((pe.Id, px, py, bh, hitR));
         });
     }
 
@@ -4391,14 +4391,14 @@ public sealed class SimRuntime
         }
 
         // 2) Nearest pawn whose body the line crosses at a strikeable height,
-        //    closer than the wall block.
-        float r2 = ProjectileHitRadius * ProjectileHitRadius;
+        //    closer than the wall block. Hit radius is per-pawn (leaning pawns
+        //    present a smaller sliver).
         // Anti-friendly-fire: a round clears the 3x3 around the muzzle, so any
         // pawn (ally OR enemy) hugging the shooter isn't hit by its own fire —
         // the bullet only starts connecting past the immediate cluster.
         int muzzleTX = (int)fromX, muzzleTY = (int)fromY;
         float bestFrac = float.MaxValue; int pawn = 0; float pawnX = 0, pawnY = 0;
-        foreach (var (id, ppx, ppy, bodyH) in _projPawns)
+        foreach (var (id, ppx, ppy, bodyH, hitR) in _projPawns)
         {
             if (id == shooterId) continue;
             if (Math.Abs((int)ppx - muzzleTX) <= 1 && Math.Abs((int)ppy - muzzleTY) <= 1) continue;
@@ -4407,7 +4407,7 @@ public sealed class SimRuntime
             if (u >= bestFrac || u > blockFrac) continue;
             float qx = fromX + ddx * u, qy = fromY + ddy * u;
             float gx = qx - ppx, gy = qy - ppy;
-            if (gx * gx + gy * gy > r2) continue;
+            if (gx * gx + gy * gy > hitR * hitR) continue;
             float h = HeightAt(u);
             if (h < 0f || h > bodyH) continue; // underground / flew over
             bestFrac = u; pawn = id; pawnX = ppx; pawnY = ppy;
@@ -4436,7 +4436,10 @@ public sealed class SimRuntime
 
     // Per-bullet hit radius around a pawn (tiles).
     private const float ProjectileHitRadius = 0.45f;
-    private readonly List<(int Id, float X, float Y, float BodyH)> _projPawns = new();
+    // A leaning pawn only pokes a sliver out past cover — shrink its hit radius
+    // so rounds miss it more often (reduced chance to be hit while peeking).
+    private const float LeanHitFraction = 0.5f;
+    private readonly List<(int Id, float X, float Y, float BodyH, float HitR)> _projPawns = new();
 
     // Animate the cosmetic tracers. The hit was already resolved at fire time
     // (ResolveArcImpact); each bullet just flies its locked arc to the impact
