@@ -684,27 +684,7 @@ public sealed class DummyController
                     w.Facing = MathF.Atan2(tp.Y - pos.Y, tp.X - pos.X); // face the victim
                     if (_tick - mt.LastHitTick >= MeleeAttackInterval)
                     {
-                        // Swing: lunge anim on attacker; victim is engaged
-                        // (slowed) whether or not it connects.
-                        if (entity.HasComponent<Combat>())
-                        { ref var ac = ref entity.GetComponent<Combat>(); ac.SwingTick = _tick; }
-                        if (tgt.HasComponent<Combat>())
-                        { ref var tc = ref tgt.GetComponent<Combat>(); tc.EngagedUntil = _tick + MeleeEngagedTicks; }
-
-                        if (_rng.NextDouble() >= MeleeMissChance)
-                        {
-                            MeleeHit?.Invoke(entity.Id, mt.TargetEntityId);
-                            if (tgt.HasComponent<Combat>())
-                            {
-                                ref var tc = ref tgt.GetComponent<Combat>();
-                                tc.FlinchTick = _tick;
-                                if (_rng.NextDouble() < MeleeStunChance) tc.StunUntil = _tick + MeleeStunTicks;
-                            }
-                        }
-                        else if (entity.HasComponent<Combat>())
-                        {
-                            ref var ac = ref entity.GetComponent<Combat>(); ac.MissTick = _tick;
-                        }
+                        DoMeleeSwing(entity, tgt);
                         ref var live = ref entity.GetComponent<MeleeTarget>();
                         live.LastHitTick = _tick;
                     }
@@ -1936,10 +1916,12 @@ public sealed class DummyController
                 brain.HasLastSeen = false; // reached the last-known spot, nobody there → give up
             }
 
-            // Combat reflexes (Retreat when hurt, Engage on sight) INTERRUPT the
-            // mission; with no current sight but a last-known spot we Hunt it;
-            // otherwise resolve the current mission objective into a goal.
-            if (hurt) brain.Goal = EnemyGoalKind.Retreat;
+            // Locked in melee (a colonist in our face) trumps everything — can't
+            // shoot point-blank, so swing back. Then the usual reflexes: Retreat
+            // when hurt, Engage on sight, Hunt a last-known spot, else the mission.
+            int meleeFoe = PerceiveAdjacentColonist(here);
+            if (meleeFoe != 0) { brain.Goal = EnemyGoalKind.Melee; brain.TargetEntityId = meleeFoe; }
+            else if (hurt) brain.Goal = EnemyGoalKind.Retreat;
             else if (brain.TargetEntityId != 0) brain.Goal = EnemyGoalKind.Engage;
             else if (brain.HasLastSeen)
             {
@@ -1969,6 +1951,9 @@ public sealed class DummyController
             case EnemyGoalKind.Assault:
             case EnemyGoalKind.Hunt:
                 TickAdvance(ref path, here, in brain); // all march toward GoalTile
+                break;
+            case EnemyGoalKind.Melee:
+                TickMelee(ref pos, ref path, ref w, entity, store, here, ref brain);
                 break;
             case EnemyGoalKind.Hold:
                 ClearPath(ref path); // posted up — stand watch (Engage interrupts if a target appears)
@@ -2141,6 +2126,67 @@ public sealed class DummyController
             bestD2 = d2; best = t.Id;
         }
         return best;
+    }
+
+    // One melee swing: lunge anim on the attacker, engage-slow the victim, then
+    // hit-or-miss (flinch + chance to stun on a hit). Shared by the drafted
+    // colonist melee order and the enemy melee-back reflex.
+    private void DoMeleeSwing(Entity attacker, Entity victim)
+    {
+        if (attacker.HasComponent<Combat>())
+        { ref var ac = ref attacker.GetComponent<Combat>(); ac.SwingTick = _tick; }
+        if (victim.HasComponent<Combat>())
+        { ref var tc = ref victim.GetComponent<Combat>(); tc.EngagedUntil = _tick + MeleeEngagedTicks; }
+
+        if (_rng.NextDouble() >= MeleeMissChance)
+        {
+            MeleeHit?.Invoke(attacker.Id, victim.Id);
+            if (victim.HasComponent<Combat>())
+            {
+                ref var tc = ref victim.GetComponent<Combat>();
+                tc.FlinchTick = _tick;
+                if (_rng.NextDouble() < MeleeStunChance) tc.StunUntil = _tick + MeleeStunTicks;
+            }
+        }
+        else if (attacker.HasComponent<Combat>())
+        {
+            ref var ac = ref attacker.GetComponent<Combat>(); ac.MissTick = _tick;
+        }
+    }
+
+    private const float EnemyMeleeReach = 1.5f; // tiles — covers adjacent + same-tile
+
+    // Nearest conscious colonist within melee reach of `here`, or 0. The enemy
+    // is "locked in melee" when one is this close — it can't bring the gun to
+    // bear, so it swings back.
+    private int PerceiveAdjacentColonist(TilePos here)
+    {
+        int best = 0;
+        float bestD2 = EnemyMeleeReach * EnemyMeleeReach;
+        float hx = here.X + 0.5f, hy = here.Y + 0.5f;
+        foreach (var t in _colonistTargets)
+        {
+            float dx = t.X - hx, dy = t.Y - hy;
+            float d2 = dx * dx + dy * dy;
+            if (d2 < bestD2) { bestD2 = d2; best = t.Id; }
+        }
+        return best;
+    }
+
+    // Melee: a colonist is in our face — face it and swing on the melee cadence
+    // (gated off Combat.SwingTick). No shooting while locked in.
+    private void TickMelee(ref WorldPos pos, ref PathFollower path, ref Wanderer w, Entity entity, EntityStore store, TilePos here, ref EnemyBrain brain)
+    {
+        ClearPath(ref path);
+        if (!store.TryGetEntityById(brain.TargetEntityId, out var tgt) || !tgt.HasComponent<WorldPos>()) return;
+        var tp = tgt.GetComponent<WorldPos>();
+        float dx = tp.X - pos.X, dy = tp.Y - pos.Y;
+        if (dx * dx + dy * dy > 1e-9f) w.Facing = MathF.Atan2(dy, dx);
+        if (entity.HasComponent<Combat>())
+        {
+            ref var ac = ref entity.GetComponent<Combat>();
+            if (_tick - ac.SwingTick >= MeleeAttackInterval) DoMeleeSwing(entity, tgt);
+        }
     }
 
     // Engage: walk to the committed firing position (a low-exposure cover

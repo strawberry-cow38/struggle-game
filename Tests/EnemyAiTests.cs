@@ -290,6 +290,30 @@ public class EnemyAiTests
     }
 
     [Fact]
+    public void Enemy_LockedInMelee_SwingsBack()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+
+        // A colonist right next to where the enemy spawns, held in place.
+        int colonist = FirstColonist(sim);
+        var ce = sim.Store.GetEntityById(colonist);
+        ce.AddComponent(new Drafted());
+        SetPos(sim, colonist, 21.5f, 20.5f);
+        ref var cpf = ref ce.GetComponent<PathFollower>();
+        cpf.Waypoints = null; cpf.Index = 0; cpf.PendingPathId = 0;
+
+        var enemy = sim.SpawnEnemy(20, 20);
+        SetPos(sim, enemy.Id, 20.5f, 20.5f);
+
+        // Past one melee cadence (MeleeAttackInterval = 60 ticks) so a swing lands.
+        for (int i = 0; i < 80; i++) sim.Step(SimConstants.TickSeconds);
+
+        Assert.Equal(EnemyGoalKind.Melee, enemy.GetComponent<EnemyBrain>().Goal);
+        Assert.True(enemy.GetComponent<Combat>().SwingTick > 0, "enemy should have swung in melee");
+    }
+
+    [Fact]
     public void Enemy_RetreatsWhenHurt()
     {
         var sim = new SimRuntime();

@@ -93,6 +93,7 @@ public enum EnemyGoalKind : byte
     Exfil,    // mission done / ordered out — flee to the nearest edge and despawn
     Assault,  // push toward the colony (living-colonist centroid), hunting it down
     Hunt,     // lost line of sight — push to where the target was last seen
+    Melee,    // locked in melee (a colonist adjacent) — can't shoot, so swing back
 }
 
 // One step of an enemy's MISSION — the strategic queue it works through when

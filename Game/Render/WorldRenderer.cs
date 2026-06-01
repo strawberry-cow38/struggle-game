@@ -165,6 +165,7 @@ public partial class WorldRenderer : Node2D
         (byte)EnemyGoalKind.Advance => "Advancing",
         (byte)EnemyGoalKind.Assault => "Assaulting",
         (byte)EnemyGoalKind.Hunt => "Hunting",
+        (byte)EnemyGoalKind.Melee => "Melee!",
         (byte)EnemyGoalKind.Hold => "Holding",
         (byte)EnemyGoalKind.Exfil => "Exfil",
         _ => "Idle",
