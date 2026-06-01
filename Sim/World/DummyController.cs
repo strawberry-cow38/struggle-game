@@ -2715,10 +2715,13 @@ public sealed class DummyController
         return found;
     }
 
-    // All 8 neighbours — every wall face + corner is a candidate peek.
+    // The 4 orthogonal faces — each peek is a single clean direction. (No
+    // diagonals: a diagonal peek cell reads as leaning two ways at once. At a
+    // corner both orthogonal options are still evaluated separately, and the
+    // best single one is picked.)
     private static readonly (int dx, int dy)[] _leanNeighbors =
     {
-        (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1),
+        (1, 0), (-1, 0), (0, 1), (0, -1),
     };
 
     // Undrafted idle behavior: keep the equipped ranged weapon's magazine
