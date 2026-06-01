@@ -38,8 +38,7 @@ public partial class DebugBar : CanvasLayer
         AddButton(_hbox, ToolMode.SpawnPawn, "Spawn Pawn");
         AddButton(_hbox, ToolMode.RemovePawn, "Remove Pawn");
         AddButton(_hbox, ToolMode.DebugAddInjury, "Add Injury");
-        AddOneShotButton(_hbox, "Spawn Enemy", SpawnEnemyAtCamera);
-        AddOneShotButton(_hbox, "Spawn Raider", SpawnRaiderAtCamera);
+        AddOneShotButton(_hbox, "Spawn Raider", () => Host?.QueueCommand(new SpawnRaiderCommand()));
         AddSpawnItemControls(_hbox);
         AddOneShotButton(_hbox, "Reroll Map", () => Host?.Reroll(System.Environment.TickCount));
         AddOneShotButton(_hbox, "-1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(-3600)));
@@ -125,26 +124,6 @@ public partial class DebugBar : CanvasLayer
 
     // Non-toggle button — fires its action once on click and doesn't sit
     // in the _buttons map (no ToolMode to track).
-    // Drop a hostile at the tile under the camera centre so it spawns in view.
-    private void SpawnEnemyAtCamera()
-    {
-        var cam = GetViewport()?.GetCamera2D();
-        var p = cam?.GlobalPosition ?? Vector2.Zero;
-        int tx = (int)(p.X / StruggleGame.Sim.SimConstants.PixelsPerTile);
-        int ty = (int)(p.Y / StruggleGame.Sim.SimConstants.PixelsPerTile);
-        Host?.QueueCommand(new SpawnEnemyCommand(new StruggleGame.Sim.Map.TilePos(tx, ty)));
-    }
-
-    // Drop a hostile running the demo raid mission (advance → hold → exfil) at
-    // the camera centre, to watch the goal-queue lifecycle play out.
-    private void SpawnRaiderAtCamera()
-    {
-        var cam = GetViewport()?.GetCamera2D();
-        var p = cam?.GlobalPosition ?? Vector2.Zero;
-        int tx = (int)(p.X / StruggleGame.Sim.SimConstants.PixelsPerTile);
-        int ty = (int)(p.Y / StruggleGame.Sim.SimConstants.PixelsPerTile);
-        Host?.QueueCommand(new SpawnRaiderCommand(new StruggleGame.Sim.Map.TilePos(tx, ty)));
-    }
 
     private static void AddOneShotButton(HBoxContainer parent, string label, Action onPress)
     {

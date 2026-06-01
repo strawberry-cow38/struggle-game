@@ -6467,7 +6467,7 @@ public sealed class SimRuntime
 
     // Spawn a hostile at the first walkable tile just inside a random map
     // edge — the entry point for a future raid system.
-    public Entity SpawnEnemyAtEdge()
+    public Entity SpawnEnemyAtEdge(List<EnemyObjective>? mission = null)
     {
         int n = SimConstants.MapSize;
         // pick the inner ring (x==1 / y==1 / x==n-2 / y==n-2) deterministically
@@ -6481,6 +6481,6 @@ public sealed class SimRuntime
             2 => (span, 1),
             _ => (span, n - 2),
         };
-        return SpawnEnemy(sx, sy);
+        return SpawnEnemy(sx, sy, mission);
     }
 }

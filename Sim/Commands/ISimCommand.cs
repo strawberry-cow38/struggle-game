@@ -52,13 +52,12 @@ public sealed class SpawnEnemyAtEdgeCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SpawnEnemyAtEdge();
 }
 
-// Debug: drop a hostile running the demo raid mission (advance to centre →
-// hold → exfil), to watch the goal-queue lifecycle on the overhead label.
+// Debug: drop a raider at a random map edge running the demo raid mission
+// (advance to centre → hold → exfil), to watch the goal-queue lifecycle on
+// the overhead label.
 public sealed class SpawnRaiderCommand : ISimCommand
 {
-    public TilePos Tile { get; }
-    public SpawnRaiderCommand(TilePos tile) { Tile = tile; }
-    public void Apply(SimRuntime sim) => sim.SpawnEnemy(Tile.X, Tile.Y, SimRuntime.RaiderMission());
+    public void Apply(SimRuntime sim) => sim.SpawnEnemyAtEdge(SimRuntime.RaiderMission());
 }
 
 public sealed class InstantPlaceLampCommand : ISimCommand
