@@ -43,6 +43,11 @@ public static class SimConstants
     // visual (the gun muzzle still reaches the full peek cell). Lower = less
     // exposed while peeking.
     public const float LeanPeekFraction = 0.6f;
+    // A target in shadow is harder to hit: the shooter's dispersion cone is
+    // multiplied by (1 + DarknessSpreadBonus * (1 - targetLight)), so a fully
+    // dark target (light 0) gets the full bonus and a fully lit one (light 1)
+    // none. Drives both live fire (FireOneShot) and the hover hit-chance.
+    public const float DarknessSpreadBonus = 1.5f;
 
     // Inventory caps for a colonist. Either one being exceeded stops them
     // adding more to their carry. Both default to 75 so a single wood

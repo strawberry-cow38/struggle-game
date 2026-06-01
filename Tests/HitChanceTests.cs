@@ -80,6 +80,31 @@ public class HitChanceTests
     }
 
     [Fact]
+    public void Darkness_WidensCone_LowersChance()
+    {
+        var lit = HitChanceEstimator.Estimate(Rifle(), 0f, 0f, 0f, 16f, 0f,
+            SimConstants.PawnBodyHeight, SimConstants.AimAutoHeight, NoWall, NoSandbag,
+            spreadMultiplier: 1f);
+        var dark = HitChanceEstimator.Estimate(Rifle(), 0f, 0f, 0f, 16f, 0f,
+            SimConstants.PawnBodyHeight, SimConstants.AimAutoHeight, NoWall, NoSandbag,
+            spreadMultiplier: 2.5f);
+        Assert.True(dark.ConeDeg > lit.ConeDeg);
+        Assert.True(dark.Chance < lit.Chance, $"dark ({dark.Chance:0.00}) should be worse than lit ({lit.Chance:0.00})");
+    }
+
+    [Fact]
+    public void SmallerHitRadius_LowersChance()
+    {
+        var full = HitChanceEstimator.Estimate(Rifle(), 0f, 0f, 0f, 16f, 0f,
+            SimConstants.PawnBodyHeight, SimConstants.AimAutoHeight, NoWall, NoSandbag,
+            hitRadius: HitChanceEstimator.HitRadius);
+        var sliver = HitChanceEstimator.Estimate(Rifle(), 0f, 0f, 0f, 16f, 0f,
+            SimConstants.PawnBodyHeight, SimConstants.AimAutoHeight, NoWall, NoSandbag,
+            hitRadius: HitChanceEstimator.HitRadius * 0.5f);
+        Assert.True(sliver.Chance < full.Chance, $"sliver ({sliver.Chance:0.00}) should be worse than full ({full.Chance:0.00})");
+    }
+
+    [Fact]
     public void SandbagOnLine_RaisesFloor_HurtsLowAim()
     {
         // Aiming at the legs (low) into a sandbag should be eaten harder than a

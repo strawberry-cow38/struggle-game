@@ -1835,6 +1835,8 @@ public sealed class DummyController
     // weight their pathing to avoid these + open fire if caught in one near a
     // target. Immutable snapshot — safe to hand to the path workers.
     public System.Func<IReadOnlySet<TilePos>?>? ColonistLosProvider;
+    // Per-tile light (0..1) for the darkness accuracy debuff. Null => fully lit.
+    public System.Func<int, int, float>? LightProvider;
 
     // (id, x, y) of every conscious non-enemy pawn, rebuilt once per Step.
     private readonly List<(int Id, float X, float Y)> _colonistTargets = new();
@@ -2591,7 +2593,10 @@ public sealed class DummyController
         // at the target is tan(cone) * distance; the round flies a FIXED line
         // to a random point in that disc and connects (or not) purely by
         // geometry in the collision pass.
-        float coneRad = (spec.SpreadDegrees + rc.Recoil) * (MathF.PI / 180f);
+        // Target in shadow widens the cone (harder to aim at what you can't see).
+        float tgtLight = LightProvider?.Invoke((int)tp.X, (int)tp.Y) ?? 1f;
+        float darkMult = 1f + SimConstants.DarknessSpreadBonus * (1f - Math.Clamp(tgtLight, 0f, 1f));
+        float coneRad = (spec.SpreadDegrees + rc.Recoil) * darkMult * (MathF.PI / 180f);
         // Forward direction to the target (fallback if standing on top of it).
         float dirx = tp.X - pos.X, diry = tp.Y - pos.Y;
         float d = MathF.Sqrt(dirx * dirx + diry * diry);

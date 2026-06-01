@@ -32,15 +32,18 @@ public static class HitChanceEstimator
     private const float MinShotDist = 1.5f;
 
     // isWall / isSandbag sample the map along the firing line (integer tiles).
+    // spreadMultiplier widens the cone (e.g. a target in darkness); hitRadius
+    // overrides the target's effective body radius (e.g. a leaning sliver).
     public static HitChanceResult Estimate(
         RangedSpec spec, float recoilDeg,
         float fromX, float fromY, float toX, float toY,
         float targetBodyH, float aimHeight,
-        Func<int, int, bool> isWall, Func<int, int, bool> isSandbag)
+        Func<int, int, bool> isWall, Func<int, int, bool> isSandbag,
+        float spreadMultiplier = 1f, float hitRadius = HitRadius)
     {
         float ddx = toX - fromX, ddy = toY - fromY;
         float dist = MathF.Sqrt(ddx * ddx + ddy * ddy);
-        float coneDeg = spec.SpreadDegrees + MathF.Max(0f, recoilDeg);
+        float coneDeg = (spec.SpreadDegrees + MathF.Max(0f, recoilDeg)) * MathF.Max(1f, spreadMultiplier);
 
         if (dist > spec.Range)
             return new HitChanceResult(0f, dist, coneDeg, 0f, 0f, 0f, HitCover.None, false);
@@ -67,8 +70,8 @@ public static class HitChanceEstimator
         if (cover == HitCover.WallBlocked)
             return new HitChanceResult(0f, dist, coneDeg, R, 0f, 0f, cover, true);
 
-        // --- Horizontal: P(lateral miss < HitRadius), disc of radius R ---
-        float pH = DiscStripFraction(HitRadius, R);
+        // --- Horizontal: P(lateral miss < hitRadius), disc of radius R ---
+        float pH = DiscStripFraction(hitRadius, R);
 
         // --- Vertical: aim height +/- R must land on the exposed body band.
         // A sandbag on the line raises the lower edge to its crest, so only

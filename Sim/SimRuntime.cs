@@ -365,6 +365,7 @@ public sealed class SimRuntime
         _dummies.LosClear = RangedLosClear;
         _dummies.HasSandbag = (x, y) => _sandbagMap.ContainsKey(new TilePos(x, y));
         _dummies.ColonistLosProvider = () => _colonistLosTiles;
+        _dummies.LightProvider = (x, y) => LightAt(new TilePos(x, y));
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
@@ -1440,9 +1441,17 @@ public sealed class SimRuntime
                 bool tDowned = ent.GetComponent<Health>().Unconscious;
                 float tBodyH = tDowned ? SimConstants.DownedBodyHeight : SimConstants.PawnBodyHeight;
                 float tAimH = tDowned ? SimConstants.DownedAimHeight : aimHeightSel;
+                // Darkness: a target in shadow widens the cone (same model as
+                // live fire). Lean: a popped-out leaning target is a smaller hit.
+                float tLight = LightAt(new TilePos((int)p.X, (int)p.Y));
+                float tSpreadMul = 1f + SimConstants.DarknessSpreadBonus * (1f - Math.Clamp(tLight, 0f, 1f));
+                bool tLean = ent.HasComponent<RangedCombat>()
+                    && ent.GetComponent<RangedCombat>().Stance == CoverStance.Popped
+                    && ent.GetComponent<RangedCombat>().Leaning;
+                float tHitR = tLean ? ProjectileHitRadius * LeanHitFraction : ProjectileHitRadius;
                 aimHit = StruggleGame.Sim.Gunnery.HitChanceEstimator.Estimate(
                     aimSpec, aimRecoil, aimFromX, aimFromY, p.X, p.Y,
-                    tBodyH, tAimH, aimIsWall, aimIsSandbag);
+                    tBodyH, tAimH, aimIsWall, aimIsSandbag, tSpreadMul, tHitR);
                 // A wall on the direct line isn't really "blocked" if the
                 // shooter could lean-peek the target — recompute from the peek
                 // cell so the readout shows the real odds, not BLOCKED.
@@ -1453,7 +1462,7 @@ public sealed class SimRuntime
                     if (_dummies.TryGetLeanCell(MapView, shooterTile, tgtTile, out var lean))
                         aimHit = StruggleGame.Sim.Gunnery.HitChanceEstimator.Estimate(
                             aimSpec, aimRecoil, lean.X + 0.5f, lean.Y + 0.5f, p.X, p.Y,
-                            tBodyH, tAimH, aimIsWall, aimIsSandbag);
+                            tBodyH, tAimH, aimIsWall, aimIsSandbag, tSpreadMul, tHitR);
                 }
             }
 
