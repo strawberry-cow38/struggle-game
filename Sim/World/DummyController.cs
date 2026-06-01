@@ -2421,7 +2421,13 @@ public sealed class DummyController
         if (e.HasComponent<RangedCombat>())
         {
             var rc = e.GetComponent<RangedCombat>();
-            if (rc.Stance == CoverStance.Popped && rc.Leaning) { x = rc.PeekX; y = rc.PeekY; }
+            if (rc.Stance == CoverStance.Popped && rc.Leaning)
+            {
+                // Part-way to the peek cell — matches the rendered lean + the
+                // hitbox shift in GatherProjPawns.
+                x = bodyX + (rc.PeekX - bodyX) * SimConstants.LeanPeekFraction;
+                y = bodyY + (rc.PeekY - bodyY) * SimConstants.LeanPeekFraction;
+            }
         }
     }
 

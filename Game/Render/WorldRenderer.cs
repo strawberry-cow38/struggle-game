@@ -703,7 +703,7 @@ public partial class WorldRenderer : Node2D
                 if (d.CoverStance == 2 && d.Leaning)
                 {
                     var peek = new Vector2(d.PeekX * PixelsPerTile, d.PeekY * PixelsPerTile);
-                    center = center.Lerp(peek, 0.6f);
+                    center = center.Lerp(peek, Sim.SimConstants.LeanPeekFraction);
                 }
                 else if (d.CoverStance == 1 && !d.Leaning)
                 {

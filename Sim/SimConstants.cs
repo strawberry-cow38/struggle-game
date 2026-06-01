@@ -37,6 +37,12 @@ public static class SimConstants
     // A crouched (tucked) pawn drops below the sandbag so high rounds clear
     // them — kept just under SandbagCoverHeight so the bag fully shields them.
     public const float CrouchBodyHeight = 0.45f;
+    // How far a popped-out leaning pawn's BODY (and thus its hitbox + the
+    // position it's perceived/aimed at) sits toward the peek cell, 0..1. The
+    // renderer leans the sprite by the same fraction so the hitbox matches the
+    // visual (the gun muzzle still reaches the full peek cell). Lower = less
+    // exposed while peeking.
+    public const float LeanPeekFraction = 0.6f;
 
     // Inventory caps for a colonist. Either one being exceeded stops them
     // adding more to their carry. Both default to 75 so a single wood

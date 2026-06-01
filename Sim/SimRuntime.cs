@@ -4345,7 +4345,15 @@ public sealed class SimRuntime
                         break;
                     case CoverStance.Popped:
                         bh = SimConstants.PawnBodyHeight;
-                        if (leaning) { px = pkx; py = pky; hitR = ProjectileHitRadius * LeanHitFraction; }
+                        if (leaning)
+                        {
+                            // Body leans only part-way to the peek cell (matches
+                            // the rendered lean), so the hitbox sits where the
+                            // sprite is — not fully out on the next tile.
+                            px += (pkx - px) * SimConstants.LeanPeekFraction;
+                            py += (pky - py) * SimConstants.LeanPeekFraction;
+                            hitR = ProjectileHitRadius * LeanHitFraction;
+                        }
                         break;
                     default:
                         bh = SimConstants.PawnBodyHeight;
