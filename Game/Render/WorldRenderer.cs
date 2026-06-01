@@ -392,6 +392,8 @@ public partial class WorldRenderer : Node2D
 
             foreach (var sbp in snap.StoveBlueprints)
             {
+                if (sbp.Origin.X < viewMinTileX - 2 || sbp.Origin.X > viewMaxTileX + 2
+                    || sbp.Origin.Y < viewMinTileY - 2 || sbp.Origin.Y > viewMaxTileY + 2) continue;
                 DrawStoveBlueprint(sbp.Origin, sbp.Orientation, sbp.Progress, sbp.Funding);
                 if (sbp.Forbidden) DrawForbidX(sbp.Origin);
             }
@@ -409,6 +411,8 @@ public partial class WorldRenderer : Node2D
         {
             foreach (var s in snap.Stoves)
             {
+                if (s.Origin.X < viewMinTileX - 2 || s.Origin.X > viewMaxTileX + 2
+                    || s.Origin.Y < viewMinTileY - 2 || s.Origin.Y > viewMaxTileY + 2) continue;
                 DrawStove(s.Origin, s.Orientation, s.CookProgress, s.CurrentBillIndex >= 0);
             }
         }

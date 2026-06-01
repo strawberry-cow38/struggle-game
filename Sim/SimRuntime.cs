@@ -751,14 +751,17 @@ public sealed class SimRuntime
     public bool SetJobForbidden(TilePos tile, bool forbidden)
         => Jobs.SetForbiddenByTile(tile, forbidden);
 
+    private readonly List<TilePos> _roofFlashKeys = new();
+
     private void AgeRoofFlashes(float dt)
     {
         if (_roofFlashes.Count == 0) return;
+        // Reused scratch — runs every tick while a flash is live (~36 ticks
+        // per roof build). Snapshot the keys so we can mutate the dict.
+        _roofFlashKeys.Clear();
+        foreach (var k in _roofFlashes.Keys) _roofFlashKeys.Add(k);
         List<TilePos>? dead = null;
-        var keys = new TilePos[_roofFlashes.Count];
-        int i = 0;
-        foreach (var k in _roofFlashes.Keys) keys[i++] = k;
-        foreach (var t in keys)
+        foreach (var t in _roofFlashKeys)
         {
             float v = _roofFlashes[t] - dt;
             if (v <= 0f) { (dead ??= new()).Add(t); }

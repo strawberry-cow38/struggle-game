@@ -147,10 +147,16 @@ public partial class VisualLighting : Node2D
         }
     }
 
+    private readonly HashSet<TilePos> _haloSeen = new();
+    private readonly List<TilePos> _haloRm = new();
+
     private void UpdateHalos(SimSnapshot snap)
     {
         if (_halosRoot is null || _haloTex is null) return;
-        var seen = new HashSet<TilePos>();
+        // Reused scratch — this runs on every new snapshot (every tick), so
+        // a fresh HashSet/List each call was steady per-tick garbage.
+        var seen = _haloSeen;
+        seen.Clear();
         foreach (var l in snap.Lamps)
         {
             if (!l.PoweredOn) continue;
@@ -178,10 +184,10 @@ public partial class VisualLighting : Node2D
         }
         if (_halos.Count != seen.Count)
         {
-            var rm = new List<TilePos>();
+            _haloRm.Clear();
             foreach (var kv in _halos)
-                if (!seen.Contains(kv.Key)) rm.Add(kv.Key);
-            foreach (var t in rm)
+                if (!seen.Contains(kv.Key)) _haloRm.Add(kv.Key);
+            foreach (var t in _haloRm)
             {
                 _halos[t].QueueFree();
                 _halos.Remove(t);
