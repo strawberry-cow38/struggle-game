@@ -1996,14 +1996,18 @@ public sealed class DummyController
         {
             return; // committed cell still valid
         }
-        float preferred = MathF.Max(SimConstants.RangedMinFireRange + 1f, spec.Range * EngagePreferredFraction);
+        float preferred = spec.Range * EngagePreferredFraction;
+        // Only ever CLOSE toward the preferred distance — never back away. If
+        // the pawn is already nearer than preferred, hold that distance (it
+        // can fight from closer); just floor it above point-blank.
+        float desired = MathF.Max(SimConstants.RangedMinFireRange + 1f, MathF.Min(preferred, dist));
         float ux = (here.X + 0.5f) - tw.X, uy = (here.Y + 0.5f) - tw.Y;
         float ulen = MathF.Sqrt(ux * ux + uy * uy);
         if (ulen < 1e-3f) { ux = 1f; uy = 0f; ulen = 1f; }
         var standoff = new TilePos(
-            (int)(tw.X + ux / ulen * preferred),
-            (int)(tw.Y + uy / ulen * preferred));
-        if (FindBestFiringCell(here, ttile, standoff, preferred, spec, view, out var cell))
+            (int)(tw.X + ux / ulen * desired),
+            (int)(tw.Y + uy / ulen * desired));
+        if (FindBestFiringCell(here, ttile, standoff, desired, spec, view, out var cell))
         {
             brain.FireCellX = cell.X; brain.FireCellY = cell.Y; brain.HasFireCell = true;
         }
