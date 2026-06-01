@@ -157,41 +157,6 @@ public partial class WorldRenderer : Node2D
     // re-interpolate "Firing at Colonist N" every pawn every frame.
     private readonly Dictionary<long, string> _combatLabelCache = new();
 
-    // Visual-only pawn separation ("bump"). Within BumpRadius tiles, a pawn is
-    // shoved away from each overlapping neighbour; the summed push is capped at
-    // BumpMaxOffset so it stays a subtle brush. Both pawns of a passing pair get
-    // pushed (each sees the other), so they part symmetrically on screen.
-    private const float BumpRadius = 0.85f;     // tiles — within this, push apart
-    private const float BumpMaxOffset = 0.28f;  // tiles — max on-screen displacement
-    private readonly List<Vector2> _dummyBumpPos = new();
-
-    private Vector2 BumpOffset(int selfIndex, float selfX, float selfY)
-    {
-        Vector2 push = Vector2.Zero;
-        float r2 = BumpRadius * BumpRadius;
-        for (int j = 0; j < _dummyBumpPos.Count; j++)
-        {
-            if (j == selfIndex) continue;
-            var o = _dummyBumpPos[j];
-            float ox = selfX - o.X, oy = selfY - o.Y;
-            float d2 = ox * ox + oy * oy;
-            if (d2 >= r2) continue;
-            float dist = Mathf.Sqrt(d2);
-            Vector2 dir;
-            if (dist < 1e-3f)
-            {
-                // Exact overlap: spread deterministically by index (golden angle).
-                float a = selfIndex * 2.39996323f;
-                dir = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
-            }
-            else dir = new Vector2(ox / dist, oy / dist);
-            push += dir * (1f - dist / BumpRadius); // closer = stronger
-        }
-        if (push == Vector2.Zero) return Vector2.Zero;
-        if (push.Length() > 1f) push = push.Normalized();
-        return push * BumpMaxOffset;
-    }
-
     // Overhead debug label for an enemy's current goal (EnemyGoalKind value).
     private static string EnemyGoalLabel(byte goal) => goal switch
     {
@@ -703,23 +668,10 @@ public partial class WorldRenderer : Node2D
         _selectedDummyIdsScratch ??= new HashSet<int>();
         _selectedDummyIdsScratch.Clear();
         foreach (var sid in snap.SelectedDummyIds) _selectedDummyIdsScratch.Add(sid);
-        // Precompute interpolated tile positions for the visual "bump" — pawns
-        // sharing space get shoved apart a little on screen (render-only, both
-        // passer + passed), so they brush past instead of perfectly stacking.
-        _dummyBumpPos.Clear();
-        foreach (var d in snap.Dummies)
-        {
-            float bx = d.X, by = d.Y;
-            if (_prevDummyByIdScratch.TryGetValue(d.EntityId, out var pv))
-            { bx = Mathf.Lerp(pv.X, d.X, interpAlpha); by = Mathf.Lerp(pv.Y, d.Y, interpAlpha); }
-            _dummyBumpPos.Add(new Vector2(bx, by));
-        }
         using (FrameProfiler.Instance.BeginScope("Dummies"))
         {
-            int di = -1;
             foreach (var d in snap.Dummies)
             {
-                di++;
                 int tx = (int)d.X;
                 int ty = (int)d.Y;
                 if (tx < viewMinTileX || tx > viewMaxTileX
@@ -732,10 +684,6 @@ public partial class WorldRenderer : Node2D
                     drawY = Mathf.Lerp(prev.Y, d.Y, interpAlpha);
                 }
                 var center = new Vector2(drawX * PixelsPerTile, drawY * PixelsPerTile);
-                // Visual bump: shove away from any pawn we're overlapping so two
-                // pawns passing through each other brush apart on screen instead
-                // of perfectly stacking. Render-only — sim positions untouched.
-                center += BumpOffset(di, drawX, drawY) * PixelsPerTile;
                 // Combat juice: lunge forward on a swing. (No victim flinch.)
                 {
                     var fdir = new Vector2(Mathf.Cos(d.Facing), Mathf.Sin(d.Facing));
