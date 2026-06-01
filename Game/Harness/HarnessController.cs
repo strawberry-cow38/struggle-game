@@ -596,8 +596,8 @@ public partial class HarnessController : Node2D
                 _schedule.Add((0.1, h => h.RemoveLowest(), "remove default 1"));
                 _schedule.Add((0.15, h => h.RemoveLowest(), "remove default 2"));
                 _schedule.Add((0.2, h => h.RemoveLowest(), "remove default 3"));
-                _schedule.Add((0.3, h => h.SetCameraZoom(1.7f), "zoom to frame both"));
-                _schedule.Add((0.6, h => h.SetupEnemyDemo(c - 6, c, c + 10, c), "spawn defender + hunting enemy"));
+                _schedule.Add((0.3, h => h.SetCameraZoom(0.9f), "zoom out to frame both"));
+                _schedule.Add((0.6, h => h.SetupEnemyDemo(c - 6, c, c + 9, c), "spawn defender + hunting enemy"));
                 _schedule.Add((14.0, h => h.Finish("enemy complete"), "finish"));
                 break;
             case "stress":
