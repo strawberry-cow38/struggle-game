@@ -1855,11 +1855,29 @@ public sealed class DummyController
             if (TryGetRangedWeapon(entity, out var wdefSight))
                 sight = MathF.Max(EnemySightRange, wdefSight.Ranged!.Range);
             brain.TargetEntityId = PerceiveNearestColonist(here, sight);
+            // Remember where a seen target is, so losing sight flips us to Hunt
+            // (push to last-seen) rather than instantly forgetting.
+            if (brain.TargetEntityId != 0
+                && store.TryGetEntityById(brain.TargetEntityId, out var seen) && seen.HasComponent<WorldPos>())
+            {
+                var sp = seen.GetComponent<WorldPos>();
+                brain.LastSeenX = (int)sp.X; brain.LastSeenY = (int)sp.Y; brain.HasLastSeen = true;
+            }
+            else if (brain.HasLastSeen && Arrived(here, brain.LastSeenX, brain.LastSeenY))
+            {
+                brain.HasLastSeen = false; // reached the last-known spot, nobody there → give up
+            }
+
             // Combat reflexes (Retreat when hurt, Engage on sight) INTERRUPT the
-            // mission; otherwise resolve the current objective into a goal,
-            // advancing the queue as steps complete.
+            // mission; with no current sight but a last-known spot we Hunt it;
+            // otherwise resolve the current mission objective into a goal.
             if (hurt) brain.Goal = EnemyGoalKind.Retreat;
             else if (brain.TargetEntityId != 0) brain.Goal = EnemyGoalKind.Engage;
+            else if (brain.HasLastSeen)
+            {
+                brain.GoalTileX = brain.LastSeenX; brain.GoalTileY = brain.LastSeenY; brain.HasGoalTile = true;
+                brain.Goal = EnemyGoalKind.Hunt;
+            }
             else brain.Goal = StepMission(ref brain, here);
 
             // For Engage, hold a committed firing position chosen by exposure
@@ -1881,7 +1899,8 @@ public sealed class DummyController
                 break;
             case EnemyGoalKind.Advance:
             case EnemyGoalKind.Assault:
-                TickAdvance(ref path, here, in brain); // both march toward GoalTile
+            case EnemyGoalKind.Hunt:
+                TickAdvance(ref path, here, in brain); // all march toward GoalTile
                 break;
             case EnemyGoalKind.Hold:
                 ClearPath(ref path); // posted up — stand watch (Engage interrupts if a target appears)
@@ -2026,7 +2045,12 @@ public sealed class DummyController
         {
             float dx = t.X - hx, dy = t.Y - hy;
             float d2 = dx * dx + dy * dy;
-            if (d2 < bestD2) { bestD2 = d2; best = t.Id; }
+            if (d2 >= bestD2) continue;
+            // LoS-gated: no shooting through walls, and no ESP either — the
+            // enemy only "sees" a colonist it has a clear line to (reuses the
+            // same LoS the firing code uses).
+            if (LosClear is not null && !LosClear(here.X, here.Y, (int)t.X, (int)t.Y)) continue;
+            bestD2 = d2; best = t.Id;
         }
         return best;
     }

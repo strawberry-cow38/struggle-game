@@ -92,6 +92,7 @@ public enum EnemyGoalKind : byte
     Hold,     // posted up at the objective tile, standing watch (mission Hold step)
     Exfil,    // mission done / ordered out — flee to the nearest edge and despawn
     Assault,  // push toward the colony (living-colonist centroid), hunting it down
+    Hunt,     // lost line of sight — push to where the target was last seen
 }
 
 // One step of an enemy's MISSION — the strategic queue it works through when
@@ -132,6 +133,12 @@ public struct EnemyBrain : IComponent
     public int GoalTileX;
     public int GoalTileY;
     public bool HasGoalTile;
+    // Last tile a target was seen at (line-of-sight). When sight is lost the
+    // brain pushes here to flush them out instead of instantly forgetting;
+    // cleared on arrival (gave up) or re-acquisition.
+    public int LastSeenX;
+    public int LastSeenY;
+    public bool HasLastSeen;
     // The strategic mission: an ordered objective queue the brain works
     // through when not in combat. Null/empty → the default "advance + hunt"
     // fallback. MissionIndex is the current step; PhaseStartTick timestamps a

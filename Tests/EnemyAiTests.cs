@@ -1,5 +1,6 @@
 using Friflo.Engine.ECS;
 using StruggleGame.Sim;
+using StruggleGame.Sim.Map;
 using StruggleGame.Sim.World;
 using Xunit;
 
@@ -201,6 +202,56 @@ public class EnemyAiTests
         int notes2 = 0;
         foreach (var _ in snap2.Notifications) notes2++;
         Assert.Equal(0, notes2);
+    }
+
+    [Fact]
+    public void Enemy_DoesNotPerceiveColonistThroughWall()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+
+        int colonist = FirstColonist(sim);
+        sim.Store.GetEntityById(colonist).AddComponent(new Drafted());
+        SetPos(sim, colonist, 20.5f, 20.5f);
+
+        // Wall column between the (well-within-sight) colonist and the enemy.
+        for (int y = 18; y <= 22; y++) sim.InstantPlaceWall(new TilePos(25, y));
+
+        var enemy = sim.SpawnEnemy(30, 20);
+        SetPos(sim, enemy.Id, 30.5f, 20.5f);
+
+        for (int i = 0; i < 16; i++) sim.Step(SimConstants.TickSeconds);
+        // No line of sight → no acquisition (no ESP through the wall).
+        Assert.Equal(0, enemy.GetComponent<EnemyBrain>().TargetEntityId);
+        Assert.NotEqual(EnemyGoalKind.Engage, enemy.GetComponent<EnemyBrain>().Goal);
+    }
+
+    [Fact]
+    public void Enemy_HuntsLastSeenTileAfterLosingSight()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+
+        int colonist = FirstColonist(sim);
+        sim.Store.GetEntityById(colonist).AddComponent(new Drafted());
+        SetPos(sim, colonist, 20.5f, 20.5f);
+
+        var enemy = sim.SpawnEnemy(27, 20);
+        SetPos(sim, enemy.Id, 27.5f, 20.5f);
+
+        // Acquire in the open, recording the last-seen tile (~20,20).
+        for (int i = 0; i < 16; i++) sim.Step(SimConstants.TickSeconds);
+        Assert.Equal(EnemyGoalKind.Engage, enemy.GetComponent<EnemyBrain>().Goal);
+
+        // Yank the target far out of sight — the enemy should push to where it
+        // last saw them rather than instantly forgetting.
+        SetPos(sim, colonist, 20.5f, 200.5f);
+        for (int i = 0; i < 16; i++) sim.Step(SimConstants.TickSeconds);
+
+        ref var brain = ref enemy.GetComponent<EnemyBrain>();
+        Assert.Equal(EnemyGoalKind.Hunt, brain.Goal);
+        Assert.True(System.Math.Abs(brain.GoalTileX - 20) <= 3 && System.Math.Abs(brain.GoalTileY - 20) <= 3,
+            $"hunt goal tile {brain.GoalTileX},{brain.GoalTileY} should be the last-seen spot ~20,20");
     }
 
     [Fact]
