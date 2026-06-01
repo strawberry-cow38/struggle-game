@@ -177,6 +177,12 @@ public partial class Selector : Node2D
         foreach (var pw in snap.PawnWork)
             if (pw.EntityId == targetId) { name = pw.Name; break; }
 
+        // Downed state + tile of the target, for a possible Move-here entry.
+        bool targetDowned = false;
+        TilePos targetTile = default;
+        foreach (var d in snap.Dummies)
+            if (d.EntityId == targetId) { targetDowned = d.Health.Unconscious; targetTile = new TilePos((int)d.X, (int)d.Y); break; }
+
         _meleeTargetId = targetId;
         _meleeAttackers = attackers;
         _bpMenu.Clear();
@@ -189,6 +195,14 @@ public partial class Selector : Node2D
             _bpMenu.SetItemDisabled(_bpMenu.ItemCount - 1, !AnyAttackerCanFire(snap, _fireAttackers, targetId));
         }
         _bpMenu.AddItem($"Melee attack {name}", 5);
+        // A downed pawn doesn't block movement, so a click on one would
+        // otherwise have no "move here" — offer it for a lone drafted pawn.
+        if (targetDowned && attackers.Length == 1)
+        {
+            _bpMenuPawnId = attackers[0];
+            _moveHereTile = targetTile;
+            _bpMenu.AddItem("Move here", 7);
+        }
         var screenPos = GetCanvasTransform() * world;
         _bpMenu.Position = new Vector2I((int)screenPos.X, (int)screenPos.Y);
         _bpMenu.Popup();
