@@ -1823,58 +1823,36 @@ public sealed class DummyController
             rc0.Leaning = false;
         }
 
-        // ── Think (staggered): perceive + select goal + issue movement ──
+        // ── Think (staggered): perceive + pick a goal ONLY. Movement is
+        // issued in the per-tick execution below — re-requesting a path every
+        // think (and discarding the one mid-walk) made the pawn stutter in
+        // place instead of committing to a route. ──
         if (_tick >= brain.NextThinkTick)
         {
             brain.NextThinkTick = _tick + EnemyThinkInterval;
-
             bool hurt = entity.HasComponent<Health>()
                 && (entity.GetComponent<Health>().BloodLevel < EnemyRetreatBloodThreshold
                     || entity.GetComponent<Health>().Moving < EnemyRetreatMovingThreshold);
-            int targetId = PerceiveNearestColonist(here);
-            brain.TargetEntityId = targetId;
-
-            // Priority: survive (retreat) > fight (engage) > nothing.
+            brain.TargetEntityId = PerceiveNearestColonist(here);
             if (hurt) brain.Goal = EnemyGoalKind.Retreat;
-            else if (targetId != 0) brain.Goal = EnemyGoalKind.Engage;
+            else if (brain.TargetEntityId != 0) brain.Goal = EnemyGoalKind.Engage;
             else brain.Goal = EnemyGoalKind.None;
-
-            switch (brain.Goal)
-            {
-                case EnemyGoalKind.Retreat:
-                    RequestFlee(ref path, here, store, targetId, view);
-                    break;
-                case EnemyGoalKind.Engage:
-                    RequestApproachIfNeeded(ref path, here, store, targetId, entity, view);
-                    break;
-                default:
-                    ClearPath(ref path);
-                    break;
-            }
         }
 
-        // ── Execute every tick: fire when engaging + in range with a shot ──
-        if (brain.Goal == EnemyGoalKind.Engage
-            && brain.TargetEntityId != 0
-            && TryGetRangedWeapon(entity, out var wdef)
-            && entity.HasComponent<RangedCombat>()
-            && store.TryGetEntityById(brain.TargetEntityId, out var tgt)
-            && tgt.HasComponent<Health>() && tgt.HasComponent<WorldPos>()
-            && !tgt.GetComponent<Health>().Unconscious)
+        // ── Execute every tick. Path requests only fire when there's no route
+        // already in flight or being followed (see EnsurePathTo), so the pawn
+        // commits to going around obstacles instead of re-pathing each think. ──
+        switch (brain.Goal)
         {
-            var spec = wdef.Ranged!;
-            var tp = tgt.GetComponent<WorldPos>();
-            float dx = tp.X - pos.X, dy = tp.Y - pos.Y;
-            float dist = MathF.Sqrt(dx * dx + dy * dy);
-            var ttile = new TilePos((int)tp.X, (int)tp.Y);
-            bool directLos = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
-            bool canShoot = directLos || TryFindLeanCell(view, here, ttile, out _);
-            bool inRange = dist <= spec.Range && dist >= SimConstants.RangedMinFireRange;
-            if (inRange && canShoot)
-            {
-                entity.GetComponent<RangedCombat>().TargetEntityId = brain.TargetEntityId;
-                ExecuteRangedFire(entity, tgt, spec, ref pos, ref path, ref w, dt, view, here);
-            }
+            case EnemyGoalKind.Engage:
+                TickEngage(ref pos, ref path, ref w, dt, entity, view, store, here, brain.TargetEntityId);
+                break;
+            case EnemyGoalKind.Retreat:
+                TickRetreat(ref path, here, store, view, brain.TargetEntityId);
+                break;
+            default:
+                ClearPath(ref path);
+                break;
         }
     }
 
@@ -1893,32 +1871,44 @@ public sealed class DummyController
         return best;
     }
 
-    // Engage: if we can already fire from here, hold (firing handles it);
-    // otherwise path toward the target so we close into range/LoS.
-    private void RequestApproachIfNeeded(ref PathFollower path, TilePos here, EntityStore store, int targetId, Entity entity, MapView view)
+    // Engage: stop + fire when there's a clear shot in range; otherwise close
+    // in, committing to one route around any obstacle.
+    private void TickEngage(ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, Entity entity, MapView view, EntityStore store, TilePos here, int targetId)
     {
-        if (!store.TryGetEntityById(targetId, out var tgt) || !tgt.HasComponent<WorldPos>()) { ClearPath(ref path); return; }
-        var tp = tgt.GetComponent<WorldPos>();
-        var ttile = new TilePos((int)tp.X, (int)tp.Y);
-        if (TryGetRangedWeapon(entity, out var wdef))
+        if (targetId == 0
+            || !TryGetRangedWeapon(entity, out var wdef)
+            || !entity.HasComponent<RangedCombat>()
+            || !store.TryGetEntityById(targetId, out var tgt)
+            || !tgt.HasComponent<Health>() || !tgt.HasComponent<WorldPos>()
+            || tgt.GetComponent<Health>().Unconscious)
         {
-            float dx = tp.X - (here.X + 0.5f), dy = tp.Y - (here.Y + 0.5f);
-            float dist = MathF.Sqrt(dx * dx + dy * dy);
-            bool los = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
-            bool inRange = dist <= wdef.Ranged!.Range && dist >= SimConstants.RangedMinFireRange;
-            if (inRange && los) { ClearPath(ref path); return; } // good firing spot — hold
+            return; // nothing valid to fight (downed targets ignored for now)
         }
-        if (ttile != here)
+        var spec = wdef.Ranged!;
+        var tp = tgt.GetComponent<WorldPos>();
+        float dx = tp.X - pos.X, dy = tp.Y - pos.Y;
+        float dist = MathF.Sqrt(dx * dx + dy * dy);
+        var ttile = new TilePos((int)tp.X, (int)tp.Y);
+        bool directLos = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
+        bool inRange = dist <= spec.Range && dist >= SimConstants.RangedMinFireRange;
+        if (inRange && directLos)
         {
-            if (path.PendingPathId != 0) _paths.Discard(path.PendingPathId);
-            path.PendingPathId = _paths.Request(here, ttile);
+            // Clear shot — stop + fire (ExecuteRangedFire drops the path).
+            entity.GetComponent<RangedCombat>().TargetEntityId = targetId;
+            ExecuteRangedFire(entity, tgt, spec, ref pos, ref path, ref w, dt, view, here);
+        }
+        else
+        {
+            EnsurePathTo(ref path, here, ttile); // close in; keep the route
         }
     }
 
-    // Retreat: head EnemyFleeDist tiles away from the threat (toward open
-    // ground / the edge), snapping the flee target to the nearest walkable.
-    private void RequestFlee(ref PathFollower path, TilePos here, EntityStore store, int threatId, MapView view)
+    // Retreat: head EnemyFleeDist tiles away from the threat. Only pick a new
+    // flee destination once the current route runs out (no per-tick re-route).
+    private void TickRetreat(ref PathFollower path, TilePos here, EntityStore store, MapView view, int threatId)
     {
+        bool hasActivePath = path.Waypoints is { Count: > 0 } && path.Index < path.Waypoints.Count;
+        if (hasActivePath || path.PendingPathId != 0) return;
         float ax = 0f, ay = 0f;
         if (threatId != 0 && store.TryGetEntityById(threatId, out var th) && th.HasComponent<WorldPos>())
         {
@@ -1930,10 +1920,16 @@ public sealed class DummyController
         int fx = here.X + (int)MathF.Round(ax * EnemyFleeDist);
         int fy = here.Y + (int)MathF.Round(ay * EnemyFleeDist);
         if (TryNearestWalkable(view, fx, fy, out var fleeTile) && fleeTile != here)
-        {
-            if (path.PendingPathId != 0) _paths.Discard(path.PendingPathId);
             path.PendingPathId = _paths.Request(here, fleeTile);
-        }
+    }
+
+    // Request a route to `dest` ONLY if the pawn isn't already following one
+    // (or waiting on one). Committing to the path is what stops the stutter.
+    private void EnsurePathTo(ref PathFollower path, TilePos here, TilePos dest)
+    {
+        bool hasActivePath = path.Waypoints is { Count: > 0 } && path.Index < path.Waypoints.Count;
+        if (hasActivePath || path.PendingPathId != 0 || dest == here) return;
+        path.PendingPathId = _paths.Request(here, dest);
     }
 
     private void ClearPath(ref PathFollower path)
