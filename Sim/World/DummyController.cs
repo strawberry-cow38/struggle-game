@@ -755,7 +755,8 @@ public sealed class DummyController
             // Idle drafted + armed: auto-engage the nearest enemy it can see or
             // lean-peek (ExecuteRangedFire handles the crouch/lean + firing).
             // Marked AutoTarget so it re-acquires when that enemy slips away.
-            if (entity.HasComponent<RangedCombat>() && TryGetRangedWeapon(entity, out var autoWdef))
+            // Suppressed when "fire at will" is off (only forced targets fire).
+            if (FireAtWill && entity.HasComponent<RangedCombat>() && TryGetRangedWeapon(entity, out var autoWdef))
             {
                 var autoSpec = autoWdef.Ranged!;
                 int foe = PerceiveNearestEnemy(here, autoSpec.Range, view);
@@ -1865,6 +1866,9 @@ public sealed class DummyController
     public System.Func<IReadOnlySet<TilePos>?>? ColonistLosProvider;
     // Per-tile light (0..1) for the darkness accuracy debuff. Null => fully lit.
     public System.Func<int, int, float>? LightProvider;
+    // Global "fire at will": when false, idle drafted colonists do NOT
+    // auto-acquire/peek enemies — they only fire at a player-forced target.
+    public bool FireAtWill = true;
 
     // (id, x, y) of every conscious non-enemy pawn, rebuilt once per Step.
     private readonly List<(int Id, float X, float Y)> _colonistTargets = new();

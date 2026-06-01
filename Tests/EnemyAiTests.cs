@@ -290,6 +290,35 @@ public class EnemyAiTests
     }
 
     [Fact]
+    public void FireAtWillOff_ColonistDoesNotAutoAcquire()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        sim.SetFireAtWill(false);
+
+        int colonist = FirstColonist(sim);
+        var ce = sim.Store.GetEntityById(colonist);
+        ce.AddComponent(new Inventory
+        {
+            Items = new List<InventoryStack> { new InventoryStack { ItemPath = ItemCatalog.RifleAmmoFmj.FullPath, Count = 120 } },
+            Equipped = new List<EquippedItemSlot> { new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = ItemCatalog.AssaultRifle.FullPath, Count = 1 } },
+        });
+        ce.AddComponent(new Drafted());
+        SetPos(sim, colonist, 20.5f, 20.5f);
+        for (int i = 0; i < 5; i++) sim.Step(SimConstants.TickSeconds);
+
+        var enemy = sim.SpawnEnemy(28, 20);
+        SetPos(sim, enemy.Id, 28.5f, 20.5f);
+        ref var cpf = ref ce.GetComponent<PathFollower>();
+        cpf.Waypoints = null; cpf.Index = 0; cpf.PendingPathId = 0;
+
+        for (int i = 0; i < 20; i++) sim.Step(SimConstants.TickSeconds);
+
+        // Fire-at-will off → no auto-acquire (only forced targets engage).
+        Assert.Equal(0, ce.GetComponent<RangedCombat>().TargetEntityId);
+    }
+
+    [Fact]
     public void Enemy_LockedInMelee_SwingsBack()
     {
         var sim = new SimRuntime();

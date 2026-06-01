@@ -25,6 +25,7 @@ public partial class DraftActionBar : CanvasLayer
     private HBoxContainer _bar = null!;
     private Label _magLabel = null!;
     private Button _forceTargetBtn = null!;
+    private Button _fireAtWillBtn = null!;
     private PopupMenu _reloadMenu = null!;
     private readonly List<string> _reloadAmmoPaths = new();
 
@@ -115,6 +116,23 @@ public partial class DraftActionBar : CanvasLayer
         };
         _bar.AddChild(_forceTargetBtn);
 
+        // Global "fire at will" toggle — off = colonists only fire at forced
+        // (RMB) targets, no auto-acquire/peek.
+        _fireAtWillBtn = new Button
+        {
+            Text = "Fire at Will",
+            ToggleMode = true,
+            TooltipText = "On: colonists auto-engage enemies. Off: only fire at a target you assign via right-click.",
+            CustomMinimumSize = new Vector2(0, ButtonHeight),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        _fireAtWillBtn.Pressed += () =>
+        {
+            if (Host is null) return;
+            Host.QueueCommand(new SetFireAtWillCommand(_fireAtWillBtn.ButtonPressed));
+        };
+        _bar.AddChild(_fireAtWillBtn);
+
         // Targeted area — cycles Head → Torso → Legs, sets the aim region.
         _targetAreaBtn = new Button
         {
@@ -162,6 +180,9 @@ public partial class DraftActionBar : CanvasLayer
 
         if (Tools is not null)
             _forceTargetBtn.SetPressedNoSignal(Tools.Mode == ToolMode.ForceFireTarget);
+
+        _fireAtWillBtn.SetPressedNoSignal(snap.FireAtWill);
+        _fireAtWillBtn.Text = snap.FireAtWill ? "Fire at Will: On" : "Fire at Will: Off";
 
         // Bottom-center, recomputed each frame (button visibility changes width).
         var vp = GetViewport().GetVisibleRect().Size;

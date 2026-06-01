@@ -481,6 +481,11 @@ public sealed class SimRuntime
     // pre-work-tab build until the player customises.
     public bool CheckmarkMode { get; private set; } = true;
 
+    // Global "fire at will": when false, idle drafted colonists won't
+    // auto-acquire enemies — they only fire at a player-forced (RMB) target.
+    public bool FireAtWill { get; private set; } = true;
+    public void SetFireAtWill(bool on) { FireAtWill = on; _dummies.FireAtWill = on; }
+
     // Debug bar toggle. When true, build systems skip BlueprintCost gating
     // entirely — useful while the haul-to-blueprint pipeline is still being
     // wired up. Defaults to true so existing playtests keep building.
@@ -1206,6 +1211,7 @@ public sealed class SimRuntime
         snap.SelectedPath = null;
         snap.SelectedOrders = null;
         snap.CheckmarkMode = CheckmarkMode;
+        snap.FireAtWill = FireAtWill;
 
         var selSet = (selectedDummyIds is { Length: > 0 }) ? new HashSet<int>(selectedDummyIds) : null;
         List<PawnPathState>? selPaths = null;

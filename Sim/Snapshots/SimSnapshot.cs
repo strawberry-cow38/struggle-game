@@ -134,6 +134,10 @@ public sealed class SimSnapshot
     // Sim-global work-tab mode flag. true = checkmark, false = priority 1..8.
     public bool CheckmarkMode { get; internal set; } = true;
 
+    // Global "fire at will": false = drafted colonists only fire at forced
+    // (RMB) targets, no auto-acquire/peek.
+    public bool FireAtWill { get; internal set; } = true;
+
     internal PawnWorkState[] PawnWorkBuf = System.Array.Empty<PawnWorkState>();
     internal int PawnWorkCount;
     public SnapshotList<PawnWorkState> PawnWork => new(PawnWorkBuf, PawnWorkCount);

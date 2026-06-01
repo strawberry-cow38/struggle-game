@@ -68,6 +68,15 @@ public sealed class TriggerRaidCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SpawnRaid(Count);
 }
 
+// Toggle global "fire at will" — when off, drafted colonists only fire at
+// player-forced (RMB) targets, no auto-acquire/peek.
+public sealed class SetFireAtWillCommand : ISimCommand
+{
+    public bool On { get; }
+    public SetFireAtWillCommand(bool on) { On = on; }
+    public void Apply(SimRuntime sim) => sim.SetFireAtWill(On);
+}
+
 // Clear a player notification once the UI has shown + dismissed it.
 public sealed class DismissNotificationCommand : ISimCommand
 {
