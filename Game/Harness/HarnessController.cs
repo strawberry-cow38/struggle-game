@@ -659,6 +659,37 @@ public partial class HarnessController : Node2D
                 _schedule.Add((0.6, h => h.SetupEnemyDemo(c - 9, c, c + 9, c), "spawn defender + hunting enemy"));
                 _schedule.Add((24.0, h => h.Finish("enemy-cover complete"), "finish"));
                 break;
+            case "enemy-corner":
+                // Toward-target lean showcase: a vertical wall with the
+                // defender out past its NORTH end (north-west). The enemy
+                // tucks on the east face near the top + peeks NORTH around the
+                // tip — which now points TOWARD the defender, not away. Reads
+                // as "edge out toward the enemy" instead of the old jank.
+                if (MovieMode)
+                {
+                    _screenshotEverySec = double.PositiveInfinity;
+                }
+                else
+                {
+                    _screenshotEverySec = 1.0 / 60.0;
+                    _screenshotScale = 1.0f;
+                }
+                _warmupSec = 2.0;
+                _manualSim = true;
+                _schedule.Add((0.1, h => h.RemoveLowest(), "remove default 1"));
+                _schedule.Add((0.15, h => h.RemoveLowest(), "remove default 2"));
+                _schedule.Add((0.2, h => h.RemoveLowest(), "remove default 3"));
+                _schedule.Add((0.3, h => h.SetCameraZoom(0.85f), "zoom out"));
+                // Vertical wall, north end at (c, c-2).
+                for (int wy = c - 2; wy <= c + 5; wy++)
+                {
+                    int y = wy;
+                    _schedule.Add((0.4, h => h.InstantWall(c, y), $"wall y={y}"));
+                }
+                // Defender NW of the wall's north tip; enemy to the east.
+                _schedule.Add((0.6, h => h.SetupEnemyDemo(c - 4, c - 4, c + 8, c), "spawn defender + hunting enemy"));
+                _schedule.Add((22.0, h => h.Finish("enemy-corner complete"), "finish"));
+                break;
             case "stress":
                 for (int r = 2; r <= 6; r++)
                 {

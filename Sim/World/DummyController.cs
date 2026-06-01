@@ -1958,7 +1958,8 @@ public sealed class DummyController
         float dx = target.X - cell.X, dy = target.Y - cell.Y;
         float dist = MathF.Sqrt(dx * dx + dy * dy);
         if (dist > spec.Range || dist < SimConstants.RangedMinFireRange) return false;
-        return LosClear?.Invoke(cell.X, cell.Y, target.X, target.Y) ?? true; // direct line only
+        bool directLos = LosClear?.Invoke(cell.X, cell.Y, target.X, target.Y) ?? true;
+        return directLos || TryFindLeanCell(view, cell, target, out _);
     }
 
     // Lowest-exposure firing cell near the target: covered cells (a wall/
@@ -1980,13 +1981,13 @@ public sealed class DummyController
             float tdx = target.X - cx, tdy = target.Y - cy;
             float dist = MathF.Sqrt(tdx * tdx + tdy * tdy);
             if (dist > spec.Range || dist < SimConstants.RangedMinFireRange) continue;
-            // Require a CLEAR direct line — the AI never chooses a full-wall
-            // peek (that forces an unnatural perpendicular lean). Sandbags
-            // don't block LoS, so a cell behind one is both covered AND has a
-            // direct shot over it (crouch cover). Walls block LoS, so cells
-            // behind them are excluded → the pawn flanks around for a clean shot.
+            // Valid if there's a direct line OR a toward-the-target corner
+            // peek (TryFindLeanCell only returns peeks that edge out toward
+            // the enemy now, so wall cover with a clean peek is fine; a target
+            // dead-behind a long wall has no toward-target peek → that cell is
+            // rejected and the pawn flanks for a direct line instead).
             bool directLos = LosClear?.Invoke(cx, cy, target.X, target.Y) ?? true;
-            if (!directLos) continue;
+            if (!directLos && !TryFindLeanCell(view, c, target, out _)) continue;
             float exposure = CoverToward(c, target, view) ? 0f : EnemyOpenExposurePenalty;
             float travel = Math.Abs(cx - here.X) + Math.Abs(cy - here.Y);
             float score = exposure + travel;
@@ -2301,6 +2302,22 @@ public sealed class DummyController
             if (view.GetWall(cx, cy) != WallType.None) continue; // can't peek into a wall
             // The peek cell must OPEN a lane the body lacks (LoS clear from it).
             if (!LosClear(cx, cy, ttile.X, ttile.Y)) continue;
+            // Only peek TOWARD the target's side, never away from it. This is
+            // the "register the wall face + edge out toward the enemy" rule:
+            // a step whose direction points away from the target (e.g. north
+            // when the target is south/west) is the unnatural perpendicular
+            // lean — reject it. With no toward-target peek the pawn won't lean
+            // at all (the caller flanks instead).
+            // Allow a peek that's toward the target OR square-on perpendicular
+            // (head-on target → dot 0, the normal corner peek). Reject only
+            // peeks pointing AWAY from the target (dot clearly negative) — that
+            // was the "lean north to shoot a south/west target" jank.
+            float toTgtX = ttile.X - here.X, toTgtY = ttile.Y - here.Y;
+            float toLen = MathF.Sqrt(toTgtX * toTgtX + toTgtY * toTgtY);
+            float stepLen = MathF.Sqrt((float)(px * px + py * py));
+            if (toLen > 1e-4f && stepLen > 1e-4f
+                && ((px / stepLen) * (toTgtX / toLen) + (py / stepLen) * (toTgtY / toLen)) < -0.05f)
+                continue;
             // Wedge clamp: the shot must run more ALONG the wall (cover axis)
             // than along the lean step. Near-axis = genuine peek; swinging
             // toward perpendicular = the pawn stepped fully into the open.
