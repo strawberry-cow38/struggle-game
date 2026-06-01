@@ -1443,6 +1443,18 @@ public sealed class SimRuntime
                 aimHit = StruggleGame.Sim.Gunnery.HitChanceEstimator.Estimate(
                     aimSpec, aimRecoil, aimFromX, aimFromY, p.X, p.Y,
                     tBodyH, tAimH, aimIsWall, aimIsSandbag);
+                // A wall on the direct line isn't really "blocked" if the
+                // shooter could lean-peek the target — recompute from the peek
+                // cell so the readout shows the real odds, not BLOCKED.
+                if (aimHit.Value.Cover == StruggleGame.Sim.Gunnery.HitCover.WallBlocked)
+                {
+                    var shooterTile = new TilePos((int)aimFromX, (int)aimFromY);
+                    var tgtTile = new TilePos((int)p.X, (int)p.Y);
+                    if (_dummies.TryGetLeanCell(MapView, shooterTile, tgtTile, out var lean))
+                        aimHit = StruggleGame.Sim.Gunnery.HitChanceEstimator.Estimate(
+                            aimSpec, aimRecoil, lean.X + 0.5f, lean.Y + 0.5f, p.X, p.Y,
+                            tBodyH, tAimH, aimIsWall, aimIsSandbag);
+                }
             }
 
             dummiesBuf[i++] = new DummyState(

@@ -2530,6 +2530,11 @@ public sealed class DummyController
     // back behind the wall otherwise. Strictly a sideways peek against the wall
     // it's hugging: no diagonal hops, no leaning when there's no wall to peek
     // around.
+    // Public probe for the hit-chance readout: does a lean-peek from `here`
+    // open a clear shot at `target`? Same logic the firing code uses.
+    public bool TryGetLeanCell(MapView view, TilePos here, TilePos target, out TilePos cell)
+        => TryFindLeanCell(view, here, target, out cell);
+
     private bool TryFindLeanCell(MapView view, TilePos here, TilePos ttile, out TilePos leanCell)
     {
         leanCell = here;
