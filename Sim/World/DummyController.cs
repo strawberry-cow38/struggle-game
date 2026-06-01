@@ -1775,6 +1775,8 @@ public sealed class DummyController
     private const float EnemyRetreatBloodThreshold = 0.45f;
     private const float EnemyRetreatMovingThreshold = 0.40f;
     private const int EnemyFleeDist = 12;             // tiles toward the edge when retreating
+    private const int EnemyCoverSearchRadius = 12;    // tiles around the target to scan for firing cells
+    private const float EnemyOpenExposurePenalty = 1000f; // open cells score far worse than covered ones
 
     // (id, x, y) of every conscious non-enemy pawn, rebuilt once per Step.
     private readonly List<(int Id, float X, float Y)> _colonistTargets = new();
@@ -1837,15 +1839,20 @@ public sealed class DummyController
             if (hurt) brain.Goal = EnemyGoalKind.Retreat;
             else if (brain.TargetEntityId != 0) brain.Goal = EnemyGoalKind.Engage;
             else brain.Goal = EnemyGoalKind.None;
+
+            // For Engage, hold a committed firing position chosen by exposure
+            // (cover) scoring. Re-pick only when we lack one or it went stale.
+            if (brain.Goal == EnemyGoalKind.Engage) UpdateFireCell(ref brain, here, entity, view, store);
+            else brain.HasFireCell = false;
         }
 
         // ── Execute every tick. Path requests only fire when there's no route
         // already in flight or being followed (see EnsurePathTo), so the pawn
-        // commits to going around obstacles instead of re-pathing each think. ──
+        // commits to its cover/route instead of re-pathing each think. ──
         switch (brain.Goal)
         {
             case EnemyGoalKind.Engage:
-                TickEngage(ref pos, ref path, ref w, dt, entity, view, store, here, brain.TargetEntityId);
+                TickEngage(ref pos, ref path, ref w, dt, entity, view, store, here, ref brain);
                 break;
             case EnemyGoalKind.Retreat:
                 TickRetreat(ref path, here, store, view, brain.TargetEntityId);
@@ -1871,10 +1878,13 @@ public sealed class DummyController
         return best;
     }
 
-    // Engage: stop + fire when there's a clear shot in range; otherwise close
-    // in, committing to one route around any obstacle.
-    private void TickEngage(ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, Entity entity, MapView view, EntityStore store, TilePos here, int targetId)
+    // Engage: walk to the committed firing position (a low-exposure cover
+    // cell chosen on the think) and fire from it. If none's been found yet,
+    // close on the target so cover comes into reach. ExecuteRangedFire handles
+    // the actual crouch/lean once posted up.
+    private void TickEngage(ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, Entity entity, MapView view, EntityStore store, TilePos here, ref EnemyBrain brain)
     {
+        int targetId = brain.TargetEntityId;
         if (targetId == 0
             || !TryGetRangedWeapon(entity, out var wdef)
             || !entity.HasComponent<RangedCombat>()
@@ -1885,27 +1895,108 @@ public sealed class DummyController
             return; // nothing valid to fight (downed targets ignored for now)
         }
         var spec = wdef.Ranged!;
-        var tp = tgt.GetComponent<WorldPos>();
-        float dx = tp.X - pos.X, dy = tp.Y - pos.Y;
-        float dist = MathF.Sqrt(dx * dx + dy * dy);
-        var ttile = new TilePos((int)tp.X, (int)tp.Y);
-        bool directLos = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
-        bool inRange = dist <= spec.Range && dist >= SimConstants.RangedMinFireRange;
-        // Stop + fire only on a clear DIRECT line. An advancing attacker
-        // commits around obstacles to a real firing position rather than
-        // opportunistically peeking over the wrong corner of cover (which the
-        // perpendicular-step lean resolves to an unnatural direction). Crouch
-        // cover at sandbags still applies inside ExecuteRangedFire; deliberate
-        // wall-cover seeking is a later feature, not this mid-advance peek.
-        if (inRange && directLos)
+        if (brain.HasFireCell)
         {
-            entity.GetComponent<RangedCombat>().TargetEntityId = targetId;
-            ExecuteRangedFire(entity, tgt, spec, ref pos, ref path, ref w, dt, view, here);
+            var fc = new TilePos(brain.FireCellX, brain.FireCellY);
+            if (here == fc)
+            {
+                // Posted up — fire (leans around cover if tucked). If the shot
+                // is gone, the next think re-picks a position.
+                entity.GetComponent<RangedCombat>().TargetEntityId = targetId;
+                ExecuteRangedFire(entity, tgt, spec, ref pos, ref path, ref w, dt, view, here);
+            }
+            else
+            {
+                EnsurePathTo(ref path, here, fc);
+            }
         }
         else
         {
-            EnsurePathTo(ref path, here, ttile); // close in; keep the route
+            var ttile = new TilePos((int)tgt.GetComponent<WorldPos>().X, (int)tgt.GetComponent<WorldPos>().Y);
+            EnsurePathTo(ref path, here, ttile); // close in to bring cover into reach
         }
+    }
+
+    // Keep a committed firing position. Reuse the current one while it's still
+    // valid (in range + has a shot); otherwise pick the lowest-exposure cell.
+    private void UpdateFireCell(ref EnemyBrain brain, TilePos here, Entity entity, MapView view, EntityStore store)
+    {
+        if (!TryGetRangedWeapon(entity, out var wdef)
+            || !store.TryGetEntityById(brain.TargetEntityId, out var tgt)
+            || !tgt.HasComponent<WorldPos>())
+        {
+            brain.HasFireCell = false;
+            return;
+        }
+        var spec = wdef.Ranged!;
+        var tw = tgt.GetComponent<WorldPos>();
+        var ttile = new TilePos((int)tw.X, (int)tw.Y);
+
+        if (brain.HasFireCell
+            && FiringCellValid(new TilePos(brain.FireCellX, brain.FireCellY), ttile, spec, view))
+        {
+            return; // current spot still good — commit to it
+        }
+        if (FindBestFiringCell(here, ttile, spec, view, out var cell))
+        {
+            brain.FireCellX = cell.X; brain.FireCellY = cell.Y; brain.HasFireCell = true;
+        }
+        else
+        {
+            brain.HasFireCell = false; // nothing in reach yet — close in
+        }
+    }
+
+    // A cell can fire on the target if it's in weapon range with either a
+    // direct line or a corner-lean shot.
+    private bool FiringCellValid(TilePos cell, TilePos target, Items.RangedSpec spec, MapView view)
+    {
+        float dx = target.X - cell.X, dy = target.Y - cell.Y;
+        float dist = MathF.Sqrt(dx * dx + dy * dy);
+        if (dist > spec.Range || dist < SimConstants.RangedMinFireRange) return false;
+        bool directLos = LosClear?.Invoke(cell.X, cell.Y, target.X, target.Y) ?? true;
+        return directLos || TryFindLeanCell(view, cell, target, out _);
+    }
+
+    // Lowest-exposure firing cell near the target: covered cells (a wall/
+    // sandbag between the cell and the threat) beat open ones by a large
+    // margin; travel distance from the pawn tie-breaks. Returns false when no
+    // in-range cell with a shot exists in the search window (→ close in).
+    private bool FindBestFiringCell(TilePos here, TilePos target, Items.RangedSpec spec, MapView view, out TilePos best)
+    {
+        best = here;
+        float bestScore = float.MaxValue;
+        bool found = false;
+        int r = EnemyCoverSearchRadius;
+        for (int dy = -r; dy <= r; dy++)
+        for (int dx = -r; dx <= r; dx++)
+        {
+            int cx = target.X + dx, cy = target.Y + dy;
+            if (!view.Walkable(cx, cy)) continue;
+            var c = new TilePos(cx, cy);
+            float tdx = target.X - cx, tdy = target.Y - cy;
+            float dist = MathF.Sqrt(tdx * tdx + tdy * tdy);
+            if (dist > spec.Range || dist < SimConstants.RangedMinFireRange) continue;
+            bool directLos = LosClear?.Invoke(cx, cy, target.X, target.Y) ?? true;
+            if (!directLos && !TryFindLeanCell(view, c, target, out _)) continue;
+            float exposure = CoverToward(c, target, view) ? 0f : EnemyOpenExposurePenalty;
+            float travel = Math.Abs(cx - here.X) + Math.Abs(cy - here.Y);
+            float score = exposure + travel;
+            if (score < bestScore) { bestScore = score; best = c; found = true; }
+        }
+        return found;
+    }
+
+    // True when a wall or sandbag sits in the cardinal step(s) from `cell`
+    // toward `threat` — i.e. the cell is shielded from that direction.
+    private bool CoverToward(TilePos cell, TilePos threat, MapView view)
+    {
+        int sx = Math.Sign(threat.X - cell.X), sy = Math.Sign(threat.Y - cell.Y);
+        if (sx != 0 && (view.GetWall(cell.X + sx, cell.Y) != WallType.None
+                        || (HasSandbag?.Invoke(cell.X + sx, cell.Y) ?? false))) return true;
+        if (sy != 0 && (view.GetWall(cell.X, cell.Y + sy) != WallType.None
+                        || (HasSandbag?.Invoke(cell.X, cell.Y + sy) ?? false))) return true;
+        return false;
     }
 
     // Retreat: head EnemyFleeDist tiles away from the threat. Only pick a new

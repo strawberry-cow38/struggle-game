@@ -97,6 +97,13 @@ public struct EnemyBrain : IComponent
     public int TargetEntityId;   // current perceived threat (0 = none)
     public long NextThinkTick;   // next tick to re-perceive + re-select goal
     public EnemyGoalKind Goal;
+    // Chosen firing position (cover cell). Picked on a think by exposure
+    // scoring; the pawn commits to it (paths there + posts up) instead of
+    // re-deciding every tick. Invalidated when reached without a shot, when
+    // the target moves out of range of it, or when it's no longer covered.
+    public int FireCellX;
+    public int FireCellY;
+    public bool HasFireCell;
 }
 
 // Per-colonist priority table for each WorkType. Priorities[i] = 0
