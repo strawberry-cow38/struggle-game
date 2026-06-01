@@ -98,6 +98,39 @@ public class RangedTests
     }
 
     [Fact]
+    public void AntiFriendlyFire_PawnInShooter3x3IsNotHit()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var ids = new List<int>();
+        sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos _, ref Wanderer _, Entity e) =>
+        { if (ids.Count < 3) ids.Add(e.Id); });
+        Assert.True(ids.Count >= 3, "need three pawns");
+        int shooter = ids[0], bystander = ids[1], target = ids[2];
+        foreach (var id in ids) sim.Store.GetEntityById(id).AddComponent(new Drafted());
+        ArmWithRifle(sim, shooter, ItemCatalog.RifleAmmoFmj, 200);
+        sim.Step(SimConstants.TickSeconds);
+        sim.Step(SimConstants.TickSeconds);
+        sim.SetFireTarget(shooter, target);
+
+        bool targetHit = false;
+        for (int i = 0; i < 1500; i++)
+        {
+            // Bystander hugs the shooter (in its 3x3) directly on the line to
+            // the target — must never eat a round; target sits well outside.
+            SetPos(sim, shooter, 20.5f, 20.5f);
+            SetPos(sim, bystander, 21.5f, 20.5f);
+            SetPos(sim, target, 27.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+            if (sim.Store.GetEntityById(target).GetComponent<Health>().Injuries is { Count: > 0 }) targetHit = true;
+        }
+
+        int bystanderInjuries = sim.Store.GetEntityById(bystander).GetComponent<Health>().Injuries?.Count ?? 0;
+        Assert.Equal(0, bystanderInjuries); // in the shooter's 3x3 → immune to its fire
+        Assert.True(targetHit, "the round should clear the cluster + still hit the target beyond it");
+    }
+
+    [Fact]
     public void RunningDry_ReloadsFromInventoryAmmo()
     {
         var sim = new SimRuntime();

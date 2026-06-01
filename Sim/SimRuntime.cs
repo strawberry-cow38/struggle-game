@@ -4329,10 +4329,15 @@ public sealed class SimRuntime
         // 2) Nearest pawn whose body the line crosses at a strikeable height,
         //    closer than the wall block.
         float r2 = ProjectileHitRadius * ProjectileHitRadius;
+        // Anti-friendly-fire: a round clears the 3x3 around the muzzle, so any
+        // pawn (ally OR enemy) hugging the shooter isn't hit by its own fire —
+        // the bullet only starts connecting past the immediate cluster.
+        int muzzleTX = (int)fromX, muzzleTY = (int)fromY;
         float bestFrac = float.MaxValue; int pawn = 0; float pawnX = 0, pawnY = 0;
         foreach (var (id, ppx, ppy, bodyH) in _projPawns)
         {
             if (id == shooterId) continue;
+            if (Math.Abs((int)ppx - muzzleTX) <= 1 && Math.Abs((int)ppy - muzzleTY) <= 1) continue;
             float proj = ((ppx - fromX) * ddx + (ppy - fromY) * ddy) / (dist * dist);
             float u = Math.Clamp(proj, 0f, 1f);
             if (u >= bestFrac || u > blockFrac) continue;
