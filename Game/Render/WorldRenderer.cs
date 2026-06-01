@@ -280,20 +280,9 @@ public partial class WorldRenderer : Node2D
         }
 
         var mapRect = new Rect2(0, 0, _mapPixelWidth, _mapPixelHeight);
-        using (FrameProfiler.Instance.BeginScope("Map"))
-        {
-            DrawTextureRect(_groundTex, mapRect, tile: true);
-            DrawFlooringTiles();
-            if (_wallOverlayTex is not null)
-            {
-                DrawTextureRect(_wallOverlayTex, mapRect, tile: false);
-            }
-        }
-
-        if (snap is null) { FrameProfiler.Instance.EndFrame(); return; }
-
-        // Visible-world tile rect for cheap AABB culling of entity loops.
-        // 1-tile pad so things straddling the edge don't pop in/out.
+        // Visible-world tile rect for cheap AABB culling of entity loops +
+        // flooring. 1-tile pad so things straddling the edge don't pop in/out.
+        // Computed before the map draw so DrawFlooringTiles can cull to it.
         var canvasXform = GetCanvasTransform();
         var canvasInv = canvasXform.AffineInverse();
         var vpSize = GetViewportRect().Size;
@@ -310,6 +299,18 @@ public partial class WorldRenderer : Node2D
         int viewMaxTileX = (int)Math.Floor(Math.Max(tl.X, br.X) / PixelsPerTile) + 1;
         int viewMinTileY = (int)Math.Floor(Math.Min(tl.Y, br.Y) / PixelsPerTile) - 1;
         int viewMaxTileY = (int)Math.Floor(Math.Max(tl.Y, br.Y) / PixelsPerTile) + 1;
+
+        using (FrameProfiler.Instance.BeginScope("Map"))
+        {
+            DrawTextureRect(_groundTex, mapRect, tile: true);
+            DrawFlooringTiles(viewMinTileX, viewMaxTileX, viewMinTileY, viewMaxTileY);
+            if (_wallOverlayTex is not null)
+            {
+                DrawTextureRect(_wallOverlayTex, mapRect, tile: false);
+            }
+        }
+
+        if (snap is null) { FrameProfiler.Instance.EndFrame(); return; }
 
         using (FrameProfiler.Instance.BeginScope("Stockpiles"))
         {
@@ -1758,16 +1759,20 @@ public partial class WorldRenderer : Node2D
     // lines. Iterates the cached _floorBytes; skips empty tiles. Cheap
     // even for big maps because the cost scales with floored-tile count,
     // not map area.
-    private void DrawFlooringTiles()
+    private void DrawFlooringTiles(int minTileX, int maxTileX, int minTileY, int maxTileY)
     {
         if (_floorBytes is null) return;
+        // Cull to the visible tile rect — this used to scan the whole map
+        // (O(65k) tiles) every frame regardless of zoom/pan. Clamp to bounds.
+        int y0 = Math.Max(0, minTileY), y1 = Math.Min(_mapHeight - 1, maxTileY);
+        int x0 = Math.Max(0, minTileX), x1 = Math.Min(_mapWidth - 1, maxTileX);
         int plankY1 = PixelsPerTile / 3;
         int plankY2 = (PixelsPerTile * 2) / 3;
-        for (int ty = 0; ty < _mapHeight; ty++)
+        for (int ty = y0; ty <= y1; ty++)
         {
             int row = ty * _mapWidth;
             float oy = ty * PixelsPerTile;
-            for (int tx = 0; tx < _mapWidth; tx++)
+            for (int tx = x0; tx <= x1; tx++)
             {
                 if (_floorBytes[row + tx] == 0) continue;
                 float ox = tx * PixelsPerTile;
