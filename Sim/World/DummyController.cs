@@ -102,6 +102,11 @@ public sealed class DummyController
     // Scratch set populated each Step() so a single tick of topoff scans
     // doesn't reserve the same item for two different carriers.
     private readonly HashSet<int> _topoffReservedThisTick = new();
+    // Tick-start pawn count per tile, rebuilt each Step(). Drives the crowding
+    // speed penalty (a pawn squeezing through a tile another pawn holds walks
+    // slower until it's clear). Pure movement-step friction — pathfinding never
+    // sees it, so the multithreaded pawn-blind pather stays untouched.
+    private readonly Dictionary<TilePos, int> _tileOccupancy = new();
     // "Is there a Wood stack on this tile" — backed by the sim's item
     // spatial index (no per-tick full Wood scan). Build-kind jobs whose
     // target tile holds wood are filtered out of the claim list so a pawn
@@ -125,6 +130,8 @@ public sealed class DummyController
     private const long MeleeStunTicks = 30;       // ~0.5s frozen on a stun
     private const double MeleeStunChance = 0.25;
     private const float EngagedSlowFactor = 0.5f;
+    // Walk speed multiplier while sharing a tile with another pawn (squeeze).
+    private const float CrowdedSpeedFactor = 0.4f;
     private const float SouthFacing = MathF.PI / 2f; // +Y is down on screen
     // Wired by SimRuntime: land a melee hit (attacker, target). Attacker's
     // equipped weapon decides the damage.
@@ -199,6 +206,17 @@ public sealed class DummyController
             _colonistTargets.Add((e.Id, p.X, p.Y));
         });
         var query = _wandererQ ??= store.Query<WorldPos, PathFollower, Wanderer>();
+        // Tick-start pawn count per tile, for the crowding speed penalty: a
+        // pawn sharing its tile with another moves at CrowdedSpeedFactor while
+        // overlapping ("squeeze past"), back to normal once it's free. Pure
+        // local friction — no pathfinding/threading involved, no blocking.
+        _tileOccupancy.Clear();
+        query.ForEachEntity((ref WorldPos pos, ref PathFollower _, ref Wanderer _, Entity _) =>
+        {
+            var t = new TilePos((int)pos.X, (int)pos.Y);
+            _tileOccupancy.TryGetValue(t, out int c);
+            _tileOccupancy[t] = c + 1;
+        });
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer w, Entity entity) =>
         {
             Plan(ref pos, ref path, ref w, dt, entity, cb, view, store);
@@ -208,6 +226,10 @@ public sealed class DummyController
             float speedMul = HealthMods.MoveSpeed(entity);
             if (entity.HasComponent<Combat>() && tick < entity.GetComponent<Combat>().EngagedUntil)
                 speedMul *= EngagedSlowFactor;
+            // Crowding: another pawn on this tile (count includes self → >= 2)
+            // slows the squeeze-through.
+            if (_tileOccupancy.TryGetValue(new TilePos((int)pos.X, (int)pos.Y), out int occ) && occ >= 2)
+                speedMul *= CrowdedSpeedFactor;
             AdvanceAlongPath(ref pos, ref path, dt, view, speedMul);
             float mdx = pos.X - bx, mdy = pos.Y - by;
             if (mdx * mdx + mdy * mdy > 1e-9f) w.Facing = MathF.Atan2(mdy, mdx);
