@@ -221,6 +221,9 @@ public sealed class DummyController
         _tileCrowd.Clear();
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity entity) =>
         {
+            // Downed pawns don't crowd — you step over a body freely (matches
+            // "downed pawns don't block"). Skip them entirely.
+            if (entity.HasComponent<Health>() && entity.GetComponent<Health>().Unconscious) return;
             var t = new TilePos((int)pos.X, (int)pos.Y);
             bool moving = path.Waypoints is { Count: > 0 } && path.Index < path.Waypoints.Count;
             _tileCrowd.TryGetValue(t, out var agg);
