@@ -1891,13 +1891,13 @@ public sealed class DummyController
         var ttile = new TilePos((int)tp.X, (int)tp.Y);
         bool directLos = LosClear?.Invoke(here.X, here.Y, ttile.X, ttile.Y) ?? true;
         bool inRange = dist <= spec.Range && dist >= SimConstants.RangedMinFireRange;
-        // Stop to fire on a clear shot OR a wall-corner lean shot — tucking at
-        // cover + peeking is preferred over walking into the open. Safe to
-        // include lean now that the route is committed (it doesn't re-path),
-        // so the stop no longer flaps. ExecuteRangedFire does the actual
-        // crouch/lean + sets the peek stance.
-        bool canShoot = directLos || TryFindLeanCell(view, here, ttile, out _);
-        if (inRange && canShoot)
+        // Stop + fire only on a clear DIRECT line. An advancing attacker
+        // commits around obstacles to a real firing position rather than
+        // opportunistically peeking over the wrong corner of cover (which the
+        // perpendicular-step lean resolves to an unnatural direction). Crouch
+        // cover at sandbags still applies inside ExecuteRangedFire; deliberate
+        // wall-cover seeking is a later feature, not this mid-advance peek.
+        if (inRange && directLos)
         {
             entity.GetComponent<RangedCombat>().TargetEntityId = targetId;
             ExecuteRangedFire(entity, tgt, spec, ref pos, ref path, ref w, dt, view, here);
