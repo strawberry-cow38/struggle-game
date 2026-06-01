@@ -2248,10 +2248,11 @@ public sealed class DummyController
         var los = ColonistLosProvider?.Invoke();
         if (los is not null && los.Contains(here))
         {
-            var tpw = tgt.GetComponent<WorldPos>();
-            float ex = tpw.X - pos.X, ey = tpw.Y - pos.Y;
+            var tpw0 = tgt.GetComponent<WorldPos>();
+            EffectivePos(tgt, tpw0.X, tpw0.Y, out float epx, out float epy); // aim at the peek when leaning
+            float ex = epx - pos.X, ey = epy - pos.Y;
             float edist = MathF.Sqrt(ex * ex + ey * ey);
-            var et = new TilePos((int)tpw.X, (int)tpw.Y);
+            var et = new TilePos((int)epx, (int)epy);
             if (edist <= EnemyCaughtInOpenDist && edist >= SimConstants.RangedMinFireRange && edist <= spec.Range
                 && (LosClear?.Invoke(here.X, here.Y, et.X, et.Y) ?? true))
             {
@@ -2288,8 +2289,9 @@ public sealed class DummyController
         }
         else
         {
-            var ttile = new TilePos((int)tgt.GetComponent<WorldPos>().X, (int)tgt.GetComponent<WorldPos>().Y);
-            EnsurePathTo(ref path, here, ttile); // close in to bring cover into reach
+            var tpw0 = tgt.GetComponent<WorldPos>();
+            EffectivePos(tgt, tpw0.X, tpw0.Y, out float cex, out float cey);
+            EnsurePathTo(ref path, here, new TilePos((int)cex, (int)cey)); // close in to bring cover into reach
         }
     }
 
@@ -2305,7 +2307,12 @@ public sealed class DummyController
             return;
         }
         var spec = wdef.Ranged!;
-        var tw = tgt.GetComponent<WorldPos>();
+        // Reason about the target's EFFECTIVE position (its peek cell while
+        // leaning) — else a colonist peeking from behind a wall reads as having
+        // no clear line and the enemy never engages, just keeps closing.
+        var tw0 = tgt.GetComponent<WorldPos>();
+        EffectivePos(tgt, tw0.X, tw0.Y, out float twx, out float twy);
+        var tw = new WorldPos { X = twx, Y = twy };
         var ttile = new TilePos((int)tw.X, (int)tw.Y);
         float dx = tw.X - (here.X + 0.5f), dy = tw.Y - (here.Y + 0.5f);
         float dist = MathF.Sqrt(dx * dx + dy * dy);
