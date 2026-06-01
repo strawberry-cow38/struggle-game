@@ -102,13 +102,6 @@ public sealed class DummyController
     // Scratch set populated each Step() so a single tick of topoff scans
     // doesn't reserve the same item for two different carriers.
     private readonly HashSet<int> _topoffReservedThisTick = new();
-    // Tick-start "tile → entity id" for every pawn currently IN MOTION (active
-    // path). The local de-stack yield reads it: a mover about to enter a tile
-    // a lower-id mover holds waits until that tile clears ("excuse me") instead
-    // of overlapping. Movers only — a stationary/downed pawn never blocks, so
-    // you can still walk onto a body / your ordered tile. Pure local nudge; the
-    // (multithreaded, pawn-blind) pathfinding is untouched.
-    private readonly Dictionary<TilePos, int> _movingOccupant = new();
     // "Is there a Wood stack on this tile" — backed by the sim's item
     // spatial index (no per-tick full Wood scan). Build-kind jobs whose
     // target tile holds wood are filtered out of the claim list so a pawn
@@ -206,14 +199,6 @@ public sealed class DummyController
             _colonistTargets.Add((e.Id, p.X, p.Y));
         });
         var query = _wandererQ ??= store.Query<WorldPos, PathFollower, Wanderer>();
-        // Pre-pass: tick-start tile of every pawn currently following a path,
-        // for the local de-stack yield in AdvanceAlongPath.
-        _movingOccupant.Clear();
-        query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity entity) =>
-        {
-            if (path.Waypoints is { Count: > 0 } && path.Index < path.Waypoints.Count)
-                _movingOccupant[new TilePos((int)pos.X, (int)pos.Y)] = entity.Id;
-        });
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer w, Entity entity) =>
         {
             Plan(ref pos, ref path, ref w, dt, entity, cb, view, store);
@@ -223,7 +208,7 @@ public sealed class DummyController
             float speedMul = HealthMods.MoveSpeed(entity);
             if (entity.HasComponent<Combat>() && tick < entity.GetComponent<Combat>().EngagedUntil)
                 speedMul *= EngagedSlowFactor;
-            AdvanceAlongPath(ref pos, ref path, dt, view, speedMul, entity.Id);
+            AdvanceAlongPath(ref pos, ref path, dt, view, speedMul);
             float mdx = pos.X - bx, mdy = pos.Y - by;
             if (mdx * mdx + mdy * mdy > 1e-9f) w.Facing = MathF.Atan2(mdy, mdx);
         });
@@ -2719,7 +2704,7 @@ public sealed class DummyController
         return false;
     }
 
-    private void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt, MapView view, float speedMul, int selfId)
+    private void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt, MapView view, float speedMul)
     {
         if (path.Waypoints is null || path.Index >= path.Waypoints.Count) return;
 
@@ -2727,18 +2712,6 @@ public sealed class DummyController
         while (remaining > 0f && path.Index < path.Waypoints.Count)
         {
             var target = path.Waypoints[path.Index];
-
-            // Local de-stack ("excuse me"): don't step into a tile another mover
-            // holds — wait until it clears. Asymmetric tie-break (lower id wins,
-            // higher id yields) so two pawns can't both wait → no deadlock. Only
-            // yields to movers (the tick-start map), so a stationary/downed pawn
-            // never blocks. Skips the pawn's own current tile.
-            if (target != new TilePos((int)pos.X, (int)pos.Y)
-                && _movingOccupant.TryGetValue(target, out int occ)
-                && occ != selfId && selfId > occ)
-            {
-                return; // hold this tick; re-check next tick once they've moved on
-            }
 
             // Door gate: if the next tile holds a door that isn't fully
             // open yet, flag it as wanting to open and freeze in place
