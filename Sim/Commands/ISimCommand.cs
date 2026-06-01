@@ -60,6 +60,22 @@ public sealed class SpawnRaiderCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SpawnEnemyAtEdge(SimRuntime.RaiderMission());
 }
 
+// Spawn a raid: a group of `Count` raiders at one map edge + a notification.
+public sealed class TriggerRaidCommand : ISimCommand
+{
+    public int Count { get; }
+    public TriggerRaidCommand(int count) { Count = count; }
+    public void Apply(SimRuntime sim) => sim.SpawnRaid(Count);
+}
+
+// Clear a player notification once the UI has shown + dismissed it.
+public sealed class DismissNotificationCommand : ISimCommand
+{
+    public int Id { get; }
+    public DismissNotificationCommand(int id) { Id = id; }
+    public void Apply(SimRuntime sim) => sim.DismissNotification(Id);
+}
+
 public sealed class InstantPlaceLampCommand : ISimCommand
 {
     public TilePos Tile { get; }

@@ -194,6 +194,9 @@ public partial class Bootstrap : Node2D
         _menu = new MainMenuPanel { Host = _host, Name = "MainMenu" };
         AddChild(_menu);
 
+        var notifications = new UI.NotificationPanel { Host = _host, Name = "Notifications" };
+        AddChild(notifications);
+
         // Decorative Labels and Separators don't need mouse interaction —
         // but Godot's GUI hover system hit-tests every Pass/Stop Control
         // on every mouse motion event. With ~50 visible Controls across

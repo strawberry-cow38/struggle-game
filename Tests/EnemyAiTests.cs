@@ -153,6 +153,31 @@ public class EnemyAiTests
     }
 
     [Fact]
+    public void Raid_SpawnsGroupAndRaisesDismissableNotification()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+
+        int before = sim.Store.Query<Enemy>().Count;
+        sim.SpawnRaid(4);
+        Assert.Equal(before + 4, sim.Store.Query<Enemy>().Count);
+
+        // The raid raises exactly one notification, carried on the snapshot.
+        var snap = sim.BuildSnapshot();
+        int notes = 0, id = 0;
+        foreach (var note in snap.Notifications) { notes++; id = note.Id; }
+        Assert.Equal(1, notes);
+        Assert.True(id != 0);
+
+        // Dismissing it clears it from subsequent snapshots.
+        sim.DismissNotification(id);
+        var snap2 = sim.BuildSnapshot();
+        int notes2 = 0;
+        foreach (var _ in snap2.Notifications) notes2++;
+        Assert.Equal(0, notes2);
+    }
+
+    [Fact]
     public void Enemy_RetreatsWhenHurt()
     {
         var sim = new SimRuntime();

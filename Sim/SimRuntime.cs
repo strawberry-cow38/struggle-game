@@ -1597,6 +1597,10 @@ public sealed class SimRuntime
         }
         snap.RoofFlashesCount = fi;
 
+        EnsureCap(ref snap.NotificationsBuf, _notifications.Count);
+        for (int ni = 0; ni < _notifications.Count; ni++) snap.NotificationsBuf[ni] = _notifications[ni];
+        snap.NotificationsCount = _notifications.Count;
+
         EnsureCap(ref snap.TreesBuf, _trees.Count);
         var treesBuf = snap.TreesBuf;
         int k2 = 0;
@@ -6401,6 +6405,50 @@ public sealed class SimRuntime
     // in DummyController.PlanEnemy. Shares the mover + projectile/cover
     // pipeline with colonists but carries the Enemy marker so it skips all
     // colonist behavior. Pre-loaded mag so it can open fire immediately.
+    // ── Player-facing notifications (raids, etc). Persist until the UI
+    // dismisses one by id; published every snapshot. ──
+    private readonly List<GameNotificationState> _notifications = new();
+    private int _nextNotificationId = 1;
+
+    public int RaiseNotification(string title, string message)
+    {
+        int id = _nextNotificationId++;
+        _notifications.Add(new GameNotificationState(id, title, message));
+        return id;
+    }
+
+    public void DismissNotification(int id) => _notifications.RemoveAll(n => n.Id == id);
+
+    // Spawn a raid: a cluster of `count` raiders arriving together at one
+    // random map edge, each running its own brain (no squad coordination yet),
+    // and raise a notification so the UI can alert + pause. The raiders push
+    // into the colony and fight on sight (default hunting mission).
+    public void SpawnRaid(int count)
+    {
+        if (count < 1) count = 1;
+        int n = SimConstants.MapSize;
+        int side = _spawnRng.Next(4);
+        int span = _spawnRng.Next(8, n - 8);
+        string from;
+        for (int k = 0; k < count; k++)
+        {
+            // Spread the entry span a little so they don't all stack on one tile
+            // (SpawnEnemy still spirals each to a free tile).
+            int s = Math.Clamp(span + (k - count / 2) * 2, 1, n - 2);
+            var (sx, sy, label) = side switch
+            {
+                0 => (1, s, "west"),
+                1 => (n - 2, s, "east"),
+                2 => (s, 1, "north"),
+                _ => (s, n - 2, "south"),
+            };
+            from = label;
+            SpawnEnemy(sx, sy); // null mission → advance into the colony + hunt
+            if (k == count - 1)
+                RaiseNotification("Raid!", $"{count} raiders are attacking from the {from}.");
+        }
+    }
+
     // Ticks an enemy holds an objective tile in the demo raid mission.
     private const int RaiderHoldTicks = 300; // ~5s at 60 TPS
 

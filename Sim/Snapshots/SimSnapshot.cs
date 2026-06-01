@@ -125,6 +125,12 @@ public sealed class SimSnapshot
     internal int RoofFlashesCount;
     public SnapshotList<RoofFlashState> RoofFlashes => new(RoofFlashesBuf, RoofFlashesCount);
 
+    // Active player-facing notifications (e.g. an incoming raid). Persist in
+    // every snapshot until the UI dismisses them via DismissNotificationCommand.
+    internal GameNotificationState[] NotificationsBuf = System.Array.Empty<GameNotificationState>();
+    internal int NotificationsCount;
+    public SnapshotList<GameNotificationState> Notifications => new(NotificationsBuf, NotificationsCount);
+
     // Sim-global work-tab mode flag. true = checkmark, false = priority 1..8.
     public bool CheckmarkMode { get; internal set; } = true;
 
@@ -216,6 +222,11 @@ public readonly record struct DummyState(
 
 // What a ranged colonist is doing right now, for the overhead label.
 public enum RangedStatus : byte { None = 0, Firing = 1, Watching = 2, Reloading = 3, TooClose = 4 }
+
+// A player-facing notification (raid alert, etc). Id is monotonic so the UI
+// can track which it has already shown/acknowledged. Pausing on arrival +
+// dismissal is handled UI-side.
+public readonly record struct GameNotificationState(int Id, string Title, string Message);
 
 public readonly record struct CarriedItemState(int SlotEntityId, string ItemPath, int Count, bool Forbidden);
 
