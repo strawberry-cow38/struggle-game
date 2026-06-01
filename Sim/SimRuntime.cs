@@ -1388,7 +1388,8 @@ public sealed class SimRuntime
                 swingT, missT, flinchT, meleeTargetId,
                 hasRanged, rangedMag, rangedMagSize, rangedMode, rangedModes,
                 fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea,
-                coverStance, leaning, peekX, peekY, rangedHasAmmo);
+                coverStance, leaning, peekX, peekY, rangedHasAmmo,
+                ent.HasComponent<Enemy>());
 
             // Capture path + queued tiles for every selected pawn, so the whole
             // squad shows its move lines + waypoints (not just the first pawn).

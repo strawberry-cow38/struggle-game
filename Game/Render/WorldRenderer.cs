@@ -84,6 +84,7 @@ public partial class WorldRenderer : Node2D
     // shadow swing (mul ambient 0.55 → ~0.23, 0.18, 0.12).
     private static readonly Color WallColor = new(0.42f, 0.32f, 0.22f);
     private static readonly Color DummyColor = new(0.95f, 0.55f, 0.20f);
+    private static readonly Color EnemyColor = new(0.85f, 0.18f, 0.16f);
     private static readonly Color BlueprintFill = new(0.20f, 0.55f, 0.95f, 0.30f);
     private static readonly Color BlueprintBorder = new(0.45f, 0.75f, 1.00f, 0.85f);
     private static readonly Color BlueprintProgress = new(0.95f, 0.85f, 0.20f, 0.85f);
@@ -689,7 +690,7 @@ public partial class WorldRenderer : Node2D
                 {
                     bodyR = radius * 0.6f;
                 }
-                DrawCircle(center, bodyR, DummyColor);
+                DrawCircle(center, bodyR, d.IsEnemy ? EnemyColor : DummyColor);
                 if (d.CoverStance == 1)
                 {
                     // Hunkered-in-cover cue: a low shield arc beneath the pawn.
