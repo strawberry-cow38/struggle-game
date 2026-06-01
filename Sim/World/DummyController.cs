@@ -102,11 +102,13 @@ public sealed class DummyController
     // Scratch set populated each Step() so a single tick of topoff scans
     // doesn't reserve the same item for two different carriers.
     private readonly HashSet<int> _topoffReservedThisTick = new();
-    // Tick-start pawn count per tile, rebuilt each Step(). Drives the crowding
-    // speed penalty (a pawn squeezing through a tile another pawn holds walks
-    // slower until it's clear). Pure movement-step friction — pathfinding never
-    // sees it, so the multithreaded pawn-blind pather stays untouched.
-    private readonly Dictionary<TilePos, int> _tileOccupancy = new();
+    // Tick-start crowding state per tile, rebuilt each Step(). Count = pawns on
+    // the tile; SlowedId = the ONE mover picked to slow (others move full so the
+    // overlap clears decisively instead of looping overlap→separate→overlap).
+    // Pick: the lone mover when one pawn is stationary, else a pseudo-random
+    // mover (min-hash, deterministic for replays). Pure movement-step friction —
+    // pathfinding never sees it, so the multithreaded pather stays untouched.
+    private readonly Dictionary<TilePos, (int Count, int SlowedId, uint BestKey)> _tileCrowd = new();
     // "Is there a Wood stack on this tile" — backed by the sim's item
     // spatial index (no per-tick full Wood scan). Build-kind jobs whose
     // target tile holds wood are filtered out of the claim list so a pawn
@@ -206,16 +208,24 @@ public sealed class DummyController
             _colonistTargets.Add((e.Id, p.X, p.Y));
         });
         var query = _wandererQ ??= store.Query<WorldPos, PathFollower, Wanderer>();
-        // Tick-start pawn count per tile, for the crowding speed penalty: a
-        // pawn sharing its tile with another moves at CrowdedSpeedFactor while
-        // overlapping ("squeeze past"), back to normal once it's free. Pure
-        // local friction — no pathfinding/threading involved, no blocking.
-        _tileOccupancy.Clear();
-        query.ForEachEntity((ref WorldPos pos, ref PathFollower _, ref Wanderer _, Entity _) =>
+        // Tick-start crowding: count pawns per tile and pick the ONE mover to
+        // slow there (others stay full so the overlap clears, not oscillates).
+        // Stationary pawns never get picked, so a parked/downed pawn holds while
+        // the mover squeezes past it; with two movers it's a deterministic
+        // pseudo-random (min-hash) pick. Pure local friction, no blocking.
+        _tileCrowd.Clear();
+        query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer _, Entity entity) =>
         {
             var t = new TilePos((int)pos.X, (int)pos.Y);
-            _tileOccupancy.TryGetValue(t, out int c);
-            _tileOccupancy[t] = c + 1;
+            bool moving = path.Waypoints is { Count: > 0 } && path.Index < path.Waypoints.Count;
+            _tileCrowd.TryGetValue(t, out var agg);
+            agg.Count++;
+            if (moving)
+            {
+                uint key = CrowdHash(entity.Id, t.X, t.Y);
+                if (agg.SlowedId == 0 || key < agg.BestKey) { agg.SlowedId = entity.Id; agg.BestKey = key; }
+            }
+            _tileCrowd[t] = agg;
         });
         query.ForEachEntity((ref WorldPos pos, ref PathFollower path, ref Wanderer w, Entity entity) =>
         {
@@ -226,9 +236,11 @@ public sealed class DummyController
             float speedMul = HealthMods.MoveSpeed(entity);
             if (entity.HasComponent<Combat>() && tick < entity.GetComponent<Combat>().EngagedUntil)
                 speedMul *= EngagedSlowFactor;
-            // Crowding: another pawn on this tile (count includes self → >= 2)
-            // slows the squeeze-through.
-            if (_tileOccupancy.TryGetValue(new TilePos((int)pos.X, (int)pos.Y), out int occ) && occ >= 2)
+            // Crowding: if this tile is shared and WE'RE the picked mover, slow
+            // the squeeze-through. Exactly one pawn per shared tile slows; the
+            // rest keep full speed so the clump resolves instead of oscillating.
+            if (_tileCrowd.TryGetValue(new TilePos((int)pos.X, (int)pos.Y), out var crowd)
+                && crowd.Count >= 2 && crowd.SlowedId == entity.Id)
                 speedMul *= CrowdedSpeedFactor;
             AdvanceAlongPath(ref pos, ref path, dt, view, speedMul);
             float mdx = pos.X - bx, mdy = pos.Y - by;
@@ -2724,6 +2736,20 @@ public sealed class DummyController
         pos.X += dx / dist * step;
         pos.Y += dy / dist * step;
         return false;
+    }
+
+    // Deterministic per-(pawn,tile) hash so the "which mover slows" pick is
+    // pseudo-random yet stable across a tick / replay (no Random()).
+    private static uint CrowdHash(int id, int x, int y)
+    {
+        unchecked
+        {
+            uint h = (uint)id * 2654435761u;
+            h ^= (uint)x * 40503u;
+            h ^= (uint)y * 12289u;
+            h ^= h >> 15; h *= 2246822519u; h ^= h >> 13;
+            return h;
+        }
     }
 
     private void AdvanceAlongPath(ref WorldPos pos, ref PathFollower path, float dt, MapView view, float speedMul)
