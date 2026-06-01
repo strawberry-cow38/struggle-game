@@ -1387,6 +1387,8 @@ public sealed class SimRuntime
             bool leaning = false;
             float peekX = p.X, peekY = p.Y;
             bool rangedHasAmmo = false;
+            byte fireMeterPhase = 0;
+            float fireMeterProgress = 0f;
             if (ent.HasComponent<RangedCombat>() && TryGetEquippedRangedSpec(ent, out var rspec))
             {
                 var rc = ent.GetComponent<RangedCombat>();
@@ -1427,6 +1429,26 @@ public sealed class SimRuntime
                     rangedStatus = fdist < SimConstants.RangedMinFireRange ? Snapshots.RangedStatus.TooClose
                         : (fdist <= rspec.Range && los) ? Snapshots.RangedStatus.Firing
                         : Snapshots.RangedStatus.Watching;
+                }
+                // Firing pie meter: aiming (spot-to-fire) shows first, then the
+                // shot/burst cooldown — same fields the sim gates firing on.
+                if (rc.TargetEntityId != 0 && !rc.Reloading)
+                {
+                    if (Tick < rc.AimReadyTick && rspec.AimTicks > 0)
+                    {
+                        fireMeterPhase = 1;
+                        fireMeterProgress = 1f - (rc.AimReadyTick - Tick) / (float)rspec.AimTicks;
+                    }
+                    else if (Tick < rc.NextActionTick)
+                    {
+                        long cd = rc.BurstRemaining > 0 ? rspec.ShotCooldownTicks : rspec.CycleCooldownTicks;
+                        if (cd > 0)
+                        {
+                            fireMeterPhase = 2;
+                            fireMeterProgress = 1f - (rc.NextActionTick - Tick) / (float)cd;
+                        }
+                    }
+                    fireMeterProgress = Math.Clamp(fireMeterProgress, 0f, 1f);
                 }
             }
             // No active firing stance but crouched by a sandbag → show the
@@ -1487,6 +1509,7 @@ public sealed class SimRuntime
                 hasRanged, rangedMag, rangedMagSize, rangedMode, rangedModes,
                 fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea,
                 coverStance, leaning, peekX, peekY, rangedHasAmmo,
+                fireMeterPhase, fireMeterProgress,
                 ent.HasComponent<Enemy>(),
                 (byte)(ent.HasComponent<EnemyBrain>() ? ent.GetComponent<EnemyBrain>().Goal : EnemyGoalKind.None),
                 aimHit);

@@ -211,6 +211,10 @@ public readonly record struct DummyState(
     float PeekY,
     // Has rounds in the mag OR compatible ammo in inventory to reload with.
     bool RangedHasAmmo,
+    // Firing pie meter: 0 = none, 1 = aiming, 2 = shot/burst cooldown; Progress
+    // 0..1 fills the wedge.
+    byte FireMeterPhase,
+    float FireMeterProgress,
     // Hostile — drawn with a red tint so it reads as an enemy, not a colonist.
     bool IsEnemy,
     // Current enemy goal (EnemyGoalKind value) for the overhead debug label.

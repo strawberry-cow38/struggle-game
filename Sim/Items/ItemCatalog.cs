@@ -61,7 +61,9 @@ public sealed class RangedSpec
     public float RecoilPerShot;        // degrees added to the cone each shot
     public float RecoilRecoverPerSec;  // degrees the cone settles per second
     public float MaxRecoilDegrees;     // recoil cap
-    public long WarmupTicks;           // aim time before a burst's first shot
+    public long WarmupTicks;           // (legacy) aim time before a burst's first shot
+    public long AimTicks;              // PER-TARGET aim: spot-to-first-shot delay,
+                                       // reset on target change / lost LoS / reload
     public long ShotCooldownTicks;     // between shots inside a burst / auto
     public long CycleCooldownTicks;    // between bursts (and between single shots)
     public long ReloadTicks;           // mag refill time
@@ -226,9 +228,10 @@ public static class ItemCatalog
                 RecoilRecoverPerSec = 9.0f,
                 MaxRecoilDegrees = 7.0f,
                 WarmupTicks = 12,
+                AimTicks = 54,   // 0.9s spot-to-first-shot (per target)
                 // ~720 rpm cyclic = a shot every ~5 ticks at 60 Hz.
                 ShotCooldownTicks = 5,
-                CycleCooldownTicks = 8,
+                CycleCooldownTicks = 24, // 0.4s between semi shots / bursts
                 ReloadTicks = 120,
             });
 

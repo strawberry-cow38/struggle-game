@@ -728,6 +728,9 @@ public partial class WorldRenderer : Node2D
                     // Hunkered-in-cover cue: a low shield arc beneath the pawn.
                     DrawArc(center, bodyR + 3f, Mathf.Pi * 0.15f, Mathf.Pi * 0.85f, 16, CoverCrouchColor, 2.5f, antialiased: true);
                 }
+                if (d.FireMeterPhase != 0)
+                    DrawFireMeter(center - new Vector2(0f, radius + PixelsPerTile * 0.28f),
+                        d.FireMeterProgress, d.FireMeterPhase == 1 ? AimMeterColor : CooldownMeterColor);
                 // Facing arrow: a small triangle on the rim pointing the
                 // way the colonist last moved.
                 {
@@ -860,6 +863,30 @@ public partial class WorldRenderer : Node2D
     private const int SleepZFontSize = 26;
     private const float SleepZCycleMs = 1500f;
     private static readonly Color SleepZColor = new(0.85f, 0.95f, 1f, 1f);
+
+    // Firing pie meter: a filled wedge growing clockwise from the top as the
+    // aim (amber) or shot/burst cooldown (cyan) fills 0..1.
+    private static readonly Color AimMeterColor = new(1f, 0.82f, 0.3f, 0.85f);
+    private static readonly Color CooldownMeterColor = new(0.45f, 0.85f, 1f, 0.85f);
+    private static readonly Color MeterBgColor = new(0f, 0f, 0f, 0.35f);
+    private readonly Vector2[] _pieBuf = new Vector2[26]; // center + 24 arc pts + close
+
+    private void DrawFireMeter(Vector2 at, float progress, Color col)
+    {
+        progress = Mathf.Clamp(progress, 0f, 1f);
+        float r = PixelsPerTile * 0.16f;
+        DrawCircle(at, r, MeterBgColor); // faint backing disc
+        if (progress <= 0f) return;
+        const int segs = 24; // fixed → reuse _pieBuf (length segs+2), no per-frame alloc
+        _pieBuf[0] = at;
+        float start = -Mathf.Pi / 2f; // top
+        for (int s = 0; s <= segs; s++)
+        {
+            float a = start + progress * Mathf.Tau * (s / (float)segs);
+            _pieBuf[s + 1] = at + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * r;
+        }
+        DrawColoredPolygon(_pieBuf, col);
+    }
 
     private void DrawSleepZs(Font font, Vector2 center, float radius)
     {

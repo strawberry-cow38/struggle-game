@@ -49,6 +49,44 @@ public class RangedTests
     }
 
     [Fact]
+    public void AimDelay_NoShotUntilAimTimeElapses()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, target) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        sim.Store.GetEntityById(target).AddComponent(new Drafted());
+        ArmWithRifle(sim, shooter, ItemCatalog.RifleAmmoFmj, 60);
+        sim.Step(SimConstants.TickSeconds); sim.Step(SimConstants.TickSeconds);
+
+        // Preload the mag so the reload delay doesn't muddy the aim window.
+        var e = sim.Store.GetEntityById(shooter);
+        { ref var rc = ref e.GetComponent<RangedCombat>(); rc.MagCount = 30; rc.LoadedAmmoPath = ItemCatalog.RifleAmmoFmj.FullPath; }
+        SetPos(sim, shooter, 20.5f, 20.5f); SetPos(sim, target, 24.5f, 20.5f);
+        sim.SetFireTarget(shooter, target);
+
+        int Projectiles() { int n = 0; sim.Store.Query<Projectile>().ForEachEntity((ref Projectile _, Entity _) => n++); return n; }
+
+        // M16 aim = 54 ticks; within the aim window (40 ticks) nothing fires.
+        for (int i = 0; i < 40; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f); SetPos(sim, target, 24.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+        }
+        Assert.Equal(0, Projectiles());
+
+        // Past the aim time it opens fire.
+        bool fired = false;
+        for (int i = 0; i < 120 && !fired; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f); SetPos(sim, target, 24.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+            if (Projectiles() > 0) fired = true;
+        }
+        Assert.True(fired, "should fire once the aim time elapses");
+    }
+
+    [Fact]
     public void ReloadCancelledByMoveOrder_GrantsNoAmmo()
     {
         var sim = new SimRuntime();

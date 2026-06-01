@@ -2577,15 +2577,20 @@ public sealed class DummyController
             return;
         }
 
-        if (_tick < rc.NextActionTick) return;
+        // Aiming: a per-target spot-to-fire delay. (Re)start it when the target
+        // changes or after the line was lost for longer than the aim time —
+        // a brief LoS blip (<= AimTicks) keeps the existing aim. This is reached
+        // only on ticks with a clear shot, so LastAimTick tracks continuous LoS.
+        if (rc.AimTargetId != tgt.Id || _tick - rc.LastAimTick > spec.AimTicks)
+            rc.AimReadyTick = _tick + spec.AimTicks;
+        rc.AimTargetId = tgt.Id;
+        rc.LastAimTick = _tick;
+        if (_tick < rc.AimReadyTick) return; // still aiming
+
+        if (_tick < rc.NextActionTick) return; // shot / burst cooldown
 
         if (rc.BurstRemaining <= 0)
-        {
-            // Begin a new burst/cycle: aim for the warmup window first.
-            rc.BurstRemaining = ShotsForMode(rc.Mode, spec);
-            rc.NextActionTick = _tick + spec.WarmupTicks;
-            return;
-        }
+            rc.BurstRemaining = ShotsForMode(rc.Mode, spec); // start a burst (aim already paid)
 
         FireOneShot(entity, tgt, spec, ref rc, pos, tp, dist);
         rc.MagCount--;

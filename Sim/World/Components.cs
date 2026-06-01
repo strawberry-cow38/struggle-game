@@ -749,6 +749,10 @@ public struct RangedCombat : IComponent
     // enemy leaves the engagement envelope so the pawn re-acquires; forced
     // targets hold (the player chose to watch that spot).
     public bool AutoTarget;
+    // ─── Aiming (per-target spot-to-fire delay) ───────────────────────
+    public int AimTargetId;        // target the current aim is locked to
+    public long AimReadyTick;      // earliest tick this pawn may fire (aim done)
+    public long LastAimTick;       // last tick it had a clear shot — gap > AimTicks re-aims
     // ─── Cover stance (phase 7) ───────────────────────────────────────
     public CoverStance Stance;     // None / Tucked / Popped
     public bool Leaning;           // true = lateral wall-lean (7c); false = crouch (7b)
