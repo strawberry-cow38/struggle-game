@@ -192,6 +192,9 @@ public partial class WorldRenderer : Node2D
     private readonly Vector2[] _doorPts = new Vector2[4];
 
     public SimHost? Host { get; set; }
+    // Debug overlay: draw each pawn's projectile hitbox (toggle on P).
+    public bool ShowHitboxes;
+    private static readonly Color HitboxColor = new(1f, 0.2f, 0.9f, 0.9f);
 
     public override void _Ready()
     {
@@ -710,6 +713,16 @@ public partial class WorldRenderer : Node2D
                     bodyR = radius * 0.6f;
                 }
                 DrawCircle(center, bodyR, d.IsEnemy ? EnemyColor : DummyColor);
+                if (ShowHitboxes)
+                {
+                    // Debug (P): the actual projectile hitbox — at the same
+                    // (lean-adjusted) position the sim uses for `center`, with
+                    // the leaning sliver radius. Matches ResolveArcImpact.
+                    bool leanHit = d.CoverStance == 2 && d.Leaning;
+                    float hbR = (leanHit ? Sim.SimConstants.ProjectileHitRadius * Sim.SimConstants.LeanHitFraction
+                                         : Sim.SimConstants.ProjectileHitRadius) * PixelsPerTile;
+                    DrawArc(center, hbR, 0f, Mathf.Tau, 28, HitboxColor, 1.5f, antialiased: true);
+                }
                 if (d.CoverStance == 1)
                 {
                     // Hunkered-in-cover cue: a low shield arc beneath the pawn.

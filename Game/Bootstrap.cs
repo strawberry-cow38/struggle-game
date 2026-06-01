@@ -17,6 +17,7 @@ public partial class Bootstrap : Node2D
     private SimHost? _host;
     private readonly ToolService _tools = new();
     private UI.MainMenuPanel? _menu;
+    private WorldRenderer? _renderer;
 
     public override void _Ready()
     {
@@ -40,6 +41,7 @@ public partial class Bootstrap : Node2D
         AddVoidBackground();
 
         var renderer = new WorldRenderer { Host = _host, Name = "WorldRenderer" };
+        _renderer = renderer;
         AddChild(renderer);
 
         var wallDesignator = new WallDesignator { Host = _host, Tools = _tools, Name = "WallDesignator" };
@@ -281,6 +283,13 @@ public partial class Bootstrap : Node2D
             case Key.Key2: _host.SetTickHz(180); _host.SetPaused(false); break;
             case Key.Key3: _host.SetTickHz(360); _host.SetPaused(false); break;
             case Key.Key4: _host.SetTickHz(720); _host.SetPaused(false); break;
+            case Key.P:
+                if (_renderer is not null)
+                {
+                    _renderer.ShowHitboxes = !_renderer.ShowHitboxes;
+                    GD.Print(_renderer.ShowHitboxes ? "Hitboxes ON" : "Hitboxes OFF");
+                }
+                break;
             case Key.R:
             {
                 var pawnIds = _host.SelectedDummyIds;

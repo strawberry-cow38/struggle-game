@@ -4452,10 +4452,8 @@ public sealed class SimRuntime
     }
 
     // Per-bullet hit radius around a pawn (tiles).
-    private const float ProjectileHitRadius = 0.45f;
-    // A leaning pawn only pokes a sliver out past cover — shrink its hit radius
-    // so rounds miss it more often (reduced chance to be hit while peeking).
-    private const float LeanHitFraction = 0.5f;
+    private const float ProjectileHitRadius = SimConstants.ProjectileHitRadius;
+    private const float LeanHitFraction = SimConstants.LeanHitFraction;
     private readonly List<(int Id, float X, float Y, float BodyH, float HitR)> _projPawns = new();
 
     // Animate the cosmetic tracers. The hit was already resolved at fire time

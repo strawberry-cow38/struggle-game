@@ -48,6 +48,10 @@ public static class SimConstants
     // dark target (light 0) gets the full bonus and a fully lit one (light 1)
     // none. Drives both live fire (FireOneShot) and the hover hit-chance.
     public const float DarknessSpreadBonus = 1.5f;
+    // Per-bullet hit radius around a pawn (tiles), and the fraction of it a
+    // popped-out leaning pawn presents (a thin peeking sliver — harder to hit).
+    public const float ProjectileHitRadius = 0.45f;
+    public const float LeanHitFraction = 0.5f;
 
     // Inventory caps for a colonist. Either one being exceeded stops them
     // adding more to their carry. Both default to 75 so a single wood
