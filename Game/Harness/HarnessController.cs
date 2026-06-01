@@ -629,6 +629,36 @@ public partial class HarnessController : Node2D
                 _schedule.Add((0.6, h => h.SetupEnemyDemo(c - 9, c, c + 9, c), "spawn defender + hunting enemy"));
                 _schedule.Add((24.0, h => h.Finish("enemy-wall complete"), "finish"));
                 break;
+            case "enemy-cover":
+                // Cover-seeking showcase: a SANDBAG line between defender + the
+                // hostile. The enemy scores a cell tucked behind a sandbag
+                // (sandbag toward the threat) as low-exposure, posts up there
+                // CROUCHED, and fires over the bags at the defender — clean
+                // cover, no wall-peek lean.
+                if (MovieMode)
+                {
+                    _screenshotEverySec = double.PositiveInfinity;
+                }
+                else
+                {
+                    _screenshotEverySec = 1.0 / 60.0;
+                    _screenshotScale = 1.0f;
+                }
+                _warmupSec = 2.0;
+                _manualSim = true;
+                _schedule.Add((0.1, h => h.RemoveLowest(), "remove default 1"));
+                _schedule.Add((0.15, h => h.RemoveLowest(), "remove default 2"));
+                _schedule.Add((0.2, h => h.RemoveLowest(), "remove default 3"));
+                _schedule.Add((0.3, h => h.SetCameraZoom(0.9f), "zoom out"));
+                // 7-tile vertical sandbag line at x=c between defender + enemy.
+                for (int sy = c - 3; sy <= c + 3; sy++)
+                {
+                    int y = sy;
+                    _schedule.Add((0.4, h => h.InstantSandbag(c, y), $"sandbag y={y}"));
+                }
+                _schedule.Add((0.6, h => h.SetupEnemyDemo(c - 9, c, c + 9, c), "spawn defender + hunting enemy"));
+                _schedule.Add((24.0, h => h.Finish("enemy-cover complete"), "finish"));
+                break;
             case "stress":
                 for (int r = 2; r <= 6; r++)
                 {
@@ -753,6 +783,11 @@ public partial class HarnessController : Node2D
     private void InstantWall(int x, int y)
     {
         Host.QueueCommand(new InstantPlaceWallCommand(new TilePos(x, y)));
+    }
+
+    private void InstantSandbag(int x, int y)
+    {
+        Host.QueueCommand(new InstantPlaceSandbagCommand(new TilePos(x, y)));
     }
 
     private void InstantDoor(int x, int y)

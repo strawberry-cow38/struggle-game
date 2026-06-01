@@ -1812,6 +1812,10 @@ public sealed class DummyController
 
         ref var brain = ref entity.GetComponent<EnemyBrain>();
 
+        // Crouch when hugging a sandbag (same as a drafted colonist) so the
+        // lowered hitbox + crouch visual apply while firing over cover.
+        w.Crouched = IsAdjacentToSandbag(here);
+
         // Per-tick ranged housekeeping (the colonist Plan does this for drafted
         // pawns; enemies skip that path, so do it here): finish reloads, settle
         // recoil, clear the stance until the fire step re-asserts it.
@@ -1954,8 +1958,7 @@ public sealed class DummyController
         float dx = target.X - cell.X, dy = target.Y - cell.Y;
         float dist = MathF.Sqrt(dx * dx + dy * dy);
         if (dist > spec.Range || dist < SimConstants.RangedMinFireRange) return false;
-        bool directLos = LosClear?.Invoke(cell.X, cell.Y, target.X, target.Y) ?? true;
-        return directLos || TryFindLeanCell(view, cell, target, out _);
+        return LosClear?.Invoke(cell.X, cell.Y, target.X, target.Y) ?? true; // direct line only
     }
 
     // Lowest-exposure firing cell near the target: covered cells (a wall/
@@ -1977,8 +1980,13 @@ public sealed class DummyController
             float tdx = target.X - cx, tdy = target.Y - cy;
             float dist = MathF.Sqrt(tdx * tdx + tdy * tdy);
             if (dist > spec.Range || dist < SimConstants.RangedMinFireRange) continue;
+            // Require a CLEAR direct line — the AI never chooses a full-wall
+            // peek (that forces an unnatural perpendicular lean). Sandbags
+            // don't block LoS, so a cell behind one is both covered AND has a
+            // direct shot over it (crouch cover). Walls block LoS, so cells
+            // behind them are excluded → the pawn flanks around for a clean shot.
             bool directLos = LosClear?.Invoke(cx, cy, target.X, target.Y) ?? true;
-            if (!directLos && !TryFindLeanCell(view, c, target, out _)) continue;
+            if (!directLos) continue;
             float exposure = CoverToward(c, target, view) ? 0f : EnemyOpenExposurePenalty;
             float travel = Math.Abs(cx - here.X) + Math.Abs(cy - here.Y);
             float score = exposure + travel;
