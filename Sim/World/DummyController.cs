@@ -2678,7 +2678,7 @@ public sealed class DummyController
         int dx = ttile.X - here.X, dy = ttile.Y - here.Y;
         if (dx == 0 && dy == 0) return false;
 
-        // Only lean when actually hugging a wall (a genuine corner peek) — not
+        // Only lean when actually hugging a wall (a genuine cover peek) — not
         // sidestepping in the open.
         bool hugging = view.GetWall(here.X + 1, here.Y) != WallType.None
             || view.GetWall(here.X - 1, here.Y) != WallType.None
@@ -2686,67 +2686,40 @@ public sealed class DummyController
             || view.GetWall(here.X, here.Y - 1) != WallType.None;
         if (!hugging) return false;
 
-        // Firing axis = dominant direction to the target; the legit peek steps
-        // PERPENDICULAR to it and fires roughly along it (≤45° off). Static perp
-        // tables avoid per-tick allocations (this runs every tick per shooter).
-        float axisX, axisY;
-        (int dx, int dy)[] perp;
-        if (Math.Abs(dx) >= Math.Abs(dy))
-        {
-            axisX = Math.Sign(dx); axisY = 0f;
-            perp = _perpVertical;
-        }
-        else
-        {
-            axisX = 0f; axisY = Math.Sign(dy);
-            perp = _perpHorizontal;
-        }
-
+        // Consider EVERY adjacent cell (all 4 faces + 4 corners) as a peek
+        // candidate, not just one axis — at a corner, peeking either way is
+        // valid. A candidate counts if: it's open, the shot from it has clear
+        // LoS to the target (the body lacks it — callers only lean when the
+        // direct shot is blocked), and the peek step isn't AWAY from the target
+        // (the one rule that kills the "lean backward" jank). Pick the peek that
+        // ends up closest to the target (the most forward shoulder-out).
+        float toLen = MathF.Sqrt((float)(dx * dx + dy * dy));
         float best = float.MaxValue; bool found = false;
-        foreach (var (px, py) in perp)
+        foreach (var (px, py) in _leanNeighbors)
         {
             int cx = here.X + px, cy = here.Y + py;
             if (!view.InBounds(cx, cy)) continue;
             if (view.GetWall(cx, cy) != WallType.None) continue; // can't peek into a wall
-            // The peek cell must OPEN a lane the body lacks (LoS clear from it).
-            if (!LosClear(cx, cy, ttile.X, ttile.Y)) continue;
-            // Only peek TOWARD the target's side, never away from it. This is
-            // the "register the wall face + edge out toward the enemy" rule:
-            // a step whose direction points away from the target (e.g. north
-            // when the target is south/west) is the unnatural perpendicular
-            // lean — reject it. With no toward-target peek the pawn won't lean
-            // at all (the caller flanks instead).
-            // Allow a peek that's toward the target OR square-on perpendicular
-            // (head-on target → dot 0, the normal corner peek). Reject only
-            // peeks pointing AWAY from the target (dot clearly negative) — that
-            // was the "lean north to shoot a south/west target" jank.
-            float toTgtX = ttile.X - here.X, toTgtY = ttile.Y - here.Y;
-            float toLen = MathF.Sqrt(toTgtX * toTgtX + toTgtY * toTgtY);
+            // Reject a step pointing away from the target (dot clearly < 0);
+            // a square-on perpendicular peek (dot ~0) is allowed.
             float stepLen = MathF.Sqrt((float)(px * px + py * py));
             if (toLen > 1e-4f && stepLen > 1e-4f
-                && ((px / stepLen) * (toTgtX / toLen) + (py / stepLen) * (toTgtY / toLen)) < -0.05f)
+                && ((px / stepLen) * (dx / toLen) + (py / stepLen) * (dy / toLen)) < -0.05f)
                 continue;
-            // Wedge clamp: the shot must run more ALONG the wall (cover axis)
-            // than along the lean step. Near-axis = genuine peek; swinging
-            // toward perpendicular = the pawn stepped fully into the open.
+            // The peek must open a clear lane the body lacks.
+            if (!LosClear(cx, cy, ttile.X, ttile.Y)) continue;
             float ex = ttile.X - cx, ey = ttile.Y - cy;
             float d2 = ex * ex + ey * ey;
-            float elen = MathF.Sqrt(d2);
-            if (elen < 1e-4f) continue;
-            float dot = (ex / elen) * axisX + (ey / elen) * axisY;
-            if (dot < LeanMaxOffAxisCos) continue;
             if (d2 < best) { best = d2; leanCell = new TilePos(cx, cy); found = true; }
         }
         return found;
     }
 
-    private static readonly (int dx, int dy)[] _perpVertical = { (0, 1), (0, -1) };
-    private static readonly (int dx, int dy)[] _perpHorizontal = { (1, 0), (-1, 0) };
-
-    // Cos of the widest angle a lean shot may sit off the cover axis. 0.707 =
-    // 45°: the shot must run more along the wall than along the lean step, else
-    // the pawn has stepped into the open (full exposure) rather than peeked.
-    private const float LeanMaxOffAxisCos = 0.707f;
+    // All 8 neighbours — every wall face + corner is a candidate peek.
+    private static readonly (int dx, int dy)[] _leanNeighbors =
+    {
+        (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1),
+    };
 
     // Undrafted idle behavior: keep the equipped ranged weapon's magazine
     // topped off, walking to fetch ammo from a pile when none is carried.
