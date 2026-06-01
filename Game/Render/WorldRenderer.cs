@@ -163,6 +163,7 @@ public partial class WorldRenderer : Node2D
         (byte)EnemyGoalKind.Engage => "Engaging",
         (byte)EnemyGoalKind.Retreat => "Retreating",
         (byte)EnemyGoalKind.Advance => "Advancing",
+        (byte)EnemyGoalKind.Assault => "Assaulting",
         (byte)EnemyGoalKind.Hold => "Holding",
         (byte)EnemyGoalKind.Exfil => "Exfil",
         _ => "Idle",

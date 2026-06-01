@@ -153,6 +153,32 @@ public class EnemyAiTests
     }
 
     [Fact]
+    public void Raid_AssaultSteersTowardColonyCentroid()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+
+        // Cluster every colonist at a known far point so the centroid is fixed.
+        sim.Store.Query<WorldPos, Wanderer>().ForEachEntity((ref WorldPos p, ref Wanderer _, Entity e) =>
+        {
+            if (!e.HasComponent<Enemy>()) { p.X = 200.5f; p.Y = 200.5f; }
+        });
+
+        var raider = sim.SpawnEnemy(20, 20, SimRuntime.RaidMission());
+        SetPos(sim, raider.Id, 20.5f, 20.5f);
+
+        for (int i = 0; i < 20; i++) sim.Step(SimConstants.TickSeconds);
+
+        ref var brain = ref raider.GetComponent<EnemyBrain>();
+        // Far out of sight (centroid ~254 tiles away) → not Engage; the Assault
+        // goal steers toward the colony centroid (~200,200), NOT map centre 128.
+        Assert.Equal(EnemyGoalKind.Assault, brain.Goal);
+        Assert.True(brain.HasGoalTile);
+        Assert.True(System.Math.Abs(brain.GoalTileX - 200) <= 5 && System.Math.Abs(brain.GoalTileY - 200) <= 5,
+            $"assault goal tile {brain.GoalTileX},{brain.GoalTileY} should aim at the colony centroid ~200,200");
+    }
+
+    [Fact]
     public void Raid_SpawnsGroupAndRaisesDismissableNotification()
     {
         var sim = new SimRuntime();

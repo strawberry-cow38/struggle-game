@@ -6443,7 +6443,7 @@ public sealed class SimRuntime
                 _ => (s, n - 2, "south"),
             };
             from = label;
-            SpawnEnemy(sx, sy); // null mission → advance into the colony + hunt
+            SpawnEnemy(sx, sy, RaidMission()); // assault the colony, then exfil when it's cleared
             if (k == count - 1)
                 RaiseNotification("Raid!", $"{count} raiders are attacking from the {from}.");
         }
@@ -6455,6 +6455,15 @@ public sealed class SimRuntime
     // A demonstrable raid arc: march to map centre, hold the ground a few
     // seconds, then exfil off the nearest edge (despawning). Combat reflexes
     // still interrupt each step. Shows the full mission lifecycle.
+    // A raid member's mission: hunt the colony down, then leave the map once
+    // it's cleared. The Assault step steers toward the living-colonist centroid
+    // each think (Engage interrupts on sight); it completes when none remain.
+    public static List<EnemyObjective> RaidMission() => new()
+    {
+        new EnemyObjective(EnemyObjectiveKind.Assault, 0, 0, 0),
+        new EnemyObjective(EnemyObjectiveKind.Exfil, 0, 0, 0),
+    };
+
     public static List<EnemyObjective> RaiderMission()
     {
         int c = SimConstants.MapSize / 2;

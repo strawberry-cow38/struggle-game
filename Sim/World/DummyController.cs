@@ -1771,7 +1771,7 @@ public sealed class DummyController
     // cooldowns, run the warmup + burst cadence, emit a bullet per shot.
     // ─── Enemy AI (goal-oriented hostile brain) ──────────────────────────
     private const long EnemyThinkInterval = 15;     // ticks between re-perceive/re-plan
-    private const float EnemySightRange = 28f;        // tiles
+    private const float EnemySightRange = 28f;        // tiles — FLOOR; actual sight = max(this, weapon range)
     private const float EnemyRetreatBloodThreshold = 0.45f;
     private const float EnemyRetreatMovingThreshold = 0.40f;
     private const int EnemyFleeDist = 12;             // tiles toward the edge when retreating
@@ -1848,7 +1848,13 @@ public sealed class DummyController
             bool hurt = entity.HasComponent<Health>()
                 && (entity.GetComponent<Health>().BloodLevel < EnemyRetreatBloodThreshold
                     || entity.GetComponent<Health>().Moving < EnemyRetreatMovingThreshold);
-            brain.TargetEntityId = PerceiveNearestColonist(here);
+            // See at least as far as the weapon can shoot — a 50-tile rifle
+            // that only perceives at 28 would close to within a third of its
+            // reach before engaging. Floor at the base sight for short/no arms.
+            float sight = EnemySightRange;
+            if (TryGetRangedWeapon(entity, out var wdefSight))
+                sight = MathF.Max(EnemySightRange, wdefSight.Ranged!.Range);
+            brain.TargetEntityId = PerceiveNearestColonist(here, sight);
             // Combat reflexes (Retreat when hurt, Engage on sight) INTERRUPT the
             // mission; otherwise resolve the current objective into a goal,
             // advancing the queue as steps complete.
@@ -1874,7 +1880,8 @@ public sealed class DummyController
                 TickRetreat(ref path, here, store, view, brain.TargetEntityId);
                 break;
             case EnemyGoalKind.Advance:
-                TickAdvance(ref path, here, in brain);
+            case EnemyGoalKind.Assault:
+                TickAdvance(ref path, here, in brain); // both march toward GoalTile
                 break;
             case EnemyGoalKind.Hold:
                 ClearPath(ref path); // posted up — stand watch (Engage interrupts if a target appears)
@@ -1933,6 +1940,14 @@ public sealed class DummyController
                 case EnemyObjectiveKind.Exfil:
                     return EnemyGoalKind.Exfil;
 
+                case EnemyObjectiveKind.Assault:
+                    // Hunt the colony: steer toward the living-colonist centroid
+                    // (recomputed each think so we chase them as they move). The
+                    // assault is done once no conscious colonists remain.
+                    if (!TryColonyAnchor(out var anchor)) { AdvanceMission(ref brain); continue; }
+                    brain.GoalTileX = anchor.X; brain.GoalTileY = anchor.Y; brain.HasGoalTile = true;
+                    return EnemyGoalKind.Assault;
+
                 default:
                     AdvanceMission(ref brain); continue;
             }
@@ -1989,11 +2004,23 @@ public sealed class DummyController
         EnsurePathTo(ref path, here, dest);
     }
 
-    // Nearest conscious non-enemy pawn within sight (squared compare), or 0.
-    private int PerceiveNearestColonist(TilePos here)
+    // Centroid of all living (conscious, non-enemy) colonists — the colony mass
+    // a raid pushes toward. False when none remain (raid won).
+    private bool TryColonyAnchor(out TilePos anchor)
+    {
+        anchor = default;
+        if (_colonistTargets.Count == 0) return false;
+        float sx = 0f, sy = 0f;
+        foreach (var t in _colonistTargets) { sx += t.X; sy += t.Y; }
+        anchor = new TilePos((int)(sx / _colonistTargets.Count), (int)(sy / _colonistTargets.Count));
+        return true;
+    }
+
+    // Nearest conscious non-enemy pawn within `sight` tiles (squared compare), or 0.
+    private int PerceiveNearestColonist(TilePos here, float sight)
     {
         int best = 0;
-        float bestD2 = EnemySightRange * EnemySightRange;
+        float bestD2 = sight * sight;
         float hx = here.X + 0.5f, hy = here.Y + 0.5f;
         foreach (var t in _colonistTargets)
         {

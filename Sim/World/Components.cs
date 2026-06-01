@@ -91,6 +91,7 @@ public enum EnemyGoalKind : byte
     Advance,  // no target — march toward the goal destination (default map center)
     Hold,     // posted up at the objective tile, standing watch (mission Hold step)
     Exfil,    // mission done / ordered out — flee to the nearest edge and despawn
+    Assault,  // push toward the colony (living-colonist centroid), hunting it down
 }
 
 // One step of an enemy's MISSION — the strategic queue it works through when
@@ -104,6 +105,7 @@ public enum EnemyObjectiveKind : byte
     Hold,       // hold (TileX,TileY) for Param ticks (0 = forever); completes when elapsed
     Patrol,     // loop marker — restart the mission from the top
     Exfil,      // leave the map (flee to nearest edge + despawn)
+    Assault,    // hunt the colony (push to the living-colonist centroid); completes when none remain
     // Future: DestroyBuilding, Steal — add a kind + a resolver branch.
 }
 
