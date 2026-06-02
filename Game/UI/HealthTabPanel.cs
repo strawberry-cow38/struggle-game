@@ -44,7 +44,7 @@ public partial class HealthTabPanel : CanvasLayer
     private Panel _root = null!;
     private Label _painValue = null!;
     private Label _bleedValue = null!;
-    private Label _deathLabel = null!;
+    private Label _deathValue = null!;
     private readonly Dictionary<string, Label> _capValues = new();
     private VBoxContainer _conditionsCol = null!;
     private Label _conditionsEmpty = null!;
@@ -107,10 +107,7 @@ public partial class HealthTabPanel : CanvasLayer
 
         leftCol.AddChild(BuildRow("Pain", out _painValue));
         leftCol.AddChild(BuildRow("Bleeding", out _bleedValue));
-        _deathLabel = new Label { Text = "Death in: N/A", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        _deathLabel.AddThemeFontSizeOverride("font_size", 14);
-        _deathLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.45f, 0.40f));
-        leftCol.AddChild(_deathLabel);
+        leftCol.AddChild(BuildRow("Death in", out _deathValue));
         leftCol.AddChild(new HSeparator());
         foreach (var (name, _) in Caps)
         {
@@ -174,13 +171,13 @@ public partial class HealthTabPanel : CanvasLayer
         {
             double gameHours = hs.BloodLevel * SimRuntime.SimSecondsPerRealSecond / (hs.BleedRate * 3600.0);
             double realSec = hs.BloodLevel / (hs.BleedRate * SimConstants.TickSeconds * System.Math.Max(1, Host.TickHz));
-            _deathLabel.Text = $"Death in: {gameHours:0.0}h ({FormatDuration(realSec)})";
-            _deathLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.45f, 0.40f));
+            _deathValue.Text = $"{gameHours:0.0}h ({FormatDuration(realSec)})";
+            _deathValue.AddThemeColorOverride("font_color", new Color(0.95f, 0.45f, 0.40f));
         }
         else
         {
-            _deathLabel.Text = "Death in: N/A";
-            _deathLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 1f));
+            _deathValue.Text = "N/A";
+            _deathValue.AddThemeColorOverride("font_color", new Color(1f, 1f, 1f));
         }
 
         foreach (var (name, real) in Caps)
