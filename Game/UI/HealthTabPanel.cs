@@ -188,14 +188,14 @@ public partial class HealthTabPanel : CanvasLayer
             lbl.AddThemeColorOverride("font_color", CapColor(v));
         }
 
-        // Conditions (rebuild only on change).
+        // Conditions (rebuild only on change), grouped by part+kind.
         string sig = InjurySig(hs.Injuries);
         if (sig != _lastInjurySig)
         {
             _lastInjurySig = sig;
             foreach (var c in _conditionsCol.GetChildren()) c.QueueFree();
             _conditionsEmpty.Visible = hs.Injuries.Length == 0;
-            foreach (var inj in hs.Injuries) _conditionsCol.AddChild(BuildConditionRow(inj));
+            foreach (var g in GroupInjuries(hs.Injuries)) _conditionsCol.AddChild(BuildConditionRow(g));
         }
 
         Recenter();
@@ -257,22 +257,40 @@ public partial class HealthTabPanel : CanvasLayer
         return row;
     }
 
-    private static Label BuildConditionRow(InjuryState inj)
+    private readonly record struct InjuryGroup(string PartId, ConditionKind Kind, int Count, float MaxSeverity, string? Caliber, bool Lodged);
+
+    private static List<InjuryGroup> GroupInjuries(InjuryState[] injuries)
     {
-        string part = BodyTree.TryGet(inj.PartId, out var def) ? def.DisplayName : inj.PartId;
-        string detail = inj.Kind switch
+        var map = new Dictionary<(string, ConditionKind, string?, bool), (int n, float maxSev)>();
+        var order = new List<(string, ConditionKind, string?, bool)>();
+        foreach (var inj in injuries)
+        {
+            var key = (inj.PartId, inj.Kind, inj.Caliber, inj.Lodged);
+            if (map.TryGetValue(key, out var cur)) map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity));
+            else { map[key] = (1, inj.Severity); order.Add(key); }
+        }
+        var list = new List<InjuryGroup>();
+        foreach (var key in order) { var v = map[key]; list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4)); }
+        return list;
+    }
+
+    private static Label BuildConditionRow(InjuryGroup g)
+    {
+        string part = BodyTree.TryGet(g.PartId, out var def) ? def.DisplayName : g.PartId;
+        string detail = g.Kind switch
         {
             ConditionKind.Missing => "missing",
             ConditionKind.Scar => "scar",
-            ConditionKind.Gunshot when inj.Caliber is not null =>
-                $"gunshot {inj.Severity:0} — {inj.Caliber}, {(inj.Lodged ? "lodged" : "through")}",
-            _ => $"{inj.Kind.ToString().ToLower()} {inj.Severity:0}",
+            ConditionKind.Gunshot when g.Caliber is not null =>
+                $"gunshot {g.MaxSeverity:0} dmg — {g.Caliber}, {(g.Lodged ? "lodged" : "through & through")}",
+            _ => $"{g.Kind.ToString().ToLower()} {g.MaxSeverity:0} dmg",
         };
-        var line = new Label { Text = $"{part}: {detail}" };
-        line.AddThemeFontSizeOverride("font_size", 13);
-        Color c = inj.Kind == ConditionKind.Missing
+        string countTag = g.Count > 1 ? $"  x{g.Count}" : "";
+        var line = new Label { Text = $"{part}: {detail}{countTag}" };
+        line.AddThemeFontSizeOverride("font_size", 14);
+        Color c = g.Kind == ConditionKind.Missing
             ? new Color(1f, 0.4f, 0.4f)
-            : inj.Severity >= 12f ? new Color(1f, 0.6f, 0.3f) : new Color(0.9f, 0.85f, 0.6f);
+            : g.MaxSeverity >= 12f ? new Color(1f, 0.6f, 0.3f) : new Color(0.9f, 0.85f, 0.6f);
         line.AddThemeColorOverride("font_color", c);
         return line;
     }
@@ -280,7 +298,7 @@ public partial class HealthTabPanel : CanvasLayer
     private static string InjurySig(InjuryState[] injuries)
     {
         var sb = new System.Text.StringBuilder();
-        foreach (var i in injuries) sb.Append(i.PartId).Append((int)i.Kind).Append((int)(i.Severity * 10)).Append(';');
+        foreach (var i in injuries) sb.Append(i.PartId).Append((int)i.Kind).Append((int)(i.Severity * 10)).Append(i.Caliber).Append(i.Lodged ? 'L' : 'T').Append(';');
         return sb.ToString();
     }
 
