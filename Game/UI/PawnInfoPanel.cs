@@ -29,29 +29,15 @@ public partial class PawnInfoPanel : CanvasLayer
     private ProgressBar _healthBar = null!;
     private Label _healthPct = null!;
     private Label _bioLabel = null!;
-    private Label _capLabel = null!;
     private Label _sleepLabel = null!;
     private ProgressBar _sleepBar = null!;
     private Label _sleepPct = null!;
     private Label _recLabel = null!;
     private ProgressBar _recBar = null!;
     private Label _recPct = null!;
-    private VBoxContainer _invList = null!;
-    private Label _invEmptyLabel = null!;
-    private VBoxContainer _equipList = null!;
-    private Label _equipEmptyLabel = null!;
-    private VBoxContainer _injuryList = null!;
-    private Label _injuryEmptyLabel = null!;
-    private string _lastInjurySig = "";
 
     private int _shownPawnId = -1;
     private long _lastSnapshotTick = -1;
-    // Signature of the inventory/equipped/carrying rows last built. Rows
-    // hold clickable buttons; rebuilding them every tick (Render runs per
-    // snapshot tick) would QueueFree a button mid-click and swallow the
-    // press. So rebuild rows only when this signature changes; the live
-    // labels/bars still refresh every tick.
-    private string _lastRowSig = "";
 
     public override void _Ready()
     {
@@ -144,52 +130,6 @@ public partial class PawnInfoPanel : CanvasLayer
         midRow.AddChild(bioCol);
 
         vbox.AddChild(midRow);
-
-        vbox.AddChild(new HSeparator());
-
-        var healthHeader = new Label { Text = "Health" };
-        healthHeader.AddThemeFontSizeOverride("font_size", 14);
-        vbox.AddChild(healthHeader);
-
-        _injuryList = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        _injuryList.AddThemeConstantOverride("separation", 2);
-        vbox.AddChild(_injuryList);
-
-        _injuryEmptyLabel = new Label { Text = "(no injuries)" };
-        _injuryEmptyLabel.AddThemeFontSizeOverride("font_size", 11);
-        vbox.AddChild(_injuryEmptyLabel);
-
-        vbox.AddChild(new HSeparator());
-
-        var equipHeader = new Label { Text = "Equipped" };
-        equipHeader.AddThemeFontSizeOverride("font_size", 14);
-        vbox.AddChild(equipHeader);
-
-        _equipList = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        _equipList.AddThemeConstantOverride("separation", 4);
-        vbox.AddChild(_equipList);
-
-        _equipEmptyLabel = new Label { Text = "(nothing equipped)" };
-        _equipEmptyLabel.AddThemeFontSizeOverride("font_size", 11);
-        vbox.AddChild(_equipEmptyLabel);
-
-        vbox.AddChild(new HSeparator());
-
-        var invHeader = new Label { Text = "Inventory" };
-        invHeader.AddThemeFontSizeOverride("font_size", 14);
-        vbox.AddChild(invHeader);
-
-        _capLabel = new Label { Text = "" };
-        _capLabel.AddThemeFontSizeOverride("font_size", 11);
-        vbox.AddChild(_capLabel);
-
-        _invList = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        _invList.AddThemeConstantOverride("separation", 4);
-        vbox.AddChild(_invList);
-
-        _invEmptyLabel = new Label { Text = "(empty)" };
-        _invEmptyLabel.AddThemeFontSizeOverride("font_size", 11);
-        vbox.AddChild(_invEmptyLabel);
 
         GetTree().Root.SizeChanged += Reposition;
         CallDeferred(nameof(Reposition));
@@ -291,8 +231,10 @@ public partial class PawnInfoPanel : CanvasLayer
         var p = found.Value;
         _nameLabel.Text = $"Colonist #{p.EntityId}";
 
-        _healthBar.Value = p.Health.OverallHealth;
-        _healthPct.Text = $"{p.Health.OverallHealth * 100f:0}%";
+        float oh = p.Health.OverallHealth;
+        _healthBar.Value = oh;
+        _healthPct.Text = $"{oh * 100f:0}%";
+        StyleBar(_healthBar, HealthColor(oh)); // tint by how low/high health is
 
         _sleepBar.Value = p.SleepLevel;
         _sleepLabel.Text = p.Sleeping ? "Sleep (zzz)" : "Sleep";
@@ -301,281 +243,15 @@ public partial class PawnInfoPanel : CanvasLayer
         _recBar.Value = p.RecreationLevel;
         _recLabel.Text = p.AtRecreationKind is RecreationKind k ? $"Rec ({k})" : "Recreation";
         _recPct.Text = $"{p.RecreationLevel * 100f:0}%";
-
-        _capLabel.Text = $"Carry: {p.CarryWeight:0.#} / {p.MaxCarryWeight:0.#} wt    {p.CarryBulk:0.#} / {p.MaxCarryBulk:0.#} bulk";
-
-        // Health — live labels every tick; the injury list rebuilds only
-        // when its content changes (gated separately from the row sig so
-        // the equip/inventory early-return below doesn't skip it).
-        var hs = p.Health;
-        string injSig = BuildInjurySignature(hs.Injuries);
-        if (injSig != _lastInjurySig || pawnId != _shownPawnId)
-        {
-            _lastInjurySig = injSig;
-            foreach (var child in _injuryList.GetChildren()) child.QueueFree();
-            _injuryEmptyLabel.Visible = hs.Injuries.Length == 0;
-            foreach (var g in GroupInjuries(hs.Injuries)) BuildInjuryRow(g);
-        }
-
-        // Only rebuild the clickable rows when their contents actually
-        // change — see _lastRowSig. Pawn switch forces a rebuild.
-        string sig = BuildRowSignature(p);
-        if (sig == _lastRowSig && pawnId == _shownPawnId) return;
-        _lastRowSig = sig;
-
-        // Equipped section.
-        foreach (var child in _equipList.GetChildren()) child.QueueFree();
-        _equipEmptyLabel.Visible = p.Equipped.Length == 0;
-        foreach (var eq in p.Equipped)
-        {
-            BuildEquippedRow(p.EntityId, eq);
-        }
-
-        // Inventory section: general held stacks + in-transit haul cargo.
-        foreach (var child in _invList.GetChildren()) child.QueueFree();
-        _invEmptyLabel.Visible = p.Held.Length == 0 && p.Inventory.Length == 0;
-        foreach (var stack in p.Held)
-        {
-            BuildHeldRow(p.EntityId, stack);
-        }
-        foreach (var slot in p.Inventory)
-        {
-            BuildSlotRow(p.EntityId, slot);
-        }
     }
 
-    // One panel row = all conditions of the same kind on the same part,
-    // collapsed with a count + the worst severity.
-    private readonly record struct InjuryGroup(
-        string PartId, StruggleGame.Sim.Bodies.ConditionKind Kind, int Count, float MaxSeverity,
-        string? Caliber, bool Lodged);
-
-    // Reused scratch — Render calls these every tick while a pawn is
-    // selected, so fresh Dictionary/List/StringBuilder allocations each tick
-    // were steady garbage. GroupInjuries is called then fully consumed before
-    // the next call, so a single reused result list is safe.
-    private readonly Dictionary<(string, StruggleGame.Sim.Bodies.ConditionKind, string?, bool), (int n, float maxSev)> _injMap = new();
-    private readonly List<(string, StruggleGame.Sim.Bodies.ConditionKind, string?, bool)> _injOrder = new();
-    private readonly List<InjuryGroup> _injGroups = new();
-    private readonly System.Text.StringBuilder _injSigSb = new();
-
-    private List<InjuryGroup> GroupInjuries(InjuryState[] injuries)
+    // Health bar fill: green when high, amber mid, red when low.
+    private static Color HealthColor(float h)
     {
-        var map = _injMap; map.Clear();
-        var order = _injOrder; order.Clear();
-        foreach (var inj in injuries)
-        {
-            var key = (inj.PartId, inj.Kind, inj.Caliber, inj.Lodged);
-            if (map.TryGetValue(key, out var cur))
-                map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity));
-            else { map[key] = (1, inj.Severity); order.Add(key); }
-        }
-        var list = _injGroups; list.Clear();
-        foreach (var key in order) { var v = map[key]; list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4)); }
-        return list;
-    }
-
-    // Compact real-time: "1m05s" / "42s".
-    private string BuildInjurySignature(InjuryState[] injuries)
-    {
-        var sb = _injSigSb; sb.Clear();
-        foreach (var g in GroupInjuries(injuries))
-            sb.Append(g.PartId).Append((int)g.Kind).Append('x').Append(g.Count).Append((int)(g.MaxSeverity * 100))
-              .Append(g.Caliber).Append(g.Lodged ? 'L' : 'T').Append(';');
-        return sb.ToString();
-    }
-
-    private void BuildInjuryRow(InjuryGroup g)
-    {
-        string part = StruggleGame.Sim.Bodies.BodyTree.TryGet(g.PartId, out var def)
-            ? def.DisplayName : g.PartId;
-        string kind = g.Kind.ToString();
-        string detail = g.Kind switch
-        {
-            StruggleGame.Sim.Bodies.ConditionKind.Missing => "missing",
-            StruggleGame.Sim.Bodies.ConditionKind.Scar => "scar",
-            // Gunshots show caliber + whether the round lodged or passed through.
-            StruggleGame.Sim.Bodies.ConditionKind.Gunshot when g.Caliber is not null =>
-                $"gunshot {g.MaxSeverity:0} dmg — {g.Caliber}, {(g.Lodged ? "lodged" : "through & through")}",
-            _ => $"{kind.ToLower()} {g.MaxSeverity:0} dmg",
-        };
-        string countTag = g.Count > 1 ? $" x{g.Count}" : "";
-        var line = new Label { Text = $"{part}: {detail}{countTag}" };
-        line.AddThemeFontSizeOverride("font_size", 11);
-        // Tint by how nasty it is (damage in hit points).
-        Color c = g.Kind == StruggleGame.Sim.Bodies.ConditionKind.Missing
-            ? new Color(1f, 0.4f, 0.4f)
-            : g.MaxSeverity >= 12f ? new Color(1f, 0.6f, 0.3f) : new Color(0.9f, 0.85f, 0.6f);
-        line.AddThemeColorOverride("font_color", c);
-        _injuryList.AddChild(line);
-    }
-
-    private static string BuildRowSignature(DummyState p)
-    {
-        var sb = new System.Text.StringBuilder();
-        foreach (var eq in p.Equipped) sb.Append('E').Append(eq.Index).Append(eq.ItemPath).Append(eq.Count).Append((int)eq.Slot).Append(';');
-        foreach (var h in p.Held) sb.Append('H').Append(h.Index).Append(h.ItemPath).Append(h.Count).Append(';');
-        foreach (var s in p.Inventory) sb.Append('C').Append(s.SlotEntityId).Append(s.ItemPath).Append(s.Count).Append(s.Forbidden ? '1' : '0').Append(';');
-        return sb.ToString();
-    }
-
-    private void BuildEquippedRow(int pawnId, EquippedSlotState eq)
-    {
-        string itemName = ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var def)
-            ? def.DisplayName : eq.ItemPath;
-        float w = def?.Weight ?? 0f;
-        float b = def?.Bulk ?? 0f;
-
-        var row = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        row.AddThemeConstantOverride("separation", 2);
-
-        var line = new Label
-        {
-            Text = $"[{eq.Slot}] {itemName} x{eq.Count}    {w * eq.Count:0.#} wt  {b * eq.Count:0.#} bulk",
-        };
-        line.AddThemeColorOverride("font_color", new Color(0.7f, 0.9f, 1.0f));
-        row.AddChild(line);
-
-        var btns = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        btns.AddThemeConstantOverride("separation", 4);
-
-        int index = eq.Index;
-        var unequipBtn = new Button
-        {
-            Text = "Unequip",
-            CustomMinimumSize = new Vector2(0, 24),
-            FocusMode = Control.FocusModeEnum.None,
-        };
-        unequipBtn.Pressed += () =>
-        {
-            if (Host is null) return;
-            Host.QueueCommand(new ForceUnequipCommand(pawnId, index));
-        };
-        btns.AddChild(unequipBtn);
-
-        var dropBtn = new Button
-        {
-            Text = "Drop",
-            CustomMinimumSize = new Vector2(0, 24),
-            FocusMode = Control.FocusModeEnum.None,
-        };
-        dropBtn.Pressed += () =>
-        {
-            if (Host is null) return;
-            Host.QueueCommand(new DropEquippedCommand(pawnId, index));
-        };
-        btns.AddChild(dropBtn);
-
-        row.AddChild(btns);
-        _equipList.AddChild(row);
-    }
-
-    private void BuildHeldRow(int pawnId, HeldStackState stack)
-    {
-        string itemName = ItemCatalog.ItemsByPath.TryGetValue(stack.ItemPath, out var def)
-            ? def.DisplayName : stack.ItemPath;
-        float w = def?.Weight ?? 0f;
-        float b = def?.Bulk ?? 0f;
-
-        var row = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        row.AddThemeConstantOverride("separation", 2);
-
-        var line = new Label
-        {
-            Text = $"{itemName} x{stack.Count}    {w * stack.Count:0.#} wt  {b * stack.Count:0.#} bulk",
-        };
-        row.AddChild(line);
-
-        int index = stack.Index;
-        var btns = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        btns.AddThemeConstantOverride("separation", 4);
-
-        // Equippable items in the bag get a direct Equip button (no walking).
-        if (def is not null && def.Equippable)
-        {
-            var equipBtn = new Button
-            {
-                Text = "Equip",
-                CustomMinimumSize = new Vector2(0, 24),
-                FocusMode = Control.FocusModeEnum.None,
-            };
-            equipBtn.Pressed += () =>
-            {
-                if (Host is null) return;
-                Host.QueueCommand(new EquipFromInventoryCommand(pawnId, index));
-            };
-            btns.AddChild(equipBtn);
-        }
-
-        var dropBtn = new Button
-        {
-            Text = "Force Drop",
-            CustomMinimumSize = new Vector2(0, 24),
-            FocusMode = Control.FocusModeEnum.None,
-        };
-        dropBtn.Pressed += () =>
-        {
-            if (Host is null) return;
-            Host.QueueCommand(new DropHeldItemCommand(pawnId, index));
-        };
-        btns.AddChild(dropBtn);
-        row.AddChild(btns);
-        _invList.AddChild(row);
-    }
-
-    private void BuildSlotRow(int pawnId, CarriedItemState slot)
-    {
-        string itemName = ItemCatalog.ItemsByPath.TryGetValue(slot.ItemPath, out var def)
-            ? def.DisplayName : slot.ItemPath;
-        float w = def?.Weight ?? 0f;
-        float b = def?.Bulk ?? 0f;
-
-        var row = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        row.AddThemeConstantOverride("separation", 2);
-
-        var line = new Label
-        {
-            Text = $"{itemName} x{slot.Count}    {w * slot.Count:0.#} wt  {b * slot.Count:0.#} bulk",
-        };
-        if (slot.Forbidden)
-        {
-            line.AddThemeColorOverride("font_color", new Color(1.0f, 0.55f, 0.55f));
-            line.Text += "    [FORBIDDEN]";
-        }
-        row.AddChild(line);
-
-        var btns = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        btns.AddThemeConstantOverride("separation", 4);
-
-        var forbidBtn = new Button
-        {
-            Text = slot.Forbidden ? "Unforbid" : "Forbid",
-            CustomMinimumSize = new Vector2(0, 24),
-            FocusMode = Control.FocusModeEnum.None,
-        };
-        int slotId = slot.SlotEntityId;
-        bool nowForbidden = slot.Forbidden;
-        forbidBtn.Pressed += () =>
-        {
-            if (Host is null) return;
-            Host.QueueCommand(new SetInventorySlotForbiddenCommand(pawnId, slotId, !nowForbidden));
-        };
-        btns.AddChild(forbidBtn);
-
-        var dropBtn = new Button
-        {
-            Text = "Force Drop",
-            CustomMinimumSize = new Vector2(0, 24),
-            FocusMode = Control.FocusModeEnum.None,
-        };
-        dropBtn.Pressed += () =>
-        {
-            if (Host is null) return;
-            Host.QueueCommand(new ForceDropInventorySlotCommand(pawnId, slotId));
-        };
-        btns.AddChild(dropBtn);
-
-        row.AddChild(btns);
-        _invList.AddChild(row);
+        h = Math.Clamp(h, 0f, 1f);
+        var low = new Color(0.78f, 0.22f, 0.22f);   // red
+        var mid = new Color(0.82f, 0.62f, 0.18f);   // amber
+        var high = new Color(0.40f, 0.74f, 0.34f);  // green
+        return h < 0.5f ? low.Lerp(mid, h / 0.5f) : mid.Lerp(high, (h - 0.5f) / 0.5f);
     }
 }
