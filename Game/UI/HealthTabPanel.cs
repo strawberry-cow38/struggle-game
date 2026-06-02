@@ -287,6 +287,10 @@ public partial class HealthTabPanel : CanvasLayer
         return list;
     }
 
+    // Trim long caliber names for the conditions list (9x19mm Parabellum -> Para).
+    private static string ShortCaliber(string caliber)
+        => caliber.Contains("Parabellum") ? "Para" : caliber;
+
     private static Control BuildConditionRow(InjuryGroup g)
     {
         string part = BodyTree.TryGet(g.PartId, out var def) ? def.DisplayName : g.PartId;
@@ -295,8 +299,8 @@ public partial class HealthTabPanel : CanvasLayer
             ConditionKind.Missing => "missing",
             ConditionKind.Scar => "scar",
             ConditionKind.Gunshot when g.Caliber is not null =>
-                $"gunshot {g.MaxSeverity:0} dmg — {g.Caliber}, {(g.Lodged ? "lodged" : "through & through")}",
-            _ => $"{g.Kind.ToString().ToLower()} {g.MaxSeverity:0} dmg",
+                $"gunshot — {ShortCaliber(g.Caliber)}, {(g.Lodged ? "lodged" : "through & through")}",
+            _ => g.Kind.ToString().ToLower(),
         };
         string countTag = g.Count > 1 ? $"  x{g.Count}" : "";
 

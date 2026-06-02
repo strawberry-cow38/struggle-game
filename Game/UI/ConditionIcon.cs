@@ -41,10 +41,10 @@ public partial class ConditionIcon : Control
             DrawCircle(c, radius, new Color(0.80f, 0.15f, 0.12f));
             if (_stabilized)
             {
-                // White medical cross over the droplet.
+                // White diagonal cross (X) over the droplet.
                 var w = new Color(1f, 1f, 1f, 0.92f);
-                DrawLine(new Vector2(c.X - radius, c.Y), new Vector2(c.X + radius, c.Y), w, 2f);
-                DrawLine(new Vector2(c.X, c.Y - radius), new Vector2(c.X, c.Y + radius), w, 2f);
+                DrawLine(new Vector2(c.X - radius, c.Y - radius), new Vector2(c.X + radius, c.Y + radius), w, 2f);
+                DrawLine(new Vector2(c.X - radius, c.Y + radius), new Vector2(c.X + radius, c.Y - radius), w, 2f);
             }
         }
     }
