@@ -32,7 +32,7 @@ public partial class HudOverlay : CanvasLayer
         var settings = new LabelSettings
         {
             FontSize = 20,
-            FontColor = new Color(1.0f, 0.92f, 0.10f),
+            FontColor = new Color(1.0f, 1.0f, 1.0f),
             OutlineSize = 4,
             OutlineColor = new Color(0f, 0f, 0f, 0.85f),
         };
