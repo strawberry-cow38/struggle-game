@@ -20,9 +20,9 @@ public partial class PawnInfoPanel : CanvasLayer
 {
     public SimHost? Host { get; set; }
 
-    private const int PanelWidth = 320;
-    private const int MarginRight = 16;
-    private const int MarginTop = 16;
+    private const int PanelWidth = 340;
+    private const int MarginLeft = 16;
+    private const int MarginBottom = 16;
 
     private Panel _root = null!;
     private Label _nameLabel = null!;
@@ -65,6 +65,10 @@ public partial class PawnInfoPanel : CanvasLayer
         };
         AddChild(_root);
 
+        // Dark slate card (RimWorld-ish), flat-themed (no image assets).
+        _root.AddThemeStyleboxOverride("panel", MakeBox(new Color(0.16f, 0.17f, 0.20f, 0.97f),
+            border: new Color(0.34f, 0.36f, 0.42f), borderWidth: 2, corner: 6, margin: 10));
+
         var vbox = new VBoxContainer
         {
             AnchorRight = 1, AnchorBottom = 1,
@@ -73,6 +77,22 @@ public partial class PawnInfoPanel : CanvasLayer
         };
         vbox.AddThemeConstantOverride("separation", 6);
         _root.AddChild(vbox);
+
+        // Dumb tab strip (inert — styling only for now).
+        var tabRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        tabRow.AddThemeConstantOverride("separation", 3);
+        foreach (var tab in new[] { "Log", "Gear", "Social", "Bio", "Needs", "Health" })
+        {
+            var t = new Button { Text = tab, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 24) };
+            t.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            var tan = MakeBox(new Color(0.45f, 0.36f, 0.22f), border: new Color(0.20f, 0.15f, 0.08f), borderWidth: 1, corner: 4, margin: 4);
+            t.AddThemeStyleboxOverride("normal", tan);
+            t.AddThemeStyleboxOverride("hover", tan);
+            t.AddThemeStyleboxOverride("pressed", tan);
+            t.AddThemeColorOverride("font_color", new Color(0.93f, 0.9f, 0.82f));
+            tabRow.AddChild(t);
+        }
+        vbox.AddChild(tabRow);
 
         var headerRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         _nameLabel = new Label { Text = "Colonist", CustomMinimumSize = new Vector2(0, 24) };
@@ -96,6 +116,7 @@ public partial class PawnInfoPanel : CanvasLayer
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
         _bioLabel.AddThemeFontSizeOverride("font_size", 11);
+        _bioLabel.AddThemeColorOverride("font_color", new Color(0.62f, 0.65f, 0.72f)); // grey subtitle
         vbox.AddChild(_bioLabel);
 
         vbox.AddChild(new HSeparator());
@@ -114,6 +135,7 @@ public partial class PawnInfoPanel : CanvasLayer
             Step = 0.0001,
             CustomMinimumSize = new Vector2(0, 18),
         };
+        StyleBar(_sleepBar, new Color(0.45f, 0.78f, 0.38f)); // green
         vbox.AddChild(_sleepBar);
 
         _recLabel = new Label { Text = "Recreation" };
@@ -126,6 +148,7 @@ public partial class PawnInfoPanel : CanvasLayer
             Step = 0.0001,
             CustomMinimumSize = new Vector2(0, 18),
         };
+        StyleBar(_recBar, new Color(0.72f, 0.62f, 0.22f)); // olive
         vbox.AddChild(_recBar);
 
         vbox.AddChild(new HSeparator());
@@ -202,6 +225,7 @@ public partial class PawnInfoPanel : CanvasLayer
             return;
         }
         if (!_root.Visible) _root.Visible = true;
+        Reposition(); // re-anchor bottom-left as content height changes
         if (sel.Value != _shownPawnId || snap.Tick != _lastSnapshotTick)
         {
             Render(snap, sel.Value);
@@ -210,11 +234,35 @@ public partial class PawnInfoPanel : CanvasLayer
         }
     }
 
+    // Bottom-left anchored card (tracks the panel's current height each frame).
     private void Reposition()
     {
         var vp = GetViewport().GetVisibleRect().Size;
-        _root.Position = new Vector2(vp.X - PanelWidth - MarginRight, MarginTop);
         _root.Size = new Vector2(PanelWidth, _root.Size.Y);
+        _root.Position = new Vector2(MarginLeft, vp.Y - _root.Size.Y - MarginBottom);
+    }
+
+    // Flat StyleBox helper (no image assets) — bg + optional border + rounded
+    // corners + uniform content margin.
+    private static StyleBoxFlat MakeBox(Color bg, Color border = default, int borderWidth = 0, int corner = 0, int margin = 0)
+    {
+        var box = new StyleBoxFlat { BgColor = bg };
+        if (borderWidth > 0)
+        {
+            box.BorderColor = border;
+            box.BorderWidthLeft = box.BorderWidthRight = box.BorderWidthTop = box.BorderWidthBottom = borderWidth;
+        }
+        box.CornerRadiusTopLeft = box.CornerRadiusTopRight = box.CornerRadiusBottomLeft = box.CornerRadiusBottomRight = corner;
+        box.ContentMarginLeft = box.ContentMarginRight = box.ContentMarginTop = box.ContentMarginBottom = margin;
+        return box;
+    }
+
+    // Flat colored fill on a dark track; % text hidden (we label it ourselves).
+    private static void StyleBar(ProgressBar bar, Color fill)
+    {
+        bar.ShowPercentage = false;
+        bar.AddThemeStyleboxOverride("background", MakeBox(new Color(0.09f, 0.09f, 0.11f), corner: 3));
+        bar.AddThemeStyleboxOverride("fill", MakeBox(fill, corner: 3));
     }
 
     private void Render(SimSnapshot snap, int pawnId)
