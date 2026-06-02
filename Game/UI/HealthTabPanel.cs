@@ -287,9 +287,10 @@ public partial class HealthTabPanel : CanvasLayer
         return list;
     }
 
-    // Trim long caliber names for the conditions list (9x19mm Parabellum -> Para).
+    // Trim long caliber names for the conditions list (Parabellum -> Para,
+    // keeping the 9x19mm prefix).
     private static string ShortCaliber(string caliber)
-        => caliber.Contains("Parabellum") ? "Para" : caliber;
+        => caliber.Replace("Parabellum", "Para");
 
     private static Control BuildConditionRow(InjuryGroup g)
     {
