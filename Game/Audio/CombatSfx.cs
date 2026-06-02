@@ -1,46 +1,70 @@
+using System.Collections.Generic;
 using Godot;
+using StruggleGame.Sim.Items;
 using StruggleGame.Sim.Snapshots;
 
 namespace StruggleGame.Game.Audio;
 
-// Plays combat sound effects driven off the sim snapshot. Right now: a
-// gunshot whenever a colonist fires (detected via DummyState.ShotTick
-// advancing). Loaded at runtime so the source-pull build doesn't need a
-// Godot .import step for the asset.
+// Plays combat sound effects driven off the sim snapshot: a gunshot whenever a
+// pawn fires (DummyState.ShotTick advancing), picking the sound by the firing
+// pawn's weapon. Streams are loaded at runtime so the source-pull build needs
+// no Godot .import step.
 public partial class CombatSfx : Node
 {
-    private const string ShotPath = "res://Game/Assets/Audio/Shot_GTEK556mm.ogg";
+    private const string Dir = "res://Game/Assets/Audio/";
 
     public SimHost? Host { get; set; }
 
-    private AudioStreamPlayer _shotPlayer = null!;
+    // Per-weapon shot players, keyed by the weapon's item path.
+    private readonly Dictionary<string, AudioStreamPlayer> _players = new();
+    private AudioStreamPlayer? _default;
     private long _lastShotTick = 0;
 
     public override void _Ready()
     {
-        _shotPlayer = new AudioStreamPlayer { Name = "ShotPlayer", Bus = "Master" };
-        AddChild(_shotPlayer);
-        var stream = AudioStreamOggVorbis.LoadFromFile(ProjectSettings.GlobalizePath(ShotPath));
-        if (stream is not null) _shotPlayer.Stream = stream;
+        var map = new (ItemDef weapon, string ogg)[]
+        {
+            (ItemCatalog.AssaultRifle, "Shot_GTEK556mm.ogg"),
+            (ItemCatalog.SubmachineGun, "Shot_GTEK_MP5Type.ogg"),
+            (ItemCatalog.BoltActionRifle, "Shot_GTEK762mm.ogg"),
+        };
+        foreach (var (weapon, ogg) in map)
+        {
+            var p = new AudioStreamPlayer { Name = $"Shot_{weapon.Id}", Bus = "Master" };
+            AddChild(p);
+            var stream = AudioStreamOggVorbis.LoadFromFile(ProjectSettings.GlobalizePath(Dir + ogg));
+            if (stream is not null) p.Stream = stream;
+            _players[weapon.FullPath] = p;
+            _default ??= p; // the rifle is the fallback report
+        }
     }
 
     public override void _Process(double delta)
     {
-        if (Host is null || _shotPlayer.Stream is null) return;
+        if (Host is null) return;
         var snap = Host.LatestSnapshot;
         if (snap is null) return;
 
-        // Find the most recent shot tick across all colonists; play once per
-        // new shot tick (simultaneous shots collapse to one report).
+        // Newest shot tick across all pawns + the weapon that produced it; play
+        // once per new shot (simultaneous shots collapse to one report).
         long maxShot = _lastShotTick;
+        string weapon = "";
         foreach (var d in snap.Dummies)
-            if (d.HasRangedWeapon && d.ShotTick > maxShot) maxShot = d.ShotTick;
-        // (ShotTick is 0 until a pawn first fires, so startup never triggers.)
+            if (d.HasRangedWeapon && d.ShotTick > maxShot) { maxShot = d.ShotTick; weapon = WeaponPathOf(d); }
 
         if (maxShot > _lastShotTick)
         {
             _lastShotTick = maxShot;
-            _shotPlayer.Play();
+            var player = (weapon.Length > 0 && _players.TryGetValue(weapon, out var pl)) ? pl : _default;
+            player?.Play();
         }
+    }
+
+    private static string WeaponPathOf(in DummyState d)
+    {
+        foreach (var eq in d.Equipped)
+            if (ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var def) && def.Ranged is not null)
+                return eq.ItemPath;
+        return "";
     }
 }

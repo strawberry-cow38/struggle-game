@@ -185,6 +185,12 @@ public static class ItemCatalog
     public static readonly ItemDef RifleAmmoAp;
     public static readonly ItemDef RifleAmmoHp;
     public static readonly ItemDef RifleAmmoFmj;
+    // MP5 9mm SMG — low damage, high RoF, short range.
+    public static readonly ItemDef SubmachineGun;
+    public static readonly ItemDef Ammo9mm;
+    // M700 7.62x51 bolt rifle — high damage, long range, slow.
+    public static readonly ItemDef BoltActionRifle;
+    public static readonly ItemDef Ammo762x51;
 
     static ItemCatalog()
     {
@@ -209,6 +215,12 @@ public static class ItemCatalog
             ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 18f, PenSharp = 3f, PenBlunt = 34f });
         RifleAmmoFmj = RegisterItem("RifleAmmoFMJ", "5.56x45mm NATO (FMJ)", Ammo, weight: 0.02f, bulk: 0.02f, maxStack: 500,
             ammo: new AmmoSpec { CategoryPath = "Rifle", InjuryKind = ConditionKind.Gunshot, Damage = 14f, PenSharp = 6f, PenBlunt = 34f });
+        // 9x19mm — pistol/SMG round: low damage, modest pen.
+        Ammo9mm = RegisterItem("Ammo9mm", "9x19mm Parabellum", Ammo, weight: 0.012f, bulk: 0.012f, maxStack: 500,
+            ammo: new AmmoSpec { CategoryPath = "9mm", InjuryKind = ConditionKind.Gunshot, Damage = 8f, PenSharp = 4f, PenBlunt = 24f });
+        // 7.62x51mm NATO — full-power rifle round: high damage + penetration.
+        Ammo762x51 = RegisterItem("Ammo762x51", "7.62x51mm NATO", Ammo, weight: 0.025f, bulk: 0.025f, maxStack: 500,
+            ammo: new AmmoSpec { CategoryPath = "762x51", InjuryKind = ConditionKind.Gunshot, Damage = 32f, PenSharp = 16f, PenBlunt = 45f });
         AssaultRifle = RegisterItem("AssaultRifle", "M16A1", Equipment, weight: 4f, bulk: 3f, equippable: true,
             ranged: new RangedSpec
             {
@@ -233,6 +245,50 @@ public static class ItemCatalog
                 ShotCooldownTicks = 5,
                 CycleCooldownTicks = 24, // 0.4s between semi shots / bursts
                 ReloadTicks = 120,
+            });
+
+        // MP5 — 9mm SMG: low damage, very high RoF, short range, snappy aim,
+        // looser cone than the rifle. Full auto for spray-down CQB.
+        SubmachineGun = RegisterItem("SubmachineGun", "MP5", Equipment, weight: 3f, bulk: 2f, equippable: true,
+            ranged: new RangedSpec
+            {
+                Range = 22f,
+                AmmoCategoryPath = "9mm",
+                MagazineSize = 30,
+                Modes = FireModeFlags.Single | FireModeFlags.Burst | FireModeFlags.Auto,
+                BurstShots = 3,
+                ProjectileSpeed = 110f,
+                SpreadDegrees = 2.4f,
+                RecoilPerShot = 0.7f,
+                RecoilRecoverPerSec = 11f,
+                MaxRecoilDegrees = 6f,
+                WarmupTicks = 8,
+                AimTicks = 36,   // 0.6s — quick to bring up in CQB
+                ShotCooldownTicks = 4,  // ~900 rpm cyclic
+                CycleCooldownTicks = 14, // ~0.23s between bursts / taps
+                ReloadTicks = 100,
+            });
+
+        // M700 — 7.62x51 bolt rifle: high damage, long range, pinpoint, but
+        // slow (long aim + bolt cycle between shots). Single fire only.
+        BoltActionRifle = RegisterItem("BoltActionRifle", "M700", Equipment, weight: 5f, bulk: 4f, equippable: true,
+            ranged: new RangedSpec
+            {
+                Range = 75f,
+                AmmoCategoryPath = "762x51",
+                MagazineSize = 5,
+                Modes = FireModeFlags.Single,
+                BurstShots = 1,
+                ProjectileSpeed = 220f,
+                SpreadDegrees = 0.4f,
+                RecoilPerShot = 2.5f,
+                RecoilRecoverPerSec = 6f,
+                MaxRecoilDegrees = 5f,
+                WarmupTicks = 18,
+                AimTicks = 108,   // 1.8s — slow, deliberate
+                ShotCooldownTicks = 90,
+                CycleCooldownTicks = 90, // 1.5s bolt cycle between shots
+                ReloadTicks = 180,
             });
 
         // Kevlar vest — torso only. Sharp 8 mmRHA deflects HP (3) + FMJ (6)
