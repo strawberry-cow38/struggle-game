@@ -26,6 +26,8 @@ public partial class PawnInfoPanel : CanvasLayer
     private const int MarginBottom = 16;
 
     private Panel _root = null!;
+    private VBoxContainer _vbox = null!;
+    private const int PanelPad = 10; // vbox inset; bottom gap matches the sides
 
     // For other bottom-left HUD elements to dodge / align to this panel.
     public bool PanelOpen => _root is not null && _root.Visible;
@@ -61,7 +63,7 @@ public partial class PawnInfoPanel : CanvasLayer
         _root = new Panel
         {
             Name = "Root",
-            CustomMinimumSize = new Vector2(PanelWidth, 290),
+            CustomMinimumSize = new Vector2(PanelWidth, 0),
             MouseFilter = Control.MouseFilterEnum.Stop,
             Visible = false,
         };
@@ -80,6 +82,7 @@ public partial class PawnInfoPanel : CanvasLayer
         };
         vbox.AddThemeConstantOverride("separation", 6);
         _root.AddChild(vbox);
+        _vbox = vbox;
 
         var headerRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         _nameLabel = new Label { Text = "Colonist", CustomMinimumSize = new Vector2(0, 28) };
@@ -208,7 +211,9 @@ public partial class PawnInfoPanel : CanvasLayer
     private void Reposition()
     {
         var vp = GetViewport().GetVisibleRect().Size;
-        _root.Size = new Vector2(PanelWidth, _root.Size.Y);
+        // Size the card to its content so the bottom padding equals the sides.
+        float h = _vbox.GetCombinedMinimumSize().Y + PanelPad * 2;
+        _root.Size = new Vector2(PanelWidth, h);
         _root.Position = new Vector2(MarginLeft, vp.Y - _root.Size.Y - MarginBottom);
     }
 
