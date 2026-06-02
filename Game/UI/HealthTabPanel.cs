@@ -302,20 +302,22 @@ public partial class HealthTabPanel : CanvasLayer
 
     private static List<InjuryGroup> GroupInjuries(InjuryState[] injuries)
     {
-        var map = new Dictionary<(string, ConditionKind, string?, bool), (int n, float maxSev, float bleed, bool allTended, bool anyStab, float tendQ, bool reqRem)>();
-        var order = new List<(string, ConditionKind, string?, bool)>();
+        // Key includes treatment + bullet state, so only wounds that are
+        // identical in every respect merge; differing states split out.
+        var map = new Dictionary<(string, ConditionKind, string?, bool, bool, bool, bool), (int n, float maxSev, float bleed, float tendQ)>();
+        var order = new List<(string, ConditionKind, string?, bool, bool, bool, bool)>();
         foreach (var inj in injuries)
         {
-            var key = (inj.PartId, inj.Kind, inj.Caliber, inj.Lodged);
+            var key = (inj.PartId, inj.Kind, inj.Caliber, inj.Lodged, inj.Tended, inj.Stabilized, inj.RemovalRequested);
             if (map.TryGetValue(key, out var cur))
-                map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity), cur.bleed + inj.Bleed, cur.allTended && inj.Tended, cur.anyStab || inj.Stabilized, System.Math.Max(cur.tendQ, inj.TendQuality), cur.reqRem || inj.RemovalRequested);
-            else { map[key] = (1, inj.Severity, inj.Bleed, inj.Tended, inj.Stabilized, inj.TendQuality, inj.RemovalRequested); order.Add(key); }
+                map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity), cur.bleed + inj.Bleed, System.Math.Max(cur.tendQ, inj.TendQuality));
+            else { map[key] = (1, inj.Severity, inj.Bleed, inj.TendQuality); order.Add(key); }
         }
         var list = new List<InjuryGroup>();
         foreach (var key in order)
         {
             var v = map[key];
-            list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4, v.bleed, v.allTended, v.anyStab, v.tendQ, v.reqRem));
+            list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4, v.bleed, key.Item5, key.Item6, v.tendQ, key.Item7));
         }
         return list;
     }
@@ -393,7 +395,7 @@ public partial class HealthTabPanel : CanvasLayer
         foreach (var i in injuries)
             sb.Append(i.PartId).Append((int)i.Kind).Append((int)(i.Severity * 10)).Append(i.Caliber)
               .Append(i.Lodged ? 'L' : 'T').Append(i.Tended ? 'b' : '-').Append(i.Stabilized ? 's' : '-')
-              .Append((int)(i.Bleed * 1000)).Append(';');
+              .Append(i.RemovalRequested ? 'Q' : '-').Append((int)(i.Bleed * 1000)).Append(';');
         return sb.ToString();
     }
 
