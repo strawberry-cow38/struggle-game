@@ -42,17 +42,26 @@ public static class UiTheme
         return b;
     }
 
-    // The UI font (Sora), lazily loaded from disk and shared.
-    private static FontFile? _font;
+    // The UI font (Sora), lazily loaded + bumped to a slightly heavier weight
+    // via the variable-font axis — "fatter" than regular without going bold.
+    private static Font? _font;
     private static bool _fontTried;
-    public static FontFile? Font
+    public static Font? Font
     {
         get
         {
             if (_fontTried) return _font;
             _fontTried = true;
             var bytes = Godot.FileAccess.GetFileAsBytes("res://assets/fonts/Sora.ttf");
-            if (bytes.Length > 0) _font = new FontFile { Data = bytes };
+            if (bytes.Length == 0) return _font;
+            var ff = new FontFile { Data = bytes };
+            var fv = new FontVariation { BaseFont = ff };
+            // 0x77676874 = the OpenType "wght" axis tag.
+            fv.SetVariationOpentype(new Godot.Collections.Dictionary
+            {
+                { 0x77676874, 560 },
+            });
+            _font = fv;
             return _font;
         }
     }

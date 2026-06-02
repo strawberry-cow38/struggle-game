@@ -40,6 +40,7 @@ public partial class HealthTabPanel : CanvasLayer
     };
 
     private Panel _root = null!;
+    private VBoxContainer _vbox = null!;
     private Label _painValue = null!;
     private Label _bleedValue = null!;
     private Label _deathValue = null!;
@@ -74,7 +75,7 @@ public partial class HealthTabPanel : CanvasLayer
         _root = new Panel
         {
             Visible = false,
-            CustomMinimumSize = new Vector2(PanelWidth, PanelHeight),
+            CustomMinimumSize = new Vector2(PanelWidth, 0),
             Size = new Vector2(PanelWidth, PanelHeight),
         };
         _root.AddThemeStyleboxOverride("panel", UiTheme.PanelBox(corner: 12, margin: 0));
@@ -87,6 +88,7 @@ public partial class HealthTabPanel : CanvasLayer
         vbox.OffsetLeft = 12; vbox.OffsetTop = 12; vbox.OffsetRight = -12; vbox.OffsetBottom = -12;
         vbox.AddThemeConstantOverride("separation", 8);
         _root.AddChild(vbox);
+        _vbox = vbox;
 
         // Tab row: Overview (active) / Operations (inert) ... X close.
         var tabRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
@@ -278,8 +280,11 @@ public partial class HealthTabPanel : CanvasLayer
         float w = PanelWidth; // wider than the card so conditions fit
         float x = PawnPanel?.PanelLeft ?? 12f;
         float panelTop = PawnPanel is { PanelOpen: true } pp ? pp.PanelTop : vp.Y - (PawnPanel?.PanelMarginBottom ?? 16f);
-        float y = panelTop - GapAbovePanel - PanelHeight;
-        _root.Size = new Vector2(w, PanelHeight);
+        // Fit the panel to its content (the capacity column) so there's no
+        // dead space below Digestion; clamp so the conditions area keeps a floor.
+        float h = _vbox is null ? PanelHeight : Mathf.Max(220f, _vbox.GetCombinedMinimumSize().Y + 24f);
+        float y = panelTop - GapAbovePanel - h;
+        _root.Size = new Vector2(w, h);
         _root.Position = new Vector2(x, y);
     }
 
