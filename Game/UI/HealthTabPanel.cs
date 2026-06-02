@@ -47,7 +47,6 @@ public partial class HealthTabPanel : CanvasLayer
     private Label _deathValue = null!;
     private readonly Dictionary<string, Label> _capValues = new();
     private VBoxContainer _conditionsCol = null!;
-    private Label _conditionsEmpty = null!;
     private string _lastInjurySig = "";
 
     private bool _open;
@@ -124,25 +123,19 @@ public partial class HealthTabPanel : CanvasLayer
         divider.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = new Color(0.40f, 0.42f, 0.48f) });
         body.AddChild(divider);
 
-        // Right: conditions.
-        var rightCol = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        rightCol.AddThemeConstantOverride("separation", 4);
-        body.AddChild(rightCol);
+        // Right: conditions, in a scroll view with an always-reserved scrollbar.
+        var scroll = new ScrollContainer
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            VerticalScrollMode = ScrollContainer.ScrollMode.ShowAlways,
+        };
+        body.AddChild(scroll);
 
         _conditionsCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _conditionsCol.AddThemeConstantOverride("separation", 3);
-        rightCol.AddChild(_conditionsCol);
-
-        _conditionsEmpty = new Label
-        {
-            Text = "(no health conditions)",
-            HorizontalAlignment = HorizontalAlignment.Center,
-            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
-            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        _conditionsEmpty.AddThemeColorOverride("font_color", new Color(0.55f, 0.58f, 0.64f));
-        rightCol.AddChild(_conditionsEmpty);
+        scroll.AddChild(_conditionsCol);
 
         GetTree().Root.SizeChanged += Recenter;
         CallDeferred(nameof(Recenter));
@@ -204,8 +197,16 @@ public partial class HealthTabPanel : CanvasLayer
         {
             _lastInjurySig = sig;
             foreach (var c in _conditionsCol.GetChildren()) c.QueueFree();
-            _conditionsEmpty.Visible = hs.Injuries.Length == 0;
-            foreach (var g in GroupInjuries(hs.Injuries)) _conditionsCol.AddChild(BuildConditionRow(g));
+            if (hs.Injuries.Length == 0)
+            {
+                var empty = new Label { Text = "(no health conditions)" };
+                empty.AddThemeColorOverride("font_color", new Color(0.55f, 0.58f, 0.64f));
+                _conditionsCol.AddChild(empty);
+            }
+            else
+            {
+                foreach (var g in GroupInjuries(hs.Injuries)) _conditionsCol.AddChild(BuildConditionRow(g));
+            }
         }
 
         Recenter();
