@@ -201,6 +201,7 @@ public readonly record struct DummyState(
     bool HasRangedWeapon,
     int RangedMag,
     int RangedMagSize,
+    string? LoadedAmmoPath,
     StruggleGame.Sim.Items.FireMode RangedMode,
     StruggleGame.Sim.Items.FireModeFlags RangedModes,
     int FireTargetId,

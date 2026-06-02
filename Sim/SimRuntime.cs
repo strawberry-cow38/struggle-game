@@ -1386,6 +1386,7 @@ public sealed class SimRuntime
             int meleeTargetId = ent.HasComponent<MeleeTarget>() ? ent.GetComponent<MeleeTarget>().TargetEntityId : 0;
 
             bool hasRanged = false;
+            string? loadedAmmo = null;
             int rangedMag = 0, rangedMagSize = 0, fireTargetId = 0;
             long shotTick = 0;
             float rangedRange = 0f;
@@ -1429,6 +1430,7 @@ public sealed class SimRuntime
                 }
                 rangedMag = rc.MagCount;
                 rangedMagSize = rspec.MagazineSize;
+                loadedAmmo = rc.LoadedAmmoPath;
                 fireTargetId = rc.TargetEntityId;
                 shotTick = rc.ShotTick;
                 rangedMode = rc.Mode;
@@ -1530,7 +1532,7 @@ public sealed class SimRuntime
                 sleepLevel, isSleeping, assignedBedId,
                 recLevel, atRecKind, equipped, held, healthState, wr.Facing,
                 swingT, missT, flinchT, meleeTargetId,
-                hasRanged, rangedMag, rangedMagSize, rangedMode, rangedModes,
+                hasRanged, rangedMag, rangedMagSize, loadedAmmo, rangedMode, rangedModes,
                 fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea, rangedAimMode,
                 coverStance, leaning, peekX, peekY, rangedHasAmmo,
                 fireMeterPhase, fireMeterProgress, treatProgress,

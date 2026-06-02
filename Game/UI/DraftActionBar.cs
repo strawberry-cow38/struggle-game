@@ -36,7 +36,8 @@ public partial class DraftActionBar : CanvasLayer
     private Button _draftBtn = null!;
     private Label _draftCap = null!;
 
-    private HBoxContainer _combatGroup = null!;
+    // Tiles that only appear once drafted + holding a ranged weapon.
+    private readonly List<Control> _combatWraps = new();
 
     private Button _forceTargetBtn = null!;
     private Label _forceTargetCap = null!;
@@ -70,9 +71,63 @@ public partial class DraftActionBar : CanvasLayer
         _bar.AddThemeConstantOverride("separation", 6);
         AddChild(_bar);
 
-        // Mag / ammo panel — weapon name on top, big mag count below.
+        _reloadMenu = new PopupMenu();
+        AddChild(_reloadMenu);
+        _reloadMenu.IdPressed += OnReloadMenuPick;
+
+        // Left → right order (per design): mag · fire mode · reload · aim mode ·
+        // target area · DRAFT · fire at will · unarmed · weapon. Every tile but
+        // Draft is combat-only; the weapon tile sits rightmost.
+
+        // Mag / ammo panel.
         _magPanel = BuildMagPanel();
         _bar.AddChild(_magPanel);
+        _combatWraps.Add(_magPanel);
+
+        // Fire-mode tile — cycles through the weapon's available modes.
+        _fireModeBtn = BuildGizmo("Fire Mode", toggle: false, parent: _bar, out _);
+        _fireModeBtn.TooltipText = "Cycle the weapon's fire mode.";
+        _fireModeBtn.Pressed += () =>
+        {
+            if (Host is null || _shownPawnId < 0) return;
+            Host.QueueCommand(new SetFireModeCommand(_shownPawnId, NextMode(_shownMode, _shownModes)));
+        };
+        _combatWraps.Add(WrapOf(_fireModeBtn));
+
+        // Reload (left-click reload, right-click ammo/unload menu).
+        _reloadBtn = BuildGizmo("Reload", toggle: false, parent: _bar, out _);
+        _reloadBtn.TooltipText = "Left-click: reload. Right-click: pick ammo / unload.";
+        _reloadBtn.Pressed += () =>
+        {
+            if (Host is null || _shownPawnId < 0) return;
+            Host.QueueCommand(new ReloadWeaponCommand(_shownPawnId));
+        };
+        _reloadBtn.GuiInput += OnReloadGuiInput;
+        _combatWraps.Add(WrapOf(_reloadBtn));
+
+        // Aim mode — cycles Aimed → Snapshot → Auto.
+        _aimModeBtn = BuildGizmo("Aim Mode", toggle: false, parent: _bar, out _);
+        _aimModeBtn.TooltipText = "Aimed: full aim, accurate. Snapshot: no aim, big penalty. Auto: picks by range.";
+        _aimModeBtn.Pressed += () =>
+        {
+            if (Host is null || _shownPawnId < 0) return;
+            int idx = System.Array.IndexOf(_aimModeCycle, _shownAimMode);
+            var next = _aimModeCycle[(idx + 1) % _aimModeCycle.Length];
+            Host.QueueCommand(new SetAimModeCommand(_shownPawnId, next));
+        };
+        _combatWraps.Add(WrapOf(_aimModeBtn));
+
+        // Target area — cycles Auto → Head → Torso → Legs.
+        _targetAreaBtn = BuildGizmo("Target Area", toggle: false, parent: _bar, out _);
+        _targetAreaBtn.TooltipText = "Body region the colonist aims for.";
+        _targetAreaBtn.Pressed += () =>
+        {
+            if (Host is null || _shownPawnId < 0) return;
+            int idx = System.Array.IndexOf(_areaCycle, _shownArea);
+            var next = _areaCycle[(idx + 1) % _areaCycle.Length];
+            Host.QueueCommand(new SetTargetAreaCommand(_shownPawnId, next));
+        };
+        _combatWraps.Add(WrapOf(_targetAreaBtn));
 
         // Draft / Undraft tile — always shown while a colonist is selected.
         _draftBtn = BuildGizmo("Draft", toggle: false, parent: _bar, out _draftCap);
@@ -82,84 +137,39 @@ public partial class DraftActionBar : CanvasLayer
             Host.QueueCommand(new ToggleDraftCommand(_shownPawnId));
         };
 
-        // Combat tiles — only visible once drafted + holding a ranged weapon.
-        _combatGroup = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        _combatGroup.AddThemeConstantOverride("separation", 6);
-        _bar.AddChild(_combatGroup);
-
-        // Fire-mode tile — cycles through the weapon's available modes.
-        _fireModeBtn = BuildGizmo("Fire Mode", toggle: false, parent: _combatGroup, out _);
-        _fireModeBtn.TooltipText = "Cycle the weapon's fire mode.";
-        _fireModeBtn.Pressed += () =>
-        {
-            if (Host is null || _shownPawnId < 0) return;
-            Host.QueueCommand(new SetFireModeCommand(_shownPawnId, NextMode(_shownMode, _shownModes)));
-        };
-
-        // Reload (left-click reload, right-click ammo/unload menu).
-        _reloadBtn = BuildGizmo("Reload", toggle: false, parent: _combatGroup, out _);
-        _reloadBtn.TooltipText = "Left-click: reload. Right-click: pick ammo / unload.";
-        _reloadBtn.Pressed += () =>
-        {
-            if (Host is null || _shownPawnId < 0) return;
-            Host.QueueCommand(new ReloadWeaponCommand(_shownPawnId));
-        };
-        _reloadBtn.GuiInput += OnReloadGuiInput;
-
-        _reloadMenu = new PopupMenu();
-        AddChild(_reloadMenu);
-        _reloadMenu.IdPressed += OnReloadMenuPick;
-
-        // Weapon tile = ranged target mode (click, then a pawn, to set a shoot
-        // target). Caption is the equipped weapon name, set each frame.
-        _forceTargetBtn = BuildGizmo("Fire", toggle: true, parent: _combatGroup, out _forceTargetCap);
-        _forceTargetBtn.TooltipText = "Click, then a pawn, to set a shoot target.";
-        _forceTargetBtn.Pressed += () =>
-        {
-            if (Tools is null) return;
-            Tools.Mode = _forceTargetBtn.ButtonPressed ? ToolMode.ForceFireTarget : ToolMode.None;
-        };
-
-        // Melee target mode.
-        _meleeBtn = BuildGizmo("Melee Attack", toggle: true, parent: _combatGroup, out _);
-        _meleeBtn.TooltipText = "Click, then a pawn, to melee it.";
-        _meleeBtn.Pressed += () =>
-        {
-            if (Tools is null) return;
-            Tools.Mode = _meleeBtn.ButtonPressed ? ToolMode.MeleeAttackTarget : ToolMode.None;
-        };
-
         // Global "fire at will" toggle.
-        _fireAtWillBtn = BuildGizmo("Fire at Will", toggle: true, parent: _combatGroup, out _);
+        _fireAtWillBtn = BuildGizmo("Fire at Will", toggle: true, parent: _bar, out _);
         _fireAtWillBtn.TooltipText = "On: colonists auto-engage enemies. Off: only fire at a target you assign via right-click.";
         _fireAtWillBtn.Pressed += () =>
         {
             if (Host is null) return;
             Host.QueueCommand(new SetFireAtWillCommand(_fireAtWillBtn.ButtonPressed));
         };
+        _combatWraps.Add(WrapOf(_fireAtWillBtn));
 
-        // Target area — cycles Auto → Head → Torso → Legs.
-        _targetAreaBtn = BuildGizmo("Target Area", toggle: false, parent: _combatGroup, out _);
-        _targetAreaBtn.TooltipText = "Body region the colonist aims for.";
-        _targetAreaBtn.Pressed += () =>
+        // Unarmed / melee target mode.
+        _meleeBtn = BuildGizmo("Unarmed", toggle: true, parent: _bar, out _);
+        _meleeBtn.TooltipText = "Click, then a pawn, to melee it.";
+        _meleeBtn.Pressed += () =>
         {
-            if (Host is null || _shownPawnId < 0) return;
-            int idx = System.Array.IndexOf(_areaCycle, _shownArea);
-            var next = _areaCycle[(idx + 1) % _areaCycle.Length];
-            Host.QueueCommand(new SetTargetAreaCommand(_shownPawnId, next));
+            if (Tools is null) return;
+            Tools.Mode = _meleeBtn.ButtonPressed ? ToolMode.MeleeAttackTarget : ToolMode.None;
         };
+        _combatWraps.Add(WrapOf(_meleeBtn));
 
-        // Aim mode — cycles Aimed → Snapshot → Auto.
-        _aimModeBtn = BuildGizmo("Aim Mode", toggle: false, parent: _combatGroup, out _);
-        _aimModeBtn.TooltipText = "Aimed: full aim, accurate. Snapshot: no aim, big penalty. Auto: picks by range.";
-        _aimModeBtn.Pressed += () =>
+        // Weapon tile (rightmost) = ranged target mode (click, then a pawn, to
+        // set a shoot target). Caption is the equipped weapon name, set each frame.
+        _forceTargetBtn = BuildGizmo("Fire", toggle: true, parent: _bar, out _forceTargetCap);
+        _forceTargetBtn.TooltipText = "Click, then a pawn, to set a shoot target.";
+        _forceTargetBtn.Pressed += () =>
         {
-            if (Host is null || _shownPawnId < 0) return;
-            int idx = System.Array.IndexOf(_aimModeCycle, _shownAimMode);
-            var next = _aimModeCycle[(idx + 1) % _aimModeCycle.Length];
-            Host.QueueCommand(new SetAimModeCommand(_shownPawnId, next));
+            if (Tools is null) return;
+            Tools.Mode = _forceTargetBtn.ButtonPressed ? ToolMode.ForceFireTarget : ToolMode.None;
         };
+        _combatWraps.Add(WrapOf(_forceTargetBtn));
     }
+
+    private static Control WrapOf(Button tile) => (Control)tile.GetParent();
 
     public override void _Process(double delta)
     {
@@ -180,20 +190,19 @@ public partial class DraftActionBar : CanvasLayer
         SetTileActive(_draftBtn, p.Drafted);
 
         bool combat = p.Drafted && p.HasRangedWeapon;
-        _combatGroup.Visible = combat;
-        _magPanel.Visible = combat;
+        foreach (var w in _combatWraps) w.Visible = combat;
         if (!combat) { Recenter(); return; }
 
         _shownMode = p.RangedMode;
         _shownModes = p.RangedModes;
         _fireModeBtn.Text = p.RangedMode.ToString();
 
-        // Weapon name → mag panel title + force-target caption.
+        // Weapon name → force-target caption; mag panel shows ammo type + count.
         string weaponName = "Weapon";
         foreach (var eq in p.Equipped)
             if (ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var wd) && wd.Ranged is not null)
             { weaponName = wd.DisplayName; break; }
-        _magTitle.Text = weaponName;
+        _magTitle.Text = AmmoTag(p.LoadedAmmoPath);
         _magCount.Text = $"{p.RangedMag} / {p.RangedMagSize}";
         _forceTargetCap.Text = weaponName;
 
@@ -212,6 +221,17 @@ public partial class DraftActionBar : CanvasLayer
         SetTileActive(_fireAtWillBtn, snap.FireAtWill);
 
         Recenter();
+    }
+
+    // Short ammo tag for the loaded round: the parenthetical from the ammo's
+    // display name ("5.56x45mm NATO (FMJ)" → "FMJ"), else the caliber, else "—".
+    private static string AmmoTag(string? path)
+    {
+        if (path is null || !ItemCatalog.ItemsByPath.TryGetValue(path, out var def)) return "—";
+        string n = def.DisplayName;
+        int a = n.IndexOf('('), b = n.IndexOf(')');
+        if (a >= 0 && b > a) return n.Substring(a + 1, b - a - 1);
+        return n;
     }
 
     // Next available fire mode after `cur`, skipping modes the weapon lacks.
