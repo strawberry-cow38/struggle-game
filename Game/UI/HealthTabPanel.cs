@@ -143,9 +143,9 @@ public partial class HealthTabPanel : CanvasLayer
         var vbar = _scroll.GetVScrollBar();
         vbar.CustomMinimumSize = new Vector2(9, 0); // slim visible width
         vbar.AddThemeStyleboxOverride("scroll", UiTheme.InsetBox(UiTheme.Inset, corner: 4));
-        vbar.AddThemeStyleboxOverride("grabber", UiTheme.Box(new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.45f), UiTheme.Border, 1, 4, 0, glow: false));
-        vbar.AddThemeStyleboxOverride("grabber_highlight", UiTheme.Box(new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.65f), UiTheme.Border, 1, 4, 0, glow: false));
-        vbar.AddThemeStyleboxOverride("grabber_pressed", UiTheme.Box(UiTheme.Accent, UiTheme.Border, 1, 4, 0, glow: false));
+        vbar.AddThemeStyleboxOverride("grabber", UiTheme.Box(UiTheme.PanelDeep, UiTheme.Border, 1, 4, 0, glow: false));
+        vbar.AddThemeStyleboxOverride("grabber_highlight", UiTheme.Box(UiTheme.PanelDeep.Lightened(0.08f), UiTheme.Border, 1, 4, 0, glow: false));
+        vbar.AddThemeStyleboxOverride("grabber_pressed", UiTheme.Box(UiTheme.PanelDeep.Lightened(0.14f), UiTheme.Border, 1, 4, 0, glow: false));
 
         _conditionsCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _conditionsCol.AddThemeConstantOverride("separation", 3);
