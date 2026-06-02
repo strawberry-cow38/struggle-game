@@ -47,6 +47,7 @@ public partial class HealthTabPanel : CanvasLayer
     private Label _deathValue = null!;
     private readonly Dictionary<string, Label> _capValues = new();
     private VBoxContainer _conditionsCol = null!;
+    private ScrollContainer _scroll = null!;
     private string _lastInjurySig = "";
 
     private bool _open;
@@ -124,18 +125,18 @@ public partial class HealthTabPanel : CanvasLayer
         body.AddChild(divider);
 
         // Right: conditions, in a scroll view with an always-reserved scrollbar.
-        var scroll = new ScrollContainer
+        _scroll = new ScrollContainer
         {
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
             VerticalScrollMode = ScrollContainer.ScrollMode.ShowAlways,
         };
-        body.AddChild(scroll);
+        body.AddChild(_scroll);
 
         _conditionsCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _conditionsCol.AddThemeConstantOverride("separation", 3);
-        scroll.AddChild(_conditionsCol);
+        _scroll.AddChild(_conditionsCol);
 
         GetTree().Root.SizeChanged += Recenter;
         CallDeferred(nameof(Recenter));
@@ -144,6 +145,21 @@ public partial class HealthTabPanel : CanvasLayer
     public override void _ExitTree()
     {
         if (IsInsideTree()) GetTree().Root.SizeChanged -= Recenter;
+    }
+
+    // While hovering the conditions scroll area, route the wheel into it and
+    // swallow the event so it doesn't reach the camera (no map zoom). Runs in
+    // _Input, ahead of the camera's _UnhandledInput.
+    public override void _Input(InputEvent @event)
+    {
+        if (!_root.Visible || _scroll is null) return;
+        if (@event is not InputEventMouseButton mb || !mb.Pressed) return;
+        if (mb.ButtonIndex is not (MouseButton.WheelUp or MouseButton.WheelDown)) return;
+        if (!_scroll.GetGlobalRect().HasPoint(mb.Position)) return;
+
+        var bar = _scroll.GetVScrollBar();
+        bar.Value += mb.ButtonIndex == MouseButton.WheelDown ? 40 : -40;
+        GetViewport().SetInputAsHandled();
     }
 
     public override void _Process(double delta)
