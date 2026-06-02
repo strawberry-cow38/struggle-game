@@ -93,9 +93,6 @@ public partial class PawnInfoPanel : CanvasLayer
         _nameLabel.AddThemeFontSizeOverride("font_size", 18);
         _nameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         headerRow.AddChild(_nameLabel);
-        var closeBtn = new Button { Text = "X", CustomMinimumSize = new Vector2(28, 24) };
-        closeBtn.Pressed += () => { if (Host is not null) Host.SelectedDummyId = null; };
-        headerRow.AddChild(closeBtn);
         vbox.AddChild(headerRow);
 
         vbox.AddChild(new HSeparator());
