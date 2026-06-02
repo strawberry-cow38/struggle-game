@@ -17,7 +17,7 @@ public partial class HealthTabPanel : CanvasLayer
     // Aligned to sit directly above the pawn card and share its width.
     public PawnInfoPanel? PawnPanel { get; set; }
 
-    private const int PanelWidth = 820;  // wider than the pawn card to fit conditions
+    private const int PanelWidth = 700;  // wider than the pawn card to fit conditions
     private const int PanelHeight = 460;
     private const float GapAbovePanel = 8f;
 
@@ -118,7 +118,11 @@ public partial class HealthTabPanel : CanvasLayer
             _capValues[name] = val;
         }
 
-        body.AddChild(new VSeparator());
+        // Visible divider between stats (left) and conditions (right) — the
+        // flat-themed VSeparator is near-invisible, so draw an explicit line.
+        var divider = new Panel { CustomMinimumSize = new Vector2(2, 0), SizeFlagsVertical = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore };
+        divider.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = new Color(0.40f, 0.42f, 0.48f) });
+        body.AddChild(divider);
 
         // Right: conditions.
         var rightCol = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
