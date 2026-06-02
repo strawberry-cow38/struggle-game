@@ -196,6 +196,8 @@ public static class ItemCatalog
     // M700 7.62x51 bolt rifle — high damage, long range, slow.
     public static readonly ItemDef BoltActionRifle;
     public static readonly ItemDef Ammo762x51;
+    // Consumed per tend/stabilize job.
+    public static readonly ItemDef Medicine;
 
     static ItemCatalog()
     {
@@ -204,6 +206,7 @@ public static class ItemCatalog
         Wood = RegisterItem("Wood", "Wood", ResourcesWood, weight: 1f, bulk: 1f);
         ResourcesFood = RegisterCategory("Food", "Food", Resources);
         Carrot = RegisterItem("Carrot", "Carrot", ResourcesFood, weight: 0.05f, bulk: 0.05f);
+        Medicine = RegisterItem("Medicine", "Medicine", Resources, weight: 0.2f, bulk: 0.15f, maxStack: 25);
         SimpleMeal = RegisterItem("SimpleMeal", "Simple Meal", ResourcesFood, weight: 0.4f, bulk: 0.4f);
         Equipment = RegisterCategory("Equipment", "Equipment");
         // Melee attacks now deal hit-point damage (RimWorld scale).

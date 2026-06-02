@@ -54,6 +54,15 @@ public static class SimConstants
     // Auto aim mode snapshots a target within this fraction of weapon range
     // (very close); aims at anything farther.
     public const float SnapshotRangeFraction = 0.25f;
+
+    // === Medical ===
+    // Total wound-severity one tend/stabilize job covers (worst wounds first,
+    // whole wounds; the wound that exhausts the budget is still treated fully).
+    public const float TendSeverityBudget = 10f;
+    public const float StabilizeSeverityBudget = 20f; // emergency: patch more, fast
+    public const long TendWorkTicks = 240;   // ~4s of work to tend
+    public const long StabilizeWorkTicks = 45; // ~0.75s — fast emergency patch
+    public const float TendQualityStub = 0.75f; // until filth/skill/med-quality exist
     // Per-bullet hit radius around a pawn (tiles), and the fraction of it a
     // popped-out leaning pawn presents (a thin peeking sliver — harder to hit).
     public const float ProjectileHitRadius = 0.45f;

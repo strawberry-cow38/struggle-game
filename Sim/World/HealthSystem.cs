@@ -16,8 +16,14 @@ public sealed class HealthSystem
 {
     public const float UnconsciousThreshold = 0.30f;
     public const float PainShockThreshold = 0.80f;  // total pain that downs a colonist
-    public const float HealPerSecHp = 0.03f;         // hit-points/sim-sec a wound recovers (no tending yet)
+    public const float HealPerSecHp = 0.03f;         // hit-points/sim-sec an untended wound recovers
     public const float BloodRegenPerSec = 0.0001f;
+    // Tending: a tended wound sheds severity (1 + TendHealQualityBonus*quality)×
+    // faster and its pain is cut by TendPainFactor*quality. Stabilized wounds
+    // keep StabilizeBleedFraction of their bleed; tended wounds bleed none.
+    public const float TendHealQualityBonus = 8f;    // quality 0.75 → ~7× heal rate
+    public const float TendPainFactor = 0.6f;        // quality 0.75 → ~45% less pain
+    public const float StabilizeBleedFraction = 0.25f; // 75% bleed stopped
     // Blood (0..1 units) that must pool before a puddle is dripped.
     public const float PuddlePerDrip = 0.04f;
 
@@ -87,7 +93,7 @@ public sealed class HealthSystem
         float bleed = 0f;
         if (h.Injuries is not null)
             foreach (var inj in h.Injuries)
-                bleed += BodyTree.BleedRate(inj.Kind, inj.Severity);
+                bleed += BleedOf(inj);
         return bleed;
     }
 
@@ -99,7 +105,7 @@ public sealed class HealthSystem
         float bleed = 0f;
         if (h.Injuries is not null)
             foreach (var inj in h.Injuries)
-                bleed += BodyTree.BleedRate(inj.Kind, inj.Severity);
+                bleed += BleedOf(inj);
 
         if (bleed > 0f) h.BloodLevel = Math.Max(0f, h.BloodLevel - bleed * dt);
         else h.BloodLevel = Math.Min(1f, h.BloodLevel + BloodRegenPerSec * dt);
@@ -110,11 +116,22 @@ public sealed class HealthSystem
             {
                 var inj = h.Injuries[i];
                 if (BodyTree.IsPermanent(inj.Kind)) continue;
-                inj.Severity -= HealPerSecHp * dt; // Severity == damage in HP
+                // Tended wounds shed severity far faster (scaled by quality).
+                float rate = HealPerSecHp * (inj.Tended ? 1f + TendHealQualityBonus * inj.TendQuality : 1f);
+                inj.Severity -= rate * dt; // Severity == damage in HP
                 if (inj.Severity <= 0f) h.Injuries.RemoveAt(i);
                 else h.Injuries[i] = inj;
             }
         }
+    }
+
+    // Per-injury bleed after treatment: tended = none, stabilized = a quarter,
+    // else full.
+    public static float BleedOf(in PartInjury inj)
+    {
+        if (inj.Tended) return 0f;
+        float b = BodyTree.BleedRate(inj.Kind, inj.Severity);
+        return inj.Stabilized ? b * StabilizeBleedFraction : b;
     }
 
     // Recompute cached capacities + Unconscious from injuries + blood.
@@ -135,7 +152,10 @@ public sealed class HealthSystem
             foreach (var inj in h.Injuries)
             {
                 if (inj.Kind == ConditionKind.Missing) missing.Add(inj.PartId);
-                pain += BodyTree.Pain(inj.Kind, inj.Severity);
+                // Tending cuts a wound's pain (scaled by quality).
+                float p = BodyTree.Pain(inj.Kind, inj.Severity);
+                if (inj.Tended) p *= 1f - TendPainFactor * inj.TendQuality;
+                pain += p;
             }
         pain = Math.Clamp(pain, 0f, 1f);
         h.Pain = pain;

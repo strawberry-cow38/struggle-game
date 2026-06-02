@@ -366,6 +366,8 @@ public sealed class SimRuntime
         _dummies.HasSandbag = (x, y) => _sandbagMap.ContainsKey(new TilePos(x, y));
         _dummies.ColonistLosProvider = () => _colonistLosTiles;
         _dummies.LightProvider = (x, y) => LightAt(new TilePos(x, y));
+        _dummies.HasTreatableWounds = HasTreatableWounds;
+        _dummies.ApplyTreatment = ApplyTreatment;
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
@@ -1367,7 +1369,7 @@ public sealed class SimRuntime
                     {
                         var inj = hc.Injuries[ii];
                         injuries[ii] = new InjuryState(inj.PartId, inj.Kind, inj.Severity, inj.Caliber, inj.Lodged);
-                        bleedRate += StruggleGame.Sim.Bodies.BodyTree.BleedRate(inj.Kind, inj.Severity);
+                        bleedRate += World.HealthSystem.BleedOf(inj);
                     }
                 }
                 healthState = new HealthState(
@@ -4257,10 +4259,89 @@ public sealed class SimRuntime
         p.GetComponent<RangedCombat>().TargetArea = area;
     }
 
+    // Order a drafted doctor (with medicine) to tend / stabilize a patient.
+    public void SetTreatmentTarget(int doctorId, int patientId, bool stabilize)
+    {
+        if (doctorId == patientId) return;
+        if (!Store.TryGetEntityById(doctorId, out var d) || !d.HasComponent<Drafted>()) return;
+        if (!Store.TryGetEntityById(patientId, out var pt) || !pt.HasComponent<Health>()) return;
+        // A treatment order supersedes any combat order.
+        if (d.HasComponent<RangedCombat>()) { ref var rc = ref d.GetComponent<RangedCombat>(); rc.TargetEntityId = 0; rc.BurstRemaining = 0; }
+        if (d.HasComponent<MeleeTarget>()) d.RemoveComponent<MeleeTarget>();
+        if (d.HasComponent<TreatmentTarget>())
+        {
+            ref var tt = ref d.GetComponent<TreatmentTarget>();
+            tt.PatientEntityId = patientId; tt.Stabilize = stabilize; tt.WorkUntilTick = 0;
+        }
+        else
+        {
+            d.AddComponent(new TreatmentTarget { PatientEntityId = patientId, Stabilize = stabilize });
+        }
+    }
+
     public void SetAimMode(int pawnId, Items.AimMode mode)
     {
         if (!Store.TryGetEntityById(pawnId, out var p) || !p.HasComponent<RangedCombat>()) return;
         p.GetComponent<RangedCombat>().AimMode = mode;
+    }
+
+    // Does this pawn have a wound the given mode could still help? Tend wants an
+    // untended non-permanent wound; stabilize wants an actively-bleeding wound
+    // that isn't tended/stabilized yet.
+    public bool HasTreatableWounds(Entity p, bool stabilize)
+    {
+        if (!p.HasComponent<Health>()) return false;
+        var inj = p.GetComponent<Health>().Injuries;
+        if (inj is null) return false;
+        foreach (var w in inj)
+        {
+            if (StruggleGame.Sim.Bodies.BodyTree.IsPermanent(w.Kind)) continue;
+            if (stabilize)
+            {
+                if (!w.Tended && !w.Stabilized && StruggleGame.Sim.Bodies.BodyTree.BleedRate(w.Kind, w.Severity) > 0f) return true;
+            }
+            else if (!w.Tended) return true;
+        }
+        return false;
+    }
+
+    private readonly List<int> _treatScratch = new();
+
+    // Apply a tend (or stabilize) over the pawn's wounds, worst-first, until the
+    // mode's severity budget runs out — the wound that exhausts it is still
+    // treated fully (whole wounds only).
+    public void ApplyTreatment(Entity patient, bool stabilize, float quality)
+    {
+        if (!patient.HasComponent<Health>()) return;
+        var injuries = patient.GetComponent<Health>().Injuries; // mutating its elements persists (ref type)
+        if (injuries is null) return;
+
+        _treatScratch.Clear();
+        for (int i = 0; i < injuries.Count; i++)
+        {
+            var w = injuries[i];
+            if (StruggleGame.Sim.Bodies.BodyTree.IsPermanent(w.Kind)) continue;
+            if (stabilize)
+            {
+                if (w.Tended || w.Stabilized) continue;
+                if (StruggleGame.Sim.Bodies.BodyTree.BleedRate(w.Kind, w.Severity) <= 0f) continue;
+            }
+            else if (w.Tended) continue;
+            _treatScratch.Add(i);
+        }
+        // Worst wounds first.
+        _treatScratch.Sort((a, b) => injuries[b].Severity.CompareTo(injuries[a].Severity));
+
+        float budget = stabilize ? SimConstants.StabilizeSeverityBudget : SimConstants.TendSeverityBudget;
+        foreach (int idx in _treatScratch)
+        {
+            if (budget <= 0f) break;
+            var w = injuries[idx];
+            if (stabilize) { w.Stabilized = true; }
+            else { w.Tended = true; w.TendQuality = quality; w.Stabilized = false; }
+            injuries[idx] = w;
+            budget -= w.Severity; // the wound that crosses 0 is still treated fully
+        }
     }
 
     // Line of sight for bullets: walls block, doorways don't (door/cover

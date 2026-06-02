@@ -313,8 +313,9 @@ public sealed class IssueMoveOrderCommand : ISimCommand
         if (!sim.MapView.Walkable(Tile)) return;
         if (sim.MapView.HasFurniture(Tile)) return;
 
-        // A move order cancels any melee attack.
+        // A move order cancels any melee attack or treatment order.
         if (ent.HasComponent<MeleeTarget>()) ent.RemoveComponent<MeleeTarget>();
+        if (ent.HasComponent<TreatmentTarget>()) ent.RemoveComponent<TreatmentTarget>();
         // ...and any ranged fire order (keeps the weapon + mag).
         if (ent.HasComponent<RangedCombat>())
         {
@@ -883,6 +884,22 @@ public sealed class SetTargetAreaCommand : ISimCommand
         Area = area;
     }
     public void Apply(SimRuntime sim) => sim.SetTargetArea(PawnEntityId, Area);
+}
+
+// RMB "Tend" / "Stabilize": order a drafted doctor (with medicine) to treat a
+// patient over time.
+public sealed class TreatPawnCommand : ISimCommand
+{
+    public int DoctorEntityId { get; }
+    public int PatientEntityId { get; }
+    public bool Stabilize { get; }
+    public TreatPawnCommand(int doctorId, int patientId, bool stabilize)
+    {
+        DoctorEntityId = doctorId;
+        PatientEntityId = patientId;
+        Stabilize = stabilize;
+    }
+    public void Apply(SimRuntime sim) => sim.SetTreatmentTarget(DoctorEntityId, PatientEntityId, Stabilize);
 }
 
 public sealed class SetAimModeCommand : ISimCommand

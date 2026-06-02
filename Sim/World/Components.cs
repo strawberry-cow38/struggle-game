@@ -715,6 +715,17 @@ public struct MeleeTarget : IComponent
     public bool FinishOff;
 }
 
+// A medical order on a DRAFTED doctor: walk to PatientId and tend (or
+// stabilize) it. WorkUntilTick is set once adjacent; on reaching it the
+// treatment applies + a medicine is consumed. Cleared on completion / a new
+// order / the patient being healed up.
+public struct TreatmentTarget : IComponent
+{
+    public int PatientEntityId;
+    public bool Stabilize;     // false = tend (slow, full effects); true = stabilize (fast)
+    public long WorkUntilTick; // 0 = not started working yet
+}
+
 // Ranged-weapon state for a pawn carrying an equipped ranged weapon.
 // Attached/removed by DummyController to mirror the equipped weapon. Holds
 // the magazine (loaded count + which ammo is chambered), the selected fire
@@ -812,6 +823,12 @@ public struct PartInjury
     // and whether the bullet lodged in the body vs passed clean through.
     public string? Caliber;
     public bool Lodged;
+    // Treatment state. Tended: bleeding stopped, severity sheds fast, pain cut
+    // (scaled by TendQuality 0..1). Stabilized: a quick patch — bleed cut ~75%,
+    // nothing else. A wound can't be both (tending supersedes a stabilize).
+    public bool Tended;
+    public bool Stabilized;
+    public float TendQuality; // 0..1, set when Tended (stub 0.75 for now)
 }
 
 // Per-colonist health. Injuries is the flat list of conditions across the

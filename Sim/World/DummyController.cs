@@ -368,6 +368,7 @@ public sealed class DummyController
             }
             if (entity.HasComponent<OrderQueue>()) cb.RemoveComponent<OrderQueue>(entity.Id);
             if (entity.HasComponent<MeleeTarget>()) cb.RemoveComponent<MeleeTarget>(entity.Id);
+            if (entity.HasComponent<TreatmentTarget>()) cb.RemoveComponent<TreatmentTarget>(entity.Id);
             if (entity.HasComponent<EquipOrder>()) cb.RemoveComponent<EquipOrder>(entity.Id);
             if (entity.HasComponent<PickupOrder>()) cb.RemoveComponent<PickupOrder>(entity.Id);
             if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
@@ -620,6 +621,54 @@ public sealed class DummyController
                 }
                 path.Waypoints = null;
                 path.Index = 0;
+            }
+
+            // Medical order: walk to the patient and tend / stabilize over time.
+            // Cancels when the patient has nothing left to treat or the doctor
+            // is out of medicine.
+            if (entity.HasComponent<TreatmentTarget>())
+            {
+                ref var tt = ref entity.GetComponent<TreatmentTarget>();
+                bool valid = store.TryGetEntityById(tt.PatientEntityId, out var pat)
+                    && pat.HasComponent<Health>() && pat.HasComponent<WorldPos>()
+                    && (HasTreatableWounds?.Invoke(pat, tt.Stabilize) ?? false)
+                    && HasMedicine(entity);
+                if (!valid) { cb.RemoveComponent<TreatmentTarget>(entity.Id); ClearPath(ref path); }
+                else
+                {
+                    var pp = pat.GetComponent<WorldPos>();
+                    var ptile = new TilePos((int)pp.X, (int)pp.Y);
+                    bool adjacent = ptile == here
+                        || (Math.Abs(ptile.X - here.X) <= 1 && Math.Abs(ptile.Y - here.Y) <= 1);
+                    if (adjacent)
+                    {
+                        ClearPath(ref path);
+                        SnapToNearestTile(ref pos, dt, out _, out _);
+                        w.Facing = MathF.Atan2(pp.Y - pos.Y, pp.X - pos.X);
+                        if (tt.WorkUntilTick == 0)
+                            tt.WorkUntilTick = _tick + (tt.Stabilize ? SimConstants.StabilizeWorkTicks : SimConstants.TendWorkTicks);
+                        else if (_tick >= tt.WorkUntilTick)
+                        {
+                            if (ConsumeMedicine(entity))
+                                ApplyTreatment?.Invoke(pat, tt.Stabilize, SimConstants.TendQualityStub);
+                            cb.RemoveComponent<TreatmentTarget>(entity.Id);
+                        }
+                        return;
+                    }
+                    bool headingAdj = path.Waypoints is { Count: > 0 }
+                        && Math.Abs(path.Waypoints[path.Waypoints.Count - 1].X - ptile.X) <= 1
+                        && Math.Abs(path.Waypoints[path.Waypoints.Count - 1].Y - ptile.Y) <= 1;
+                    if (!headingAdj && path.PendingPathId == 0)
+                    {
+                        if (TryPickNeighbor(view, here, ptile, out var approach))
+                        {
+                            path.Waypoints = null; path.Index = 0;
+                            path.PendingPathId = _paths.Request(here, approach);
+                        }
+                        else cb.RemoveComponent<TreatmentTarget>(entity.Id);
+                    }
+                    return;
+                }
             }
 
             // Ranged fire order: hold the firing position (never chase). Ease
@@ -1881,6 +1930,10 @@ public sealed class DummyController
     // Global "fire at will": when false, idle drafted colonists do NOT
     // auto-acquire/peek enemies — they only fire at a player-forced target.
     public bool FireAtWill = true;
+    // Medical: check a patient still has wounds this mode can treat / apply the
+    // treatment. Wired to SimRuntime.
+    public System.Func<Entity, bool, bool>? HasTreatableWounds;
+    public System.Action<Entity, bool, float>? ApplyTreatment;
 
     // (id, x, y) of every conscious non-enemy pawn, rebuilt once per Step.
     private readonly List<(int Id, float X, float Y)> _colonistTargets = new();
@@ -2507,6 +2560,33 @@ public sealed class DummyController
         rc.AimTargetId = newTarget;
         rc.AimReadyTick = _tick + (long)(aimTicks * TransferReaimFraction);
         rc.LastAimTick = _tick;
+    }
+
+    private static bool HasMedicine(Entity e)
+    {
+        if (!e.HasComponent<Inventory>()) return false;
+        var inv = e.GetComponent<Inventory>();
+        if (inv.Items is null) return false;
+        foreach (var s in inv.Items)
+            if (s.Count > 0 && s.ItemPath == Items.ItemCatalog.Medicine.FullPath) return true;
+        return false;
+    }
+
+    // Pull one Medicine from the doctor's inventory. True if consumed.
+    private static bool ConsumeMedicine(Entity e)
+    {
+        if (!e.HasComponent<Inventory>()) return false;
+        ref var inv = ref e.GetComponent<Inventory>();
+        if (inv.Items is null) return false;
+        for (int k = 0; k < inv.Items.Count; k++)
+        {
+            var s = inv.Items[k];
+            if (s.ItemPath != Items.ItemCatalog.Medicine.FullPath || s.Count <= 0) continue;
+            s.Count--;
+            if (s.Count <= 0) inv.Items.RemoveAt(k); else inv.Items[k] = s;
+            return true;
+        }
+        return false;
     }
 
     private void ClearPath(ref PathFollower path)

@@ -161,6 +161,42 @@ public partial class Selector : Node2D
             // Move here — stand on the clicked tile (e.g. atop dropped items).
             Host.QueueCommand(new IssueMoveOrderCommand(_bpMenuPawnId, _moveHereTile, append: false));
         }
+        else if (id == 8)
+        {
+            Host.QueueCommand(new TreatPawnCommand(_bpMenuPawnId, _meleeTargetId, stabilize: false));
+        }
+        else if (id == 9)
+        {
+            Host.QueueCommand(new TreatPawnCommand(_bpMenuPawnId, _meleeTargetId, stabilize: true));
+        }
+    }
+
+    // The lone drafted pawn is carrying medicine.
+    private static bool DoctorHasMedicine(SimSnapshot snap, int doctorId)
+    {
+        foreach (var d in snap.Dummies)
+            if (d.EntityId == doctorId)
+            {
+                foreach (var h in d.Held)
+                    if (h.ItemPath == ItemCatalog.Medicine.FullPath && h.Count > 0) return true;
+                return false;
+            }
+        return false;
+    }
+
+    // The target has a non-permanent wound (scars/missing parts don't count).
+    private static bool IsWounded(SimSnapshot snap, int targetId)
+    {
+        foreach (var d in snap.Dummies)
+            if (d.EntityId == targetId)
+            {
+                if (d.Health.Injuries is null) return false;
+                foreach (var inj in d.Health.Injuries)
+                    if (inj.Kind != StruggleGame.Sim.Bodies.ConditionKind.Scar
+                        && inj.Kind != StruggleGame.Sim.Bodies.ConditionKind.Missing) return true;
+                return false;
+            }
+        return false;
     }
 
     // Drafted RMB on a pawn. An UN-DOWNED target: directly set each attacker's
@@ -174,10 +210,14 @@ public partial class Selector : Node2D
         if (!TryPickPawn(snap, world, out int targetId)) return false;
         if (System.Array.IndexOf(attackers, targetId) >= 0) return false; // not self
 
-        bool downed = false;
+        bool downed = false, targetIsEnemy = false;
         foreach (var d in snap.Dummies)
-            if (d.EntityId == targetId) { downed = d.Health.Unconscious; break; }
-        if (downed) return TryShowMeleeMenu(world, attackers); // keep the menu for downed
+            if (d.EntityId == targetId) { downed = d.Health.Unconscious; targetIsEnemy = d.IsEnemy; break; }
+
+        // Downed (either side), or a standing ally → the menu (tend / stabilize /
+        // fire / melee / move-here, whichever apply). A standing ENEMY → direct
+        // combat, no menu (fast).
+        if (downed || !targetIsEnemy) return TryShowMeleeMenu(world, attackers);
 
         foreach (int a in attackers)
         {
@@ -215,15 +255,25 @@ public partial class Selector : Node2D
         _meleeTargetId = targetId;
         _meleeAttackers = attackers;
         _bpMenu.Clear();
-        // Fire at X is the top option (grayed out when no shooter is in range);
-        // melee attack sits below it.
+        // Combat entries only vs enemies (Fire grayed when no shooter's in range).
         _fireAttackers = FilterRangedHolders(snap, attackers);
-        if (_fireAttackers.Length > 0)
+        if (targetIsEnemy)
         {
-            _bpMenu.AddItem($"Fire at {name}", 6);
-            _bpMenu.SetItemDisabled(_bpMenu.ItemCount - 1, !AnyAttackerCanFire(snap, _fireAttackers, targetId));
+            if (_fireAttackers.Length > 0)
+            {
+                _bpMenu.AddItem($"Fire at {name}", 6);
+                _bpMenu.SetItemDisabled(_bpMenu.ItemCount - 1, !AnyAttackerCanFire(snap, _fireAttackers, targetId));
+            }
+            _bpMenu.AddItem($"Melee attack {name}", 5);
         }
-        _bpMenu.AddItem($"Melee attack {name}", 5);
+        // Medical: a lone drafted doctor carrying medicine can tend/stabilize a
+        // wounded target (any side — downed enemies included).
+        if (attackers.Length == 1 && DoctorHasMedicine(snap, attackers[0]) && IsWounded(snap, targetId))
+        {
+            _bpMenuPawnId = attackers[0];
+            _bpMenu.AddItem("Tend", 8);
+            _bpMenu.AddItem("Stabilize", 9);
+        }
         // A downed pawn doesn't block movement, so a click on one would
         // otherwise have no "move here" — offer it for a lone drafted pawn.
         if (targetDowned && attackers.Length == 1)
@@ -232,6 +282,7 @@ public partial class Selector : Node2D
             _moveHereTile = targetTile;
             _bpMenu.AddItem("Move here", 7);
         }
+        if (_bpMenu.ItemCount == 0) return false; // nothing to offer → let the move drag run
         var screenPos = GetCanvasTransform() * world;
         _bpMenu.Position = new Vector2I((int)screenPos.X, (int)screenPos.Y);
         _bpMenu.Popup();
