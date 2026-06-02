@@ -40,6 +40,8 @@ public partial class PawnInfoPanel : CanvasLayer
     private Label _recLabel = null!;
     private ProgressBar _recBar = null!;
     private Label _recPct = null!;
+    private Label _activityLabel = null!;
+    private Label _weaponLabel = null!;
 
     private int _shownPawnId = -1;
     private long _lastSnapshotTick = -1;
@@ -138,6 +140,20 @@ public partial class PawnInfoPanel : CanvasLayer
         midRow.AddChild(bioCol);
 
         vbox.AddChild(midRow);
+
+        vbox.AddChild(new HSeparator());
+
+        // Footer: current activity (left) · equipped weapon (right).
+        var activityRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        activityRow.AddThemeConstantOverride("separation", 8);
+        _activityLabel = new Label { Text = "Activity:", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        _activityLabel.AddThemeFontSizeOverride("font_size", 12);
+        _weaponLabel = new Label { Text = "", HorizontalAlignment = HorizontalAlignment.Right };
+        _weaponLabel.AddThemeFontSizeOverride("font_size", 12);
+        _weaponLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.9f, 1.0f));
+        activityRow.AddChild(_activityLabel);
+        activityRow.AddChild(_weaponLabel);
+        vbox.AddChild(activityRow);
 
         GetTree().Root.SizeChanged += Reposition;
         CallDeferred(nameof(Reposition));
@@ -263,6 +279,13 @@ public partial class PawnInfoPanel : CanvasLayer
         _recLabel.Text = p.AtRecreationKind is RecreationKind k ? $"Rec ({k})" : "Recreation";
         _recPct.Text = $"{p.RecreationLevel * 100f:0}%";
         StyleBar(_recBar, BarColor((float)p.RecreationLevel));
+
+        _activityLabel.Text = $"Activity: {p.Job}";
+        string weapon = "Unarmed";
+        foreach (var eq in p.Equipped)
+            if (ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var def) && (def.IsWeapon || def.IsRangedWeapon))
+            { weapon = def.DisplayName; break; }
+        _weaponLabel.Text = weapon;
     }
 
     // Bar fill: green when high, amber mid, red when low (low % = bad).
