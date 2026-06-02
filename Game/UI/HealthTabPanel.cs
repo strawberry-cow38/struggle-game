@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Godot;
+using StruggleGame.Sim;
 using StruggleGame.Sim.Bodies;
 using StruggleGame.Sim.Snapshots;
 
@@ -43,6 +44,7 @@ public partial class HealthTabPanel : CanvasLayer
     private Panel _root = null!;
     private Label _painValue = null!;
     private Label _bleedValue = null!;
+    private Label _deathLabel = null!;
     private readonly Dictionary<string, Label> _capValues = new();
     private VBoxContainer _conditionsCol = null!;
     private Label _conditionsEmpty = null!;
@@ -105,6 +107,10 @@ public partial class HealthTabPanel : CanvasLayer
 
         leftCol.AddChild(BuildRow("Pain", out _painValue));
         leftCol.AddChild(BuildRow("Bleeding", out _bleedValue));
+        _deathLabel = new Label { Text = "", Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        _deathLabel.AddThemeFontSizeOverride("font_size", 13);
+        _deathLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.45f, 0.40f));
+        leftCol.AddChild(_deathLabel);
         leftCol.AddChild(new HSeparator());
         foreach (var (name, _) in Caps)
         {
@@ -160,6 +166,17 @@ public partial class HealthTabPanel : CanvasLayer
         _painValue.Text = $"{hs.Pain * 100f:0}%";
         _bleedValue.Text = $"{hs.BleedRate * 100f:0.0}%";
 
+        // Bleed-out estimate (only while actively bleeding). Game-hours is
+        // fixed by the sim; real time scales with the current game speed.
+        if (hs.BleedRate > 0f && Host is not null)
+        {
+            double gameHours = hs.BloodLevel * SimRuntime.SimSecondsPerRealSecond / (hs.BleedRate * 3600.0);
+            double realSec = hs.BloodLevel / (hs.BleedRate * SimConstants.TickSeconds * System.Math.Max(1, Host.TickHz));
+            _deathLabel.Text = $"Death in {gameHours:0.0}h ({FormatDuration(realSec)})";
+            _deathLabel.Visible = true;
+        }
+        else _deathLabel.Visible = false;
+
         foreach (var (name, real) in Caps)
             _capValues[name].Text = $"{(real ? CapValue(hs, name) : 0f) * 100f:0}%";
 
@@ -174,6 +191,18 @@ public partial class HealthTabPanel : CanvasLayer
         }
 
         Recenter();
+    }
+
+    private static string FormatDuration(double seconds)
+    {
+        if (seconds < 0) seconds = 0;
+        if (seconds >= 60)
+        {
+            int m = (int)(seconds / 60);
+            int s = (int)(seconds % 60);
+            return $"{m}m{s:00}s";
+        }
+        return $"{seconds:0}s";
     }
 
     private static float CapValue(HealthState hs, string name) => name switch
