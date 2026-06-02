@@ -108,7 +108,7 @@ public partial class HealthTabPanel : CanvasLayer
         leftCol.AddChild(BuildRow("Pain", out _painValue));
         leftCol.AddChild(BuildRow("Bleeding", out _bleedValue));
         _deathLabel = new Label { Text = "Death in: N/A", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        _deathLabel.AddThemeFontSizeOverride("font_size", 13);
+        _deathLabel.AddThemeFontSizeOverride("font_size", 14);
         _deathLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.45f, 0.40f));
         leftCol.AddChild(_deathLabel);
         leftCol.AddChild(new HSeparator());
