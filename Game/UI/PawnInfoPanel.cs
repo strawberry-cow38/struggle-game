@@ -140,12 +140,13 @@ public partial class PawnInfoPanel : CanvasLayer
         vbox.AddChild(activityRow);
 
         // Dumb tab strip at the bottom (inert — styling only for now),
-        // right-aligned at natural width.
-        var tabRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, Alignment = BoxContainer.AlignmentMode.End };
+        // buttons span the full panel width.
+        var tabRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         tabRow.AddThemeConstantOverride("separation", 3);
         foreach (var tab in new[] { "Log", "Gear", "Social", "Bio", "Needs", "Health" })
         {
             var t = new Button { Text = tab, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 24) };
+            t.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             var tan = MakeBox(new Color(0.45f, 0.36f, 0.22f), border: new Color(0.20f, 0.15f, 0.08f), borderWidth: 1, corner: 4, margin: 4);
             t.AddThemeStyleboxOverride("normal", tan);
             t.AddThemeStyleboxOverride("hover", tan);
