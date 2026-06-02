@@ -8,8 +8,8 @@ namespace StruggleGame.Game.UI;
 // is StyleBoxFlat + a generated label Theme.
 public static class UiTheme
 {
-    public static readonly Color Panel = new(0.17f, 0.07f, 0.30f, 0.52f);   // deep glass purple
-    public static readonly Color PanelDeep = new(0.11f, 0.04f, 0.19f, 0.85f);
+    public static readonly Color PanelDeep = new(0.11f, 0.04f, 0.19f, 0.85f); // draft tiles
+    public static readonly Color Panel = new(0.11f, 0.04f, 0.19f, 0.62f);     // panes — same purple, a touch more glass
     public static readonly Color Inset = new(0.05f, 0.05f, 0.12f, 0.55f);
     public static readonly Color Border = new(0.74f, 0.82f, 1.0f, 0.45f);   // soft pastel edge
     public static readonly Color Glow = new(0.55f, 0.62f, 1.0f, 0.22f);
