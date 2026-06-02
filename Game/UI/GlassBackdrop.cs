@@ -16,7 +16,7 @@ shader_type canvas_item;
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
 uniform vec2 size_px = vec2(100.0, 100.0);
 uniform float corner = 12.0;
-uniform float blur = 6.0;
+uniform float blur = 10.0;
 void fragment() {
     vec2 p = UV * size_px;
     vec2 h = size_px * 0.5;
