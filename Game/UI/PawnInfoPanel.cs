@@ -19,6 +19,7 @@ namespace StruggleGame.Game.UI;
 public partial class PawnInfoPanel : CanvasLayer
 {
     public SimHost? Host { get; set; }
+    public HealthTabPanel? HealthTab { get; set; }
 
     private const int PanelWidth = 560;
     private const int MarginLeft = 12;
@@ -156,6 +157,9 @@ public partial class PawnInfoPanel : CanvasLayer
             t.AddThemeStyleboxOverride("hover", tan);
             t.AddThemeStyleboxOverride("pressed", tan);
             t.AddThemeColorOverride("font_color", new Color(0.93f, 0.9f, 0.82f));
+            // Only the Health tab is wired so far — opens the health panel.
+            if (tab == "Health")
+                t.Pressed += () => { if (HealthTab is not null && _shownPawnId >= 0) HealthTab.OpenFor(_shownPawnId); };
             tabRow.AddChild(t);
         }
         vbox.AddChild(tabRow);

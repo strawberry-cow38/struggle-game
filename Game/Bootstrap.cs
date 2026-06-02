@@ -178,7 +178,10 @@ public partial class Bootstrap : Node2D
         var blueprintInfoPanel = new BlueprintInfoPanel { Host = _host, Name = "BlueprintInfoPanel" };
         AddChild(blueprintInfoPanel);
 
-        var pawnInfoPanel = new PawnInfoPanel { Host = _host, Name = "PawnInfoPanel" };
+        var healthTab = new HealthTabPanel { Host = _host, Name = "HealthTabPanel" };
+        AddChild(healthTab);
+
+        var pawnInfoPanel = new PawnInfoPanel { Host = _host, HealthTab = healthTab, Name = "PawnInfoPanel" };
         AddChild(pawnInfoPanel);
         hud.PawnPanel = pawnInfoPanel;
 
