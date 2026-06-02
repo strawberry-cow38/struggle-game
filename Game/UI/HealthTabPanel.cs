@@ -386,6 +386,8 @@ public partial class HealthTabPanel : CanvasLayer
             : g.Bleed > 0f ? $"Bleeding {g.Bleed * 100f:0.0}%"
             : "";
         row.AddChild(icon);
+        // Padding so the icon doesn't butt against the scrollbar.
+        row.AddChild(new Control { CustomMinimumSize = new Vector2(8, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
         return row;
     }
 
