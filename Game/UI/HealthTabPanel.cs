@@ -58,6 +58,9 @@ public partial class HealthTabPanel : CanvasLayer
 
     public void Close() { _root.Visible = false; _pawnId = -1; }
 
+    public bool PanelOpen => _root is not null && _root.Visible;
+    public float PanelTop => _root is not null ? _root.Position.Y : float.MaxValue;
+
     public override void _Ready()
     {
         Layer = 97;
