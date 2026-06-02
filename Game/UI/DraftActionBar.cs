@@ -258,9 +258,9 @@ public partial class DraftActionBar : CanvasLayer
     // Fill color encodes ammo TYPE (not remaining amount).
     private static Color AmmoColor(string? path) => AmmoTag(path).ToUpperInvariant() switch
     {
-        "FMJ" => new Color(0.72f, 0.60f, 0.22f), // brass
-        "HP" => new Color(0.78f, 0.30f, 0.26f),  // red
-        "AP" => new Color(0.36f, 0.52f, 0.78f),  // steel blue
+        "FMJ" => new Color(0.40f, 0.74f, 0.34f), // green
+        "AP" => new Color(0.78f, 0.30f, 0.26f),  // red
+        "HP" => new Color(0.86f, 0.74f, 0.20f),  // yellow
         _ => new Color(0.40f, 0.42f, 0.48f),     // gray
     };
 
@@ -410,7 +410,7 @@ public partial class DraftActionBar : CanvasLayer
         {
             if (!ItemCatalog.ItemsByPath.TryGetValue(h.ItemPath, out var def) || def.Ammo is null) continue;
             int id = _reloadAmmoPaths.Count;
-            _reloadMenu.AddItem($"Reload: {def.DisplayName} ({h.Count})", id);
+            _reloadMenu.AddItem($"Reload: {AmmoLongName(h.ItemPath)} ({h.Count})", id);
             _reloadAmmoPaths.Add(h.ItemPath);
         }
         if (_reloadMenu.ItemCount > 0) _reloadMenu.AddSeparator();
