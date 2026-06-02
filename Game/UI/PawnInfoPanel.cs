@@ -20,7 +20,7 @@ public partial class PawnInfoPanel : CanvasLayer
 {
     public SimHost? Host { get; set; }
 
-    private const int PanelWidth = 700;
+    private const int PanelWidth = 560;
     private const int MarginLeft = 16;
     private const int MarginBottom = 16;
 
@@ -53,7 +53,7 @@ public partial class PawnInfoPanel : CanvasLayer
         _root = new Panel
         {
             Name = "Root",
-            CustomMinimumSize = new Vector2(PanelWidth, 342),
+            CustomMinimumSize = new Vector2(PanelWidth, 290),
             MouseFilter = Control.MouseFilterEnum.Stop,
             Visible = false,
         };
@@ -73,8 +73,11 @@ public partial class PawnInfoPanel : CanvasLayer
         _root.AddChild(vbox);
 
         var headerRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        _nameLabel = new Label { Text = "Colonist", CustomMinimumSize = new Vector2(0, 24) };
-        _nameLabel.AddThemeFontSizeOverride("font_size", 18);
+        _nameLabel = new Label { Text = "Colonist", CustomMinimumSize = new Vector2(0, 28) };
+        _nameLabel.AddThemeFontSizeOverride("font_size", 22);
+        // Fake bold via a matching outline (no bold font asset bundled).
+        _nameLabel.AddThemeConstantOverride("outline_size", 3);
+        _nameLabel.AddThemeColorOverride("font_outline_color", new Color(0.93f, 0.93f, 0.95f));
         _nameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         headerRow.AddChild(_nameLabel);
         vbox.AddChild(headerRow);
@@ -82,9 +85,9 @@ public partial class PawnInfoPanel : CanvasLayer
         vbox.AddChild(new HSeparator());
 
         // Overall health bar (mean remaining-HP across present body parts).
-        vbox.AddChild(BuildNeedRow("Health", new Color(0.78f, 0.32f, 0.32f), out var _, out _healthBar, out _healthPct));
+        vbox.AddChild(BuildNeedRow("Health:", new Color(0.78f, 0.32f, 0.32f), out var _, out _healthBar, out _healthPct));
         // Mood bar (stub 100% for now).
-        vbox.AddChild(BuildNeedRow("Mood", new Color(0.42f, 0.58f, 0.78f), out var _, out _moodBar, out _moodPct));
+        vbox.AddChild(BuildNeedRow("Mood:", new Color(0.42f, 0.58f, 0.78f), out var _, out _moodBar, out _moodPct));
 
         vbox.AddChild(new HSeparator());
 
@@ -94,19 +97,19 @@ public partial class PawnInfoPanel : CanvasLayer
 
         var needsCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsStretchRatio = 1.8f };
         needsCol.AddThemeConstantOverride("separation", 4);
-        var needsHeader = new Label { Text = "Needs" };
+        var needsHeader = new Label { Text = "Needs:" };
         needsHeader.AddThemeFontSizeOverride("font_size", 14);
         needsCol.AddChild(needsHeader);
-        needsCol.AddChild(BuildNeedRow("Food", new Color(0.62f, 0.45f, 0.28f), out _foodLabel, out _foodBar, out _foodPct));
-        needsCol.AddChild(BuildNeedRow("Sleep", new Color(0.45f, 0.78f, 0.38f), out _sleepLabel, out _sleepBar, out _sleepPct));
-        needsCol.AddChild(BuildNeedRow("Recreation", new Color(0.72f, 0.62f, 0.22f), out _recLabel, out _recBar, out _recPct));
+        needsCol.AddChild(BuildNeedRow("Food:", new Color(0.62f, 0.45f, 0.28f), out _foodLabel, out _foodBar, out _foodPct));
+        needsCol.AddChild(BuildNeedRow("Sleep:", new Color(0.45f, 0.78f, 0.38f), out _sleepLabel, out _sleepBar, out _sleepPct));
+        needsCol.AddChild(BuildNeedRow("Recreation:", new Color(0.72f, 0.62f, 0.22f), out _recLabel, out _recBar, out _recPct));
         midRow.AddChild(needsCol);
 
         midRow.AddChild(new VSeparator());
 
         var bioCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsStretchRatio = 1f };
         bioCol.AddThemeConstantOverride("separation", 4);
-        var bioHeader = new Label { Text = "Bio" };
+        var bioHeader = new Label { Text = "Bio:" };
         bioHeader.AddThemeFontSizeOverride("font_size", 14);
         bioCol.AddChild(bioHeader);
         _bioLabel = new Label
@@ -136,13 +139,13 @@ public partial class PawnInfoPanel : CanvasLayer
         activityRow.AddChild(_weaponLabel);
         vbox.AddChild(activityRow);
 
-        // Dumb tab strip at the bottom (inert — styling only for now).
-        var tabRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        // Dumb tab strip at the bottom (inert — styling only for now),
+        // right-aligned at natural width.
+        var tabRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, Alignment = BoxContainer.AlignmentMode.End };
         tabRow.AddThemeConstantOverride("separation", 3);
         foreach (var tab in new[] { "Log", "Gear", "Social", "Bio", "Needs", "Health" })
         {
             var t = new Button { Text = tab, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 24) };
-            t.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             var tan = MakeBox(new Color(0.45f, 0.36f, 0.22f), border: new Color(0.20f, 0.15f, 0.08f), borderWidth: 1, corner: 4, margin: 4);
             t.AddThemeStyleboxOverride("normal", tan);
             t.AddThemeStyleboxOverride("hover", tan);
@@ -268,12 +271,12 @@ public partial class PawnInfoPanel : CanvasLayer
         StyleBar(_foodBar, BarColor(food));
 
         _sleepBar.Value = p.SleepLevel;
-        _sleepLabel.Text = p.Sleeping ? "Sleep (zzz)" : "Sleep";
+        _sleepLabel.Text = p.Sleeping ? "Sleep (zzz):" : "Sleep:";
         _sleepPct.Text = $"{p.SleepLevel * 100f:0}%";
         StyleBar(_sleepBar, BarColor((float)p.SleepLevel));
 
         _recBar.Value = p.RecreationLevel;
-        _recLabel.Text = p.AtRecreationKind is RecreationKind k ? $"Rec ({k})" : "Recreation";
+        _recLabel.Text = p.AtRecreationKind is RecreationKind k ? $"Rec ({k}):" : "Recreation:";
         _recPct.Text = $"{p.RecreationLevel * 100f:0}%";
         StyleBar(_recBar, BarColor((float)p.RecreationLevel));
 
@@ -281,8 +284,25 @@ public partial class PawnInfoPanel : CanvasLayer
         string weapon = "Unarmed";
         foreach (var eq in p.Equipped)
             if (ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var def) && (def.IsWeapon || def.IsRangedWeapon))
-            { weapon = def.DisplayName; break; }
+            {
+                weapon = def.DisplayName;
+                if (def.Ranged is { } r) weapon += $" ({CaliberFor(r.AmmoCategoryPath)})";
+                break;
+            }
         _weaponLabel.Text = $"Equipped: {weapon}";
+    }
+
+    // Caliber label for a weapon's ammo category — pulled from the first
+    // matching ammo def's display name, with any "(AP/HP/FMJ)" suffix dropped.
+    private static string CaliberFor(string ammoCategory)
+    {
+        foreach (var d in ItemCatalog.ItemsByPath.Values)
+            if (d.IsAmmo && d.Ammo is { } a && a.CategoryPath == ammoCategory)
+            {
+                int paren = d.DisplayName.IndexOf(" (", System.StringComparison.Ordinal);
+                return paren >= 0 ? d.DisplayName.Substring(0, paren) : d.DisplayName;
+            }
+        return ammoCategory;
     }
 
     // Bar fill: green when high, amber mid, red when low (low % = bad).
