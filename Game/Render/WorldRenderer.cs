@@ -940,15 +940,24 @@ public partial class WorldRenderer : Node2D
         if (font is null) return;
         bool found = false;
         Sim.Snapshots.DummyState hovered = default;
+        Sim.Items.AimMode shooterMode = Sim.Items.AimMode.Aimed;
+        float shooterRange = 0f;
         foreach (var d in snap.Dummies)
         {
-            if (d.EntityId == snap.AimShooterId || !d.AimHit.HasValue) continue;
-            if ((int)d.X == cursorTileX && (int)d.Y == cursorTileY) { hovered = d; found = true; break; }
+            if (d.EntityId == snap.AimShooterId) { shooterMode = d.RangedAimMode; shooterRange = d.RangedRange; continue; }
+            if (!d.AimHit.HasValue) continue;
+            if ((int)d.X == cursorTileX && (int)d.Y == cursorTileY) { hovered = d; found = true; }
         }
         if (!found) return;
         var hc = hovered.AimHit!.Value;
 
-        const int headSize = 18, bodySize = 13;
+        // Constant on-screen size: counter the camera zoom (world px = screen/zoom).
+        float zoom = GetViewport().GetCamera2D()?.Zoom.X ?? 1f;
+        if (zoom <= 0f) zoom = 1f;
+        float sc = 1f / zoom;
+        int headSize = Mathf.Max(1, Mathf.RoundToInt(18 * sc));
+        int bodySize = Mathf.Max(1, Mathf.RoundToInt(13 * sc));
+
         _hitLines.Clear();
         if (!hc.InRange)
             _hitLines.Add(("OUT OF RANGE", headSize, HitBad));
@@ -958,6 +967,12 @@ public partial class WorldRenderer : Node2D
             var pctCol = hc.Chance >= 0.66f ? HitGood : hc.Chance >= 0.33f ? HitMid
                 : hc.Chance > 0f ? HitPoor : HitBad;
             _hitLines.Add(($"Hit: {pct}%", headSize, pctCol));
+        }
+        // In Auto, show which fire mode this target would get.
+        if (shooterMode == Sim.Items.AimMode.Auto && hc.InRange)
+        {
+            bool snapshot = hc.Distance <= shooterRange * Sim.SimConstants.SnapshotRangeFraction;
+            _hitLines.Add((snapshot ? "Auto → Snapshot" : "Auto → Aimed", bodySize, HitMid));
         }
         if (hc.Cover == Sim.Gunnery.HitCover.WallBlocked)
             _hitLines.Add(("Wall blocks the shot", bodySize, HitBad));
@@ -970,7 +985,7 @@ public partial class WorldRenderer : Node2D
                 bodySize, HitFactorDim));
 
         float maxW = 0f, totalH = 0f;
-        const float lineGap = 3f, pad = 7f;
+        float lineGap = 3f * sc, pad = 7f * sc;
         foreach (var (text, size, _) in _hitLines)
         {
             var sz = font.GetStringSize(text, HorizontalAlignment.Left, -1f, size);
@@ -979,9 +994,9 @@ public partial class WorldRenderer : Node2D
         }
         totalH -= lineGap;
 
-        // Anchor above-right of the hovered pawn.
+        // Anchor above-right of the hovered pawn (offset in screen-constant px).
         var center = new Vector2(hovered.X * PixelsPerTile, hovered.Y * PixelsPerTile);
-        var origin = new Vector2(center.X + PixelsPerTile * 0.5f, center.Y - PixelsPerTile * 0.7f - totalH);
+        var origin = new Vector2(center.X + PixelsPerTile * 0.5f * sc, center.Y - PixelsPerTile * 0.7f * sc - totalH);
         DrawRect(new Rect2(origin.X - pad, origin.Y - pad, maxW + pad * 2f, totalH + pad * 2f), HitPanelBg, filled: true);
 
         float y = origin.Y;
