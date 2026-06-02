@@ -663,7 +663,7 @@ public sealed class DummyController
                     if (transfer != 0 && store.TryGetEntityById(transfer, out var nt))
                     {
                         rc.AutoTarget = true; rc.FinishOff = false;
-                        RedirectFireNoReaim(ref rc, transfer);
+                        RedirectFire(ref rc, transfer, spec.AimTicks);
                         ExecuteRangedFire(entity, nt, spec, ref pos, ref path, ref w, dt, view, here);
                         return;
                     }
@@ -2268,7 +2268,7 @@ public sealed class DummyController
             int nt = rcE.BurstRemaining > 0 ? PerceiveNearestColonist(here, sight) : 0;
             if (nt == 0 || !store.TryGetEntityById(nt, out tgt)) return;
             brain.TargetEntityId = nt;
-            RedirectFireNoReaim(ref rcE, nt);
+            RedirectFire(ref rcE, nt, spec.AimTicks);
         }
 
         // Caught in the open: if we're standing in a colonist sightline and a
@@ -2495,13 +2495,17 @@ public sealed class DummyController
         }
     }
 
-    // Hand a still-running burst to a new target without re-aiming (already on
-    // the trigger). Used when the current target drops mid-spray.
-    private void RedirectFireNoReaim(ref RangedCombat rc, int newTarget)
+    // Fraction of the full aim time it takes to swing a running burst onto a
+    // fresh target — quicker than a cold acquire (already shouldered), but not
+    // instant (instant snapping between targets is too strong).
+    private const float TransferReaimFraction = 0.5f;
+
+    // Hand a still-running burst to a new target with a short re-aim.
+    private void RedirectFire(ref RangedCombat rc, int newTarget, long aimTicks)
     {
         rc.TargetEntityId = newTarget;
         rc.AimTargetId = newTarget;
-        rc.AimReadyTick = _tick;
+        rc.AimReadyTick = _tick + (long)(aimTicks * TransferReaimFraction);
         rc.LastAimTick = _tick;
     }
 
