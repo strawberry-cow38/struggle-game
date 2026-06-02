@@ -51,6 +51,7 @@ public partial class HealthTabPanel : CanvasLayer
     private string _lastInjurySig = "";
 
     private bool _open;
+    private int _shownPawn = -1;
 
     // Tab follows the live selection rather than locking to one pawn, so it
     // updates every frame and switches colonists when the selection does.
@@ -161,6 +162,9 @@ public partial class HealthTabPanel : CanvasLayer
             if (d.EntityId == sel.Value) { found = d; break; }
         if (found is not { } p) { Close(); return; }
 
+        bool pawnChanged = sel.Value != _shownPawn;
+        _shownPawn = sel.Value;
+
         var hs = p.Health;
         _painValue.Text = $"{hs.Pain * 100f:0}%";
         _painValue.AddThemeColorOverride("font_color", CapColor(1f - hs.Pain)); // high pain = bad
@@ -192,7 +196,7 @@ public partial class HealthTabPanel : CanvasLayer
 
         // Conditions (rebuild only on change), grouped by part+kind.
         string sig = InjurySig(hs.Injuries);
-        if (sig != _lastInjurySig)
+        if (sig != _lastInjurySig || pawnChanged)
         {
             _lastInjurySig = sig;
             foreach (var c in _conditionsCol.GetChildren()) c.QueueFree();
