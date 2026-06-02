@@ -4921,6 +4921,14 @@ public sealed class SimRuntime
             new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 8f, Caliber = "9x19mm Parabellum", Stabilized = true },
             new PartInjury { PartId = "ArmL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 2f, Caliber = "9x19mm Parabellum" },
             new PartInjury { PartId = "Head", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 5f, Caliber = "7.62x51mm NATO", Tended = true, TendQuality = 0.75f },
+            new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 4f, Caliber = "5.56x45mm NATO" },
+            new PartInjury { PartId = "ArmR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 6f, Caliber = "5.56x45mm NATO", Lodged = true, HealFloor = 3f },
+            new PartInjury { PartId = "LegL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 3f, Caliber = "9x19mm Parabellum", Tended = true, TendQuality = 0.75f },
+            new PartInjury { PartId = "LegR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 7f, Caliber = "7.62x51mm NATO", Stabilized = true },
+            new PartInjury { PartId = "Head", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 2f, Caliber = "5.56x45mm NATO" },
+            new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 9f, Caliber = "7.62x51mm NATO", Lodged = true, HealFloor = 4.5f },
+            new PartInjury { PartId = "ArmL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 4f, Caliber = "5.56x45mm NATO", Stabilized = true },
+            new PartInjury { PartId = "LegR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 5f, Caliber = "9x19mm Parabellum", Tended = true, TendQuality = 0.75f },
         };
     }
 
