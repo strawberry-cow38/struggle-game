@@ -180,6 +180,7 @@ public partial class Bootstrap : Node2D
 
         var pawnInfoPanel = new PawnInfoPanel { Host = _host, Name = "PawnInfoPanel" };
         AddChild(pawnInfoPanel);
+        hud.PawnPanel = pawnInfoPanel;
 
         var debugBar = new DebugBar { Tools = _tools, Host = _host, Name = "DebugBar" };
         AddChild(debugBar);

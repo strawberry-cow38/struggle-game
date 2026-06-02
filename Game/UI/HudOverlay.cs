@@ -11,6 +11,8 @@ namespace StruggleGame.Game.UI;
 public partial class HudOverlay : CanvasLayer
 {
     public SimHost? Host { get; set; }
+    // When open, the bottom-left pawn panel pushes the tile readout above it.
+    public PawnInfoPanel? PawnPanel { get; set; }
 
     private Label _label = null!;
     private Label _perfLabel = null!;
@@ -159,6 +161,8 @@ public partial class HudOverlay : CanvasLayer
 
         var vp = GetViewport().GetVisibleRect().Size;
         var min = _tileLabel.GetMinimumSize();
-        _tileLabel.Position = new Vector2(12, vp.Y - min.Y - 12);
+        // Sit just above the pawn panel when it's open, else the screen bottom.
+        float bottom = PawnPanel is { PanelOpen: true } pp ? pp.PanelTop - 8f : vp.Y - 12f;
+        _tileLabel.Position = new Vector2(12, bottom - min.Y);
     }
 }
