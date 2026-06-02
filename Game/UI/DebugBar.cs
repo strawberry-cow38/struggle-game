@@ -16,7 +16,10 @@ public partial class DebugBar : CanvasLayer
 
     private const int ButtonHeight = 36;
     private const int ButtonGap = 6;
-    private const int MarginTop = 8;
+    // Match Toolbar's bottom-right cluster so Dev stacks above Sched/Work/Build.
+    private const int MarginRight = 16;
+    private const int MarginBottom = 16;
+    private const int ToolbarButtonSize = 56;
 
     private readonly Dictionary<ToolMode, Button> _buttons = new();
     private HBoxContainer _hbox = null!;
@@ -79,9 +82,14 @@ public partial class DebugBar : CanvasLayer
     {
         if (_hbox is null || _devToggle is null) return;
         var vp = GetViewport().GetVisibleRect().Size;
-        _devToggle.Position = new Vector2((vp.X - _devToggle.Size.X) * 0.5f, MarginTop);
+        // Build row sits at the bottom; Work/Sched on the row above it; Dev
+        // goes one row higher again, right-aligned to the same margin.
+        float buildY = vp.Y - ToolbarButtonSize - MarginBottom;
+        float upperRowY = buildY - ToolbarButtonSize - ButtonGap;
+        float devY = upperRowY - _devToggle.Size.Y - ButtonGap;
+        _devToggle.Position = new Vector2(vp.X - _devToggle.Size.X - MarginRight, devY);
         if (_hbox.Visible)
-            _hbox.Position = new Vector2((vp.X - _hbox.Size.X) * 0.5f, MarginTop + _devToggle.Size.Y + ButtonGap);
+            _hbox.Position = new Vector2(vp.X - _hbox.Size.X - MarginRight, devY - _hbox.Size.Y - ButtonGap);
     }
 
     public override void _ExitTree()
