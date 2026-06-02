@@ -139,6 +139,13 @@ public partial class HealthTabPanel : CanvasLayer
         };
         body.AddChild(_scroll);
 
+        // Style the scrollbar to match — pastel grabber on a dim track.
+        var vbar = _scroll.GetVScrollBar();
+        vbar.AddThemeStyleboxOverride("scroll", UiTheme.InsetBox(UiTheme.Inset, corner: 4));
+        vbar.AddThemeStyleboxOverride("grabber", UiTheme.Box(new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.45f), UiTheme.Border, 1, 4, 0, glow: false));
+        vbar.AddThemeStyleboxOverride("grabber_highlight", UiTheme.Box(new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.65f), UiTheme.Border, 1, 4, 0, glow: false));
+        vbar.AddThemeStyleboxOverride("grabber_pressed", UiTheme.Box(UiTheme.Accent, UiTheme.Border, 1, 4, 0, glow: false));
+
         _conditionsCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _conditionsCol.AddThemeConstantOverride("separation", 3);
         _scroll.AddChild(_conditionsCol);
