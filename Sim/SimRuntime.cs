@@ -4328,6 +4328,7 @@ public sealed class SimRuntime
         if (!patient.HasComponent<Health>()) return;
         var injuries = patient.GetComponent<Health>().Injuries;
         if (injuries is null) return;
+        // One round per surgery (each takes a tend's worth of work).
         for (int i = 0; i < injuries.Count; i++)
         {
             var w = injuries[i];
@@ -4341,6 +4342,7 @@ public sealed class SimRuntime
             w.HealFloor = 0f;          // can now heal fully
             w.RemovalRequested = false;
             injuries[i] = w;
+            break;
         }
         ref var h = ref patient.GetComponent<Health>();
         HealthSystem.Recompute(ref h);

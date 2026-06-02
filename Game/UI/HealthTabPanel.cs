@@ -337,7 +337,7 @@ public partial class HealthTabPanel : CanvasLayer
             _ => g.Kind.ToString().ToLower(),
         };
         string countTag = g.Count > 1 ? $"  x{g.Count}" : "";
-        if (g.RemovalRequested) countTag += "  [surgery queued]";
+        string queued = g.RemovalRequested ? "[Q] " : "";
 
         var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Stop };
         // Right-click a lodged gunshot to queue/cancel bullet-removal surgery.
@@ -358,7 +358,7 @@ public partial class HealthTabPanel : CanvasLayer
                 }
             };
         }
-        var line = new Label { Text = $"{part}: {detail}{countTag}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        var line = new Label { Text = $"{queued}{part}: {detail}{countTag}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         line.AddThemeFontSizeOverride("font_size", 14);
         Color c = g.Kind == ConditionKind.Missing
             ? new Color(1f, 0.4f, 0.4f)
@@ -370,7 +370,7 @@ public partial class HealthTabPanel : CanvasLayer
         // independently of treatment, so a lodged round still reads as lodged
         // even once tended or stabilized.
         var ballistic = new BallisticIcon { CustomMinimumSize = new Vector2(20, 18), MouseFilter = Control.MouseFilterEnum.Stop };
-        ballistic.Set(g.Kind == ConditionKind.Gunshot, g.Lodged);
+        ballistic.Set(g.Kind == ConditionKind.Gunshot, g.Lodged, g.Tended);
         if (g.Kind == ConditionKind.Gunshot)
             ballistic.TooltipText = g.Lodged
                 ? "Lodged — the round is stuck in the body"

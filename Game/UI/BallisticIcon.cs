@@ -11,16 +11,19 @@ public partial class BallisticIcon : Control
 {
     private bool _gunshot;
     private bool _lodged;
+    private bool _tended;
 
-    public void Set(bool gunshot, bool lodged)
+    public void Set(bool gunshot, bool lodged, bool tended)
     {
-        _gunshot = gunshot; _lodged = lodged;
+        _gunshot = gunshot; _lodged = lodged; _tended = tended;
         QueueRedraw();
     }
 
     public override void _Draw()
     {
         if (!_gunshot) return;
+        // A tended through & through needs no marker; lodged always shows.
+        if (!_lodged && _tended) return;
         var c = Size * 0.5f;
         if (_lodged)
         {
