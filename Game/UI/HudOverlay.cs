@@ -11,6 +11,7 @@ public partial class HudOverlay : CanvasLayer
     public SimHost? Host { get; set; }
 
     private Label _label = null!;
+    private Label _perfLabel = null!;
 
     // Refresh the readout at most this often. Per-frame at 1500+ fps the
     // sim queries + string interpolation showed up under the mouse-move
@@ -39,6 +40,18 @@ public partial class HudOverlay : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         AddChild(_label);
+
+        // FPS / TPS readout, top-right.
+        _perfLabel = new Label
+        {
+            Name = "Perf",
+            LabelSettings = settings,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            AnchorLeft = 1, AnchorTop = 0, AnchorRight = 1, AnchorBottom = 0,
+            OffsetLeft = -260, OffsetTop = 8, OffsetRight = -12, OffsetBottom = 60,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        AddChild(_perfLabel);
     }
 
     public override void _Process(double delta)
@@ -49,8 +62,6 @@ public partial class HudOverlay : CanvasLayer
         _refreshAccum = 0;
         float fps = (float)Engine.GetFramesPerSecond();
         float tps = Host.ActualTps;
-        float speed = Host.TickHz / (float)SimConstants.TickHz;
-        int rooms = Host.LatestSnapshot?.RoomCount ?? 0;
         string paused = Host.IsPaused ? "  [PAUSED]" : string.Empty;
 
         // Screen→world for the hover tile: convert viewport mouse
@@ -86,6 +97,7 @@ public partial class HudOverlay : CanvasLayer
         string clock = dt.ToString("HH:mm");
         string date = dt.ToString("ddd MMM d, yyyy");
 
-        _label.Text = $"FPS  {fps:0}\nTPS  {tps:0} / {Host.TickHz}{paused}\nSPEED {speed:0.##}x\nROOMS {rooms}\n{clock}  {date}{hoverLine}";
+        _perfLabel.Text = $"FPS  {fps:0}\nTPS  {tps:0} / {Host.TickHz}{paused}";
+        _label.Text = $"{clock}  {date}{hoverLine}";
     }
 }
