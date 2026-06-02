@@ -42,11 +42,27 @@ public static class UiTheme
         return b;
     }
 
-    // A Theme that outlines every Label so text stays legible over the glass.
-    // Assign to a panel root; children inherit it.
+    // The UI font (Sora), lazily loaded from disk and shared.
+    private static FontFile? _font;
+    private static bool _fontTried;
+    public static FontFile? Font
+    {
+        get
+        {
+            if (_fontTried) return _font;
+            _fontTried = true;
+            var bytes = Godot.FileAccess.GetFileAsBytes("res://assets/fonts/Sora.ttf");
+            if (bytes.Length > 0) _font = new FontFile { Data = bytes };
+            return _font;
+        }
+    }
+
+    // A Theme that sets the UI font + outlines every Label so text stays
+    // legible over the glass. Assign to a panel root; children inherit it.
     public static Theme LabelTheme()
     {
         var t = new Theme();
+        if (Font is not null) t.DefaultFont = Font;
         t.SetColor("font_color", "Label", Text);
         t.SetConstant("outline_size", "Label", 3);
         t.SetColor("font_outline_color", "Label", Outline);

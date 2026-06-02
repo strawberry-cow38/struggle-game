@@ -360,6 +360,12 @@ public partial class HarnessController : Node2D
                 }
                 _schedule.Add((120.0, h => h.Finish("rgb-wheel complete"), "finish"));
                 break;
+            case "fonts":
+                _schedule.Add((0.3, h => h.FontShowcase(), "fonts"));
+                _schedule.Add((1.5, h => h.Screenshot(), "shot"));
+                _schedule.Add((2.5, h => h.Finish("fonts done"), "finish"));
+                _screenshotEverySec = double.PositiveInfinity;
+                break;
             case "healthtab":
                 // Wound the lowest colonist with a demo mix, select it, open
                 // the health tab, then screenshot the status icons.
@@ -966,6 +972,44 @@ public partial class HarnessController : Node2D
     private void DraftLowest()
     {
         if (LowestPawnId() is int id) Host.QueueCommand(new ToggleDraftCommand(id));
+    }
+
+    private void FontShowcase()
+    {
+        var layer = new CanvasLayer { Layer = 98 };
+        AddChild(layer);
+
+        var panel = new Panel { CustomMinimumSize = new Vector2(1480, 980) };
+        panel.AddThemeStyleboxOverride("panel", StruggleGame.Game.UI.UiTheme.PanelBox(16, 0));
+        panel.Size = new Vector2(1480, 980);
+        var vp = GetViewport().GetVisibleRect().Size;
+        panel.Position = new Vector2((vp.X - 1480) * 0.5f, (vp.Y - 980) * 0.5f);
+        layer.AddChild(panel);
+
+        var vb = new VBoxContainer { Position = new Vector2(48, 36) };
+        vb.AddThemeConstantOverride("separation", 14);
+        panel.AddChild(vb);
+
+        string sample = "Colonist #7  Health 96%  Pain 12%  0123456789";
+        var fonts = new[]
+        {
+            "Quicksand", "Comfortaa", "Jost", "Outfit", "Orbitron", "VT323", "ChakraPetch",
+            "Rajdhani", "Exo2", "SpaceGrotesk", "Iceland", "Tomorrow", "Syne", "Sora",
+        };
+        foreach (var name in fonts)
+        {
+            var ff = new FontFile();
+            var bytes = Godot.FileAccess.GetFileAsBytes($"res://assets/fonts/{name}.ttf");
+            GD.Print($"[fonts] {name} bytes={bytes.Length}");
+            ff.Data = bytes;
+            var line = new Label { Text = $"{name}   {sample}" };
+            line.AddThemeFontOverride("font", ff);
+            line.AddThemeFontSizeOverride("font_size", 28);
+            line.AddThemeColorOverride("font_color", new Color(0.93f, 0.95f, 1f));
+            line.AddThemeConstantOverride("outline_size", 3);
+            line.AddThemeColorOverride("font_outline_color", new Color(0.03f, 0.03f, 0.09f, 0.9f));
+            vb.AddChild(line);
+        }
     }
 
     private void HealthDemo()
