@@ -17,7 +17,7 @@ public partial class HealthTabPanel : CanvasLayer
     // Aligned to sit directly above the pawn card and share its width.
     public PawnInfoPanel? PawnPanel { get; set; }
 
-    private const int PanelWidth = 560;  // fallback if the pawn panel is absent
+    private const int PanelWidth = 820;  // wider than the pawn card to fit conditions
     private const int PanelHeight = 460;
     private const float GapAbovePanel = 8f;
 
@@ -242,7 +242,7 @@ public partial class HealthTabPanel : CanvasLayer
     {
         if (_root is null) return;
         var vp = GetViewport().GetVisibleRect().Size;
-        float w = PawnPanel?.PanelWidthPx ?? PanelWidth;
+        float w = PanelWidth; // wider than the card so conditions fit
         float x = PawnPanel?.PanelLeft ?? 12f;
         float panelTop = PawnPanel is { PanelOpen: true } pp ? pp.PanelTop : vp.Y - (PawnPanel?.PanelMarginBottom ?? 16f);
         float y = panelTop - GapAbovePanel - PanelHeight;
