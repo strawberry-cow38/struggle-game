@@ -266,13 +266,14 @@ public partial class Selector : Node2D
             }
             _bpMenu.AddItem($"Melee attack {name}", 5);
         }
-        // Medical: a lone drafted doctor carrying medicine can tend/stabilize a
-        // wounded target (any side — downed enemies included).
-        if (attackers.Length == 1 && DoctorHasMedicine(snap, attackers[0]) && IsWounded(snap, targetId))
+        // Medical: a lone drafted doctor can tend a wounded target (any side).
+        // Tend works without medicine (half quality); stabilize needs it.
+        if (attackers.Length == 1 && IsWounded(snap, targetId))
         {
             _bpMenuPawnId = attackers[0];
-            _bpMenu.AddItem("Tend", 8);
-            _bpMenu.AddItem("Stabilize", 9);
+            bool hasMeds = DoctorHasMedicine(snap, attackers[0]);
+            _bpMenu.AddItem(hasMeds ? "Tend" : "Tend (no medicine)", 8);
+            if (hasMeds) _bpMenu.AddItem("Stabilize", 9);
         }
         // A downed pawn doesn't block movement, so a click on one would
         // otherwise have no "move here" — offer it for a lone drafted pawn.

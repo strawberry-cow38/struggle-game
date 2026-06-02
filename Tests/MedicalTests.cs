@@ -76,6 +76,74 @@ public class MedicalTests
     }
 
     [Fact]
+    public void BareHandsTend_NoMedicine_HalfQuality()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var ids = Colonists(sim);
+        int doctor = ids[0], patient = ids[1];
+
+        var de = sim.Store.GetEntityById(doctor);
+        de.AddComponent(new Drafted()); // no inventory → no medicine
+        SetPos(sim, doctor, 20.5f, 20.5f);
+        ref var dpf = ref de.GetComponent<PathFollower>(); dpf.Waypoints = null; dpf.Index = 0; dpf.PendingPathId = 0;
+
+        var pe = sim.Store.GetEntityById(patient);
+        SetPos(sim, patient, 21.5f, 20.5f);
+        pe.GetComponent<Health>().Injuries = new List<PartInjury>
+        { new PartInjury { PartId = "Torso", Kind = ConditionKind.Gunshot, Severity = 4f } };
+
+        sim.SetTreatmentTarget(doctor, patient, stabilize: false);
+
+        // Bare-hands tend = 1.3x the work time; step well past it.
+        for (int i = 0; i < 420; i++)
+        {
+            SetPos(sim, doctor, 20.5f, 20.5f); SetPos(sim, patient, 21.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+        }
+        var w = pe.GetComponent<Health>().Injuries![0];
+        Assert.True(w.Tended);
+        Assert.Equal(SimConstants.TendQualityStub * 0.5f, w.TendQuality, 4); // half quality
+    }
+
+    [Fact]
+    public void Tend_RepeatsUntilAllWoundsTreated()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var ids = Colonists(sim);
+        int doctor = ids[0], patient = ids[1];
+
+        var de = sim.Store.GetEntityById(doctor);
+        de.AddComponent(new Drafted());
+        de.AddComponent(new Inventory
+        { Items = new List<InventoryStack> { new InventoryStack { ItemPath = ItemCatalog.Medicine.FullPath, Count = 5 } } });
+        SetPos(sim, doctor, 20.5f, 20.5f);
+        ref var dpf = ref de.GetComponent<PathFollower>(); dpf.Waypoints = null; dpf.Index = 0; dpf.PendingPathId = 0;
+
+        var pe = sim.Store.GetEntityById(patient);
+        SetPos(sim, patient, 21.5f, 20.5f);
+        // 8+6+5 = 19 > budget 10 → needs two tend cycles.
+        pe.GetComponent<Health>().Injuries = new List<PartInjury>
+        {
+            new PartInjury { PartId = "Torso", Kind = ConditionKind.Gunshot, Severity = 8f },
+            new PartInjury { PartId = "ArmL", Kind = ConditionKind.Gunshot, Severity = 6f },
+            new PartInjury { PartId = "LegL", Kind = ConditionKind.Gunshot, Severity = 5f },
+        };
+
+        sim.SetTreatmentTarget(doctor, patient, stabilize: false);
+        for (int i = 0; i < 700; i++)
+        {
+            SetPos(sim, doctor, 20.5f, 20.5f); SetPos(sim, patient, 21.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+        }
+
+        foreach (var w in pe.GetComponent<Health>().Injuries!)
+            Assert.True(w.Tended, $"wound {w.PartId} should be tended");
+        Assert.False(de.HasComponent<TreatmentTarget>(), "order clears once all wounds are tended");
+    }
+
+    [Fact]
     public void TendJob_DoctorWalksWorksAndConsumesMedicine()
     {
         var sim = new SimRuntime();

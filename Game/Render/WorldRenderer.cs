@@ -731,6 +731,8 @@ public partial class WorldRenderer : Node2D
                 if (d.FireMeterPhase != 0)
                     DrawFireMeter(center - new Vector2(0f, radius + PixelsPerTile * 0.28f),
                         d.FireMeterProgress, d.FireMeterPhase == 1 ? AimMeterColor : CooldownMeterColor);
+                if (d.TreatProgress > 0f)
+                    DrawProgressBar(center - new Vector2(0f, radius + PixelsPerTile * 0.42f), d.TreatProgress, TreatBarColor);
                 // Facing arrow: a small triangle on the rim pointing the
                 // way the colonist last moved.
                 {
@@ -886,6 +888,18 @@ public partial class WorldRenderer : Node2D
             _pieBuf[s + 1] = at + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * r;
         }
         DrawColoredPolygon(_pieBuf, col);
+    }
+
+    // Horizontal progress bar (e.g. tending) centered at `at`.
+    private static readonly Color TreatBarColor = new(0.4f, 0.9f, 0.55f, 0.95f);
+    private static readonly Color TreatBarBg = new(0f, 0f, 0f, 0.5f);
+    private void DrawProgressBar(Vector2 at, float progress, Color fill)
+    {
+        progress = Mathf.Clamp(progress, 0f, 1f);
+        float w = PixelsPerTile * 0.5f, h = PixelsPerTile * 0.1f;
+        var bg = new Rect2(at.X - w * 0.5f, at.Y - h * 0.5f, w, h);
+        DrawRect(bg, TreatBarBg, filled: true);
+        DrawRect(new Rect2(bg.Position, new Vector2(w * progress, h)), fill, filled: true);
     }
 
     private void DrawSleepZs(Font font, Vector2 center, float radius)

@@ -220,6 +220,8 @@ public readonly record struct DummyState(
     // 0..1 fills the wedge.
     byte FireMeterPhase,
     float FireMeterProgress,
+    // Tend/stabilize work progress 0..1 (0 = not treating); drives the bar.
+    float TreatProgress,
     // Hostile — drawn with a red tint so it reads as an enemy, not a colonist.
     bool IsEnemy,
     // Current enemy goal (EnemyGoalKind value) for the overhead debug label.

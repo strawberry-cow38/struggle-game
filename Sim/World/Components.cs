@@ -44,6 +44,9 @@ public struct Wanderer : IComponent
     // Cleared as soon as the pawn steps out of any sandbag's neighbourhood.
     // A ranged pawn actively popping/leaning to fire overrides this.
     public bool Crouched;
+    // A medic is treating this pawn: hold still through this tick. The doctor
+    // refreshes it each working tick; the patient's Plan stands pat while set.
+    public long TendedUntilTick;
 }
 
 // Pending construction job on a tile. ProgressSec advances while a
@@ -723,6 +726,7 @@ public struct TreatmentTarget : IComponent
 {
     public int PatientEntityId;
     public bool Stabilize;     // false = tend (slow, full effects); true = stabilize (fast)
+    public long WorkStartTick; // when the current work cycle began
     public long WorkUntilTick; // 0 = not started working yet
 }
 

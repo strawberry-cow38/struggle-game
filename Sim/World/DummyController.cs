@@ -132,6 +132,7 @@ public sealed class DummyController
     private const long MeleeStunTicks = 30;       // ~0.5s frozen on a stun
     private const double MeleeStunChance = 0.25;
     private const float EngagedSlowFactor = 0.5f;
+    private const long TendHoldTicks = 20; // patient holds this long after each tend tick
     // Walk speed multiplier while sharing a tile with another pawn (squeeze).
     private const float CrowdedSpeedFactor = 0.4f;
     private const float SouthFacing = MathF.PI / 2f; // +Y is down on screen
@@ -390,6 +391,16 @@ public sealed class DummyController
             return;
         }
 
+        // Being tended: a medic is treating this pawn — hold still (don't wander
+        // or wander off into a job) so the doctor stays adjacent. The medic
+        // refreshes TendedUntilTick each working tick.
+        if (_tick < w.TendedUntilTick && !entity.HasComponent<TreatmentTarget>())
+        {
+            ClearPath(ref path);
+            SnapToNearestTile(ref pos, dt, out _, out _);
+            return;
+        }
+
         // Easing onto the grid after an undraft mid-walk. Hold here (no
         // jobs/wander) until centered, then fall through this same tick.
         if (w.Snapping)
@@ -629,10 +640,13 @@ public sealed class DummyController
             if (entity.HasComponent<TreatmentTarget>())
             {
                 ref var tt = ref entity.GetComponent<TreatmentTarget>();
+                // Tend needs no medicine (bare-hands = half quality); stabilize
+                // requires it. Order persists + re-cycles until nothing's left
+                // to treat (or it's cancelled by a move/undraft).
                 bool valid = store.TryGetEntityById(tt.PatientEntityId, out var pat)
                     && pat.HasComponent<Health>() && pat.HasComponent<WorldPos>()
                     && (HasTreatableWounds?.Invoke(pat, tt.Stabilize) ?? false)
-                    && HasMedicine(entity);
+                    && (!tt.Stabilize || HasMedicine(entity));
                 if (!valid) { cb.RemoveComponent<TreatmentTarget>(entity.Id); ClearPath(ref path); }
                 else
                 {
@@ -645,13 +659,28 @@ public sealed class DummyController
                         ClearPath(ref path);
                         SnapToNearestTile(ref pos, dt, out _, out _);
                         w.Facing = MathF.Atan2(pp.Y - pos.Y, pp.X - pos.X);
+                        // Keep the patient put while we work on them.
+                        if (pat.HasComponent<Wanderer>())
+                            pat.GetComponent<Wanderer>().TendedUntilTick = _tick + TendHoldTicks;
                         if (tt.WorkUntilTick == 0)
-                            tt.WorkUntilTick = _tick + (tt.Stabilize ? SimConstants.StabilizeWorkTicks : SimConstants.TendWorkTicks);
+                        {
+                            long dur = tt.Stabilize ? SimConstants.StabilizeWorkTicks : SimConstants.TendWorkTicks;
+                            // Bare-hands tending (no medicine) is 30% slower.
+                            if (!tt.Stabilize && !HasMedicine(entity))
+                                dur = (long)(dur * SimConstants.BareHandTendWorkMultiplier);
+                            tt.WorkStartTick = _tick;
+                            tt.WorkUntilTick = _tick + dur;
+                        }
                         else if (_tick >= tt.WorkUntilTick)
                         {
-                            if (ConsumeMedicine(entity))
-                                ApplyTreatment?.Invoke(pat, tt.Stabilize, SimConstants.TendQualityStub);
-                            cb.RemoveComponent<TreatmentTarget>(entity.Id);
+                            bool usedMed = ConsumeMedicine(entity); // tend works without; stabilize had it (valid)
+                            float quality = usedMed ? SimConstants.TendQualityStub : SimConstants.TendQualityStub * 0.5f;
+                            ApplyTreatment?.Invoke(pat, tt.Stabilize, quality);
+                            // Keep going if there's more to treat; else done.
+                            bool more = (HasTreatableWounds?.Invoke(pat, tt.Stabilize) ?? false)
+                                && (!tt.Stabilize || HasMedicine(entity));
+                            if (more) tt.WorkUntilTick = 0; // start the next cycle
+                            else cb.RemoveComponent<TreatmentTarget>(entity.Id);
                         }
                         return;
                     }

@@ -1400,6 +1400,14 @@ public sealed class SimRuntime
             bool rangedHasAmmo = false;
             byte fireMeterPhase = 0;
             float fireMeterProgress = 0f;
+            float treatProgress = 0f;
+            if (ent.HasComponent<TreatmentTarget>())
+            {
+                var tt = ent.GetComponent<TreatmentTarget>();
+                long span = tt.WorkUntilTick - tt.WorkStartTick;
+                if (tt.WorkUntilTick > 0 && span > 0)
+                    treatProgress = Math.Clamp((Tick - tt.WorkStartTick) / (float)span, 0f, 1f);
+            }
             if (ent.HasComponent<RangedCombat>() && TryGetEquippedRangedSpec(ent, out var rspec))
             {
                 var rc = ent.GetComponent<RangedCombat>();
@@ -1525,7 +1533,7 @@ public sealed class SimRuntime
                 hasRanged, rangedMag, rangedMagSize, rangedMode, rangedModes,
                 fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea, rangedAimMode,
                 coverStance, leaning, peekX, peekY, rangedHasAmmo,
-                fireMeterPhase, fireMeterProgress,
+                fireMeterPhase, fireMeterProgress, treatProgress,
                 ent.HasComponent<Enemy>(),
                 (byte)(ent.HasComponent<EnemyBrain>() ? ent.GetComponent<EnemyBrain>().Goal : EnemyGoalKind.None),
                 aimHit);
