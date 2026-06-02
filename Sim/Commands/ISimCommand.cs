@@ -920,6 +920,19 @@ public sealed class RemoveBulletPawnCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetTreatmentTarget(DoctorEntityId, PatientEntityId, stabilize: false, removeBullet: true);
 }
 
+// Shortcut: queue every lodged round, then send the surgeon for them.
+public sealed class RemoveAllBulletsPawnCommand : ISimCommand
+{
+    public int DoctorEntityId { get; }
+    public int PatientEntityId { get; }
+    public RemoveAllBulletsPawnCommand(int doctorId, int patientId) { DoctorEntityId = doctorId; PatientEntityId = patientId; }
+    public void Apply(SimRuntime sim)
+    {
+        sim.RequestAllBulletRemovals(PatientEntityId);
+        sim.SetTreatmentTarget(DoctorEntityId, PatientEntityId, stabilize: false, removeBullet: true);
+    }
+}
+
 public sealed class SetAimModeCommand : ISimCommand
 {
     public int PawnEntityId { get; }

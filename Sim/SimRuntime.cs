@@ -4310,6 +4310,23 @@ public sealed class SimRuntime
         }
     }
 
+    // Queue every lodged round for removal at once (the "Remove bullets" shortcut).
+    public void RequestAllBulletRemovals(int patientId)
+    {
+        if (!Store.TryGetEntityById(patientId, out var pt) || !pt.HasComponent<Health>()) return;
+        var injuries = pt.GetComponent<Health>().Injuries;
+        if (injuries is null) return;
+        for (int i = 0; i < injuries.Count; i++)
+        {
+            var w = injuries[i];
+            if (w.Lodged && w.Kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot && !w.RemovalRequested)
+            {
+                w.RemovalRequested = true;
+                injuries[i] = w;
+            }
+        }
+    }
+
     // Any lodged round queued for removal?
     public bool HasRemovableBullet(Entity p)
     {
