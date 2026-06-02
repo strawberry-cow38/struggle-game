@@ -72,22 +72,6 @@ public partial class PawnInfoPanel : CanvasLayer
         vbox.AddThemeConstantOverride("separation", 6);
         _root.AddChild(vbox);
 
-        // Dumb tab strip (inert — styling only for now).
-        var tabRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        tabRow.AddThemeConstantOverride("separation", 3);
-        foreach (var tab in new[] { "Log", "Gear", "Social", "Bio", "Needs", "Health" })
-        {
-            var t = new Button { Text = tab, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 24) };
-            t.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-            var tan = MakeBox(new Color(0.45f, 0.36f, 0.22f), border: new Color(0.20f, 0.15f, 0.08f), borderWidth: 1, corner: 4, margin: 4);
-            t.AddThemeStyleboxOverride("normal", tan);
-            t.AddThemeStyleboxOverride("hover", tan);
-            t.AddThemeStyleboxOverride("pressed", tan);
-            t.AddThemeColorOverride("font_color", new Color(0.93f, 0.9f, 0.82f));
-            tabRow.AddChild(t);
-        }
-        vbox.AddChild(tabRow);
-
         var headerRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         _nameLabel = new Label { Text = "Colonist", CustomMinimumSize = new Vector2(0, 24) };
         _nameLabel.AddThemeFontSizeOverride("font_size", 18);
@@ -151,6 +135,22 @@ public partial class PawnInfoPanel : CanvasLayer
         activityRow.AddChild(_activityLabel);
         activityRow.AddChild(_weaponLabel);
         vbox.AddChild(activityRow);
+
+        // Dumb tab strip at the bottom (inert — styling only for now).
+        var tabRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        tabRow.AddThemeConstantOverride("separation", 3);
+        foreach (var tab in new[] { "Log", "Gear", "Social", "Bio", "Needs", "Health" })
+        {
+            var t = new Button { Text = tab, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 24) };
+            t.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            var tan = MakeBox(new Color(0.45f, 0.36f, 0.22f), border: new Color(0.20f, 0.15f, 0.08f), borderWidth: 1, corner: 4, margin: 4);
+            t.AddThemeStyleboxOverride("normal", tan);
+            t.AddThemeStyleboxOverride("hover", tan);
+            t.AddThemeStyleboxOverride("pressed", tan);
+            t.AddThemeColorOverride("font_color", new Color(0.93f, 0.9f, 0.82f));
+            tabRow.AddChild(t);
+        }
+        vbox.AddChild(tabRow);
 
         GetTree().Root.SizeChanged += Reposition;
         CallDeferred(nameof(Reposition));
@@ -282,7 +282,7 @@ public partial class PawnInfoPanel : CanvasLayer
         foreach (var eq in p.Equipped)
             if (ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var def) && (def.IsWeapon || def.IsRangedWeapon))
             { weapon = def.DisplayName; break; }
-        _weaponLabel.Text = weapon;
+        _weaponLabel.Text = $"Equipped: {weapon}";
     }
 
     // Bar fill: green when high, amber mid, red when low (low % = bad).
