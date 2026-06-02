@@ -146,7 +146,11 @@ public partial class HudOverlay : CanvasLayer
         foreach (var gz in snap.GrowZones)
             foreach (var t in gz.Tiles) if (t.X == tx && t.Y == ty) { lines.Add($"Grow zone: {gz.Name}"); break; }
 
-        if (lines.Count == 0) lines.Add("(empty)");
+        // Terrain / flooring / wall (the ground itself).
+        var map = Host.Map;
+        if ((int)map.GetWall(tx, ty) != 0) lines.Add($"{map.GetWall(tx, ty)} wall");
+        if ((int)map.GetFlooring(tx, ty) != 0) lines.Add($"{map.GetFlooring(tx, ty)} floor");
+        lines.Add($"{map.GetTerrain(tx, ty)}");
 
         float light = Host.LightAt(new TilePos(tx, ty));
         lines.Add($"Light: {light * 100f:0}%");
