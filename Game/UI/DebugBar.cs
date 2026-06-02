@@ -20,16 +20,37 @@ public partial class DebugBar : CanvasLayer
 
     private readonly Dictionary<ToolMode, Button> _buttons = new();
     private HBoxContainer _hbox = null!;
+    private Button _devToggle = null!;
 
     public override void _Ready()
     {
         Layer = 95;
         if (Tools is null) return;
 
+        // "Dev" toggle compacts the whole debug row behind one button, like
+        // the Build / Work / Sched toggles. Hidden by default.
+        _devToggle = new Button
+        {
+            Name = "DevToggle",
+            Text = "Dev",
+            ToggleMode = true,
+            CustomMinimumSize = new Vector2(0, ButtonHeight),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        _devToggle.Pressed += () =>
+        {
+            _hbox.Visible = _devToggle.ButtonPressed;
+            if (!_hbox.Visible && Tools is not null) Tools.Mode = ToolMode.None;
+            CallDeferred(nameof(Reposition));
+        };
+        AddChild(_devToggle);
+        _devToggle.Resized += Reposition;
+
         _hbox = new HBoxContainer
         {
             Name = "DebugRow",
             MouseFilter = Control.MouseFilterEnum.Pass,
+            Visible = false,
         };
         _hbox.AddThemeConstantOverride("separation", ButtonGap);
         AddChild(_hbox);
@@ -56,9 +77,11 @@ public partial class DebugBar : CanvasLayer
 
     private void Reposition()
     {
-        if (_hbox is null) return;
+        if (_hbox is null || _devToggle is null) return;
         var vp = GetViewport().GetVisibleRect().Size;
-        _hbox.Position = new Vector2((vp.X - _hbox.Size.X) * 0.5f, MarginTop);
+        _devToggle.Position = new Vector2((vp.X - _devToggle.Size.X) * 0.5f, MarginTop);
+        if (_hbox.Visible)
+            _hbox.Position = new Vector2((vp.X - _hbox.Size.X) * 0.5f, MarginTop + _devToggle.Size.Y + ButtonGap);
     }
 
     public override void _ExitTree()
