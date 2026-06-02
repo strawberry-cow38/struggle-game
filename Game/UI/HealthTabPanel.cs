@@ -141,6 +141,7 @@ public partial class HealthTabPanel : CanvasLayer
 
         // Style the scrollbar to match — pastel grabber on a dim track.
         var vbar = _scroll.GetVScrollBar();
+        vbar.CustomMinimumSize = new Vector2(14, 0); // give it a visible width
         vbar.AddThemeStyleboxOverride("scroll", UiTheme.InsetBox(UiTheme.Inset, corner: 4));
         vbar.AddThemeStyleboxOverride("grabber", UiTheme.Box(new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.45f), UiTheme.Border, 1, 4, 0, glow: false));
         vbar.AddThemeStyleboxOverride("grabber_highlight", UiTheme.Box(new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.65f), UiTheme.Border, 1, 4, 0, glow: false));
