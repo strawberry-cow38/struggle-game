@@ -41,6 +41,8 @@ public partial class HealthTabPanel : CanvasLayer
 
     private Panel _root = null!;
     private VBoxContainer _vbox = null!;
+    private StyleBoxFlat _panelBox = null!;
+    private double _glowT;
     private Label _painValue = null!;
     private Label _bleedValue = null!;
     private Label _deathValue = null!;
@@ -78,7 +80,8 @@ public partial class HealthTabPanel : CanvasLayer
             CustomMinimumSize = new Vector2(PanelWidth, 0),
             Size = new Vector2(PanelWidth, PanelHeight),
         };
-        _root.AddThemeStyleboxOverride("panel", UiTheme.PanelBox(corner: 12, margin: 0));
+        _panelBox = UiTheme.PanelBox(corner: 12, margin: 0);
+        _root.AddThemeStyleboxOverride("panel", _panelBox);
         _root.Theme = UiTheme.LabelTheme(); // outlined, readable text over the glass
         AddChild(new GlassBackdrop { Target = _root, Corner = 12f }); // frosted blur behind
         AddChild(_root);
@@ -188,6 +191,8 @@ public partial class HealthTabPanel : CanvasLayer
     public override void _Process(double delta)
     {
         if (!_open) return;
+        _glowT += delta;
+        UiTheme.AnimateGlow(_panelBox, _glowT);
         if (Host?.LatestSnapshot is not { } snap) return;
 
         // Follow the live selection; close when nothing's selected.

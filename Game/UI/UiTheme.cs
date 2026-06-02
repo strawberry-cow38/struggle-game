@@ -11,8 +11,8 @@ public static class UiTheme
     public static readonly Color PanelDeep = new(0.11f, 0.04f, 0.19f, 0.85f); // draft tiles
     public static readonly Color Panel = new(0.11f, 0.04f, 0.19f, 0.62f);     // panes — same purple, a touch more glass
     public static readonly Color Inset = new(0.05f, 0.05f, 0.12f, 0.55f);
-    public static readonly Color Border = new(0.74f, 0.82f, 1.0f, 0.45f);   // soft pastel edge
-    public static readonly Color Glow = new(0.55f, 0.62f, 1.0f, 0.22f);
+    public static readonly Color Border = new(0.42f, 0.26f, 0.58f, 0.65f);  // dark purple edge
+    public static readonly Color Glow = new(0.36f, 0.16f, 0.52f, 0.22f);    // dark purple glow
     public static readonly Color Accent = new(0.62f, 0.86f, 0.98f);         // pastel cyan
     public static readonly Color AccentPink = new(0.96f, 0.76f, 0.93f);
     public static readonly Color Text = new(0.93f, 0.95f, 1.0f);
@@ -64,6 +64,14 @@ public static class UiTheme
             _font = fv;
             return _font;
         }
+    }
+
+    // Pulse a panel box's glow (call each frame with accumulated time).
+    public static void AnimateGlow(StyleBoxFlat box, double t)
+    {
+        float pulse = 0.5f + 0.5f * Mathf.Sin((float)t * 1.5f);
+        box.ShadowSize = (int)Mathf.Lerp(7f, 18f, pulse);
+        box.ShadowColor = new Color(Glow.R, Glow.G, Glow.B, Mathf.Lerp(0.12f, 0.32f, pulse));
     }
 
     // A Theme that sets the UI font + outlines every Label so text stays

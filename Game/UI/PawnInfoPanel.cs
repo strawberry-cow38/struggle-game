@@ -27,6 +27,8 @@ public partial class PawnInfoPanel : CanvasLayer
 
     private Panel _root = null!;
     private VBoxContainer _vbox = null!;
+    private StyleBoxFlat _panelBox = null!;
+    private double _glowT;
     private const int PanelPad = 10; // vbox inset; bottom gap matches the sides
 
     // For other bottom-left HUD elements to dodge / align to this panel.
@@ -71,7 +73,8 @@ public partial class PawnInfoPanel : CanvasLayer
         AddChild(_root);
 
         // Ethereal glass card (shared dreamcore theme).
-        _root.AddThemeStyleboxOverride("panel", UiTheme.PanelBox(corner: 12, margin: 10));
+        _panelBox = UiTheme.PanelBox(corner: 12, margin: 10);
+        _root.AddThemeStyleboxOverride("panel", _panelBox);
         _root.Theme = UiTheme.LabelTheme();
 
         var vbox = new VBoxContainer
@@ -198,6 +201,8 @@ public partial class PawnInfoPanel : CanvasLayer
             return;
         }
         if (!_root.Visible) _root.Visible = true;
+        _glowT += delta;
+        UiTheme.AnimateGlow(_panelBox, _glowT);
         Reposition(); // re-anchor bottom-left as content height changes
         if (sel.Value != _shownPawnId || snap.Tick != _lastSnapshotTick)
         {
