@@ -164,7 +164,9 @@ public partial class HealthTabPanel : CanvasLayer
 
         var hs = p.Health;
         _painValue.Text = $"{hs.Pain * 100f:0}%";
+        _painValue.AddThemeColorOverride("font_color", CapColor(1f - hs.Pain)); // high pain = bad
         _bleedValue.Text = $"{hs.BleedRate * 100f:0.0}%";
+        _bleedValue.AddThemeColorOverride("font_color", CapColor(1f - Mathf.Min(1f, hs.BleedRate * 10f)));
 
         // Bleed-out estimate (only while actively bleeding). Game-hours is
         // fixed by the sim; real time scales with the current game speed.
@@ -173,11 +175,21 @@ public partial class HealthTabPanel : CanvasLayer
             double gameHours = hs.BloodLevel * SimRuntime.SimSecondsPerRealSecond / (hs.BleedRate * 3600.0);
             double realSec = hs.BloodLevel / (hs.BleedRate * SimConstants.TickSeconds * System.Math.Max(1, Host.TickHz));
             _deathLabel.Text = $"Death in: {gameHours:0.0}h ({FormatDuration(realSec)})";
+            _deathLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.45f, 0.40f));
         }
-        else _deathLabel.Text = "Death in: N/A";
+        else
+        {
+            _deathLabel.Text = "Death in: N/A";
+            _deathLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 1f));
+        }
 
         foreach (var (name, real) in Caps)
-            _capValues[name].Text = $"{(real ? CapValue(hs, name) : 0f) * 100f:0}%";
+        {
+            float v = real ? CapValue(hs, name) : 0f;
+            var lbl = _capValues[name];
+            lbl.Text = $"{v * 100f:0}%";
+            lbl.AddThemeColorOverride("font_color", CapColor(v));
+        }
 
         // Conditions (rebuild only on change).
         string sig = InjurySig(hs.Injuries);
@@ -202,6 +214,16 @@ public partial class HealthTabPanel : CanvasLayer
             return $"{m}m{s:00}s";
         }
         return $"{seconds:0}s";
+    }
+
+    // Red (low) → amber → green (high).
+    private static Color CapColor(float v)
+    {
+        v = Mathf.Clamp(v, 0f, 1f);
+        var low = new Color(0.85f, 0.32f, 0.30f);
+        var mid = new Color(0.85f, 0.70f, 0.25f);
+        var high = new Color(0.55f, 0.88f, 0.55f);
+        return v < 0.5f ? low.Lerp(mid, v / 0.5f) : mid.Lerp(high, (v - 0.5f) / 0.5f);
     }
 
     private static float CapValue(HealthState hs, string name) => name switch
