@@ -34,16 +34,29 @@ public partial class GameCamera : Camera2D
         Zoom = new Vector2(_targetZoom, _targetZoom);
     }
 
+    // Middle-mouse pan runs in _Input (ahead of GUI) so the UI panels — which
+    // have MouseFilter.Stop and would otherwise eat it — don't block dragging
+    // the view around while the cursor is over them.
+    public override void _Input(InputEvent @event)
+    {
+        if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Middle)
+        {
+            _panning = mb.Pressed;
+            GetViewport().SetInputAsHandled();
+        }
+        else if (@event is InputEventMouseMotion mm && _panning)
+        {
+            // Drag in screen pixels — translate world by relative / zoom
+            // so the world tracks the cursor 1:1.
+            Position -= mm.Relative / Zoom;
+            GetViewport().SetInputAsHandled();
+        }
+    }
+
     public override void _UnhandledInput(InputEvent @event)
     {
         if (@event is InputEventMouseButton mb)
         {
-            if (mb.ButtonIndex == MouseButton.Middle)
-            {
-                _panning = mb.Pressed;
-                GetViewport().SetInputAsHandled();
-                return;
-            }
             if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelUp)
             {
                 SetZoomIndex(_zoomIndex + 1);
@@ -56,13 +69,6 @@ public partial class GameCamera : Camera2D
                 GetViewport().SetInputAsHandled();
                 return;
             }
-        }
-        else if (@event is InputEventMouseMotion mm && _panning)
-        {
-            // Drag in screen pixels — translate world by relative / zoom
-            // so the world tracks the cursor 1:1.
-            Position -= mm.Relative / Zoom;
-            GetViewport().SetInputAsHandled();
         }
     }
 
