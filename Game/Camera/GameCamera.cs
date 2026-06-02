@@ -87,6 +87,14 @@ public partial class GameCamera : Camera2D
         worldPx = SimConstants.MapSize * SimConstants.PixelsPerTile;
     }
 
+    // Center the view on a world-pixel point (clamped to the map). Used by
+    // the colonist bar to focus a pawn on double-click.
+    public void FocusOn(Vector2 worldPx)
+    {
+        Position = worldPx;
+        ClampToMap();
+    }
+
     private void ClampToMap()
     {
         GetMapBounds(out float worldPx);

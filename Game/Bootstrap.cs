@@ -187,7 +187,7 @@ public partial class Bootstrap : Node2D
         var draftActionBar = new DraftActionBar { Host = _host, Tools = _tools, Name = "DraftActionBar" };
         AddChild(draftActionBar);
 
-        var colonistBar = new ColonistBar { Host = _host, Name = "ColonistBar" };
+        var colonistBar = new ColonistBar { Host = _host, Camera = camera, Name = "ColonistBar" };
         AddChild(colonistBar);
 
         var combatSfx = new CombatSfx { Host = _host, Name = "CombatSfx" };
