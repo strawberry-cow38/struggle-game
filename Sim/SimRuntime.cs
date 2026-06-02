@@ -4827,6 +4827,21 @@ public sealed class SimRuntime
 
     // Debug/gameplay: add a condition to one of a colonist's body parts
     // and recompute capacities immediately.
+    // Debug: overwrite a pawn's injuries with a fixed demo set covering each
+    // status-icon case (heavy bleed, light bleed, tended, stabilized).
+    public void DebugHealthDemo(int pawnId)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var pawn) || !pawn.HasComponent<Health>()) return;
+        ref var h = ref pawn.GetComponent<Health>();
+        h.Injuries = new List<PartInjury>
+        {
+            new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 11f, Caliber = "7.62x51mm NATO", Lodged = true },
+            new PartInjury { PartId = "ArmR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 3f, Caliber = "9x19mm Parabellum" },
+            new PartInjury { PartId = "ArmL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 5f, Caliber = "9x19mm Parabellum", Tended = true, TendQuality = 0.75f },
+            new PartInjury { PartId = "LegL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 7f, Caliber = "5.56x45mm NATO", Stabilized = true },
+        };
+    }
+
     public void ApplyInjury(int pawnId, string partId, StruggleGame.Sim.Bodies.ConditionKind kind, float severity, string? caliber = null, bool lodged = false)
     {
         if (!Store.TryGetEntityById(pawnId, out var pawn)) return;

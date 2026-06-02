@@ -956,6 +956,15 @@ public sealed class ApplyInjuryCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.ApplyInjury(PawnEntityId, PartId, Kind, Severity);
 }
 
+// Debug: stamp a fixed mix of wounds (bleeding / tended / stabilized) onto a
+// pawn so the health-tab status icons can be demoed/screenshotted.
+public sealed class DebugHealthDemoCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public DebugHealthDemoCommand(int pawnId) { PawnEntityId = pawnId; }
+    public void Apply(SimRuntime sim) => sim.DebugHealthDemo(PawnEntityId);
+}
+
 // RMB "Prioritize Haul" on a dropped pile outside a stockpile: pin its
 // stockpile haul to the chosen colonist.
 public sealed class PrioritizeHaulForPawnCommand : ISimCommand

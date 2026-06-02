@@ -353,6 +353,15 @@ public partial class HarnessController : Node2D
                 }
                 _schedule.Add((120.0, h => h.Finish("rgb-wheel complete"), "finish"));
                 break;
+            case "healthtab":
+                // Wound the lowest colonist with a demo mix, select it, open
+                // the health tab, then screenshot the status icons.
+                _schedule.Add((0.1, h => h.SetCameraZoom(4.0f), "zoom"));
+                _schedule.Add((0.5, h => h.HealthDemo(), "wound + open health"));
+                _schedule.Add((2.5, h => h.Screenshot(), "shot"));
+                _schedule.Add((3.5, h => h.Finish("healthtab done"), "finish"));
+                _screenshotEverySec = double.PositiveInfinity;
+                break;
             case "lit-room-night":
                 // Visual harness: 5x5 outer-wall room with door on south,
                 // roof over interior, lit lamp at center, world time set
@@ -950,6 +959,15 @@ public partial class HarnessController : Node2D
     private void DraftLowest()
     {
         if (LowestPawnId() is int id) Host.QueueCommand(new ToggleDraftCommand(id));
+    }
+
+    private void HealthDemo()
+    {
+        if (LowestPawnId() is not int id) return;
+        Host.QueueCommand(new DebugHealthDemoCommand(id));
+        Host.SelectedDummyId = id; // opens the pawn card so the health tab anchors above it
+        if (GetTree().Root.FindChild("HealthTabPanel", true, false) is StruggleGame.Game.UI.HealthTabPanel panel)
+            panel.OpenFor(id);
     }
 
     private void SpawnPawn()
