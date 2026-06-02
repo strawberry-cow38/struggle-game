@@ -256,7 +256,7 @@ public readonly record struct HealthState(
     bool Unconscious,
     InjuryState[] Injuries);
 
-public readonly record struct InjuryState(string PartId, StruggleGame.Sim.Bodies.ConditionKind Kind, float Severity, string? Caliber = null, bool Lodged = false);
+public readonly record struct InjuryState(string PartId, StruggleGame.Sim.Bodies.ConditionKind Kind, float Severity, string? Caliber = null, bool Lodged = false, float Bleed = 0f, bool Tended = false, bool Stabilized = false);
 
 // Persistent inventory rows for the pawn info panel. Equipped slots and
 // general (held) stacks are indexed by position in their respective

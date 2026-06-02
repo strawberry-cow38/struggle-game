@@ -263,24 +263,31 @@ public partial class HealthTabPanel : CanvasLayer
         return row;
     }
 
-    private readonly record struct InjuryGroup(string PartId, ConditionKind Kind, int Count, float MaxSeverity, string? Caliber, bool Lodged);
+    private readonly record struct InjuryGroup(
+        string PartId, ConditionKind Kind, int Count, float MaxSeverity, string? Caliber, bool Lodged,
+        float Bleed, bool Tended, bool Stabilized);
 
     private static List<InjuryGroup> GroupInjuries(InjuryState[] injuries)
     {
-        var map = new Dictionary<(string, ConditionKind, string?, bool), (int n, float maxSev)>();
+        var map = new Dictionary<(string, ConditionKind, string?, bool), (int n, float maxSev, float bleed, bool allTended, bool anyStab)>();
         var order = new List<(string, ConditionKind, string?, bool)>();
         foreach (var inj in injuries)
         {
             var key = (inj.PartId, inj.Kind, inj.Caliber, inj.Lodged);
-            if (map.TryGetValue(key, out var cur)) map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity));
-            else { map[key] = (1, inj.Severity); order.Add(key); }
+            if (map.TryGetValue(key, out var cur))
+                map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity), cur.bleed + inj.Bleed, cur.allTended && inj.Tended, cur.anyStab || inj.Stabilized);
+            else { map[key] = (1, inj.Severity, inj.Bleed, inj.Tended, inj.Stabilized); order.Add(key); }
         }
         var list = new List<InjuryGroup>();
-        foreach (var key in order) { var v = map[key]; list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4)); }
+        foreach (var key in order)
+        {
+            var v = map[key];
+            list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4, v.bleed, v.allTended, v.anyStab));
+        }
         return list;
     }
 
-    private static Label BuildConditionRow(InjuryGroup g)
+    private static Control BuildConditionRow(InjuryGroup g)
     {
         string part = BodyTree.TryGet(g.PartId, out var def) ? def.DisplayName : g.PartId;
         string detail = g.Kind switch
@@ -292,19 +299,29 @@ public partial class HealthTabPanel : CanvasLayer
             _ => $"{g.Kind.ToString().ToLower()} {g.MaxSeverity:0} dmg",
         };
         string countTag = g.Count > 1 ? $"  x{g.Count}" : "";
-        var line = new Label { Text = $"{part}: {detail}{countTag}" };
+
+        var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        var line = new Label { Text = $"{part}: {detail}{countTag}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         line.AddThemeFontSizeOverride("font_size", 14);
         Color c = g.Kind == ConditionKind.Missing
             ? new Color(1f, 0.4f, 0.4f)
             : g.MaxSeverity >= 12f ? new Color(1f, 0.6f, 0.3f) : new Color(0.9f, 0.85f, 0.6f);
         line.AddThemeColorOverride("font_color", c);
-        return line;
+        row.AddChild(line);
+
+        var icon = new ConditionIcon { CustomMinimumSize = new Vector2(28, 18), MouseFilter = Control.MouseFilterEnum.Ignore };
+        icon.Set(g.Tended ? 0f : g.Bleed, g.Tended, g.Stabilized);
+        row.AddChild(icon);
+        return row;
     }
 
     private static string InjurySig(InjuryState[] injuries)
     {
         var sb = new System.Text.StringBuilder();
-        foreach (var i in injuries) sb.Append(i.PartId).Append((int)i.Kind).Append((int)(i.Severity * 10)).Append(i.Caliber).Append(i.Lodged ? 'L' : 'T').Append(';');
+        foreach (var i in injuries)
+            sb.Append(i.PartId).Append((int)i.Kind).Append((int)(i.Severity * 10)).Append(i.Caliber)
+              .Append(i.Lodged ? 'L' : 'T').Append(i.Tended ? 'b' : '-').Append(i.Stabilized ? 's' : '-')
+              .Append((int)(i.Bleed * 1000)).Append(';');
         return sb.ToString();
     }
 
