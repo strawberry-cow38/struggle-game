@@ -53,6 +53,13 @@ public partial class HarnessController : Node2D
         _log = new StreamWriter(Path.Combine(OutputDir, "log.jsonl")) { AutoFlush = true };
         _headless = DisplayServer.GetName() == "headless";
 
+        // Render captures at 1440p.
+        if (!_headless)
+        {
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+            DisplayServer.WindowSetPosition(new Vector2I(0, 0));
+            DisplayServer.WindowSetSize(new Vector2I(2560, 1440));
+        }
         GD.Print($"[harness] scenario={Scenario} headless={_headless} out={OutputDir}");
         Log($"{{\"event\":\"start\",\"scenario\":\"{Scenario}\",\"tickHz\":{Host.TickHz},\"headless\":{(_headless ? "true" : "false")}}}");
 

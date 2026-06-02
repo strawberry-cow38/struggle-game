@@ -65,6 +65,7 @@ public partial class PawnInfoPanel : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Stop,
             Visible = false,
         };
+        AddChild(new GlassBackdrop { Target = _root, Corner = 12f }); // frosted blur behind
         AddChild(_root);
 
         // Ethereal glass card (shared dreamcore theme).

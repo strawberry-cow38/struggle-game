@@ -79,6 +79,7 @@ public partial class HealthTabPanel : CanvasLayer
         };
         _root.AddThemeStyleboxOverride("panel", UiTheme.PanelBox(corner: 12, margin: 0));
         _root.Theme = UiTheme.LabelTheme(); // outlined, readable text over the glass
+        AddChild(new GlassBackdrop { Target = _root, Corner = 12f }); // frosted blur behind
         AddChild(_root);
 
         var vbox = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
