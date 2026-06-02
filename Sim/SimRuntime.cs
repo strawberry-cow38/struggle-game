@@ -368,6 +368,8 @@ public sealed class SimRuntime
         _dummies.LightProvider = (x, y) => LightAt(new TilePos(x, y));
         _dummies.HasTreatableWounds = HasTreatableWounds;
         _dummies.ApplyTreatment = ApplyTreatment;
+        _dummies.HasRemovableBullet = HasRemovableBullet;
+        _dummies.ApplyBulletRemoval = ApplyBulletRemoval;
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
@@ -1369,7 +1371,7 @@ public sealed class SimRuntime
                     {
                         var inj = hc.Injuries[ii];
                         injuries[ii] = new InjuryState(inj.PartId, inj.Kind, inj.Severity, inj.Caliber, inj.Lodged,
-                            HealthSystem.BleedOf(inj), inj.Tended, inj.Stabilized, inj.TendQuality);
+                            HealthSystem.BleedOf(inj), inj.Tended, inj.Stabilized, inj.TendQuality, inj.RemovalRequested);
                         bleedRate += World.HealthSystem.BleedOf(inj);
                     }
                 }
@@ -4271,7 +4273,7 @@ public sealed class SimRuntime
     }
 
     // Order a drafted doctor (with medicine) to tend / stabilize a patient.
-    public void SetTreatmentTarget(int doctorId, int patientId, bool stabilize)
+    public void SetTreatmentTarget(int doctorId, int patientId, bool stabilize, bool removeBullet = false)
     {
         if (doctorId == patientId) return;
         if (!Store.TryGetEntityById(doctorId, out var d) || !d.HasComponent<Drafted>()) return;
@@ -4282,12 +4284,66 @@ public sealed class SimRuntime
         if (d.HasComponent<TreatmentTarget>())
         {
             ref var tt = ref d.GetComponent<TreatmentTarget>();
-            tt.PatientEntityId = patientId; tt.Stabilize = stabilize; tt.WorkUntilTick = 0;
+            tt.PatientEntityId = patientId; tt.Stabilize = stabilize; tt.RemoveBullet = removeBullet; tt.WorkUntilTick = 0;
         }
         else
         {
-            d.AddComponent(new TreatmentTarget { PatientEntityId = patientId, Stabilize = stabilize });
+            d.AddComponent(new TreatmentTarget { PatientEntityId = patientId, Stabilize = stabilize, RemoveBullet = removeBullet });
         }
+    }
+
+    // Player queues (or un-queues) surgery on a specific lodged wound via the
+    // health panel; a drafted surgeon is assigned later by RMB on the patient.
+    public void RequestBulletRemoval(int patientId, string partId)
+    {
+        if (!Store.TryGetEntityById(patientId, out var pt) || !pt.HasComponent<Health>()) return;
+        var injuries = pt.GetComponent<Health>().Injuries;
+        if (injuries is null) return;
+        for (int i = 0; i < injuries.Count; i++)
+        {
+            var w = injuries[i];
+            if (w.PartId == partId && w.Lodged && w.Kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot)
+            {
+                w.RemovalRequested = !w.RemovalRequested;
+                injuries[i] = w;
+            }
+        }
+    }
+
+    // Any lodged round queued for removal?
+    public bool HasRemovableBullet(Entity p)
+    {
+        if (!p.HasComponent<Health>()) return false;
+        var inj = p.GetComponent<Health>().Injuries;
+        if (inj is null) return false;
+        foreach (var w in inj)
+            if (w.Lodged && w.RemovalRequested && w.Kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot) return true;
+        return false;
+    }
+
+    // Surgery: pull every queued lodged round. A tended wound comes out clean
+    // (heals fully from here); an untended one doubles its severity + bleeding.
+    public void ApplyBulletRemoval(Entity patient)
+    {
+        if (!patient.HasComponent<Health>()) return;
+        var injuries = patient.GetComponent<Health>().Injuries;
+        if (injuries is null) return;
+        for (int i = 0; i < injuries.Count; i++)
+        {
+            var w = injuries[i];
+            if (!(w.Lodged && w.RemovalRequested && w.Kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot)) continue;
+            if (!w.Tended)
+            {
+                w.Severity *= 2f;
+                w.BleedMult = (w.BleedMult > 0f ? w.BleedMult : 1f) * 2f;
+            }
+            w.Lodged = false;
+            w.HealFloor = 0f;          // can now heal fully
+            w.RemovalRequested = false;
+            injuries[i] = w;
+        }
+        ref var h = ref patient.GetComponent<Health>();
+        HealthSystem.Recompute(ref h);
     }
 
     public void SetAimMode(int pawnId, Items.AimMode mode)
@@ -4835,7 +4891,7 @@ public sealed class SimRuntime
         ref var h = ref pawn.GetComponent<Health>();
         h.Injuries = new List<PartInjury>
         {
-            new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 11f, Caliber = "7.62x51mm NATO", Lodged = true },
+            new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 11f, Caliber = "7.62x51mm NATO", Lodged = true, HealFloor = 5.5f },
             new PartInjury { PartId = "ArmR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 3f, Caliber = "9x19mm Parabellum" },
             new PartInjury { PartId = "ArmL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 5f, Caliber = "9x19mm Parabellum", Tended = true, TendQuality = 0.75f },
             new PartInjury { PartId = "LegL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 7f, Caliber = "5.56x45mm NATO", Stabilized = true },
@@ -4849,14 +4905,17 @@ public sealed class SimRuntime
         if (!StruggleGame.Sim.Bodies.BodyTree.TryGet(partId, out _)) return;
         ref var h = ref pawn.GetComponent<Health>();
         h.Injuries ??= new List<PartInjury>();
+        float sev = severity <= 0f ? 1f : severity;
         h.Injuries.Add(new PartInjury
         {
             PartId = partId,
             Kind = kind,
             // Severity is now damage in hit points — no upper clamp.
-            Severity = severity <= 0f ? 1f : severity,
+            Severity = sev,
             Caliber = caliber,
             Lodged = lodged,
+            // Lodged gunshots stall at 50% until the round's removed.
+            HealFloor = (lodged && kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot) ? sev * 0.5f : 0f,
         });
         HealthSystem.Recompute(ref h);
     }

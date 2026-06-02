@@ -169,6 +169,25 @@ public partial class Selector : Node2D
         {
             Host.QueueCommand(new TreatPawnCommand(_bpMenuPawnId, _meleeTargetId, stabilize: true));
         }
+        else if (id == 11)
+        {
+            Host.QueueCommand(new RemoveBulletPawnCommand(_bpMenuPawnId, _meleeTargetId));
+        }
+    }
+
+    // Target has a lodged round the player queued for removal.
+    private static bool HasRequestedBullet(SimSnapshot snap, int targetId)
+    {
+        foreach (var d in snap.Dummies)
+            if (d.EntityId == targetId)
+            {
+                if (d.Health.Injuries is null) return false;
+                foreach (var inj in d.Health.Injuries)
+                    if (inj.Lodged && inj.RemovalRequested
+                        && inj.Kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot) return true;
+                return false;
+            }
+        return false;
     }
 
     // The lone drafted pawn is carrying medicine.
@@ -274,6 +293,12 @@ public partial class Selector : Node2D
             bool hasMeds = DoctorHasMedicine(snap, attackers[0]);
             _bpMenu.AddItem(hasMeds ? "Tend" : "Tend (no medicine)", 8);
             if (hasMeds) _bpMenu.AddItem("Stabilize", 9);
+        }
+        // Remove a lodged round the player queued via the health panel (no medicine).
+        if (attackers.Length == 1 && HasRequestedBullet(snap, targetId))
+        {
+            _bpMenuPawnId = attackers[0];
+            _bpMenu.AddItem("Remove bullet", 11);
         }
         // A downed pawn doesn't block movement, so a click on one would
         // otherwise have no "move here" — offer it for a lone drafted pawn.

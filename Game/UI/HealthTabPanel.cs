@@ -48,6 +48,8 @@ public partial class HealthTabPanel : CanvasLayer
     private readonly Dictionary<string, Label> _capValues = new();
     private VBoxContainer _conditionsCol = null!;
     private ScrollContainer _scroll = null!;
+    private PopupMenu _rowMenu = null!;
+    private string _menuPartId = "";
     private string _lastInjurySig = "";
 
     private bool _open;
@@ -138,8 +140,18 @@ public partial class HealthTabPanel : CanvasLayer
         _conditionsCol.AddThemeConstantOverride("separation", 3);
         _scroll.AddChild(_conditionsCol);
 
+        _rowMenu = new PopupMenu();
+        _rowMenu.IdPressed += OnRowMenuPressed;
+        AddChild(_rowMenu);
+
         GetTree().Root.SizeChanged += Recenter;
         CallDeferred(nameof(Recenter));
+    }
+
+    private void OnRowMenuPressed(long id)
+    {
+        if (id == 1 && Host?.SelectedDummyId is int pid && _menuPartId.Length > 0)
+            Host.QueueCommand(new StruggleGame.Sim.Commands.RequestBulletRemovalCommand(pid, _menuPartId));
     }
 
     public override void _ExitTree()
@@ -286,24 +298,24 @@ public partial class HealthTabPanel : CanvasLayer
 
     private readonly record struct InjuryGroup(
         string PartId, ConditionKind Kind, int Count, float MaxSeverity, string? Caliber, bool Lodged,
-        float Bleed, bool Tended, bool Stabilized, float TendQuality);
+        float Bleed, bool Tended, bool Stabilized, float TendQuality, bool RemovalRequested);
 
     private static List<InjuryGroup> GroupInjuries(InjuryState[] injuries)
     {
-        var map = new Dictionary<(string, ConditionKind, string?, bool), (int n, float maxSev, float bleed, bool allTended, bool anyStab, float tendQ)>();
+        var map = new Dictionary<(string, ConditionKind, string?, bool), (int n, float maxSev, float bleed, bool allTended, bool anyStab, float tendQ, bool reqRem)>();
         var order = new List<(string, ConditionKind, string?, bool)>();
         foreach (var inj in injuries)
         {
             var key = (inj.PartId, inj.Kind, inj.Caliber, inj.Lodged);
             if (map.TryGetValue(key, out var cur))
-                map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity), cur.bleed + inj.Bleed, cur.allTended && inj.Tended, cur.anyStab || inj.Stabilized, System.Math.Max(cur.tendQ, inj.TendQuality));
-            else { map[key] = (1, inj.Severity, inj.Bleed, inj.Tended, inj.Stabilized, inj.TendQuality); order.Add(key); }
+                map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity), cur.bleed + inj.Bleed, cur.allTended && inj.Tended, cur.anyStab || inj.Stabilized, System.Math.Max(cur.tendQ, inj.TendQuality), cur.reqRem || inj.RemovalRequested);
+            else { map[key] = (1, inj.Severity, inj.Bleed, inj.Tended, inj.Stabilized, inj.TendQuality, inj.RemovalRequested); order.Add(key); }
         }
         var list = new List<InjuryGroup>();
         foreach (var key in order)
         {
             var v = map[key];
-            list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4, v.bleed, v.allTended, v.anyStab, v.tendQ));
+            list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4, v.bleed, v.allTended, v.anyStab, v.tendQ, v.reqRem));
         }
         return list;
     }
@@ -313,7 +325,7 @@ public partial class HealthTabPanel : CanvasLayer
     private static string ShortCaliber(string caliber)
         => caliber.Replace("Parabellum", "Para");
 
-    private static Control BuildConditionRow(InjuryGroup g)
+    private Control BuildConditionRow(InjuryGroup g)
     {
         string part = BodyTree.TryGet(g.PartId, out var def) ? def.DisplayName : g.PartId;
         string detail = g.Kind switch
@@ -325,8 +337,27 @@ public partial class HealthTabPanel : CanvasLayer
             _ => g.Kind.ToString().ToLower(),
         };
         string countTag = g.Count > 1 ? $"  x{g.Count}" : "";
+        if (g.RemovalRequested) countTag += "  [surgery queued]";
 
-        var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Stop };
+        // Right-click a lodged gunshot to queue/cancel bullet-removal surgery.
+        if (g.Lodged && g.Kind == ConditionKind.Gunshot)
+        {
+            string partId = g.PartId;
+            bool requested = g.RemovalRequested;
+            row.GuiInput += e =>
+            {
+                if (e is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Right)
+                {
+                    _menuPartId = partId;
+                    _rowMenu.Clear();
+                    _rowMenu.AddItem(requested ? "Cancel bullet removal" : "Remove bullet", 1);
+                    _rowMenu.Position = (Vector2I)GetViewport().GetMousePosition();
+                    _rowMenu.Popup();
+                    GetViewport().SetInputAsHandled();
+                }
+            };
+        }
         var line = new Label { Text = $"{part}: {detail}{countTag}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         line.AddThemeFontSizeOverride("font_size", 14);
         Color c = g.Kind == ConditionKind.Missing

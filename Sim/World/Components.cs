@@ -726,6 +726,7 @@ public struct TreatmentTarget : IComponent
 {
     public int PatientEntityId;
     public bool Stabilize;     // false = tend (slow, full effects); true = stabilize (fast)
+    public bool RemoveBullet;  // true = surgery to remove a lodged round (no medicine)
     public long WorkStartTick; // when the current work cycle began
     public long WorkUntilTick; // 0 = not started working yet
 }
@@ -833,6 +834,12 @@ public struct PartInjury
     public bool Tended;
     public bool Stabilized;
     public float TendQuality; // 0..1, set when Tended (stub 0.75 for now)
+    // Lodged gunshots can't heal past HealFloor (50% of the wound's starting
+    // severity) until the round is removed. BleedMult scales bleed (untended
+    // bullet removal doubles it). RemovalRequested = player queued surgery.
+    public float HealFloor;
+    public float BleedMult;
+    public bool RemovalRequested;
 }
 
 // Per-colonist health. Injuries is the flat list of conditions across the

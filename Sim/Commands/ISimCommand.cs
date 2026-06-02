@@ -902,6 +902,24 @@ public sealed class TreatPawnCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetTreatmentTarget(DoctorEntityId, PatientEntityId, Stabilize);
 }
 
+// Health panel: queue (toggle) bullet-removal surgery on a specific lodged wound.
+public sealed class RequestBulletRemovalCommand : ISimCommand
+{
+    public int PatientEntityId { get; }
+    public string PartId { get; }
+    public RequestBulletRemovalCommand(int patientId, string partId) { PatientEntityId = patientId; PartId = partId; }
+    public void Apply(SimRuntime sim) => sim.RequestBulletRemoval(PatientEntityId, PartId);
+}
+
+// RMB on a patient with a drafted pawn: send that surgeon to pull the queued round(s).
+public sealed class RemoveBulletPawnCommand : ISimCommand
+{
+    public int DoctorEntityId { get; }
+    public int PatientEntityId { get; }
+    public RemoveBulletPawnCommand(int doctorId, int patientId) { DoctorEntityId = doctorId; PatientEntityId = patientId; }
+    public void Apply(SimRuntime sim) => sim.SetTreatmentTarget(DoctorEntityId, PatientEntityId, stabilize: false, removeBullet: true);
+}
+
 public sealed class SetAimModeCommand : ISimCommand
 {
     public int PawnEntityId { get; }
