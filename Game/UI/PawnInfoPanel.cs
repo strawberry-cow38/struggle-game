@@ -250,7 +250,17 @@ public partial class PawnInfoPanel : CanvasLayer
         // the equip/inventory early-return below doesn't skip it).
         var hs = p.Health;
         string downed = hs.Unconscious ? "  [UNCONSCIOUS]" : "";
-        string bleeding = hs.BleedRate > 0f ? $"    bleeding {hs.BleedRate * 100f:0.0}%/s" : "";
+        string bleeding = "";
+        if (hs.BleedRate > 0f)
+        {
+            // Death ≈ blood reaching 0. Game-hours is fixed by the sim; real
+            // time scales with the current speed (more ticks/sec = sooner).
+            double gameHours = hs.BloodLevel * StruggleGame.Sim.SimRuntime.SimSecondsPerRealSecond
+                / (hs.BleedRate * 3600.0);
+            double realSec = hs.BloodLevel
+                / (hs.BleedRate * StruggleGame.Sim.SimConstants.TickSeconds * Math.Max(1, Host!.TickHz));
+            bleeding = $"    bleeding {hs.BleedRate * 100f:0.0}%/s — bleed-out ~{gameHours:0.0}h game / {FormatDuration(realSec)} real";
+        }
         _bloodLabel.Text = $"Blood: {hs.BloodLevel * 100f:0}%{bleeding}    Consciousness: {hs.Consciousness * 100f:0}%{downed}";
         _capLabel2.Text = $"Move {hs.Moving * 100f:0}%  ·  Manip {hs.Manipulation * 100f:0}%  ·  Sight {hs.Sight * 100f:0}%  ·  Pain {hs.Pain * 100f:0}%";
         string injSig = BuildInjurySignature(hs.Injuries);
@@ -318,6 +328,19 @@ public partial class PawnInfoPanel : CanvasLayer
         var list = _injGroups; list.Clear();
         foreach (var key in order) { var v = map[key]; list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4)); }
         return list;
+    }
+
+    // Compact real-time: "1m05s" / "42s".
+    private static string FormatDuration(double seconds)
+    {
+        if (seconds < 0) seconds = 0;
+        if (seconds >= 60)
+        {
+            int m = (int)(seconds / 60);
+            int s = (int)(seconds % 60);
+            return $"{m}m{s:00}s";
+        }
+        return $"{seconds:0}s";
     }
 
     private string BuildInjurySignature(InjuryState[] injuries)
