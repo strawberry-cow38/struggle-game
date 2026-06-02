@@ -27,9 +27,12 @@ public partial class PawnInfoPanel : CanvasLayer
 
     private Panel _root = null!;
 
-    // For other bottom-left HUD elements to dodge this panel when it's open.
+    // For other bottom-left HUD elements to dodge / align to this panel.
     public bool PanelOpen => _root is not null && _root.Visible;
     public float PanelTop => _root is not null ? _root.Position.Y : float.MaxValue;
+    public float PanelLeft => MarginLeft;
+    public float PanelWidthPx => PanelWidth;
+    public float PanelMarginBottom => MarginBottom;
     private Label _nameLabel = null!;
     private ProgressBar _healthBar = null!;
     private Label _healthPct = null!;

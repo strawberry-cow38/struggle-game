@@ -13,9 +13,12 @@ namespace StruggleGame.Game.UI;
 public partial class HealthTabPanel : CanvasLayer
 {
     public SimHost? Host { get; set; }
+    // Aligned to sit directly above the pawn card and share its width.
+    public PawnInfoPanel? PawnPanel { get; set; }
 
-    private const int PanelWidth = 900;
-    private const int PanelHeight = 540;
+    private const int PanelWidth = 560;  // fallback if the pawn panel is absent
+    private const int PanelHeight = 460;
+    private const float GapAbovePanel = 8f;
 
     private static readonly Color PanelBg = new(0.16f, 0.17f, 0.20f, 0.98f);
     private static readonly Color Border = new(0.30f, 0.32f, 0.38f);
@@ -178,7 +181,12 @@ public partial class HealthTabPanel : CanvasLayer
     {
         if (_root is null) return;
         var vp = GetViewport().GetVisibleRect().Size;
-        _root.Position = new Vector2((vp.X - PanelWidth) * 0.5f, (vp.Y - PanelHeight) * 0.5f);
+        float w = PawnPanel?.PanelWidthPx ?? PanelWidth;
+        float x = PawnPanel?.PanelLeft ?? 12f;
+        float panelTop = PawnPanel is { PanelOpen: true } pp ? pp.PanelTop : vp.Y - (PawnPanel?.PanelMarginBottom ?? 16f);
+        float y = panelTop - GapAbovePanel - PanelHeight;
+        _root.Size = new Vector2(w, PanelHeight);
+        _root.Position = new Vector2(x, y);
     }
 
     private static HBoxContainer BuildRow(string label, out Label value)
