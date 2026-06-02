@@ -20,7 +20,7 @@ public partial class PawnInfoPanel : CanvasLayer
 {
     public SimHost? Host { get; set; }
 
-    private const int PanelWidth = 340;
+    private const int PanelWidth = 460;
     private const int MarginLeft = 16;
     private const int MarginBottom = 16;
 
@@ -31,8 +31,10 @@ public partial class PawnInfoPanel : CanvasLayer
     private Label _capLabel = null!;
     private Label _sleepLabel = null!;
     private ProgressBar _sleepBar = null!;
+    private Label _sleepPct = null!;
     private Label _recLabel = null!;
     private ProgressBar _recBar = null!;
+    private Label _recPct = null!;
     private VBoxContainer _invList = null!;
     private Label _invEmptyLabel = null!;
     private VBoxContainer _equipList = null!;
@@ -125,31 +127,8 @@ public partial class PawnInfoPanel : CanvasLayer
         needsHeader.AddThemeFontSizeOverride("font_size", 14);
         vbox.AddChild(needsHeader);
 
-        _sleepLabel = new Label { Text = "Sleep" };
-        _sleepLabel.AddThemeFontSizeOverride("font_size", 11);
-        vbox.AddChild(_sleepLabel);
-        _sleepBar = new ProgressBar
-        {
-            MinValue = 0,
-            MaxValue = 1,
-            Step = 0.0001,
-            CustomMinimumSize = new Vector2(0, 18),
-        };
-        StyleBar(_sleepBar, new Color(0.45f, 0.78f, 0.38f)); // green
-        vbox.AddChild(_sleepBar);
-
-        _recLabel = new Label { Text = "Recreation" };
-        _recLabel.AddThemeFontSizeOverride("font_size", 11);
-        vbox.AddChild(_recLabel);
-        _recBar = new ProgressBar
-        {
-            MinValue = 0,
-            MaxValue = 1,
-            Step = 0.0001,
-            CustomMinimumSize = new Vector2(0, 18),
-        };
-        StyleBar(_recBar, new Color(0.72f, 0.62f, 0.22f)); // olive
-        vbox.AddChild(_recBar);
+        vbox.AddChild(BuildNeedRow("Sleep", new Color(0.45f, 0.78f, 0.38f), out _sleepLabel, out _sleepBar, out _sleepPct));
+        vbox.AddChild(BuildNeedRow("Recreation", new Color(0.72f, 0.62f, 0.22f), out _recLabel, out _recBar, out _recPct));
 
         vbox.AddChild(new HSeparator());
 
@@ -242,6 +221,30 @@ public partial class PawnInfoPanel : CanvasLayer
         _root.Position = new Vector2(MarginLeft, vp.Y - _root.Size.Y - MarginBottom);
     }
 
+    // One need row: name on the left, bar filling the middle, % on the right.
+    private static HBoxContainer BuildNeedRow(string title, Color fill, out Label name, out ProgressBar bar, out Label pct)
+    {
+        var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        row.AddThemeConstantOverride("separation", 8);
+        name = new Label { Text = title, CustomMinimumSize = new Vector2(96, 0), VerticalAlignment = VerticalAlignment.Center };
+        name.AddThemeFontSizeOverride("font_size", 13);
+        bar = new ProgressBar
+        {
+            MinValue = 0, MaxValue = 1, Step = 0.0001,
+            CustomMinimumSize = new Vector2(0, 16),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        StyleBar(bar, fill);
+        pct = new Label
+        {
+            Text = "", CustomMinimumSize = new Vector2(48, 0),
+            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center,
+        };
+        pct.AddThemeFontSizeOverride("font_size", 13);
+        row.AddChild(name); row.AddChild(bar); row.AddChild(pct);
+        return row;
+    }
+
     // Flat StyleBox helper (no image assets) — bg + optional border + rounded
     // corners + uniform content margin.
     private static StyleBoxFlat MakeBox(Color bg, Color border = default, int borderWidth = 0, int corner = 0, int margin = 0)
@@ -285,11 +288,12 @@ public partial class PawnInfoPanel : CanvasLayer
         _stateLabel.Text = $"State: {p.Job}{draftTag}{sleepTag}";
 
         _sleepBar.Value = p.SleepLevel;
-        _sleepLabel.Text = $"Sleep: {p.SleepLevel * 100f:0}%" + (p.Sleeping ? "  (asleep)" : "");
+        _sleepLabel.Text = p.Sleeping ? "Sleep (zzz)" : "Sleep";
+        _sleepPct.Text = $"{p.SleepLevel * 100f:0}%";
 
         _recBar.Value = p.RecreationLevel;
-        string recTag = p.AtRecreationKind is RecreationKind k ? $"  ({k})" : "";
-        _recLabel.Text = $"Recreation: {p.RecreationLevel * 100f:0}%{recTag}";
+        _recLabel.Text = p.AtRecreationKind is RecreationKind k ? $"Rec ({k})" : "Recreation";
+        _recPct.Text = $"{p.RecreationLevel * 100f:0}%";
 
         _capLabel.Text = $"Carry: {p.CarryWeight:0.#} / {p.MaxCarryWeight:0.#} wt    {p.CarryBulk:0.#} / {p.MaxCarryBulk:0.#} bulk";
 
