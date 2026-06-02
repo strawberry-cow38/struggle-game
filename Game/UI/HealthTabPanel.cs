@@ -300,7 +300,7 @@ public partial class HealthTabPanel : CanvasLayer
             ConditionKind.Missing => "missing",
             ConditionKind.Scar => "scar",
             ConditionKind.Gunshot when g.Caliber is not null =>
-                $"gunshot — {ShortCaliber(g.Caliber)}, {(g.Lodged ? "lodged" : "through & through")}",
+                $"gunshot — {ShortCaliber(g.Caliber)}",
             _ => g.Kind.ToString().ToLower(),
         };
         string countTag = g.Count > 1 ? $"  x{g.Count}" : "";
@@ -313,6 +313,13 @@ public partial class HealthTabPanel : CanvasLayer
             : g.MaxSeverity >= 12f ? new Color(1f, 0.6f, 0.3f) : new Color(0.9f, 0.85f, 0.6f);
         line.AddThemeColorOverride("font_color", c);
         row.AddChild(line);
+
+        // Ballistic marker (lodged / through) left of the status icon — shown
+        // independently of treatment, so a lodged round still reads as lodged
+        // even once tended or stabilized.
+        var ballistic = new BallisticIcon { CustomMinimumSize = new Vector2(20, 18), MouseFilter = Control.MouseFilterEnum.Ignore };
+        ballistic.Set(g.Kind == ConditionKind.Gunshot, g.Lodged);
+        row.AddChild(ballistic);
 
         var icon = new ConditionIcon { CustomMinimumSize = new Vector2(28, 18), MouseFilter = Control.MouseFilterEnum.Ignore };
         icon.Set(g.Tended ? 0f : g.Bleed, g.Tended, g.Stabilized);
