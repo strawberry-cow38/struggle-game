@@ -144,6 +144,8 @@ public partial class HealthTabPanel : CanvasLayer
     public override void _Process(double delta)
     {
         if (!_root.Visible) return;
+        // Closing the pawn card (deselecting) closes the health tab too.
+        if (PawnPanel is { PanelOpen: false }) { Close(); return; }
         if (Host?.LatestSnapshot is not { } snap) return;
 
         // Close if the pawn vanished / deselected.
