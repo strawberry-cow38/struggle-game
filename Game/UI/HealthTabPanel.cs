@@ -274,7 +274,17 @@ public partial class HealthTabPanel : CanvasLayer
             {
                 var groups = GroupInjuries(hs.Injuries);
                 groups.Sort((a, b) => PartOrder(a.PartId).CompareTo(PartOrder(b.PartId)));
-                foreach (var g in groups) _conditionsCol.AddChild(BuildConditionRow(g));
+                // Tree: a header per body part, its conditions indented beneath.
+                string? curPart = null;
+                foreach (var g in groups)
+                {
+                    if (g.PartId != curPart)
+                    {
+                        curPart = g.PartId;
+                        _conditionsCol.AddChild(BuildPartHeader(g.PartId));
+                    }
+                    _conditionsCol.AddChild(BuildConditionRow(g));
+                }
             }
         }
 
@@ -384,10 +394,19 @@ public partial class HealthTabPanel : CanvasLayer
     private static string ShortCaliber(string caliber)
         => caliber.Replace("Parabellum", "Para");
 
+    // A body-part header (tree title).
+    private static Label BuildPartHeader(string partId)
+    {
+        string name = partId == "WholeBody" ? "Whole Body"
+            : BodyTree.TryGet(partId, out var def) ? def.DisplayName : partId;
+        var h = new Label { Text = name };
+        h.AddThemeFontSizeOverride("font_size", 14);
+        h.AddThemeColorOverride("font_color", UiTheme.Accent);
+        return h;
+    }
+
     private Control BuildConditionRow(InjuryGroup g)
     {
-        string part = g.PartId == "WholeBody" ? "Whole Body"
-            : BodyTree.TryGet(g.PartId, out var def) ? def.DisplayName : g.PartId;
         string detail = g.Kind switch
         {
             ConditionKind.Missing => "missing",
@@ -401,6 +420,13 @@ public partial class HealthTabPanel : CanvasLayer
         string queued = g.RemovalRequested ? "[Q] " : "";
 
         var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Stop };
+        row.AddThemeConstantOverride("separation", 0);
+        // Indent + a dim vertical line so children read as a tree under the part.
+        row.AddChild(new Control { CustomMinimumSize = new Vector2(12, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
+        var treeLine = new Panel { CustomMinimumSize = new Vector2(2, 0), SizeFlagsVertical = Control.SizeFlags.Fill, MouseFilter = Control.MouseFilterEnum.Ignore };
+        treeLine.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = new Color(UiTheme.Border.R, UiTheme.Border.G, UiTheme.Border.B, 0.5f) });
+        row.AddChild(treeLine);
+        row.AddChild(new Control { CustomMinimumSize = new Vector2(8, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
         // Right-click a lodged gunshot to queue/cancel bullet-removal surgery.
         if (g.Lodged && g.Kind == ConditionKind.Gunshot)
         {
@@ -419,7 +445,7 @@ public partial class HealthTabPanel : CanvasLayer
                 }
             };
         }
-        var line = new Label { Text = $"{queued}{part}: {detail}{countTag}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        var line = new Label { Text = $"{queued}{detail}{countTag}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         line.AddThemeFontSizeOverride("font_size", 14);
         Color c = g.Kind == ConditionKind.Missing
             ? new Color(1f, 0.4f, 0.4f)
