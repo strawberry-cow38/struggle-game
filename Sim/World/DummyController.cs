@@ -655,6 +655,18 @@ public sealed class DummyController
                 if (!valid)
                 {
                     ref var rc = ref entity.GetComponent<RangedCombat>();
+                    // Mid-burst/auto: if shots are still queued + another enemy
+                    // is engageable, transfer the spray to it (no re-aim) rather
+                    // than stopping. Gated by fire-at-will (off = hold fire).
+                    int transfer = (FireAtWill && rc.BurstRemaining > 0)
+                        ? PerceiveNearestEnemy(here, spec.Range, view) : 0;
+                    if (transfer != 0 && store.TryGetEntityById(transfer, out var nt))
+                    {
+                        rc.AutoTarget = true; rc.FinishOff = false;
+                        RedirectFireNoReaim(ref rc, transfer);
+                        ExecuteRangedFire(entity, nt, spec, ref pos, ref path, ref w, dt, view, here);
+                        return;
+                    }
                     rc.TargetEntityId = 0; rc.BurstRemaining = 0;
                     // fall through to normal drafted hold/move
                 }
@@ -2242,12 +2254,22 @@ public sealed class DummyController
             || !TryGetRangedWeapon(entity, out var wdef)
             || !entity.HasComponent<RangedCombat>()
             || !store.TryGetEntityById(targetId, out var tgt)
-            || !tgt.HasComponent<Health>() || !tgt.HasComponent<WorldPos>()
-            || tgt.GetComponent<Health>().Unconscious)
+            || !tgt.HasComponent<Health>() || !tgt.HasComponent<WorldPos>())
         {
-            return; // nothing valid to fight (downed targets ignored for now)
+            return; // nothing valid to fight
         }
         var spec = wdef.Ranged!;
+        // Target down: transfer the spray to a fresh colonist if mid-burst (no
+        // re-aim); otherwise stop (the next think re-plans).
+        if (tgt.GetComponent<Health>().Unconscious)
+        {
+            ref var rcE = ref entity.GetComponent<RangedCombat>();
+            float sight = MathF.Max(EnemySightRange, spec.Range);
+            int nt = rcE.BurstRemaining > 0 ? PerceiveNearestColonist(here, sight) : 0;
+            if (nt == 0 || !store.TryGetEntityById(nt, out tgt)) return;
+            brain.TargetEntityId = nt;
+            RedirectFireNoReaim(ref rcE, nt);
+        }
 
         // Caught in the open: if we're standing in a colonist sightline and a
         // target is close with a clear shot, frick the cover-seek and just
@@ -2471,6 +2493,16 @@ public sealed class DummyController
                 y = bodyY + (rc.PeekY - bodyY) * SimConstants.LeanPeekFraction;
             }
         }
+    }
+
+    // Hand a still-running burst to a new target without re-aiming (already on
+    // the trigger). Used when the current target drops mid-spray.
+    private void RedirectFireNoReaim(ref RangedCombat rc, int newTarget)
+    {
+        rc.TargetEntityId = newTarget;
+        rc.AimTargetId = newTarget;
+        rc.AimReadyTick = _tick;
+        rc.LastAimTick = _tick;
     }
 
     private void ClearPath(ref PathFollower path)

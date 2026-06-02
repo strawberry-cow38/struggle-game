@@ -290,6 +290,61 @@ public class EnemyAiTests
     }
 
     [Fact]
+    public void TargetLostMidBurst_TransfersToAnotherEnemy()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+
+        int colonist = FirstColonist(sim);
+        var ce = sim.Store.GetEntityById(colonist);
+        ce.AddComponent(new Inventory
+        {
+            Items = new List<InventoryStack> { new InventoryStack { ItemPath = ItemCatalog.RifleAmmoFmj.FullPath, Count = 120 } },
+            Equipped = new List<EquippedItemSlot> { new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = ItemCatalog.AssaultRifle.FullPath, Count = 1 } },
+        });
+        ce.AddComponent(new Drafted());
+        SetPos(sim, colonist, 20.5f, 20.5f);
+        for (int i = 0; i < 5; i++) sim.Step(SimConstants.TickSeconds);
+        { ref var rc = ref ce.GetComponent<RangedCombat>(); rc.MagCount = 30; rc.LoadedAmmoPath = ItemCatalog.RifleAmmoFmj.FullPath; rc.Mode = FireMode.Auto; }
+        ref var cpf = ref ce.GetComponent<PathFollower>();
+        cpf.Waypoints = null; cpf.Index = 0; cpf.PendingPathId = 0;
+
+        // Clear the test area so sightlines are guaranteed open.
+        for (int x = 14; x <= 30; x++)
+            for (int y = 14; y <= 30; y++)
+                sim.Map.SetWall(x, y, WallType.None);
+
+        // A east (on the firing line), B south (off it, so stray rounds don't
+        // clip it). Disarm both so they can't down our shooter — just targets.
+        var enemyA = sim.SpawnEnemy(24, 20); SetPos(sim, enemyA.Id, 24.5f, 20.5f);
+        var enemyB = sim.SpawnEnemy(20, 24); SetPos(sim, enemyB.Id, 20.5f, 24.5f);
+        enemyA.RemoveComponent<RangedCombat>();
+        enemyB.RemoveComponent<RangedCombat>();
+        int bId = enemyB.Id;
+        sim.SetFireTarget(colonist, enemyA.Id);
+
+        // Spray until mid-burst on A (past the aim time + firing).
+        for (int i = 0; i < 80; i++)
+        {
+            SetPos(sim, colonist, 20.5f, 20.5f); SetPos(sim, enemyA.Id, 24.5f, 20.5f); SetPos(sim, bId, 20.5f, 24.5f);
+            sim.Step(SimConstants.TickSeconds);
+        }
+        Assert.True(ce.GetComponent<RangedCombat>().BurstRemaining > 0, "should be mid auto-burst");
+
+        // A drops out mid-spray → the burst transfers to B (assert promptly,
+        // before the continued spray downs B too).
+        enemyA.DeleteEntity();
+        bool transferred = false;
+        for (int i = 0; i < 5 && !transferred; i++)
+        {
+            SetPos(sim, colonist, 20.5f, 20.5f); SetPos(sim, bId, 20.5f, 24.5f);
+            sim.Step(SimConstants.TickSeconds);
+            if (ce.GetComponent<RangedCombat>().TargetEntityId == bId) transferred = true;
+        }
+        Assert.True(transferred, "burst should transfer to the other enemy when the target drops");
+    }
+
+    [Fact]
     public void FireAtWillOff_ColonistDoesNotAutoAcquire()
     {
         var sim = new SimRuntime();
