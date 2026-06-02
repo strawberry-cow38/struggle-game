@@ -20,7 +20,7 @@ public partial class PawnInfoPanel : CanvasLayer
 {
     public SimHost? Host { get; set; }
 
-    private const int PanelWidth = 740;
+    private const int PanelWidth = 700;
     private const int MarginLeft = 16;
     private const int MarginBottom = 16;
 
@@ -61,7 +61,7 @@ public partial class PawnInfoPanel : CanvasLayer
         _root = new Panel
         {
             Name = "Root",
-            CustomMinimumSize = new Vector2(PanelWidth, 360),
+            CustomMinimumSize = new Vector2(PanelWidth, 342),
             MouseFilter = Control.MouseFilterEnum.Stop,
             Visible = false,
         };
@@ -117,7 +117,7 @@ public partial class PawnInfoPanel : CanvasLayer
         var midRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         midRow.AddThemeConstantOverride("separation", 12);
 
-        var needsCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsStretchRatio = 2.2f };
+        var needsCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsStretchRatio = 1.8f };
         needsCol.AddThemeConstantOverride("separation", 4);
         var needsHeader = new Label { Text = "Needs" };
         needsHeader.AddThemeFontSizeOverride("font_size", 14);
