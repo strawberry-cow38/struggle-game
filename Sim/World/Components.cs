@@ -850,6 +850,9 @@ public struct Health : IComponent
     public float BloodPumping;
     public float Breathing;
     public float Pain; // 0..1 summed across injuries; high pain -> shock
+    // Overall health = mean remaining-HP fraction across PRESENT body parts
+    // (missing parts excluded from sum AND count). Recomputed each rare tick.
+    public float OverallHealth;
     public bool Unconscious;
     public bool WasDowned; // last tick's Unconscious, for the down -> drop-items transition
     // Blood spilled but not yet dropped as a puddle. HealthSystem drips a

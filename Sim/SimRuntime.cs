@@ -1374,7 +1374,7 @@ public sealed class SimRuntime
                 }
                 healthState = new HealthState(
                     hc.BloodLevel, bleedRate, hc.Pain, hc.Consciousness, hc.Moving, hc.Manipulation,
-                    hc.Sight, hc.Unconscious, injuries);
+                    hc.Sight, hc.OverallHealth, hc.Unconscious, injuries);
             }
 
             long swingT = 0, missT = 0, flinchT = 0;

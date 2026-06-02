@@ -162,14 +162,17 @@ public sealed class HealthSystem
 
         var num = _numScratch;
         System.Array.Clear(num, 0, num.Length);
+        float overallSum = 0f;
+        int overallCount = 0;
         foreach (var part in BodyTree.All)
         {
-            if (part.Provides.Length == 0) continue;
+            bool gone = BodyTree.IsGone(part.Id, missing);
+            // Efficiency = remaining HP / max HP (gone parts contribute 0 to
+            // capacities, but are excluded entirely from overall health).
             float eff;
-            if (BodyTree.IsGone(part.Id, missing)) eff = 0f;
+            if (gone) eff = 0f;
             else
             {
-                // Efficiency = remaining HP / max HP.
                 float dmg = 0f;
                 if (h.Injuries is not null)
                     foreach (var inj in h.Injuries)
@@ -177,9 +180,14 @@ public sealed class HealthSystem
                             dmg += inj.Severity;
                 eff = part.MaxHp > 0f ? Math.Clamp((part.MaxHp - dmg) / part.MaxHp, 0f, 1f) : 1f;
             }
+            // Overall health = mean eff across present parts; missing parts
+            // count toward neither sum nor total.
+            if (!gone) { overallSum += eff; overallCount++; }
+            if (part.Provides.Length == 0) continue;
             foreach (var (cap, w) in part.Provides)
                 num[(int)cap] += eff * w;
         }
+        h.OverallHealth = overallCount > 0 ? overallSum / overallCount : 1f;
 
         float Cap(HealthCapacity c)
         {

@@ -26,7 +26,8 @@ public partial class PawnInfoPanel : CanvasLayer
 
     private Panel _root = null!;
     private Label _nameLabel = null!;
-    private Label _stateLabel = null!;
+    private ProgressBar _healthBar = null!;
+    private Label _healthPct = null!;
     private Label _bioLabel = null!;
     private Label _capLabel = null!;
     private Label _sleepLabel = null!;
@@ -39,8 +40,6 @@ public partial class PawnInfoPanel : CanvasLayer
     private Label _invEmptyLabel = null!;
     private VBoxContainer _equipList = null!;
     private Label _equipEmptyLabel = null!;
-    private Label _bloodLabel = null!;
-    private Label _capLabel2 = null!;
     private VBoxContainer _injuryList = null!;
     private Label _injuryEmptyLabel = null!;
     private string _lastInjurySig = "";
@@ -108,8 +107,8 @@ public partial class PawnInfoPanel : CanvasLayer
 
         vbox.AddChild(new HSeparator());
 
-        _stateLabel = new Label { Text = "" };
-        vbox.AddChild(_stateLabel);
+        // Overall health bar (mean remaining-HP across present body parts).
+        vbox.AddChild(BuildNeedRow("Health", new Color(0.78f, 0.32f, 0.32f), out var _, out _healthBar, out _healthPct));
 
         vbox.AddChild(new HSeparator());
 
@@ -151,14 +150,6 @@ public partial class PawnInfoPanel : CanvasLayer
         var healthHeader = new Label { Text = "Health" };
         healthHeader.AddThemeFontSizeOverride("font_size", 14);
         vbox.AddChild(healthHeader);
-
-        _bloodLabel = new Label { Text = "" };
-        _bloodLabel.AddThemeFontSizeOverride("font_size", 11);
-        vbox.AddChild(_bloodLabel);
-
-        _capLabel2 = new Label { Text = "", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        _capLabel2.AddThemeFontSizeOverride("font_size", 11);
-        vbox.AddChild(_capLabel2);
 
         _injuryList = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         _injuryList.AddThemeConstantOverride("separation", 2);
@@ -299,9 +290,9 @@ public partial class PawnInfoPanel : CanvasLayer
         }
         var p = found.Value;
         _nameLabel.Text = $"Colonist #{p.EntityId}";
-        string draftTag = p.Drafted ? "  [DRAFTED]" : "";
-        string sleepTag = p.Sleeping ? "  [SLEEPING]" : "";
-        _stateLabel.Text = $"State: {p.Job}{draftTag}{sleepTag}";
+
+        _healthBar.Value = p.Health.OverallHealth;
+        _healthPct.Text = $"{p.Health.OverallHealth * 100f:0}%";
 
         _sleepBar.Value = p.SleepLevel;
         _sleepLabel.Text = p.Sleeping ? "Sleep (zzz)" : "Sleep";
@@ -317,20 +308,6 @@ public partial class PawnInfoPanel : CanvasLayer
         // when its content changes (gated separately from the row sig so
         // the equip/inventory early-return below doesn't skip it).
         var hs = p.Health;
-        string downed = hs.Unconscious ? "  [UNCONSCIOUS]" : "";
-        string bleeding = "";
-        if (hs.BleedRate > 0f)
-        {
-            // Death ≈ blood reaching 0. Game-hours is fixed by the sim; real
-            // time scales with the current speed (more ticks/sec = sooner).
-            double gameHours = hs.BloodLevel * StruggleGame.Sim.SimRuntime.SimSecondsPerRealSecond
-                / (hs.BleedRate * 3600.0);
-            double realSec = hs.BloodLevel
-                / (hs.BleedRate * StruggleGame.Sim.SimConstants.TickSeconds * Math.Max(1, Host!.TickHz));
-            bleeding = $"    bleeding {hs.BleedRate * 100f:0.0}%/s — bleed-out ~{gameHours:0.0}h game / {FormatDuration(realSec)} real";
-        }
-        _bloodLabel.Text = $"Blood: {hs.BloodLevel * 100f:0}%{bleeding}    Consciousness: {hs.Consciousness * 100f:0}%{downed}";
-        _capLabel2.Text = $"Move {hs.Moving * 100f:0}%  ·  Manip {hs.Manipulation * 100f:0}%  ·  Sight {hs.Sight * 100f:0}%  ·  Pain {hs.Pain * 100f:0}%";
         string injSig = BuildInjurySignature(hs.Injuries);
         if (injSig != _lastInjurySig || pawnId != _shownPawnId)
         {
@@ -399,18 +376,6 @@ public partial class PawnInfoPanel : CanvasLayer
     }
 
     // Compact real-time: "1m05s" / "42s".
-    private static string FormatDuration(double seconds)
-    {
-        if (seconds < 0) seconds = 0;
-        if (seconds >= 60)
-        {
-            int m = (int)(seconds / 60);
-            int s = (int)(seconds % 60);
-            return $"{m}m{s:00}s";
-        }
-        return $"{seconds:0}s";
-    }
-
     private string BuildInjurySignature(InjuryState[] injuries)
     {
         var sb = _injSigSb; sb.Clear();

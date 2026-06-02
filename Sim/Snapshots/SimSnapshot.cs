@@ -251,6 +251,7 @@ public readonly record struct HealthState(
     float Moving,
     float Manipulation,
     float Sight,
+    float OverallHealth,
     bool Unconscious,
     InjuryState[] Injuries);
 
