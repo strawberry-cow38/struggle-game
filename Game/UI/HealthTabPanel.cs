@@ -98,7 +98,7 @@ public partial class HealthTabPanel : CanvasLayer
         vbox.AddChild(body);
 
         // Left: pain + capacities.
-        var leftCol = new VBoxContainer { CustomMinimumSize = new Vector2(320, 0) };
+        var leftCol = new VBoxContainer { CustomMinimumSize = new Vector2(215, 0) };
         leftCol.AddThemeConstantOverride("separation", 6);
         body.AddChild(leftCol);
 
@@ -197,10 +197,10 @@ public partial class HealthTabPanel : CanvasLayer
     private static HBoxContainer BuildRow(string label, out Label value)
     {
         var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        var name = new Label { Text = label, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        name.AddThemeFontSizeOverride("font_size", 15);
-        value = new Label { Text = "", HorizontalAlignment = HorizontalAlignment.Right, CustomMinimumSize = new Vector2(80, 0) };
-        value.AddThemeFontSizeOverride("font_size", 15);
+        var name = new Label { Text = $"{label}:", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        name.AddThemeFontSizeOverride("font_size", 14);
+        value = new Label { Text = "", HorizontalAlignment = HorizontalAlignment.Right, CustomMinimumSize = new Vector2(58, 0) };
+        value.AddThemeFontSizeOverride("font_size", 14);
         value.AddThemeColorOverride("font_color", CapGood);
         row.AddChild(name);
         row.AddChild(value);
