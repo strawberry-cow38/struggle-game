@@ -67,9 +67,9 @@ public partial class PawnInfoPanel : CanvasLayer
         };
         AddChild(_root);
 
-        // Dark slate card (RimWorld-ish), flat-themed (no image assets).
-        _root.AddThemeStyleboxOverride("panel", MakeBox(new Color(0.16f, 0.17f, 0.20f, 0.97f),
-            border: new Color(0.34f, 0.36f, 0.42f), borderWidth: 2, corner: 6, margin: 10));
+        // Ethereal glass card (shared dreamcore theme).
+        _root.AddThemeStyleboxOverride("panel", UiTheme.PanelBox(corner: 12, margin: 10));
+        _root.Theme = UiTheme.LabelTheme();
 
         var vbox = new VBoxContainer
         {
@@ -155,11 +155,11 @@ public partial class PawnInfoPanel : CanvasLayer
         {
             var t = new Button { Text = tab, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 24) };
             t.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-            var tan = MakeBox(new Color(0.45f, 0.36f, 0.22f), border: new Color(0.20f, 0.15f, 0.08f), borderWidth: 1, corner: 4, margin: 4);
-            t.AddThemeStyleboxOverride("normal", tan);
-            t.AddThemeStyleboxOverride("hover", tan);
-            t.AddThemeStyleboxOverride("pressed", tan);
-            t.AddThemeColorOverride("font_color", new Color(0.93f, 0.9f, 0.82f));
+            var tabBox = UiTheme.Box(UiTheme.PanelDeep, UiTheme.Border, 1, 6, 4, glow: false);
+            t.AddThemeStyleboxOverride("normal", tabBox);
+            t.AddThemeStyleboxOverride("hover", UiTheme.Box(new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.22f), UiTheme.Border, 1, 6, 4, glow: false));
+            t.AddThemeStyleboxOverride("pressed", tabBox);
+            t.AddThemeColorOverride("font_color", UiTheme.TextDim);
             // Health tab toggles the health panel; any other tab closes it.
             if (tab == "Health")
                 t.Pressed += () =>
@@ -254,8 +254,8 @@ public partial class PawnInfoPanel : CanvasLayer
     private static void StyleBar(ProgressBar bar, Color fill)
     {
         bar.ShowPercentage = false;
-        bar.AddThemeStyleboxOverride("background", MakeBox(new Color(0.09f, 0.09f, 0.11f), corner: 3));
-        bar.AddThemeStyleboxOverride("fill", MakeBox(fill, corner: 3));
+        bar.AddThemeStyleboxOverride("background", UiTheme.InsetBox(UiTheme.Inset, corner: 4));
+        bar.AddThemeStyleboxOverride("fill", MakeBox(fill, corner: 4));
     }
 
     private void Render(SimSnapshot snap, int pawnId)

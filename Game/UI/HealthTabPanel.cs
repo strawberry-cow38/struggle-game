@@ -21,8 +21,6 @@ public partial class HealthTabPanel : CanvasLayer
     private const int PanelHeight = 460;
     private const float GapAbovePanel = 8f;
 
-    private static readonly Color PanelBg = new(0.16f, 0.17f, 0.20f, 0.98f);
-    private static readonly Color Border = new(0.30f, 0.32f, 0.38f);
     private static readonly Color CapGood = new(0.55f, 0.88f, 0.55f);
 
     // (label, isReal) — real ones pull from HealthState; the rest are 0% stubs.
@@ -79,7 +77,8 @@ public partial class HealthTabPanel : CanvasLayer
             CustomMinimumSize = new Vector2(PanelWidth, PanelHeight),
             Size = new Vector2(PanelWidth, PanelHeight),
         };
-        _root.AddThemeStyleboxOverride("panel", MakeBox(PanelBg, Border, 2, 6, 12));
+        _root.AddThemeStyleboxOverride("panel", UiTheme.PanelBox(corner: 12, margin: 0));
+        _root.Theme = UiTheme.LabelTheme(); // outlined, readable text over the glass
         AddChild(_root);
 
         var vbox = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
@@ -123,7 +122,7 @@ public partial class HealthTabPanel : CanvasLayer
         // Visible divider between stats (left) and conditions (right) — the
         // flat-themed VSeparator is near-invisible, so draw an explicit line.
         var divider = new Panel { CustomMinimumSize = new Vector2(2, 0), SizeFlagsVertical = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore };
-        divider.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = new Color(0.40f, 0.42f, 0.48f) });
+        divider.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = UiTheme.Border });
         body.AddChild(divider);
 
         // Right: conditions, in a scroll view with an always-reserved scrollbar.
@@ -404,21 +403,12 @@ public partial class HealthTabPanel : CanvasLayer
     private static Button MakeTab(string text, bool active)
     {
         var t = new Button { Text = text, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(120, 30) };
-        var bg = active ? new Color(0.24f, 0.26f, 0.30f) : new Color(0.13f, 0.14f, 0.17f);
-        var box = MakeBox(bg, Border, 1, 4, 4);
+        var bg = active ? new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.28f) : UiTheme.PanelDeep;
+        var box = UiTheme.Box(bg, UiTheme.Border, 1, 6, 4, glow: false);
         t.AddThemeStyleboxOverride("normal", box);
         t.AddThemeStyleboxOverride("hover", box);
         t.AddThemeStyleboxOverride("pressed", box);
+        t.AddThemeColorOverride("font_color", active ? UiTheme.Text : UiTheme.TextDim);
         return t;
-    }
-
-    private static StyleBoxFlat MakeBox(Color bg, Color border, int borderWidth, int corner, int margin)
-    {
-        var box = new StyleBoxFlat { BgColor = bg };
-        box.BorderColor = border;
-        box.BorderWidthLeft = box.BorderWidthRight = box.BorderWidthTop = box.BorderWidthBottom = borderWidth;
-        box.CornerRadiusTopLeft = box.CornerRadiusTopRight = box.CornerRadiusBottomLeft = box.CornerRadiusBottomRight = corner;
-        box.ContentMarginLeft = box.ContentMarginRight = box.ContentMarginTop = box.ContentMarginBottom = margin;
-        return box;
     }
 }

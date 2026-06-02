@@ -21,10 +21,10 @@ public partial class DraftActionBar : CanvasLayer
     private const float MarginBottom = 14f;
     private const int UnloadMenuId = 10000;
 
-    private static readonly Color TileBg = new(0.16f, 0.17f, 0.20f);
-    private static readonly Color BorderIdle = new(0.35f, 0.37f, 0.42f);
-    private static readonly Color BorderActive = new(0.35f, 0.78f, 0.40f);
-    private static readonly Color CheckColor = new(0.45f, 0.92f, 0.50f);
+    private static readonly Color TileBg = UiTheme.PanelDeep;
+    private static readonly Color BorderIdle = UiTheme.Border;
+    private static readonly Color BorderActive = UiTheme.Accent;
+    private static readonly Color CheckColor = UiTheme.Accent;
 
     private HBoxContainer _bar = null!;
 
@@ -72,6 +72,7 @@ public partial class DraftActionBar : CanvasLayer
         Layer = 96;
 
         _bar = new HBoxContainer { Name = "DraftRow", Visible = false, MouseFilter = Control.MouseFilterEnum.Pass };
+        _bar.Theme = UiTheme.LabelTheme(); // outlined captions over the glass
         _bar.AddThemeConstantOverride("separation", 6);
         AddChild(_bar);
 
@@ -349,7 +350,7 @@ public partial class DraftActionBar : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         _magBar.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        _magBar.AddThemeStyleboxOverride("background", MakeBox(new Color(0.10f, 0.11f, 0.13f), BorderIdle, 2, 4, 0));
+        _magBar.AddThemeStyleboxOverride("background", MakeBox(UiTheme.Inset, BorderIdle, 2, 4, 0));
         _magBar.AddThemeStyleboxOverride("fill", MakeBox(new Color(0.40f, 0.42f, 0.48f), default, 0, 4));
         tile.AddChild(_magBar);
 
