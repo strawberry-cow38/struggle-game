@@ -50,16 +50,18 @@ public partial class HealthTabPanel : CanvasLayer
     private Label _conditionsEmpty = null!;
     private string _lastInjurySig = "";
 
-    private int _pawnId = -1;
+    private bool _open;
 
+    // Tab follows the live selection rather than locking to one pawn, so it
+    // updates every frame and switches colonists when the selection does.
     public void OpenFor(int pawnId)
     {
-        _pawnId = pawnId;
+        _open = true;
         _lastInjurySig = "";
         _root.Visible = true;
     }
 
-    public void Close() { _root.Visible = false; _pawnId = -1; }
+    public void Close() { _open = false; _root.Visible = false; }
 
     public bool PanelOpen => _root is not null && _root.Visible;
     public float PanelTop => _root is not null ? _root.Position.Y : float.MaxValue;
@@ -148,15 +150,15 @@ public partial class HealthTabPanel : CanvasLayer
 
     public override void _Process(double delta)
     {
-        if (!_root.Visible) return;
-        // Closing the pawn card (deselecting) closes the health tab too.
-        if (PawnPanel is { PanelOpen: false }) { Close(); return; }
+        if (!_open) return;
         if (Host?.LatestSnapshot is not { } snap) return;
 
-        // Close if the pawn vanished / deselected.
+        // Follow the live selection; close when nothing's selected.
+        int? sel = Host.SelectedDummyId;
+        if (sel is null) { Close(); return; }
         DummyState? found = null;
         foreach (var d in snap.Dummies)
-            if (d.EntityId == _pawnId) { found = d; break; }
+            if (d.EntityId == sel.Value) { found = d; break; }
         if (found is not { } p) { Close(); return; }
 
         var hs = p.Health;
