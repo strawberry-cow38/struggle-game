@@ -28,7 +28,12 @@ public partial class PawnInfoPanel : CanvasLayer
     private Label _nameLabel = null!;
     private ProgressBar _healthBar = null!;
     private Label _healthPct = null!;
+    private ProgressBar _moodBar = null!;
+    private Label _moodPct = null!;
     private Label _bioLabel = null!;
+    private Label _foodLabel = null!;
+    private ProgressBar _foodBar = null!;
+    private Label _foodPct = null!;
     private Label _sleepLabel = null!;
     private ProgressBar _sleepBar = null!;
     private Label _sleepPct = null!;
@@ -95,6 +100,8 @@ public partial class PawnInfoPanel : CanvasLayer
 
         // Overall health bar (mean remaining-HP across present body parts).
         vbox.AddChild(BuildNeedRow("Health", new Color(0.78f, 0.32f, 0.32f), out var _, out _healthBar, out _healthPct));
+        // Mood bar (stub 100% for now).
+        vbox.AddChild(BuildNeedRow("Mood", new Color(0.42f, 0.58f, 0.78f), out var _, out _moodBar, out _moodPct));
 
         vbox.AddChild(new HSeparator());
 
@@ -107,6 +114,7 @@ public partial class PawnInfoPanel : CanvasLayer
         var needsHeader = new Label { Text = "Needs" };
         needsHeader.AddThemeFontSizeOverride("font_size", 14);
         needsCol.AddChild(needsHeader);
+        needsCol.AddChild(BuildNeedRow("Food", new Color(0.62f, 0.45f, 0.28f), out _foodLabel, out _foodBar, out _foodPct));
         needsCol.AddChild(BuildNeedRow("Sleep", new Color(0.45f, 0.78f, 0.38f), out _sleepLabel, out _sleepBar, out _sleepPct));
         needsCol.AddChild(BuildNeedRow("Recreation", new Color(0.72f, 0.62f, 0.22f), out _recLabel, out _recBar, out _recPct));
         midRow.AddChild(needsCol);
@@ -234,24 +242,36 @@ public partial class PawnInfoPanel : CanvasLayer
         float oh = p.Health.OverallHealth;
         _healthBar.Value = oh;
         _healthPct.Text = $"{oh * 100f:0}%";
-        StyleBar(_healthBar, HealthColor(oh)); // tint by how low/high health is
+        StyleBar(_healthBar, BarColor(oh));
+
+        float mood = 1f; // stub
+        _moodBar.Value = mood;
+        _moodPct.Text = $"{mood * 100f:0}%";
+        StyleBar(_moodBar, BarColor(mood));
+
+        float food = 1f; // stub
+        _foodBar.Value = food;
+        _foodPct.Text = $"{food * 100f:0}%";
+        StyleBar(_foodBar, BarColor(food));
 
         _sleepBar.Value = p.SleepLevel;
         _sleepLabel.Text = p.Sleeping ? "Sleep (zzz)" : "Sleep";
         _sleepPct.Text = $"{p.SleepLevel * 100f:0}%";
+        StyleBar(_sleepBar, BarColor((float)p.SleepLevel));
 
         _recBar.Value = p.RecreationLevel;
         _recLabel.Text = p.AtRecreationKind is RecreationKind k ? $"Rec ({k})" : "Recreation";
         _recPct.Text = $"{p.RecreationLevel * 100f:0}%";
+        StyleBar(_recBar, BarColor((float)p.RecreationLevel));
     }
 
-    // Health bar fill: green when high, amber mid, red when low.
-    private static Color HealthColor(float h)
+    // Bar fill: green when high, amber mid, red when low (low % = bad).
+    private static Color BarColor(float v)
     {
-        h = Math.Clamp(h, 0f, 1f);
+        v = Math.Clamp(v, 0f, 1f);
         var low = new Color(0.78f, 0.22f, 0.22f);   // red
         var mid = new Color(0.82f, 0.62f, 0.18f);   // amber
         var high = new Color(0.40f, 0.74f, 0.34f);  // green
-        return h < 0.5f ? low.Lerp(mid, h / 0.5f) : mid.Lerp(high, (h - 0.5f) / 0.5f);
+        return v < 0.5f ? low.Lerp(mid, v / 0.5f) : mid.Lerp(high, (v - 0.5f) / 0.5f);
     }
 }
