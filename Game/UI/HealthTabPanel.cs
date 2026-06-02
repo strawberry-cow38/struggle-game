@@ -42,6 +42,7 @@ public partial class HealthTabPanel : CanvasLayer
 
     private Panel _root = null!;
     private Label _painValue = null!;
+    private Label _bleedValue = null!;
     private readonly Dictionary<string, Label> _capValues = new();
     private VBoxContainer _conditionsCol = null!;
     private Label _conditionsEmpty = null!;
@@ -103,6 +104,7 @@ public partial class HealthTabPanel : CanvasLayer
         body.AddChild(leftCol);
 
         leftCol.AddChild(BuildRow("Pain", out _painValue));
+        leftCol.AddChild(BuildRow("Bleeding", out _bleedValue));
         leftCol.AddChild(new HSeparator());
         foreach (var (name, _) in Caps)
         {
@@ -155,7 +157,8 @@ public partial class HealthTabPanel : CanvasLayer
         if (found is not { } p) { Close(); return; }
 
         var hs = p.Health;
-        _painValue.Text = hs.Pain <= 0.001f ? "None" : $"{hs.Pain * 100f:0}%";
+        _painValue.Text = $"{hs.Pain * 100f:0}%";
+        _bleedValue.Text = $"{hs.BleedRate * 100f:0.0}%";
 
         foreach (var (name, real) in Caps)
             _capValues[name].Text = $"{(real ? CapValue(hs, name) : 0f) * 100f:0}%";
