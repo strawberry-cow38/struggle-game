@@ -21,7 +21,7 @@ public partial class PawnInfoPanel : CanvasLayer
     public SimHost? Host { get; set; }
 
     private const int PanelWidth = 560;
-    private const int MarginLeft = 16;
+    private const int MarginLeft = 12;
     private const int MarginBottom = 16;
 
     private Panel _root = null!;
