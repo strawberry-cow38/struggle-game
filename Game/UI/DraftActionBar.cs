@@ -28,8 +28,10 @@ public partial class DraftActionBar : CanvasLayer
 
     private HBoxContainer _bar = null!;
 
-    // Mag / ammo readout panel (left).
+    // Mag / ammo readout panel (left). Background bar fills with magazine
+    // capacity; its color encodes the loaded ammo TYPE (not the amount).
     private Control _magPanel = null!;
+    private ProgressBar _magBar = null!;
     private Label _magTitle = null!;
     private Label _magCount = null!;
 
@@ -207,8 +209,10 @@ public partial class DraftActionBar : CanvasLayer
             foreach (var eq in p.Equipped)
                 if (ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var wd) && wd.Ranged is not null)
                 { weaponName = wd.DisplayName; break; }
-            _magTitle.Text = AmmoTag(p.LoadedAmmoPath);
+            _magTitle.Text = AmmoLongName(p.LoadedAmmoPath);
             _magCount.Text = $"{p.RangedMag} / {p.RangedMagSize}";
+            _magBar.Value = p.RangedMagSize > 0 ? (float)p.RangedMag / p.RangedMagSize : 0f;
+            _magBar.AddThemeStyleboxOverride("fill", MakeBox(AmmoColor(p.LoadedAmmoPath), default, 0, 4));
             _forceTargetCap.Text = weaponName;
 
             _shownArea = p.RangedTargetArea;
@@ -241,6 +245,24 @@ public partial class DraftActionBar : CanvasLayer
         if (a >= 0 && b > a) return n.Substring(a + 1, b - a - 1);
         return n;
     }
+
+    // Long-form name for the loaded round, for the mag-panel caption.
+    private static string AmmoLongName(string? path) => AmmoTag(path).ToUpperInvariant() switch
+    {
+        "FMJ" => "Full Metal Jacket",
+        "HP" => "Hollow Point",
+        "AP" => "Armor Piercing",
+        _ => AmmoTag(path), // already a full name (caliber) or "—"
+    };
+
+    // Fill color encodes ammo TYPE (not remaining amount).
+    private static Color AmmoColor(string? path) => AmmoTag(path).ToUpperInvariant() switch
+    {
+        "FMJ" => new Color(0.72f, 0.60f, 0.22f), // brass
+        "HP" => new Color(0.78f, 0.30f, 0.26f),  // red
+        "AP" => new Color(0.36f, 0.52f, 0.78f),  // steel blue
+        _ => new Color(0.40f, 0.42f, 0.48f),     // gray
+    };
 
     // Next available fire mode after `cur`, skipping modes the weapon lacks.
     private static FireMode NextMode(FireMode cur, FireModeFlags avail)
@@ -318,16 +340,31 @@ public partial class DraftActionBar : CanvasLayer
         var wrap = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         wrap.AddThemeConstantOverride("separation", 2);
 
-        var tile = new PanelContainer { CustomMinimumSize = new Vector2(96, TileSize) };
-        tile.AddThemeStyleboxOverride("panel", MakeBox(new Color(0.10f, 0.11f, 0.13f), BorderIdle, 2, 4, 4));
+        var tile = new Control { CustomMinimumSize = new Vector2(96, TileSize) };
+
+        // Capacity bar fills the tile; fill color set per ammo type each frame.
+        _magBar = new ProgressBar
+        {
+            MinValue = 0, MaxValue = 1, Step = 0.0001, ShowPercentage = false,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        _magBar.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _magBar.AddThemeStyleboxOverride("background", MakeBox(new Color(0.10f, 0.11f, 0.13f), BorderIdle, 2, 4, 0));
+        _magBar.AddThemeStyleboxOverride("fill", MakeBox(new Color(0.40f, 0.42f, 0.48f), default, 0, 4));
+        tile.AddChild(_magBar);
+
         _magCount = new Label
         {
             Text = "0 / 0",
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
         };
+        _magCount.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         _magCount.AddThemeFontSizeOverride("font_size", 18);
-        _magCount.AddThemeColorOverride("font_color", new Color(0.78f, 0.86f, 0.88f));
+        _magCount.AddThemeColorOverride("font_color", new Color(0.95f, 0.97f, 0.98f));
+        _magCount.AddThemeConstantOverride("outline_size", 4);
+        _magCount.AddThemeColorOverride("font_outline_color", new Color(0f, 0f, 0f, 0.7f));
         tile.AddChild(_magCount);
         wrap.AddChild(tile);
 
