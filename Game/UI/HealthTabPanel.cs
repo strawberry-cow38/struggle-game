@@ -96,7 +96,8 @@ public partial class HealthTabPanel : CanvasLayer
         tabRow.AddChild(MakeTab("Overview", active: true));
         tabRow.AddChild(MakeTab("Operations", active: false));
         tabRow.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
-        var closeBtn = new Button { Text = "X", CustomMinimumSize = new Vector2(28, 28), FocusMode = Control.FocusModeEnum.None };
+        var closeBtn = MakeTab("X", active: false);
+        closeBtn.CustomMinimumSize = new Vector2(34, 30);
         closeBtn.Pressed += Close;
         tabRow.AddChild(closeBtn);
         vbox.AddChild(tabRow);
