@@ -43,6 +43,10 @@ public partial class HealthTabPanel : CanvasLayer
     private VBoxContainer _vbox = null!;
     private StyleBoxFlat _panelBox = null!;
     private double _glowT;
+    private Button _overviewTab = null!;
+    private Button _opsTab = null!;
+    private Control _body = null!;
+    private Control _opsStub = null!;
     private Label _painValue = null!;
     private Label _bleedValue = null!;
     private Label _deathValue = null!;
@@ -93,14 +97,19 @@ public partial class HealthTabPanel : CanvasLayer
         _root.AddChild(vbox);
         _vbox = vbox;
 
-        // Tab row: Overview (active) / Operations (inert) ... X close.
+        // Tab row: Overview / Operations ... X close. The open tab is highlighted.
         var tabRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         tabRow.AddThemeConstantOverride("separation", 4);
-        tabRow.AddChild(MakeTab("Overview", active: true));
-        tabRow.AddChild(MakeTab("Operations", active: false));
+        _overviewTab = MakeTab("Overview");
+        _overviewTab.Pressed += () => SetActiveTab(true);
+        tabRow.AddChild(_overviewTab);
+        _opsTab = MakeTab("Operations");
+        _opsTab.Pressed += () => SetActiveTab(false);
+        tabRow.AddChild(_opsTab);
         tabRow.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
-        var closeBtn = MakeTab("X", active: false);
+        var closeBtn = MakeTab("X");
         closeBtn.CustomMinimumSize = new Vector2(34, 30);
+        closeBtn.AddThemeColorOverride("font_color", new Color(0.92f, 0.34f, 0.34f)); // red X
         closeBtn.Pressed += Close;
         tabRow.AddChild(closeBtn);
         vbox.AddChild(tabRow);
@@ -110,6 +119,7 @@ public partial class HealthTabPanel : CanvasLayer
         var body = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ExpandFill };
         body.AddThemeConstantOverride("separation", 12);
         vbox.AddChild(body);
+        _body = body;
 
         // Left: pain + capacities.
         var leftCol = new VBoxContainer { CustomMinimumSize = new Vector2(215, 0) };
@@ -154,10 +164,23 @@ public partial class HealthTabPanel : CanvasLayer
         _conditionsCol.AddThemeConstantOverride("separation", 3);
         _scroll.AddChild(_conditionsCol);
 
+        // Operations tab content (placeholder for now).
+        _opsStub = new Label
+        {
+            Text = "(no operations available)",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            CustomMinimumSize = new Vector2(0, 160),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        _opsStub.AddThemeColorOverride("font_color", new Color(0.55f, 0.58f, 0.64f));
+        vbox.AddChild(_opsStub);
+
         _rowMenu = new PopupMenu();
         _rowMenu.IdPressed += OnRowMenuPressed;
         AddChild(_rowMenu);
 
+        SetActiveTab(true);
         GetTree().Root.SizeChanged += Recenter;
         CallDeferred(nameof(Recenter));
     }
@@ -420,15 +443,29 @@ public partial class HealthTabPanel : CanvasLayer
         return sb.ToString();
     }
 
-    private static Button MakeTab(string text, bool active)
+    private static Button MakeTab(string text)
     {
         var t = new Button { Text = text, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(120, 30) };
-        var bg = active ? new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.28f) : UiTheme.PanelDeep;
+        StyleTab(t, active: false);
+        return t;
+    }
+
+    private static void StyleTab(Button t, bool active)
+    {
+        var bg = active ? new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.30f) : UiTheme.PanelDeep;
         var box = UiTheme.Box(bg, UiTheme.Border, 1, 6, 4, glow: false);
         t.AddThemeStyleboxOverride("normal", box);
         t.AddThemeStyleboxOverride("hover", box);
         t.AddThemeStyleboxOverride("pressed", box);
         t.AddThemeColorOverride("font_color", active ? UiTheme.Text : UiTheme.TextDim);
-        return t;
+    }
+
+    // Highlight the open tab + swap its content (Operations is a stub for now).
+    private void SetActiveTab(bool overview)
+    {
+        StyleTab(_overviewTab, overview);
+        StyleTab(_opsTab, !overview);
+        _body.Visible = overview;
+        _opsStub.Visible = !overview;
     }
 }
