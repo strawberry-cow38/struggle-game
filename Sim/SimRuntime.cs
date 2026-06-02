@@ -4910,6 +4910,7 @@ public sealed class SimRuntime
         ref var h = ref pawn.GetComponent<Health>();
         h.Injuries = new List<PartInjury>
         {
+            new PartInjury { PartId = "WholeBody", Kind = StruggleGame.Sim.Bodies.ConditionKind.Sickness, Severity = 30f },
             new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 11f, Caliber = "7.62x51mm NATO", Lodged = true, HealFloor = 5.5f },
             new PartInjury { PartId = "ArmR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 3f, Caliber = "9x19mm Parabellum" },
             new PartInjury { PartId = "ArmL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 5f, Caliber = "9x19mm Parabellum", Tended = true, TendQuality = 0.75f },
@@ -4936,7 +4937,9 @@ public sealed class SimRuntime
     {
         if (!Store.TryGetEntityById(pawnId, out var pawn)) return;
         if (!pawn.HasComponent<Health>()) return;
-        if (!StruggleGame.Sim.Bodies.BodyTree.TryGet(partId, out _)) return;
+        // "WholeBody" is a virtual part for body-wide conditions; everything
+        // else must be a real body part.
+        if (partId != "WholeBody" && !StruggleGame.Sim.Bodies.BodyTree.TryGet(partId, out _)) return;
         ref var h = ref pawn.GetComponent<Health>();
         h.Injuries ??= new List<PartInjury>();
         float sev = severity <= 0f ? 1f : severity;

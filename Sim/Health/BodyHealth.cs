@@ -24,6 +24,7 @@ public enum ConditionKind : byte
     Missing = 4, // part (and its descendants) gone
     Stab = 5,    // puncture — bleeds heavily, heals like a cut
     Gunshot = 6, // bullet wound — heavy damage + heavy bleed, heals like a cut
+    Sickness = 7, // whole-body condition (illness, malnutrition, …) — no bleed
 }
 
 // Static definition of one body part in the hierarchy.

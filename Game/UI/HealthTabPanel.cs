@@ -272,7 +272,9 @@ public partial class HealthTabPanel : CanvasLayer
             }
             else
             {
-                foreach (var g in GroupInjuries(hs.Injuries)) _conditionsCol.AddChild(BuildConditionRow(g));
+                var groups = GroupInjuries(hs.Injuries);
+                groups.Sort((a, b) => PartOrder(a.PartId).CompareTo(PartOrder(b.PartId)));
+                foreach (var g in groups) _conditionsCol.AddChild(BuildConditionRow(g));
             }
         }
 
@@ -364,6 +366,19 @@ public partial class HealthTabPanel : CanvasLayer
         return list;
     }
 
+    // Head-to-toe ordering; WholeBody pinned to the very top, unknowns last.
+    private static readonly string[] _partOrder =
+    {
+        "WholeBody", "Head", "Brain", "EyeL", "EyeR", "EarL", "EarR", "Neck",
+        "Torso", "Heart", "LungL", "LungR", "ArmL", "HandL", "ArmR", "HandR",
+        "Body", "LegL", "FootL", "LegR", "FootR",
+    };
+    private static int PartOrder(string partId)
+    {
+        int i = System.Array.IndexOf(_partOrder, partId);
+        return i < 0 ? _partOrder.Length : i;
+    }
+
     // Trim long caliber names for the conditions list (Parabellum -> Para,
     // keeping the 9x19mm prefix).
     private static string ShortCaliber(string caliber)
@@ -371,10 +386,12 @@ public partial class HealthTabPanel : CanvasLayer
 
     private Control BuildConditionRow(InjuryGroup g)
     {
-        string part = BodyTree.TryGet(g.PartId, out var def) ? def.DisplayName : g.PartId;
+        string part = g.PartId == "WholeBody" ? "Whole Body"
+            : BodyTree.TryGet(g.PartId, out var def) ? def.DisplayName : g.PartId;
         string detail = g.Kind switch
         {
             ConditionKind.Missing => "missing",
+            ConditionKind.Sickness => "sickness",
             ConditionKind.Scar => "scar",
             ConditionKind.Gunshot when g.Caliber is not null =>
                 $"gunshot — {ShortCaliber(g.Caliber)}",
