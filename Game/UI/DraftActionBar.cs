@@ -23,6 +23,8 @@ public partial class DraftActionBar : CanvasLayer
     private const int UnloadMenuId = 10000;
 
     private HBoxContainer _bar = null!;
+    private Button _draftBtn = null!;
+    private HBoxContainer _combatGroup = null!;
     private Label _magLabel = null!;
     private Button _forceTargetBtn = null!;
     private Button _meleeBtn = null!;
@@ -61,9 +63,28 @@ public partial class DraftActionBar : CanvasLayer
         _bar.AddThemeConstantOverride("separation", 6);
         AddChild(_bar);
 
+        // Draft / Undraft toggle — always shown while a colonist is selected.
+        _draftBtn = new Button
+        {
+            Text = "Draft",
+            CustomMinimumSize = new Vector2(0, ButtonHeight),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        _draftBtn.Pressed += () =>
+        {
+            if (Host is null || _shownPawnId < 0) return;
+            Host.QueueCommand(new ToggleDraftCommand(_shownPawnId));
+        };
+        _bar.AddChild(_draftBtn);
+
+        // Combat controls — only visible once drafted.
+        _combatGroup = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        _combatGroup.AddThemeConstantOverride("separation", 6);
+        _bar.AddChild(_combatGroup);
+
         var fireLabel = new Label { Text = "Fire:" };
         fireLabel.AddThemeConstantOverride("outline_size", 4);
-        _bar.AddChild(fireLabel);
+        _combatGroup.AddChild(fireLabel);
 
         for (int i = 0; i < _modes.Length; i++)
         {
@@ -80,13 +101,13 @@ public partial class DraftActionBar : CanvasLayer
                 if (Host is null || _shownPawnId < 0) return;
                 Host.QueueCommand(new SetFireModeCommand(_shownPawnId, m));
             };
-            _bar.AddChild(btn);
+            _combatGroup.AddChild(btn);
             _modeButtons[i] = btn;
         }
 
         _magLabel = new Label { Text = "" };
         _magLabel.AddThemeConstantOverride("outline_size", 4);
-        _bar.AddChild(_magLabel);
+        _combatGroup.AddChild(_magLabel);
 
         var reloadBtn = new Button
         {
@@ -101,7 +122,7 @@ public partial class DraftActionBar : CanvasLayer
             Host.QueueCommand(new ReloadWeaponCommand(_shownPawnId));
         };
         reloadBtn.GuiInput += OnReloadGuiInput;
-        _bar.AddChild(reloadBtn);
+        _combatGroup.AddChild(reloadBtn);
 
         _reloadMenu = new PopupMenu();
         AddChild(_reloadMenu);
@@ -122,7 +143,7 @@ public partial class DraftActionBar : CanvasLayer
             if (Tools is null) return;
             Tools.Mode = _forceTargetBtn.ButtonPressed ? ToolMode.ForceFireTarget : ToolMode.None;
         };
-        _bar.AddChild(_forceTargetBtn);
+        _combatGroup.AddChild(_forceTargetBtn);
 
         // Melee target mode: click, then a pawn, to set a melee attack target.
         _meleeBtn = new Button
@@ -138,7 +159,7 @@ public partial class DraftActionBar : CanvasLayer
             if (Tools is null) return;
             Tools.Mode = _meleeBtn.ButtonPressed ? ToolMode.MeleeAttackTarget : ToolMode.None;
         };
-        _bar.AddChild(_meleeBtn);
+        _combatGroup.AddChild(_meleeBtn);
 
         // Global "fire at will" toggle — off = colonists only fire at forced
         // (RMB) targets, no auto-acquire/peek.
@@ -155,7 +176,7 @@ public partial class DraftActionBar : CanvasLayer
             if (Host is null) return;
             Host.QueueCommand(new SetFireAtWillCommand(_fireAtWillBtn.ButtonPressed));
         };
-        _bar.AddChild(_fireAtWillBtn);
+        _combatGroup.AddChild(_fireAtWillBtn);
 
         // Targeted area — cycles Head → Torso → Legs, sets the aim region.
         _targetAreaBtn = new Button
@@ -172,7 +193,7 @@ public partial class DraftActionBar : CanvasLayer
             var next = _areaCycle[(idx + 1) % _areaCycle.Length];
             Host.QueueCommand(new SetTargetAreaCommand(_shownPawnId, next));
         };
-        _bar.AddChild(_targetAreaBtn);
+        _combatGroup.AddChild(_targetAreaBtn);
 
         // Aim mode — cycles Aimed → Snapshot → Auto.
         _aimModeBtn = new Button
@@ -189,7 +210,7 @@ public partial class DraftActionBar : CanvasLayer
             var next = _aimModeCycle[(idx + 1) % _aimModeCycle.Length];
             Host.QueueCommand(new SetAimModeCommand(_shownPawnId, next));
         };
-        _bar.AddChild(_aimModeBtn);
+        _combatGroup.AddChild(_aimModeBtn);
     }
 
     public override void _Process(double delta)
@@ -203,10 +224,22 @@ public partial class DraftActionBar : CanvasLayer
         foreach (var d in snap.Dummies)
             if (d.EntityId == sel.Value) { found = d; break; }
 
-        if (found is not { } p || !p.Drafted || !p.HasRangedWeapon) { HideBar(); return; }
+        if (found is not { } p) { HideBar(); return; }
 
         _shownPawnId = p.EntityId;
         if (!_bar.Visible) _bar.Visible = true;
+
+        _draftBtn.Text = p.Drafted ? "Undraft" : "Draft";
+        // Combat controls only matter once drafted + holding a ranged weapon;
+        // undrafted (or unarmed) shows just the Draft button.
+        bool combat = p.Drafted && p.HasRangedWeapon;
+        _combatGroup.Visible = combat;
+        if (!combat)
+        {
+            var vp0 = GetViewport().GetVisibleRect().Size;
+            _bar.Position = new Vector2((vp0.X - _bar.Size.X) * 0.5f, vp0.Y - _bar.Size.Y - MarginBottom);
+            return;
+        }
 
         for (int i = 0; i < _modes.Length; i++)
         {
