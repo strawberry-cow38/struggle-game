@@ -1369,7 +1369,7 @@ public sealed class SimRuntime
                     {
                         var inj = hc.Injuries[ii];
                         injuries[ii] = new InjuryState(inj.PartId, inj.Kind, inj.Severity, inj.Caliber, inj.Lodged,
-                            HealthSystem.BleedOf(inj), inj.Tended, inj.Stabilized);
+                            HealthSystem.BleedOf(inj), inj.Tended, inj.Stabilized, inj.TendQuality);
                         bleedRate += World.HealthSystem.BleedOf(inj);
                     }
                 }

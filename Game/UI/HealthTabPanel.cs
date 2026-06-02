@@ -270,24 +270,24 @@ public partial class HealthTabPanel : CanvasLayer
 
     private readonly record struct InjuryGroup(
         string PartId, ConditionKind Kind, int Count, float MaxSeverity, string? Caliber, bool Lodged,
-        float Bleed, bool Tended, bool Stabilized);
+        float Bleed, bool Tended, bool Stabilized, float TendQuality);
 
     private static List<InjuryGroup> GroupInjuries(InjuryState[] injuries)
     {
-        var map = new Dictionary<(string, ConditionKind, string?, bool), (int n, float maxSev, float bleed, bool allTended, bool anyStab)>();
+        var map = new Dictionary<(string, ConditionKind, string?, bool), (int n, float maxSev, float bleed, bool allTended, bool anyStab, float tendQ)>();
         var order = new List<(string, ConditionKind, string?, bool)>();
         foreach (var inj in injuries)
         {
             var key = (inj.PartId, inj.Kind, inj.Caliber, inj.Lodged);
             if (map.TryGetValue(key, out var cur))
-                map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity), cur.bleed + inj.Bleed, cur.allTended && inj.Tended, cur.anyStab || inj.Stabilized);
-            else { map[key] = (1, inj.Severity, inj.Bleed, inj.Tended, inj.Stabilized); order.Add(key); }
+                map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity), cur.bleed + inj.Bleed, cur.allTended && inj.Tended, cur.anyStab || inj.Stabilized, System.Math.Max(cur.tendQ, inj.TendQuality));
+            else { map[key] = (1, inj.Severity, inj.Bleed, inj.Tended, inj.Stabilized, inj.TendQuality); order.Add(key); }
         }
         var list = new List<InjuryGroup>();
         foreach (var key in order)
         {
             var v = map[key];
-            list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4, v.bleed, v.allTended, v.anyStab));
+            list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4, v.bleed, v.allTended, v.anyStab, v.tendQ));
         }
         return list;
     }
@@ -322,12 +322,22 @@ public partial class HealthTabPanel : CanvasLayer
         // Ballistic marker (lodged / through) left of the status icon — shown
         // independently of treatment, so a lodged round still reads as lodged
         // even once tended or stabilized.
-        var ballistic = new BallisticIcon { CustomMinimumSize = new Vector2(20, 18), MouseFilter = Control.MouseFilterEnum.Ignore };
+        var ballistic = new BallisticIcon { CustomMinimumSize = new Vector2(20, 18), MouseFilter = Control.MouseFilterEnum.Stop };
         ballistic.Set(g.Kind == ConditionKind.Gunshot, g.Lodged);
+        if (g.Kind == ConditionKind.Gunshot)
+            ballistic.TooltipText = g.Lodged
+                ? "Lodged — the round is stuck in the body"
+                : "Through & through — the round passed clean through";
         row.AddChild(ballistic);
 
-        var icon = new ConditionIcon { CustomMinimumSize = new Vector2(28, 18), MouseFilter = Control.MouseFilterEnum.Ignore };
+        var icon = new ConditionIcon { CustomMinimumSize = new Vector2(28, 18), MouseFilter = Control.MouseFilterEnum.Stop };
         icon.Set(g.Tended ? 0f : g.Bleed, g.Tended, g.Stabilized);
+        // Per-game-day bleed, on the same basis as the death-in estimate.
+        double perDay = g.Bleed * 3600.0 * 24.0 / SimRuntime.SimSecondsPerRealSecond;
+        icon.TooltipText = g.Tended ? $"Tended — quality {g.TendQuality * 100f:0}%"
+            : g.Stabilized ? $"Stabilized — bleeding {perDay:0.0}/day"
+            : g.Bleed > 0f ? $"Bleeding {perDay:0.0}/day"
+            : "";
         row.AddChild(icon);
         return row;
     }
