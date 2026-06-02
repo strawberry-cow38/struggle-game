@@ -46,14 +46,11 @@ public partial class DraftActionBar : CanvasLayer
     private PopupMenu _reloadMenu = null!;
     private readonly List<string> _reloadAmmoPaths = new();
 
-    private readonly (FireMode mode, FireModeFlags flag)[] _modes =
-    {
-        (FireMode.Single, FireModeFlags.Single),
-        (FireMode.Burst, FireModeFlags.Burst),
-        (FireMode.Auto, FireModeFlags.Auto),
-    };
-    private readonly Control[] _modeWraps = new Control[3];
-    private readonly Button[] _modeButtons = new Button[3];
+    private static readonly FireMode[] _modeOrder = { FireMode.Single, FireMode.Burst, FireMode.Auto };
+    private static readonly FireModeFlags[] _modeFlags = { FireModeFlags.Single, FireModeFlags.Burst, FireModeFlags.Auto };
+    private Button _fireModeBtn = null!;
+    private FireMode _shownMode = FireMode.Single;
+    private FireModeFlags _shownModes = FireModeFlags.Single;
 
     private Button _targetAreaBtn = null!;
     private static readonly TargetArea[] _areaCycle = { TargetArea.Auto, TargetArea.Head, TargetArea.Torso, TargetArea.Legs };
@@ -90,19 +87,14 @@ public partial class DraftActionBar : CanvasLayer
         _combatGroup.AddThemeConstantOverride("separation", 6);
         _bar.AddChild(_combatGroup);
 
-        // Fire-mode tiles (Single / Burst / Auto).
-        for (int i = 0; i < _modes.Length; i++)
+        // Fire-mode tile — cycles through the weapon's available modes.
+        _fireModeBtn = BuildGizmo("Fire Mode", toggle: false, parent: _combatGroup, out _);
+        _fireModeBtn.TooltipText = "Cycle the weapon's fire mode.";
+        _fireModeBtn.Pressed += () =>
         {
-            var m = _modes[i].mode;
-            var btn = BuildGizmo(m.ToString(), toggle: true, parent: _combatGroup, out _);
-            btn.Pressed += () =>
-            {
-                if (Host is null || _shownPawnId < 0) return;
-                Host.QueueCommand(new SetFireModeCommand(_shownPawnId, m));
-            };
-            _modeWraps[i] = (Control)btn.GetParent();
-            _modeButtons[i] = btn;
-        }
+            if (Host is null || _shownPawnId < 0) return;
+            Host.QueueCommand(new SetFireModeCommand(_shownPawnId, NextMode(_shownMode, _shownModes)));
+        };
 
         // Reload (left-click reload, right-click ammo/unload menu).
         _reloadBtn = BuildGizmo("Reload", toggle: false, parent: _combatGroup, out _);
@@ -192,12 +184,9 @@ public partial class DraftActionBar : CanvasLayer
         _magPanel.Visible = combat;
         if (!combat) { Recenter(); return; }
 
-        for (int i = 0; i < _modes.Length; i++)
-        {
-            bool avail = (p.RangedModes & _modes[i].flag) != 0;
-            _modeWraps[i].Visible = avail;
-            SetTileActive(_modeButtons[i], avail && p.RangedMode == _modes[i].mode);
-        }
+        _shownMode = p.RangedMode;
+        _shownModes = p.RangedModes;
+        _fireModeBtn.Text = p.RangedMode.ToString();
 
         // Weapon name → mag panel title + force-target caption.
         string weaponName = "Weapon";
@@ -223,6 +212,18 @@ public partial class DraftActionBar : CanvasLayer
         SetTileActive(_fireAtWillBtn, snap.FireAtWill);
 
         Recenter();
+    }
+
+    // Next available fire mode after `cur`, skipping modes the weapon lacks.
+    private static FireMode NextMode(FireMode cur, FireModeFlags avail)
+    {
+        int start = System.Array.IndexOf(_modeOrder, cur);
+        for (int k = 1; k <= _modeOrder.Length; k++)
+        {
+            int j = (start + k) % _modeOrder.Length;
+            if ((avail & _modeFlags[j]) != 0) return _modeOrder[j];
+        }
+        return cur;
     }
 
     private void Recenter()
@@ -281,39 +282,38 @@ public partial class DraftActionBar : CanvasLayer
         }
     }
 
+    // Mag panel mirrors a gizmo: a square tile (big mag count on a dark
+    // inset) with the weapon name as the caption beneath, so it lines up to
+    // the same height as the buttons.
     private Control BuildMagPanel()
     {
-        var panel = new PanelContainer { CustomMinimumSize = new Vector2(132, TileSize) };
-        panel.AddThemeStyleboxOverride("panel", MakeBox(TileBg, BorderIdle, 2, 4, 6));
+        var wrap = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        wrap.AddThemeConstantOverride("separation", 2);
 
-        var col = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        col.AddThemeConstantOverride("separation", 4);
-        panel.AddChild(col);
-
-        _magTitle = new Label
-        {
-            Text = "Weapon",
-            HorizontalAlignment = HorizontalAlignment.Center,
-            AutowrapMode = TextServer.AutowrapMode.WordSmart,
-            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
-        };
-        _magTitle.AddThemeFontSizeOverride("font_size", 12);
-        col.AddChild(_magTitle);
-
-        // Big mag count on a darker inset, like the screenshot.
-        var inset = new PanelContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        inset.AddThemeStyleboxOverride("panel", MakeBox(new Color(0.10f, 0.11f, 0.13f), new Color(0.28f, 0.30f, 0.34f), 1, 3, 2));
+        var tile = new PanelContainer { CustomMinimumSize = new Vector2(96, TileSize) };
+        tile.AddThemeStyleboxOverride("panel", MakeBox(new Color(0.10f, 0.11f, 0.13f), BorderIdle, 2, 4, 4));
         _magCount = new Label
         {
             Text = "0 / 0",
             HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
         };
         _magCount.AddThemeFontSizeOverride("font_size", 18);
         _magCount.AddThemeColorOverride("font_color", new Color(0.78f, 0.86f, 0.88f));
-        inset.AddChild(_magCount);
-        col.AddChild(inset);
+        tile.AddChild(_magCount);
+        wrap.AddChild(tile);
 
-        return panel;
+        _magTitle = new Label
+        {
+            Text = "Weapon",
+            CustomMinimumSize = new Vector2(96, 0),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
+        _magTitle.AddThemeFontSizeOverride("font_size", 11);
+        wrap.AddChild(_magTitle);
+
+        return wrap;
     }
 
     private static StyleBoxFlat MakeBox(Color bg, Color border, int borderWidth, int corner, int margin = 0)
