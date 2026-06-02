@@ -111,24 +111,40 @@ public partial class PawnInfoPanel : CanvasLayer
         _stateLabel = new Label { Text = "" };
         vbox.AddChild(_stateLabel);
 
-        _bioLabel = new Label
-        {
-            // Static placeholder — set once here, not rebuilt every frame.
-            Text = "Stub bio. Name, traits, mood, skills go here later.",
-            AutowrapMode = TextServer.AutowrapMode.WordSmart,
-        };
-        _bioLabel.AddThemeFontSizeOverride("font_size", 11);
-        _bioLabel.AddThemeColorOverride("font_color", new Color(0.62f, 0.65f, 0.72f)); // grey subtitle
-        vbox.AddChild(_bioLabel);
-
         vbox.AddChild(new HSeparator());
 
+        // Two columns: needs bars (left) | bio stub (right), vertical divider.
+        var midRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        midRow.AddThemeConstantOverride("separation", 12);
+
+        var needsCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        needsCol.AddThemeConstantOverride("separation", 4);
         var needsHeader = new Label { Text = "Needs" };
         needsHeader.AddThemeFontSizeOverride("font_size", 14);
-        vbox.AddChild(needsHeader);
+        needsCol.AddChild(needsHeader);
+        needsCol.AddChild(BuildNeedRow("Sleep", new Color(0.45f, 0.78f, 0.38f), out _sleepLabel, out _sleepBar, out _sleepPct));
+        needsCol.AddChild(BuildNeedRow("Recreation", new Color(0.72f, 0.62f, 0.22f), out _recLabel, out _recBar, out _recPct));
+        midRow.AddChild(needsCol);
 
-        vbox.AddChild(BuildNeedRow("Sleep", new Color(0.45f, 0.78f, 0.38f), out _sleepLabel, out _sleepBar, out _sleepPct));
-        vbox.AddChild(BuildNeedRow("Recreation", new Color(0.72f, 0.62f, 0.22f), out _recLabel, out _recBar, out _recPct));
+        midRow.AddChild(new VSeparator());
+
+        var bioCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        bioCol.AddThemeConstantOverride("separation", 4);
+        var bioHeader = new Label { Text = "Bio" };
+        bioHeader.AddThemeFontSizeOverride("font_size", 14);
+        bioCol.AddChild(bioHeader);
+        _bioLabel = new Label
+        {
+            Text = "Stub bio. Name, traits, mood, skills go here later.",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        _bioLabel.AddThemeFontSizeOverride("font_size", 11);
+        _bioLabel.AddThemeColorOverride("font_color", new Color(0.62f, 0.65f, 0.72f));
+        bioCol.AddChild(_bioLabel);
+        midRow.AddChild(bioCol);
+
+        vbox.AddChild(midRow);
 
         vbox.AddChild(new HSeparator());
 
