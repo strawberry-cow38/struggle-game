@@ -39,6 +39,11 @@ public enum FireMode : byte { Single = 0, Burst = 1, Auto = 2 }
 // Default 0 = Auto (center mass / whatever's showing).
 public enum TargetArea : byte { Auto = 0, Torso = 1, Head = 2, Legs = 3 }
 
+// How a pawn fires: Aimed = full aim-time + normal accuracy; Snapshot = no aim
+// time but a big accuracy penalty (CQB); Auto = picks Snapshot for very close
+// targets (within SnapshotRangeFraction of weapon range), Aimed otherwise.
+public enum AimMode : byte { Aimed = 0, Snapshot = 1, Auto = 2 }
+
 // Bitmask of the fire modes a weapon supports. The action bar only
 // offers buttons for the flags present here.
 [System.Flags]

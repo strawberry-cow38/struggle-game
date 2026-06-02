@@ -1222,6 +1222,7 @@ public sealed class SimRuntime
         float aimFromX = 0f, aimFromY = 0f, aimRecoil = 0f;
         float aimHeightSel = SimConstants.AimAutoHeight;
         Items.RangedSpec? aimSpec = null;
+        var aimMode = Items.AimMode.Aimed;
         int aimShooterId = 0;
         if (selectedDummyIds is { Length: 1 }
             && Store.TryGetEntityById(selectedDummyIds[0], out var shEnt)
@@ -1233,6 +1234,7 @@ public sealed class SimRuntime
             aimFromX = shPos.X; aimFromY = shPos.Y;
             aimRecoil = shRc.Recoil;
             aimSpec = shSpec;
+            aimMode = shRc.AimMode;
             aimShooterId = shEnt.Id;
             aimHeightSel = shRc.TargetArea switch
             {
@@ -1389,6 +1391,7 @@ public sealed class SimRuntime
             Items.FireModeFlags rangedModes = Items.FireModeFlags.None;
             var rangedStatus = Snapshots.RangedStatus.None;
             var rangedArea = Items.TargetArea.Auto;
+            var rangedAimMode = Items.AimMode.Aimed;
             byte coverStance = 0;
             bool leaning = false;
             float peekX = p.X, peekY = p.Y;
@@ -1422,6 +1425,7 @@ public sealed class SimRuntime
                 rangedModes = rspec.Modes;
                 rangedRange = rspec.Range;
                 rangedArea = rc.TargetArea;
+                rangedAimMode = rc.AimMode;
                 // Overhead-label state: reloading > firing (in range + LoS) >
                 // watching (target there but blocked/out of range).
                 if (rc.Reloading) rangedStatus = Snapshots.RangedStatus.Reloading;
@@ -1473,6 +1477,10 @@ public sealed class SimRuntime
                 // live fire). Lean: a popped-out leaning target is a smaller hit.
                 float tLight = LightAt(new TilePos((int)p.X, (int)p.Y));
                 float tSpreadMul = 1f + SimConstants.DarknessSpreadBonus * (1f - Math.Clamp(tLight, 0f, 1f));
+                // Snapshot (or Auto resolving to snapshot at this range) widens the cone.
+                float tDist = MathF.Sqrt((p.X - aimFromX) * (p.X - aimFromX) + (p.Y - aimFromY) * (p.Y - aimFromY));
+                if (World.DummyController.ResolveSnapshot(aimMode, tDist, aimSpec.Range))
+                    tSpreadMul *= SimConstants.SnapshotSpreadMultiplier;
                 // Aim at the target's EFFECTIVE position — its peek cell while
                 // leaning — so a peeking (visible) target isn't reported BLOCKED
                 // just because its body tile sits behind the wall. Mirrors the
@@ -1513,7 +1521,7 @@ public sealed class SimRuntime
                 recLevel, atRecKind, equipped, held, healthState, wr.Facing,
                 swingT, missT, flinchT, meleeTargetId,
                 hasRanged, rangedMag, rangedMagSize, rangedMode, rangedModes,
-                fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea,
+                fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea, rangedAimMode,
                 coverStance, leaning, peekX, peekY, rangedHasAmmo,
                 fireMeterPhase, fireMeterProgress,
                 ent.HasComponent<Enemy>(),
@@ -4249,6 +4257,12 @@ public sealed class SimRuntime
         p.GetComponent<RangedCombat>().TargetArea = area;
     }
 
+    public void SetAimMode(int pawnId, Items.AimMode mode)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var p) || !p.HasComponent<RangedCombat>()) return;
+        p.GetComponent<RangedCombat>().AimMode = mode;
+    }
+
     // Line of sight for bullets: walls block, doorways don't (door/cover
     // occlusion is future work). Bresenham, endpoints excluded.
     public bool RangedLosClear(int x0, int y0, int x1, int y1)
@@ -6578,6 +6592,7 @@ public sealed class SimRuntime
                     e.AddComponent(new RangedCombat
                     {
                         Mode = Items.FireMode.Auto,
+                        AimMode = Items.AimMode.Auto, // raiders pick aimed/snapshot by range
                         MagCount = rifle.Ranged!.MagazineSize,
                         LoadedAmmoPath = Items.ItemCatalog.RifleAmmoFmj.FullPath,
                     });

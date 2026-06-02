@@ -208,6 +208,7 @@ public readonly record struct DummyState(
     float RangedRange,
     RangedStatus RangedStatus,
     StruggleGame.Sim.Items.TargetArea RangedTargetArea,
+    StruggleGame.Sim.Items.AimMode RangedAimMode,
     // Cover stance for the crouch/lean visual. 0 = none, 1 = tucked, 2 = popped.
     byte CoverStance,
     bool Leaning,

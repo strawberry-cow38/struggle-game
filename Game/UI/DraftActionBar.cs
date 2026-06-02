@@ -42,6 +42,10 @@ public partial class DraftActionBar : CanvasLayer
     private static readonly TargetArea[] _areaCycle = { TargetArea.Auto, TargetArea.Head, TargetArea.Torso, TargetArea.Legs };
     private TargetArea _shownArea = TargetArea.Auto;
 
+    private Button _aimModeBtn = null!;
+    private static readonly AimMode[] _aimModeCycle = { AimMode.Aimed, AimMode.Snapshot, AimMode.Auto };
+    private AimMode _shownAimMode = AimMode.Aimed;
+
     private int _shownPawnId = -1;
 
     public override void _Ready()
@@ -169,6 +173,23 @@ public partial class DraftActionBar : CanvasLayer
             Host.QueueCommand(new SetTargetAreaCommand(_shownPawnId, next));
         };
         _bar.AddChild(_targetAreaBtn);
+
+        // Aim mode — cycles Aimed → Snapshot → Auto.
+        _aimModeBtn = new Button
+        {
+            Text = "Mode: Aimed",
+            TooltipText = "Aimed: full aim, accurate. Snapshot: no aim, big penalty. Auto: picks by range.",
+            CustomMinimumSize = new Vector2(0, ButtonHeight),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        _aimModeBtn.Pressed += () =>
+        {
+            if (Host is null || _shownPawnId < 0) return;
+            int idx = System.Array.IndexOf(_aimModeCycle, _shownAimMode);
+            var next = _aimModeCycle[(idx + 1) % _aimModeCycle.Length];
+            Host.QueueCommand(new SetAimModeCommand(_shownPawnId, next));
+        };
+        _bar.AddChild(_aimModeBtn);
     }
 
     public override void _Process(double delta)
@@ -197,6 +218,9 @@ public partial class DraftActionBar : CanvasLayer
 
         _shownArea = p.RangedTargetArea;
         _targetAreaBtn.Text = $"Aim: {p.RangedTargetArea}";
+
+        _shownAimMode = p.RangedAimMode;
+        _aimModeBtn.Text = $"Mode: {p.RangedAimMode}";
 
         // Name the ranged button after the equipped weapon.
         string weaponName = "Fire";

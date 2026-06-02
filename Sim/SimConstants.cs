@@ -48,6 +48,12 @@ public static class SimConstants
     // dark target (light 0) gets the full bonus and a fully lit one (light 1)
     // none. Drives both live fire (FireOneShot) and the hover hit-chance.
     public const float DarknessSpreadBonus = 1.5f;
+    // Snapshot aim mode: no aim time, but the dispersion cone is multiplied by
+    // this (~-60% hit chance at range; negligible point-blank where it's used).
+    public const float SnapshotSpreadMultiplier = 2.5f;
+    // Auto aim mode snapshots a target within this fraction of weapon range
+    // (very close); aims at anything farther.
+    public const float SnapshotRangeFraction = 0.25f;
     // Per-bullet hit radius around a pawn (tiles), and the fraction of it a
     // popped-out leaning pawn presents (a thin peeking sliver — harder to hit).
     public const float ProjectileHitRadius = 0.45f;

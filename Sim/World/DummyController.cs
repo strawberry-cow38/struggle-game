@@ -2617,12 +2617,18 @@ public sealed class DummyController
             return;
         }
 
+        // Snapshot fires with NO aim time (but a big accuracy penalty); Aimed
+        // pays the per-target aim delay. Auto picks snapshot for very close
+        // targets, aimed otherwise.
+        bool snapshot = ResolveSnapshot(rc.AimMode, dist, spec.Range);
+        long aimTicks = snapshot ? 0 : spec.AimTicks;
+
         // Aiming: a per-target spot-to-fire delay. (Re)start it when the target
         // changes or after the line was lost for longer than the aim time —
         // a brief LoS blip (<= AimTicks) keeps the existing aim. This is reached
         // only on ticks with a clear shot, so LastAimTick tracks continuous LoS.
         if (rc.AimTargetId != tgt.Id || _tick - rc.LastAimTick > spec.AimTicks)
-            rc.AimReadyTick = _tick + spec.AimTicks;
+            rc.AimReadyTick = _tick + aimTicks;
         rc.AimTargetId = tgt.Id;
         rc.LastAimTick = _tick;
         if (_tick < rc.AimReadyTick) return; // still aiming
@@ -2632,7 +2638,7 @@ public sealed class DummyController
         if (rc.BurstRemaining <= 0)
             rc.BurstRemaining = ShotsForMode(rc.Mode, spec); // start a burst (aim already paid)
 
-        FireOneShot(entity, tgt, spec, ref rc, pos, tp, dist);
+        FireOneShot(entity, tgt, spec, ref rc, pos, tp, dist, snapshot);
         rc.MagCount--;
         rc.BurstRemaining--;
         rc.ShotTick = _tick;
@@ -2692,7 +2698,13 @@ public sealed class DummyController
 
     private const float RangedMinShotDist = 1.5f; // min flight line so point-blank shots still sweep the target
 
-    private void FireOneShot(Entity entity, Entity tgt, Items.RangedSpec spec, ref RangedCombat rc, WorldPos pos, WorldPos tp, float dist)
+    // True if this shot should be a snapshot (no aim time, wide cone): always
+    // for Snapshot mode, and for Auto when the target is within the close band.
+    public static bool ResolveSnapshot(Items.AimMode mode, float dist, float range)
+        => mode == Items.AimMode.Snapshot
+        || (mode == Items.AimMode.Auto && dist <= range * SimConstants.SnapshotRangeFraction);
+
+    private void FireOneShot(Entity entity, Entity tgt, Items.RangedSpec spec, ref RangedCombat rc, WorldPos pos, WorldPos tp, float dist, bool snapshot)
     {
         // Dispersion cone = steady spread + current recoil. The scatter radius
         // at the target is tan(cone) * distance; the round flies a FIXED line
@@ -2701,7 +2713,9 @@ public sealed class DummyController
         // Target in shadow widens the cone (harder to aim at what you can't see).
         float tgtLight = LightProvider?.Invoke((int)tp.X, (int)tp.Y) ?? 1f;
         float darkMult = 1f + SimConstants.DarknessSpreadBonus * (1f - Math.Clamp(tgtLight, 0f, 1f));
-        float coneRad = (spec.SpreadDegrees + rc.Recoil) * darkMult * (MathF.PI / 180f);
+        // Snapshot trades accuracy for speed: a much wider cone.
+        float snapMult = snapshot ? SimConstants.SnapshotSpreadMultiplier : 1f;
+        float coneRad = (spec.SpreadDegrees + rc.Recoil) * darkMult * snapMult * (MathF.PI / 180f);
         // Forward direction to the target (fallback if standing on top of it).
         float dirx = tp.X - pos.X, diry = tp.Y - pos.Y;
         float d = MathF.Sqrt(dirx * dirx + diry * diry);

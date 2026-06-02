@@ -49,6 +49,43 @@ public class RangedTests
     }
 
     [Fact]
+    public void AimMode_AutoResolvesByRange()
+    {
+        const float range = 50f; // snapshot band = within 25% = 12.5 tiles
+        Assert.True(StruggleGame.Sim.World.DummyController.ResolveSnapshot(AimMode.Auto, 5f, range), "close → snapshot");
+        Assert.False(StruggleGame.Sim.World.DummyController.ResolveSnapshot(AimMode.Auto, 40f, range), "far → aimed");
+        Assert.True(StruggleGame.Sim.World.DummyController.ResolveSnapshot(AimMode.Snapshot, 40f, range), "snapshot always");
+        Assert.False(StruggleGame.Sim.World.DummyController.ResolveSnapshot(AimMode.Aimed, 5f, range), "aimed never");
+    }
+
+    [Fact]
+    public void Snapshot_FiresWithoutAimDelay()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, target) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        sim.Store.GetEntityById(target).AddComponent(new Drafted());
+        ArmWithRifle(sim, shooter, ItemCatalog.RifleAmmoFmj, 60);
+        sim.Step(SimConstants.TickSeconds); sim.Step(SimConstants.TickSeconds);
+
+        var e = sim.Store.GetEntityById(shooter);
+        { ref var rc = ref e.GetComponent<RangedCombat>(); rc.MagCount = 30; rc.LoadedAmmoPath = ItemCatalog.RifleAmmoFmj.FullPath; rc.AimMode = AimMode.Snapshot; }
+        SetPos(sim, shooter, 20.5f, 20.5f); SetPos(sim, target, 24.5f, 20.5f);
+        sim.SetFireTarget(shooter, target);
+
+        // Snapshot has NO aim time → fires well before the 54-tick aim window.
+        bool fired = false;
+        for (int i = 0; i < 25 && !fired; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f); SetPos(sim, target, 24.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+            sim.Store.Query<Projectile>().ForEachEntity((ref Projectile _, Entity _) => fired = true);
+        }
+        Assert.True(fired, "snapshot should fire without waiting out the aim time");
+    }
+
+    [Fact]
     public void AimDelay_NoShotUntilAimTimeElapses()
     {
         var sim = new SimRuntime();
