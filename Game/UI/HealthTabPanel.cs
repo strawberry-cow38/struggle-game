@@ -332,11 +332,9 @@ public partial class HealthTabPanel : CanvasLayer
 
         var icon = new ConditionIcon { CustomMinimumSize = new Vector2(28, 18), MouseFilter = Control.MouseFilterEnum.Stop };
         icon.Set(g.Tended ? 0f : g.Bleed, g.Tended, g.Stabilized);
-        // Per-game-day bleed, on the same basis as the death-in estimate.
-        double perDay = g.Bleed * 3600.0 * 24.0 / SimRuntime.SimSecondsPerRealSecond;
         icon.TooltipText = g.Tended ? $"Tended — quality {g.TendQuality * 100f:0}%"
-            : g.Stabilized ? $"Stabilized — bleeding {perDay:0.0}/day"
-            : g.Bleed > 0f ? $"Bleeding {perDay:0.0}/day"
+            : g.Stabilized ? $"Stabilized — bleeding {g.Bleed * 100f:0.0}%"
+            : g.Bleed > 0f ? $"Bleeding {g.Bleed * 100f:0.0}%"
             : "";
         row.AddChild(icon);
         return row;
