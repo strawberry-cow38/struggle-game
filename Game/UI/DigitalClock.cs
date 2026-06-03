@@ -149,7 +149,7 @@ public partial class DigitalClock : Control
     // Date readout, themed to match the clock: a divider strip, then the
     // date glowing in the same phosphor as the digits (uppercased for a
     // display feel).
-    private void DrawDateLine(float panelH, Color core, Color bloom)
+    private void DrawDateLine(float panelH, Color core)
     {
         var font = UiTheme.Font;
         if (font is null || _date.Length == 0) return;
@@ -158,21 +158,13 @@ public partial class DigitalClock : Control
         float w = _lw;
         float tw = font.GetStringSize(s, HorizontalAlignment.Left, -1, fs).X;
         var pos = new Vector2((w - tw) * 0.5f, panelH - 6);
-        float flick = Flick();
 
         // Divider between the time row and the date row.
         float dy = panelH - DateH;
         DrawLine(new Vector2(12, dy), new Vector2(w - 12, dy), new Color(core.R, core.G, core.B, 0.22f), 1f);
 
-        // Phosphor bloom around the text (8-way offset copies) in the display
-        // color, then a white core for consistency across all clock styles.
-        for (int i = 0; i < 8; i++)
-        {
-            float a = i * Mathf.Pi / 4f;
-            var off = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 1.8f;
-            DrawString(font, pos + off, s, HorizontalAlignment.Left, -1, fs, bloom);
-        }
-        DrawString(font, pos, s, HorizontalAlignment.Left, -1, fs, new Color(0.96f, 0.96f, 1f) * flick);
+        // Plain white date text — no phosphor glow, for a clean readable line.
+        DrawString(font, pos, s, HorizontalAlignment.Left, -1, fs, new Color(0.97f, 0.97f, 1f));
     }
 
     // ------------------------------------------------------- 7-segment (Vfd/Ember)
@@ -206,7 +198,7 @@ public partial class DigitalClock : Control
                 DrawLine(new Vector2(6, gy), new Vector2(w - 6, gy), VfdGrid, 1f);
 
         DrawRect(screen, pal.Edge, false, 2f);
-        DrawDateLine(lcdH, pal.Date, pal.Bloom);
+        DrawDateLine(lcdH, pal.Date);
     }
 
     private void DrawColon(float x, float y, float flick)
@@ -320,7 +312,7 @@ public partial class DigitalClock : Control
         DrawTube(_m / 10, x, y, flick); x += TubeW + TubeGap;
         DrawTube(_m % 10, x, y, flick);
 
-        DrawDateLine(panelH, NixNeon, NixHalo);
+        DrawDateLine(panelH, NixNeon);
     }
 
     private void DrawTube(int d, float ox, float oy, float flick)
