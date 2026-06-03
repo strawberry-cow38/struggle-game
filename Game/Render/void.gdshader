@@ -1,11 +1,11 @@
 shader_type canvas_item;
 
-// Red + blue checkerboard for the empty space around the map. Each cell
-// pulses in brightness on its own phase + a slow diagonal scroll keeps
-// the grid alive.
+// Purple checkerboard for the empty space around the map (matches the UI).
+// Each cell pulses in brightness on its own phase + a slow diagonal scroll
+// keeps the grid alive.
 
-uniform vec3 color_a = vec3(0.85, 0.15, 0.15); // red
-uniform vec3 color_b = vec3(0.15, 0.30, 0.85); // blue
+uniform vec3 color_a = vec3(0.22, 0.10, 0.34); // deep purple
+uniform vec3 color_b = vec3(0.42, 0.21, 0.58); // lighter purple
 uniform float cell_size = 48.0;
 uniform float pulse_speed = 1.2;
 uniform float scroll_speed = 8.0;
