@@ -368,8 +368,6 @@ public sealed class SimRuntime
         _dummies.LightProvider = (x, y) => LightAt(new TilePos(x, y));
         _dummies.HasTreatableWounds = HasTreatableWounds;
         _dummies.ApplyTreatment = ApplyTreatment;
-        _dummies.HasRemovableBullet = HasRemovableBullet;
-        _dummies.ApplyBulletRemoval = ApplyBulletRemoval;
 
         // Trees go down before colonists so spawn can avoid landing on one.
         for (int i = 0; i < InitialTreeCount; i++) SpawnRandomTree();
@@ -1370,8 +1368,8 @@ public sealed class SimRuntime
                     for (int ii = 0; ii < hc.Injuries.Count; ii++)
                     {
                         var inj = hc.Injuries[ii];
-                        injuries[ii] = new InjuryState(inj.PartId, inj.Kind, inj.Severity, inj.Caliber, inj.Lodged,
-                            HealthSystem.BleedOf(inj), inj.Tended, inj.Stabilized, inj.TendQuality, inj.RemovalRequested);
+                        injuries[ii] = new InjuryState(inj.PartId, inj.Kind, inj.Severity, inj.Caliber,
+                            HealthSystem.BleedOf(inj), inj.Tended, inj.Stabilized, inj.TendQuality);
                         bleedRate += World.HealthSystem.BleedOf(inj);
                     }
                 }
@@ -4277,7 +4275,7 @@ public sealed class SimRuntime
     }
 
     // Order a drafted doctor (with medicine) to tend / stabilize a patient.
-    public void SetTreatmentTarget(int doctorId, int patientId, bool stabilize, bool removeBullet = false)
+    public void SetTreatmentTarget(int doctorId, int patientId, bool stabilize)
     {
         if (doctorId == patientId) return;
         if (!Store.TryGetEntityById(doctorId, out var d) || !d.HasComponent<Drafted>()) return;
@@ -4288,85 +4286,12 @@ public sealed class SimRuntime
         if (d.HasComponent<TreatmentTarget>())
         {
             ref var tt = ref d.GetComponent<TreatmentTarget>();
-            tt.PatientEntityId = patientId; tt.Stabilize = stabilize; tt.RemoveBullet = removeBullet; tt.WorkUntilTick = 0;
+            tt.PatientEntityId = patientId; tt.Stabilize = stabilize; tt.WorkUntilTick = 0;
         }
         else
         {
-            d.AddComponent(new TreatmentTarget { PatientEntityId = patientId, Stabilize = stabilize, RemoveBullet = removeBullet });
+            d.AddComponent(new TreatmentTarget { PatientEntityId = patientId, Stabilize = stabilize });
         }
-    }
-
-    // Player queues (or un-queues) surgery on a specific lodged wound via the
-    // health panel; a drafted surgeon is assigned later by RMB on the patient.
-    public void RequestBulletRemoval(int patientId, string partId)
-    {
-        if (!Store.TryGetEntityById(patientId, out var pt) || !pt.HasComponent<Health>()) return;
-        var injuries = pt.GetComponent<Health>().Injuries;
-        if (injuries is null) return;
-        for (int i = 0; i < injuries.Count; i++)
-        {
-            var w = injuries[i];
-            if (w.PartId == partId && w.Lodged && w.Kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot)
-            {
-                w.RemovalRequested = !w.RemovalRequested;
-                injuries[i] = w;
-            }
-        }
-    }
-
-    // Queue every lodged round for removal at once (the "Remove bullets" shortcut).
-    public void RequestAllBulletRemovals(int patientId)
-    {
-        if (!Store.TryGetEntityById(patientId, out var pt) || !pt.HasComponent<Health>()) return;
-        var injuries = pt.GetComponent<Health>().Injuries;
-        if (injuries is null) return;
-        for (int i = 0; i < injuries.Count; i++)
-        {
-            var w = injuries[i];
-            if (w.Lodged && w.Kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot && !w.RemovalRequested)
-            {
-                w.RemovalRequested = true;
-                injuries[i] = w;
-            }
-        }
-    }
-
-    // Any lodged round queued for removal?
-    public bool HasRemovableBullet(Entity p)
-    {
-        if (!p.HasComponent<Health>()) return false;
-        var inj = p.GetComponent<Health>().Injuries;
-        if (inj is null) return false;
-        foreach (var w in inj)
-            if (w.Lodged && w.RemovalRequested && w.Kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot) return true;
-        return false;
-    }
-
-    // Surgery: pull every queued lodged round. A tended wound comes out clean
-    // (heals fully from here); an untended one doubles its severity + bleeding.
-    public void ApplyBulletRemoval(Entity patient)
-    {
-        if (!patient.HasComponent<Health>()) return;
-        var injuries = patient.GetComponent<Health>().Injuries;
-        if (injuries is null) return;
-        // One round per surgery (each takes a tend's worth of work).
-        for (int i = 0; i < injuries.Count; i++)
-        {
-            var w = injuries[i];
-            if (!(w.Lodged && w.RemovalRequested && w.Kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot)) continue;
-            if (!w.Tended)
-            {
-                w.Severity *= 2f;
-                w.BleedMult = (w.BleedMult > 0f ? w.BleedMult : 1f) * 2f;
-            }
-            w.Lodged = false;
-            w.HealFloor = 0f;          // can now heal fully
-            w.RemovalRequested = false;
-            injuries[i] = w;
-            break;
-        }
-        ref var h = ref patient.GetComponent<Health>();
-        HealthSystem.Recompute(ref h);
     }
 
     public void SetAimMode(int pawnId, Items.AimMode mode)
@@ -4742,8 +4667,9 @@ public sealed class SimRuntime
     private static readonly string[] _upperParts = { "Head", "Neck", "EyeL", "EyeR", "EarL", "EarR" };
 
     // Resolve a bullet striking a pawn. Body part is chosen from the round's
-    // height at impact (low→legs, mid→torso/arms, high→head). Returns true if
-    // the round passed clean through (→ exit-wound spray); false if it lodged.
+    // height at impact (low→legs, mid→torso/arms, high→head). Every penetrating
+    // round passes clean through (→ exit-wound spray); returns false only when
+    // armor deflects it into a blunt bruise (no exit wound).
     private bool ResolveProjectileHit(int targetId, string ammoPath, float impactHeight)
     {
         if (!Store.TryGetEntityById(targetId, out var t) || !t.HasComponent<Health>()) return false;
@@ -4775,10 +4701,9 @@ public sealed class SimRuntime
             penBlunt = def.Ammo.PenBlunt;
             caliber = def.DisplayName;
         }
-        // High-penetration rounds (AP, ~12 mmRHA) punch through; expanding
-        // ones (HP, ~3) lodge; FMJ (~6) is in between.
-        float passChance = Math.Clamp(pen / 20f, 0.05f, 0.9f);
-        bool passThrough = _spawnRng.NextDouble() < passChance;
+        // Every round passes clean through (exit-wound spray); armor can still
+        // bounce it into a blunt bruise below.
+        bool passThrough = true;
 
         // Armor: if the struck part is covered, the round either deflects
         // (sharp pen ≤ armor → becomes a blunt bruise) or penetrates with the
@@ -4797,7 +4722,7 @@ public sealed class SimRuntime
                 dmg *= Math.Clamp((pen - armor.ArmorSharp) / pen, 0.05f, 1f);
             }
         }
-        ApplyInjury(targetId, part, kind, dmg, caliber, lodged: !passThrough);
+        ApplyInjury(targetId, part, kind, dmg, caliber);
         if (t.HasComponent<Combat>())
         { ref var tc = ref t.GetComponent<Combat>(); tc.FlinchTick = Tick; }
         return passThrough;
@@ -4915,23 +4840,23 @@ public sealed class SimRuntime
         h.Injuries = new List<PartInjury>
         {
             new PartInjury { PartId = "WholeBody", Kind = StruggleGame.Sim.Bodies.ConditionKind.Sickness, Severity = 30f },
-            new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 11f, Caliber = "7.62x51mm NATO", Lodged = true, HealFloor = 5.5f },
+            new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 11f, Caliber = "7.62x51mm NATO" },
             new PartInjury { PartId = "ArmR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 3f, Caliber = "9x19mm Parabellum" },
             new PartInjury { PartId = "ArmL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 5f, Caliber = "9x19mm Parabellum", Tended = true, TendQuality = 0.75f },
             new PartInjury { PartId = "LegL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 7f, Caliber = "5.56x45mm NATO", Stabilized = true },
             new PartInjury { PartId = "Head", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 4f, Caliber = "9x19mm Parabellum" },
-            new PartInjury { PartId = "LegR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 6f, Caliber = "5.56x45mm NATO", Lodged = true, HealFloor = 3f },
+            new PartInjury { PartId = "LegR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 6f, Caliber = "5.56x45mm NATO" },
             new PartInjury { PartId = "ArmR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 5f, Caliber = "7.62x51mm NATO", Tended = true, TendQuality = 0.75f },
             new PartInjury { PartId = "LegR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 3f, Caliber = "9x19mm Parabellum" },
             new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 8f, Caliber = "9x19mm Parabellum", Stabilized = true },
             new PartInjury { PartId = "ArmL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 2f, Caliber = "9x19mm Parabellum" },
             new PartInjury { PartId = "Head", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 5f, Caliber = "7.62x51mm NATO", Tended = true, TendQuality = 0.75f },
             new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 4f, Caliber = "5.56x45mm NATO" },
-            new PartInjury { PartId = "ArmR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 6f, Caliber = "5.56x45mm NATO", Lodged = true, HealFloor = 3f },
+            new PartInjury { PartId = "ArmR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 6f, Caliber = "5.56x45mm NATO" },
             new PartInjury { PartId = "LegL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 3f, Caliber = "9x19mm Parabellum", Tended = true, TendQuality = 0.75f },
             new PartInjury { PartId = "LegR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 7f, Caliber = "7.62x51mm NATO", Stabilized = true },
             new PartInjury { PartId = "Head", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 2f, Caliber = "5.56x45mm NATO" },
-            new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 9f, Caliber = "7.62x51mm NATO", Lodged = true, HealFloor = 4.5f },
+            new PartInjury { PartId = "Torso", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 9f, Caliber = "7.62x51mm NATO" },
             new PartInjury { PartId = "ArmL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 4f, Caliber = "5.56x45mm NATO", Stabilized = true },
             new PartInjury { PartId = "LegR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 5f, Caliber = "9x19mm Parabellum", Tended = true, TendQuality = 0.75f },
             // Missing-limb coverage: the right arm is gone. Its own gunshots
@@ -4944,7 +4869,7 @@ public sealed class SimRuntime
         HealthSystem.Recompute(ref h); // run the destruction/cleanup pass on the demo set
     }
 
-    public void ApplyInjury(int pawnId, string partId, StruggleGame.Sim.Bodies.ConditionKind kind, float severity, string? caliber = null, bool lodged = false)
+    public void ApplyInjury(int pawnId, string partId, StruggleGame.Sim.Bodies.ConditionKind kind, float severity, string? caliber = null)
     {
         if (!Store.TryGetEntityById(pawnId, out var pawn)) return;
         if (!pawn.HasComponent<Health>()) return;
@@ -4961,9 +4886,6 @@ public sealed class SimRuntime
             // Severity is now damage in hit points — no upper clamp.
             Severity = sev,
             Caliber = caliber,
-            Lodged = lodged,
-            // Lodged gunshots stall at 50% until the round's removed.
-            HealFloor = (lodged && kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot) ? sev * 0.5f : 0f,
         });
         HealthSystem.Recompute(ref h);
     }

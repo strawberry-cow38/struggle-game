@@ -81,7 +81,7 @@ public sealed class AmmoSpec
     public string CategoryPath = "";   // matches a weapon's RangedSpec.AmmoCategoryPath
     public ConditionKind InjuryKind;   // typically Gunshot
     public float Damage;               // hit-point damage per hit (RimWorld/CE scale)
-    public float PenSharp;             // sharp armor penetration, mmRHA — also gates through-and-through
+    public float PenSharp;             // sharp armor penetration, mmRHA
     public float PenBlunt;             // blunt/concussive penetration, MPa — banked for the armor system
 }
 

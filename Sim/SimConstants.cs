@@ -62,7 +62,6 @@ public static class SimConstants
     public const float StabilizeSeverityBudget = 20f; // emergency: patch more, fast
     public const long TendWorkTicks = 240;   // ~4s of work to tend
     public const long StabilizeWorkTicks = 45; // ~0.75s — fast emergency patch
-    public const long RemoveBulletWorkTicks = TendWorkTicks; // one tend's worth per round
     public const float TendQualityStub = 0.75f; // until filth/skill/med-quality exist
     public const float BareHandTendWorkMultiplier = 1.3f; // tending without medicine is 30% slower
     // Per-bullet hit radius around a pawn (tiles), and the fraction of it a

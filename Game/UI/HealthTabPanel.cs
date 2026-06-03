@@ -53,8 +53,6 @@ public partial class HealthTabPanel : CanvasLayer
     private readonly Dictionary<string, Label> _capValues = new();
     private VBoxContainer _conditionsCol = null!;
     private ScrollContainer _scroll = null!;
-    private PopupMenu _rowMenu = null!;
-    private string _menuPartId = "";
     private string _lastInjurySig = "";
 
     private bool _open;
@@ -182,19 +180,9 @@ public partial class HealthTabPanel : CanvasLayer
         _opsStub.AddThemeColorOverride("font_color", new Color(0.55f, 0.58f, 0.64f));
         vbox.AddChild(_opsStub);
 
-        _rowMenu = new PopupMenu();
-        _rowMenu.IdPressed += OnRowMenuPressed;
-        AddChild(_rowMenu);
-
         SetActiveTab(true);
         GetTree().Root.SizeChanged += Recenter;
         CallDeferred(nameof(Recenter));
-    }
-
-    private void OnRowMenuPressed(long id)
-    {
-        if (id == 1 && Host?.SelectedDummyId is int pid && _menuPartId.Length > 0)
-            Host.QueueCommand(new StruggleGame.Sim.Commands.RequestBulletRemovalCommand(pid, _menuPartId));
     }
 
     public override void _ExitTree()
@@ -359,18 +347,18 @@ public partial class HealthTabPanel : CanvasLayer
     }
 
     private readonly record struct InjuryGroup(
-        string PartId, ConditionKind Kind, int Count, float MaxSeverity, string? Caliber, bool Lodged,
-        float Bleed, bool Tended, bool Stabilized, float TendQuality, bool RemovalRequested);
+        string PartId, ConditionKind Kind, int Count, float MaxSeverity, string? Caliber,
+        float Bleed, bool Tended, bool Stabilized, float TendQuality);
 
     private static List<InjuryGroup> GroupInjuries(InjuryState[] injuries)
     {
-        // Key includes treatment + bullet state, so only wounds that are
-        // identical in every respect merge; differing states split out.
-        var map = new Dictionary<(string, ConditionKind, string?, bool, bool, bool, bool), (int n, float maxSev, float bleed, float tendQ)>();
-        var order = new List<(string, ConditionKind, string?, bool, bool, bool, bool)>();
+        // Key includes treatment state, so only wounds that are identical in
+        // every respect merge; differing states split out.
+        var map = new Dictionary<(string, ConditionKind, string?, bool, bool), (int n, float maxSev, float bleed, float tendQ)>();
+        var order = new List<(string, ConditionKind, string?, bool, bool)>();
         foreach (var inj in injuries)
         {
-            var key = (inj.PartId, inj.Kind, inj.Caliber, inj.Lodged, inj.Tended, inj.Stabilized, inj.RemovalRequested);
+            var key = (inj.PartId, inj.Kind, inj.Caliber, inj.Tended, inj.Stabilized);
             if (map.TryGetValue(key, out var cur))
                 map[key] = (cur.n + 1, System.Math.Max(cur.maxSev, inj.Severity), cur.bleed + inj.Bleed, System.Math.Max(cur.tendQ, inj.TendQuality));
             else { map[key] = (1, inj.Severity, inj.Bleed, inj.TendQuality); order.Add(key); }
@@ -379,7 +367,7 @@ public partial class HealthTabPanel : CanvasLayer
         foreach (var key in order)
         {
             var v = map[key];
-            list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, key.Item4, v.bleed, key.Item5, key.Item6, v.tendQ, key.Item7));
+            list.Add(new InjuryGroup(key.Item1, key.Item2, v.n, v.maxSev, key.Item3, v.bleed, key.Item4, key.Item5, v.tendQ));
         }
         return list;
     }
@@ -425,49 +413,19 @@ public partial class HealthTabPanel : CanvasLayer
             _ => g.Kind.ToString(),
         };
         string countTag = g.Count > 1 ? $"  x{g.Count}" : "";
-        string queued = g.RemovalRequested ? "[Q] " : "";
 
         var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Stop };
         row.AddThemeConstantOverride("separation", 4);
         // L/T tree connector to show the child belongs to the part above.
         row.AddChild(new Control { CustomMinimumSize = new Vector2(10, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
         row.AddChild(new TreeElbow { Last = last, CustomMinimumSize = new Vector2(16, 18), MouseFilter = Control.MouseFilterEnum.Ignore });
-        // Right-click a lodged gunshot to queue/cancel bullet-removal surgery.
-        if (g.Lodged && g.Kind == ConditionKind.Gunshot)
-        {
-            string partId = g.PartId;
-            bool requested = g.RemovalRequested;
-            row.GuiInput += e =>
-            {
-                if (e is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Right)
-                {
-                    _menuPartId = partId;
-                    _rowMenu.Clear();
-                    _rowMenu.AddItem(requested ? "Cancel bullet removal" : "Remove bullet", 1);
-                    _rowMenu.Position = (Vector2I)GetViewport().GetMousePosition();
-                    _rowMenu.Popup();
-                    GetViewport().SetInputAsHandled();
-                }
-            };
-        }
-        var line = new Label { Text = $"{queued}{detail}{countTag}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        var line = new Label { Text = $"{detail}{countTag}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         line.AddThemeFontSizeOverride("font_size", 14);
         Color c = g.Kind == ConditionKind.Missing
             ? new Color(1f, 0.4f, 0.4f)
             : g.MaxSeverity >= 12f ? new Color(1f, 0.6f, 0.3f) : new Color(0.9f, 0.85f, 0.6f);
         line.AddThemeColorOverride("font_color", c);
         row.AddChild(line);
-
-        // Ballistic marker (lodged / through) left of the status icon — shown
-        // independently of treatment, so a lodged round still reads as lodged
-        // even once tended or stabilized.
-        var ballistic = new BallisticIcon { CustomMinimumSize = new Vector2(20, 18), MouseFilter = Control.MouseFilterEnum.Stop };
-        ballistic.Set(g.Kind == ConditionKind.Gunshot, g.Lodged, g.Tended);
-        if (g.Kind == ConditionKind.Gunshot)
-            ballistic.TooltipText = g.Lodged
-                ? "Lodged — the round is stuck in the body"
-                : "Through & through — the round passed clean through";
-        row.AddChild(ballistic);
 
         var icon = new ConditionIcon { CustomMinimumSize = new Vector2(28, 18), MouseFilter = Control.MouseFilterEnum.Stop };
         icon.Set(g.Tended ? 0f : g.Bleed, g.Tended, g.Stabilized);
@@ -486,8 +444,8 @@ public partial class HealthTabPanel : CanvasLayer
         var sb = new System.Text.StringBuilder();
         foreach (var i in injuries)
             sb.Append(i.PartId).Append((int)i.Kind).Append((int)(i.Severity * 10)).Append(i.Caliber)
-              .Append(i.Lodged ? 'L' : 'T').Append(i.Tended ? 'b' : '-').Append(i.Stabilized ? 's' : '-')
-              .Append(i.RemovalRequested ? 'Q' : '-').Append((int)(i.Bleed * 1000)).Append(';');
+              .Append(i.Tended ? 'b' : '-').Append(i.Stabilized ? 's' : '-')
+              .Append((int)(i.Bleed * 1000)).Append(';');
         return sb.ToString();
     }
 

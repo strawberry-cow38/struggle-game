@@ -645,9 +645,7 @@ public sealed class DummyController
                 // to treat (or it's cancelled by a move/undraft).
                 bool valid = store.TryGetEntityById(tt.PatientEntityId, out var pat)
                     && pat.HasComponent<Health>() && pat.HasComponent<WorldPos>()
-                    && (tt.RemoveBullet
-                        ? (HasRemovableBullet?.Invoke(pat) ?? false)
-                        : (HasTreatableWounds?.Invoke(pat, tt.Stabilize) ?? false) && (!tt.Stabilize || HasMedicine(entity)));
+                    && (HasTreatableWounds?.Invoke(pat, tt.Stabilize) ?? false) && (!tt.Stabilize || HasMedicine(entity));
                 if (!valid) { cb.RemoveComponent<TreatmentTarget>(entity.Id); ClearPath(ref path); }
                 else
                 {
@@ -665,34 +663,23 @@ public sealed class DummyController
                             pat.GetComponent<Wanderer>().TendedUntilTick = _tick + TendHoldTicks;
                         if (tt.WorkUntilTick == 0)
                         {
-                            long dur = tt.RemoveBullet ? SimConstants.RemoveBulletWorkTicks
-                                : tt.Stabilize ? SimConstants.StabilizeWorkTicks : SimConstants.TendWorkTicks;
+                            long dur = tt.Stabilize ? SimConstants.StabilizeWorkTicks : SimConstants.TendWorkTicks;
                             // Bare-hands tending (no medicine) is 30% slower.
-                            if (!tt.RemoveBullet && !tt.Stabilize && !HasMedicine(entity))
+                            if (!tt.Stabilize && !HasMedicine(entity))
                                 dur = (long)(dur * SimConstants.BareHandTendWorkMultiplier);
                             tt.WorkStartTick = _tick;
                             tt.WorkUntilTick = _tick + dur;
                         }
                         else if (_tick >= tt.WorkUntilTick)
                         {
-                            if (tt.RemoveBullet)
-                            {
-                                ApplyBulletRemoval?.Invoke(pat); // no medicine
-                                bool moreBullets = HasRemovableBullet?.Invoke(pat) ?? false;
-                                if (moreBullets) tt.WorkUntilTick = 0;
-                                else cb.RemoveComponent<TreatmentTarget>(entity.Id);
-                            }
-                            else
-                            {
-                                bool usedMed = ConsumeMedicine(entity); // tend works without; stabilize had it (valid)
-                                float quality = usedMed ? SimConstants.TendQualityStub : SimConstants.TendQualityStub * 0.5f;
-                                ApplyTreatment?.Invoke(pat, tt.Stabilize, quality);
-                                // Keep going if there's more to treat; else done.
-                                bool more = (HasTreatableWounds?.Invoke(pat, tt.Stabilize) ?? false)
-                                    && (!tt.Stabilize || HasMedicine(entity));
-                                if (more) tt.WorkUntilTick = 0; // start the next cycle
-                                else cb.RemoveComponent<TreatmentTarget>(entity.Id);
-                            }
+                            bool usedMed = ConsumeMedicine(entity); // tend works without; stabilize had it (valid)
+                            float quality = usedMed ? SimConstants.TendQualityStub : SimConstants.TendQualityStub * 0.5f;
+                            ApplyTreatment?.Invoke(pat, tt.Stabilize, quality);
+                            // Keep going if there's more to treat; else done.
+                            bool more = (HasTreatableWounds?.Invoke(pat, tt.Stabilize) ?? false)
+                                && (!tt.Stabilize || HasMedicine(entity));
+                            if (more) tt.WorkUntilTick = 0; // start the next cycle
+                            else cb.RemoveComponent<TreatmentTarget>(entity.Id);
                         }
                         return;
                     }
@@ -1975,8 +1962,6 @@ public sealed class DummyController
     // treatment. Wired to SimRuntime.
     public System.Func<Entity, bool, bool>? HasTreatableWounds;
     public System.Action<Entity, bool, float>? ApplyTreatment;
-    public System.Func<Entity, bool>? HasRemovableBullet;
-    public System.Action<Entity>? ApplyBulletRemoval;
 
     // (id, x, y) of every conscious non-enemy pawn, rebuilt once per Step.
     private readonly List<(int Id, float X, float Y)> _colonistTargets = new();

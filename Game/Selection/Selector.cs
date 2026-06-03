@@ -169,14 +169,6 @@ public partial class Selector : Node2D
         {
             Host.QueueCommand(new TreatPawnCommand(_bpMenuPawnId, _meleeTargetId, stabilize: true));
         }
-        else if (id == 11)
-        {
-            Host.QueueCommand(new RemoveBulletPawnCommand(_bpMenuPawnId, _meleeTargetId));
-        }
-        else if (id == 12)
-        {
-            Host.QueueCommand(new RemoveAllBulletsPawnCommand(_bpMenuPawnId, _meleeTargetId));
-        }
     }
 
     // Target has any untended (non-permanent) wound.
@@ -190,35 +182,6 @@ public partial class Selector : Node2D
                     if (inj.Kind != StruggleGame.Sim.Bodies.ConditionKind.Scar
                         && inj.Kind != StruggleGame.Sim.Bodies.ConditionKind.Missing
                         && !inj.Tended) return true;
-                return false;
-            }
-        return false;
-    }
-
-    // Target has any lodged round (queued or not).
-    private static bool HasLodgedBullet(SimSnapshot snap, int targetId)
-    {
-        foreach (var d in snap.Dummies)
-            if (d.EntityId == targetId)
-            {
-                if (d.Health.Injuries is null) return false;
-                foreach (var inj in d.Health.Injuries)
-                    if (inj.Lodged && inj.Kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot) return true;
-                return false;
-            }
-        return false;
-    }
-
-    // Target has a lodged round the player queued for removal.
-    private static bool HasRequestedBullet(SimSnapshot snap, int targetId)
-    {
-        foreach (var d in snap.Dummies)
-            if (d.EntityId == targetId)
-            {
-                if (d.Health.Injuries is null) return false;
-                foreach (var inj in d.Health.Injuries)
-                    if (inj.Lodged && inj.RemovalRequested
-                        && inj.Kind == StruggleGame.Sim.Bodies.ConditionKind.Gunshot) return true;
                 return false;
             }
         return false;
@@ -314,18 +277,6 @@ public partial class Selector : Node2D
             bool hasMeds = DoctorHasMedicine(snap, attackers[0]);
             _bpMenu.AddItem(hasMeds ? "Tend" : "Tend (no medicine)", 8);
             if (hasMeds) _bpMenu.AddItem("Stabilize", 9);
-        }
-        // Remove a lodged round the player queued via the health panel (no medicine).
-        if (attackers.Length == 1 && HasRequestedBullet(snap, targetId))
-        {
-            _bpMenuPawnId = attackers[0];
-            _bpMenu.AddItem("Remove bullet", 11);
-        }
-        // Shortcut: queue every lodged round at once + send this surgeon.
-        if (attackers.Length == 1 && HasLodgedBullet(snap, targetId))
-        {
-            _bpMenuPawnId = attackers[0];
-            _bpMenu.AddItem("Remove bullets", 12);
         }
         // A downed pawn doesn't block movement, so a click on one would
         // otherwise have no "move here" — offer it for a lone drafted pawn.

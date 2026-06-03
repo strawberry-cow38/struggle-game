@@ -119,10 +119,6 @@ public sealed class HealthSystem
                 // Tended wounds shed severity far faster (scaled by quality).
                 float rate = HealPerSecHp * (inj.Tended ? 1f + TendHealQualityBonus * inj.TendQuality : 1f);
                 inj.Severity -= rate * dt; // Severity == damage in HP
-                // A lodged round caps healing at HealFloor (50% of the wound)
-                // until it's surgically removed.
-                if (inj.Lodged && inj.HealFloor > 0f && inj.Severity < inj.HealFloor)
-                    inj.Severity = inj.HealFloor;
                 if (inj.Severity <= 0f) h.Injuries.RemoveAt(i);
                 else h.Injuries[i] = inj;
             }
@@ -136,7 +132,7 @@ public sealed class HealthSystem
         if (inj.Tended) return 0f;
         float b = BodyTree.BleedRate(inj.Kind, inj.Severity);
         if (inj.Stabilized) b *= StabilizeBleedFraction;
-        return inj.BleedMult > 0f ? b * inj.BleedMult : b;
+        return b;
     }
 
     // Recompute cached capacities + Unconscious from injuries + blood.
