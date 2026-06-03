@@ -48,15 +48,19 @@ public partial class DigitalClock : Control
         { Core = core; Body = body; Bloom = bloom; Off = off; Bg = bg; Edge = edge; Date = date; }
     }
 
-    // Cyan-green VFD phosphor.
+    // Purple VFD phosphor — matches the dreamcore colonist-panel UI.
     private static readonly SegPal VfdPal = new(
-        core:  new Color(0.85f, 1.00f, 0.95f),        // near-white hot center
-        body:  new Color(0.32f, 1.00f, 0.78f),        // teal phosphor
-        bloom: new Color(0.20f, 0.95f, 0.72f, 0.26f), // soft cyan halo
-        off:   new Color(0.16f, 0.34f, 0.30f, 0.45f), // faint ghost segment
-        bg:    new Color(0.01f, 0.04f, 0.04f, 0.94f),  // near-black, slight teal
-        edge:  new Color(0.18f, 0.55f, 0.48f, 0.55f),
-        date:  new Color(0.42f, 1.00f, 0.82f, 0.92f));
+        core:  new Color(0.96f, 0.90f, 1.00f),         // lavender-white hot center
+        body:  new Color(0.74f, 0.52f, 1.00f),         // violet phosphor
+        bloom: new Color(0.55f, 0.28f, 0.96f, 0.24f),  // soft purple gas-discharge halo
+        off:   new Color(0.30f, 0.20f, 0.44f, 0.45f),  // faint ghost segment
+        bg:    new Color(0.11f, 0.04f, 0.19f, 0.94f),  // dreamcore deep purple (matches panels)
+        edge:  new Color(0.42f, 0.26f, 0.58f, 0.60f),  // dreamcore border
+        date:  new Color(0.82f, 0.64f, 1.00f, 0.92f));
+
+    // VFD faceplate extras (purple).
+    private static readonly Color VfdBacklight = new(0.45f, 0.20f, 0.78f, 0.10f); // even phosphor glow
+    private static readonly Color VfdGrid = new(0.58f, 0.38f, 0.90f, 0.085f);     // control-grid wires
 
     // Warm amber ember.
     private static readonly SegPal EmberPal = new(
@@ -97,7 +101,8 @@ public partial class DigitalClock : Control
     private string _date = "";
     private double _time;
     private double _redrawAccum;
-    private SegPal _p; // active segment palette during a draw
+    private SegPal _p;     // active segment palette during a draw
+    private bool _soft;    // VFD soft gas-discharge bloom + control grid
 
     public void SetTime(int hours, int minutes, int seconds, string date)
     {
@@ -135,8 +140,8 @@ public partial class DigitalClock : Control
         switch (_style)
         {
             case ClockStyle.Nixie: DrawNixie(); break;
-            case ClockStyle.Ember: DrawSevenSeg(EmberPal); break;
-            default:               DrawSevenSeg(VfdPal); break;
+            case ClockStyle.Ember: _soft = false; DrawSevenSeg(EmberPal); break;
+            default:               _soft = true;  DrawSevenSeg(VfdPal); break;
         }
     }
 
@@ -159,7 +164,15 @@ public partial class DigitalClock : Control
         float w = Size.X, lcdH = PadTop * 2 + DigitH + DateH;
         var screen = new Rect2(0, 0, w, lcdH);
         DrawRect(screen, pal.Bg, true);
-        DrawRect(screen, pal.Edge, false, 2f);
+
+        // VFD: even phosphor backlight glow behind the digits (a few stacked
+        // translucent bands brightest across the digit row).
+        if (_soft)
+        {
+            float cy = PadTop + DigitH * 0.5f;
+            for (int i = 3; i >= 1; i--)
+                DrawRect(new Rect2(4, cy - i * 14, w - 8, i * 28), VfdBacklight, true);
+        }
 
         float flick = Flick();
         float x = PadX, y = PadTop;
@@ -169,6 +182,12 @@ public partial class DigitalClock : Control
         DrawDigit(_m / 10, x, y, flick); x += DigitW + DigitGap;
         DrawDigit(_m % 10, x, y, flick);
 
+        // VFD: fine horizontal control-grid wires across the whole face.
+        if (_soft)
+            for (float gy = PadTop - 2; gy < PadTop + DigitH + 2; gy += 4f)
+                DrawLine(new Vector2(6, gy), new Vector2(w - 6, gy), VfdGrid, 1f);
+
+        DrawRect(screen, pal.Edge, false, 2f);
         DrawDateLine(lcdH, pal.Date);
     }
 
@@ -211,6 +230,13 @@ public partial class DigitalClock : Control
     {
         if (on)
         {
+            if (_soft)
+            {
+                // Soft gas-discharge haze: extra wide low-alpha layers so lit
+                // segments bloom into each other like a real VFD.
+                DrawColoredPolygon(Expand(core, 7f), _p.Bloom * 0.5f);
+                DrawColoredPolygon(Expand(core, 4.5f), _p.Bloom);
+            }
             DrawColoredPolygon(Expand(core, 2.6f), _p.Bloom);
             DrawColoredPolygon(core, _p.Body * flick);
             DrawColoredPolygon(Expand(core, -1.4f), _p.Core * flick);
