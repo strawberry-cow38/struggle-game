@@ -475,16 +475,7 @@ public partial class DraftActionBar : CanvasLayer
         _segGrid.AddThemeConstantOverride("v_separation", 2);
         lineLayer.AddChild(_segGrid);
         wrap.AddChild(card);
-
-        var caption = new Label
-        {
-            Text = "Pocket Sand",
-            HorizontalAlignment = HorizontalAlignment.Center,
-            AutowrapMode = TextServer.AutowrapMode.WordSmart,
-        };
-        caption.AddThemeFontSizeOverride("font_size", 11);
-        wrap.AddChild(caption);
-        return wrap;
+        return wrap; // no caption — the grid speaks for itself
     }
 
     // One weapon square: path, icon kind, active flag. Path "" = Unarmed,
