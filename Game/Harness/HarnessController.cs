@@ -102,8 +102,10 @@ public partial class HarnessController : Node2D
                 _schedule.Add((0.1, h => h.SetCameraZoom(3.0f), "zoom"));
                 _schedule.Add((0.3, h => h.InstantWall(c, c), "wall"));
                 _schedule.Add((0.6, h => h.SelectWallAt(c, c), "select wall"));
-                _schedule.Add((2.0, h => h.Screenshot(), "shot"));
-                _schedule.Add((3.0, h => h.Finish("tileinfo done"), "finish"));
+                _schedule.Add((2.0, h => h.Screenshot(), "shot: deconstruct"));
+                _schedule.Add((2.3, h => h.QueueWallDeconAt(c, c), "queue decon"));
+                _schedule.Add((3.5, h => h.Screenshot(), "shot: cancel"));
+                _schedule.Add((4.5, h => h.Finish("tileinfo done"), "finish"));
                 _screenshotEverySec = double.PositiveInfinity;
                 break;
             case "chop":
@@ -1004,6 +1006,7 @@ public partial class HarnessController : Node2D
     }
 
     private void SelectWallAt(int x, int y) => Host.SelectedWallTiles = new[] { new TilePos(x, y) };
+    private void QueueWallDeconAt(int x, int y) => Host.QueueCommand(new PostWallDeconCommand(new TilePos(x, y)));
 
     private void FontShowcase()
     {

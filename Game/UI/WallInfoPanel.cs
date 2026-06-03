@@ -13,6 +13,7 @@ public partial class WallInfoPanel : TileInfoPanel
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
     private Button _deconBtn = null!;
+    private bool _deconQueued; // selection already has a decon job → button cancels
 
     protected override TilePos[] SelectedTiles
     {
@@ -29,7 +30,7 @@ public partial class WallInfoPanel : TileInfoPanel
         _stateLabel = new Label { Text = "" };
         vbox.AddChild(_stateLabel);
 
-        _deconBtn = new Button { Text = "Deconstruct", CustomMinimumSize = new Vector2(0, 28) };
+        _deconBtn = UiTheme.ActionButton("Deconstruct");
         _deconBtn.Pressed += OnDeconPressed;
         vbox.AddChild(_deconBtn);
     }
@@ -73,7 +74,15 @@ public partial class WallInfoPanel : TileInfoPanel
                 ? "All player-built"
                 : (playerWalls == 0 ? "All pre-placed" : $"{playerWalls}/{live.Count} player-built");
         }
-        _deconBtn.Disabled = playerWalls == 0;
+
+        // Flip the button to Cancel when the selection already has a decon job.
+        var deconTiles = new HashSet<TilePos>();
+        foreach (var d in snap.Decons) deconTiles.Add(d.Tile);
+        int queued = 0;
+        foreach (var t in live) if (deconTiles.Contains(t)) queued++;
+        _deconQueued = queued > 0;
+        _deconBtn.Text = _deconQueued ? "Cancel" : "Deconstruct";
+        _deconBtn.Disabled = !_deconQueued && playerWalls == 0;
     }
 
     private void OnDeconPressed()
@@ -81,8 +90,8 @@ public partial class WallInfoPanel : TileInfoPanel
         if (Host is null) return;
         foreach (var t in Host.SelectedWallTiles)
         {
-            if (!Host.IsPlayerWall(t)) continue;
-            Host.QueueCommand(new PostWallDeconCommand(t));
+            if (_deconQueued) Host.QueueCommand(new CancelJobsInRectCommand(t, t));
+            else if (Host.IsPlayerWall(t)) Host.QueueCommand(new PostWallDeconCommand(t));
         }
     }
 }

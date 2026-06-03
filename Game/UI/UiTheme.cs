@@ -31,6 +31,20 @@ public static class UiTheme
     public static StyleBoxFlat ButtonBox(Color bg, bool active = false, int corner = 6, int margin = 4)
         => Box(bg, active ? ButtonEdge : Border, 1, corner, margin, glow: false);
 
+    // An action button styled like the colonist-pane tabs (raised indigo with
+    // the purple edge, lighter on hover, cyan when held). Caller wires Pressed.
+    public static Button ActionButton(string text)
+    {
+        var b = new Godot.Button { Text = text, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 30) };
+        b.AddThemeStyleboxOverride("normal", ButtonBox(Button));
+        b.AddThemeStyleboxOverride("hover", ButtonBox(ButtonHover));
+        b.AddThemeStyleboxOverride("pressed", ButtonBox(ButtonActive, active: true));
+        b.AddThemeStyleboxOverride("disabled", ButtonBox(new Color(Button.R, Button.G, Button.B, 0.40f)));
+        b.AddThemeColorOverride("font_color", Text);
+        b.AddThemeColorOverride("font_disabled_color", TextDim);
+        return b;
+    }
+
     // The shared red-box white-X close button (header corner of info panes).
     // Caller wires the Pressed handler.
     public static Button CloseButton()
