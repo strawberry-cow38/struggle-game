@@ -164,14 +164,15 @@ public partial class DigitalClock : Control
         float dy = panelH - DateH;
         DrawLine(new Vector2(12, dy), new Vector2(w - 12, dy), new Color(core.R, core.G, core.B, 0.22f), 1f);
 
-        // Phosphor bloom around the text (8-way offset copies), then the core.
+        // Phosphor bloom around the text (8-way offset copies) in the display
+        // color, then a white core for consistency across all clock styles.
         for (int i = 0; i < 8; i++)
         {
             float a = i * Mathf.Pi / 4f;
             var off = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 1.8f;
             DrawString(font, pos + off, s, HorizontalAlignment.Left, -1, fs, bloom);
         }
-        DrawString(font, pos, s, HorizontalAlignment.Left, -1, fs, core * flick);
+        DrawString(font, pos, s, HorizontalAlignment.Left, -1, fs, new Color(0.96f, 0.96f, 1f) * flick);
     }
 
     // ------------------------------------------------------- 7-segment (Vfd/Ember)

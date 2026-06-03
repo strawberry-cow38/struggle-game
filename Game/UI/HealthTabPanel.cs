@@ -107,9 +107,15 @@ public partial class HealthTabPanel : CanvasLayer
         _opsTab.Pressed += () => SetActiveTab(false);
         tabRow.AddChild(_opsTab);
         tabRow.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
+        // Close: a solid red box with a white X.
         var closeBtn = MakeTab("X");
         closeBtn.CustomMinimumSize = new Vector2(34, 30);
-        closeBtn.AddThemeColorOverride("font_color", new Color(0.92f, 0.34f, 0.34f)); // red X
+        var redBox = UiTheme.Box(new Color(0.80f, 0.20f, 0.20f, 0.98f), new Color(0.98f, 0.55f, 0.55f, 0.70f), 1, 6, 4, glow: false);
+        var redHover = UiTheme.Box(new Color(0.92f, 0.28f, 0.28f, 0.98f), new Color(1f, 0.70f, 0.70f, 0.85f), 1, 6, 4, glow: false);
+        closeBtn.AddThemeStyleboxOverride("normal", redBox);
+        closeBtn.AddThemeStyleboxOverride("pressed", redBox);
+        closeBtn.AddThemeStyleboxOverride("hover", redHover);
+        closeBtn.AddThemeColorOverride("font_color", new Color(1f, 1f, 1f)); // white X
         closeBtn.Pressed += Close;
         tabRow.AddChild(closeBtn);
         vbox.AddChild(tabRow);

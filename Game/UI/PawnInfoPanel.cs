@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Godot;
 using StruggleGame.Sim;
 using StruggleGame.Sim.Commands;
@@ -56,6 +57,7 @@ public partial class PawnInfoPanel : CanvasLayer
     private Label _weaponLabel = null!;
 
     private int _shownPawnId = -1;
+    private readonly List<(string name, Button btn)> _cardTabs = new();
     private long _lastSnapshotTick = -1;
 
     public override void _Ready()
@@ -162,21 +164,21 @@ public partial class PawnInfoPanel : CanvasLayer
         {
             var t = new Button { Text = tab, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 24) };
             t.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-            var tabBox = UiTheme.ButtonBox(UiTheme.Button);
-            t.AddThemeStyleboxOverride("normal", tabBox);
-            t.AddThemeStyleboxOverride("hover", UiTheme.ButtonBox(UiTheme.ButtonHover));
-            t.AddThemeStyleboxOverride("pressed", tabBox);
-            t.AddThemeColorOverride("font_color", UiTheme.Text);
-            // Health tab toggles the health panel; any other tab closes it.
+            string name = tab;
+            StyleCardTab(t, active: false);
+            // Clicking lights the tab cyan (like the health-tab logic). Health
+            // also toggles the health panel; any other tab closes it.
             if (tab == "Health")
                 t.Pressed += () =>
                 {
+                    SetActiveCardTab(name);
                     if (HealthTab is null) return;
                     if (HealthTab.PanelOpen) HealthTab.Close();
                     else if (_shownPawnId >= 0) HealthTab.OpenFor(_shownPawnId);
                 };
             else
-                t.Pressed += () => HealthTab?.Close();
+                t.Pressed += () => { SetActiveCardTab(name); HealthTab?.Close(); };
+            _cardTabs.Add((name, t));
             tabRow.AddChild(t);
         }
         vbox.AddChild(tabRow);
@@ -188,6 +190,22 @@ public partial class PawnInfoPanel : CanvasLayer
     public override void _ExitTree()
     {
         if (IsInsideTree()) GetTree().Root.SizeChanged -= Reposition;
+    }
+
+    // Tab styling mirrors HealthTabPanel: unselected = raised indigo w/ purple
+    // border, active = cyan-lit with the bright cyan edge.
+    private static void StyleCardTab(Button t, bool active)
+    {
+        var box = UiTheme.ButtonBox(active ? UiTheme.ButtonActive : UiTheme.Button, active);
+        t.AddThemeStyleboxOverride("normal", box);
+        t.AddThemeStyleboxOverride("pressed", box);
+        t.AddThemeStyleboxOverride("hover", UiTheme.ButtonBox(active ? UiTheme.ButtonActive : UiTheme.ButtonHover, active));
+        t.AddThemeColorOverride("font_color", UiTheme.Text);
+    }
+
+    private void SetActiveCardTab(string name)
+    {
+        foreach (var (n, b) in _cardTabs) StyleCardTab(b, n == name);
     }
 
     public override void _Process(double delta)
