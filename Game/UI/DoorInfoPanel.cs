@@ -14,6 +14,7 @@ public partial class DoorInfoPanel : TileInfoPanel
 {
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
+    private HpBar _hp = null!;
     private CheckBox _forbidChk = null!;
     private CheckBox _lockedChk = null!;
     private Button _priorityBtn = null!;
@@ -36,6 +37,8 @@ public partial class DoorInfoPanel : TileInfoPanel
 
         _stateLabel = new Label { Text = "" };
         vbox.AddChild(_stateLabel);
+        _hp = new HpBar();
+        vbox.AddChild(_hp);
 
         _forbidChk = new CheckBox { Text = "Forbidden (acts as wall)" };
         _forbidChk.Toggled += OnForbidToggled;
@@ -77,6 +80,7 @@ public partial class DoorInfoPanel : TileInfoPanel
             SelectedTiles = liveTiles.ToArray();
         }
 
+        _hp.Set(ThingHp.Door, ThingHp.Door);
         var d0 = live[0];
         int forbidCount = 0, lockedCount = 0;
         foreach (var d in live)

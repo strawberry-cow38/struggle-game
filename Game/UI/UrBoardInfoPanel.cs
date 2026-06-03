@@ -13,6 +13,7 @@ public partial class UrBoardInfoPanel : TileInfoPanel
     private Label _tileLabel = null!;
     private Label _playersLabel = null!;
     private Label _spectatorsLabel = null!;
+    private HpBar _hp = null!;
     private Button _deconBtn = null!;
 
     protected override TilePos[] SelectedTiles
@@ -31,6 +32,8 @@ public partial class UrBoardInfoPanel : TileInfoPanel
         vbox.AddChild(_playersLabel);
         _spectatorsLabel = new Label { Text = "" };
         vbox.AddChild(_spectatorsLabel);
+        _hp = new HpBar();
+        vbox.AddChild(_hp);
 
         _deconBtn = new Button { Text = "Deconstruct", CustomMinimumSize = new Vector2(0, 28) };
         _deconBtn.Pressed += OnDeconPressed;
@@ -57,6 +60,7 @@ public partial class UrBoardInfoPanel : TileInfoPanel
         {
             SelectedTiles = liveTiles.ToArray();
         }
+        _hp.Set(ThingHp.UrBoard, ThingHp.UrBoard);
         if (live.Count == 1)
         {
             NameLabel.Text = "Ur Board";

@@ -16,6 +16,7 @@ public partial class StoveInfoPanel : TileInfoPanel
     private Label _orientLabel = null!;
     private Label _progressLabel = null!;
     private Label _billsLabel = null!;
+    private HpBar _hp = null!;
     private Button _billsBtn = null!;
     private Button _deconBtn = null!;
 
@@ -37,6 +38,8 @@ public partial class StoveInfoPanel : TileInfoPanel
         vbox.AddChild(_progressLabel);
         _billsLabel = new Label { Text = "" };
         vbox.AddChild(_billsLabel);
+        _hp = new HpBar();
+        vbox.AddChild(_hp);
 
         _billsBtn = new Button { Text = "Bills...", CustomMinimumSize = new Vector2(0, 28) };
         _billsBtn.Pressed += OnBillsPressed;
@@ -67,6 +70,7 @@ public partial class StoveInfoPanel : TileInfoPanel
         {
             SelectedTiles = liveTiles.ToArray();
         }
+        _hp.Set(ThingHp.Stove, ThingHp.Stove);
         if (live.Count == 1)
         {
             var s = live[0];

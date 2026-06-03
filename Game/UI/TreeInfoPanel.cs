@@ -25,6 +25,7 @@ public partial class TreeInfoPanel : CanvasLayer
     private Label _nameLabel = null!;
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
+    private HpBar _hp = null!;
     private Button _chopBtn = null!;
     private Button _cutBtn = null!;
     private Button _cancelBtn = null!;
@@ -83,6 +84,8 @@ public partial class TreeInfoPanel : CanvasLayer
 
         _stateLabel = new Label { Text = "" };
         _vbox.AddChild(_stateLabel);
+        _hp = new HpBar();
+        _vbox.AddChild(_hp);
 
         var btnRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         btnRow.AddThemeConstantOverride("separation", 6);
@@ -165,6 +168,8 @@ public partial class TreeInfoPanel : CanvasLayer
             return;
         }
 
+        float hpGrowth = first is TreeState ft ? ft.GrowthStage : 1f;
+        _hp.Set(ThingHp.Tree(hpGrowth), ThingHp.Tree(hpGrowth));
         if (ids.Length == 1 && first is TreeState t1)
         {
             _nameLabel.Text = "Tree";

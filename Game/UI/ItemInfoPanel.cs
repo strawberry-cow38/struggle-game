@@ -27,6 +27,7 @@ public partial class ItemInfoPanel : CanvasLayer
     private Label _countLabel = null!;
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
+    private HpBar _hp = null!;
     private Button _forbidBtn = null!;
 
     private int _shownCount = -1;
@@ -82,6 +83,8 @@ public partial class ItemInfoPanel : CanvasLayer
 
         _stateLabel = new Label { Text = "" };
         _vbox.AddChild(_stateLabel);
+        _hp = new HpBar();
+        _vbox.AddChild(_hp);
 
         _forbidBtn = new Button { Text = "Forbid", CustomMinimumSize = new Vector2(0, 28) };
         _forbidBtn.Pressed += OnForbidPressed;
@@ -159,6 +162,7 @@ public partial class ItemInfoPanel : CanvasLayer
             totalCount += s.Count;
             if (s.Forbidden) forbidden++; else haulable++;
         }
+        _hp.Set(ThingHp.Item, ThingHp.Item);
 
         if (stacks.Count == 1)
         {

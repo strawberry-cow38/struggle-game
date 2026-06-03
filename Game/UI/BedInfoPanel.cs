@@ -12,6 +12,7 @@ public partial class BedInfoPanel : TileInfoPanel
 {
     private Label _tileLabel = null!;
     private Label _orientLabel = null!;
+    private HpBar _hp = null!;
     private Label _assignLabel = null!;
     private OptionButton _assignBtn = null!;
     private Button _deconBtn = null!;
@@ -38,6 +39,8 @@ public partial class BedInfoPanel : TileInfoPanel
         vbox.AddChild(_tileLabel);
         _orientLabel = new Label { Text = "" };
         vbox.AddChild(_orientLabel);
+        _hp = new HpBar();
+        vbox.AddChild(_hp);
 
         _assignLabel = new Label { Text = "Assigned to" };
         vbox.AddChild(_assignLabel);
@@ -70,6 +73,7 @@ public partial class BedInfoPanel : TileInfoPanel
         {
             SelectedTiles = liveTiles.ToArray();
         }
+        _hp.Set(ThingHp.Bed, ThingHp.Bed);
         if (live.Count == 1)
         {
             NameLabel.Text = "Bed";

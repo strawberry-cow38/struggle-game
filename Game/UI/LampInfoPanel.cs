@@ -14,6 +14,7 @@ public partial class LampInfoPanel : TileInfoPanel
 {
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
+    private HpBar _hp = null!;
     private CheckBox _poweredChk = null!;
     private ColorPickerButton _colorBtn = null!;
     private Button _deconBtn = null!;
@@ -34,6 +35,8 @@ public partial class LampInfoPanel : TileInfoPanel
 
         _stateLabel = new Label { Text = "" };
         vbox.AddChild(_stateLabel);
+        _hp = new HpBar();
+        vbox.AddChild(_hp);
 
         _poweredChk = new CheckBox { Text = "Powered (cheat — no power network yet)" };
         _poweredChk.Toggled += OnPoweredToggled;
@@ -100,6 +103,7 @@ public partial class LampInfoPanel : TileInfoPanel
             SelectedTiles = liveTiles.ToArray();
         }
 
+        _hp.Set(ThingHp.Lamp, ThingHp.Lamp);
         int onCount = 0;
         foreach (var l in live) if (l.PoweredOn) onCount++;
 

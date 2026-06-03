@@ -12,6 +12,7 @@ public partial class WallInfoPanel : TileInfoPanel
 {
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
+    private HpBar _hp = null!;
     private Button _uninstallBtn = null!;
     private Button _reinstallBtn = null!;
     private Button _deconBtn = null!;
@@ -31,6 +32,9 @@ public partial class WallInfoPanel : TileInfoPanel
 
         _stateLabel = new Label { Text = "" };
         vbox.AddChild(_stateLabel);
+
+        _hp = new HpBar();
+        vbox.AddChild(_hp);
 
         // Spacer pushes the action row to the bottom of the panel.
         vbox.AddChild(new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
@@ -81,6 +85,8 @@ public partial class WallInfoPanel : TileInfoPanel
         }
 
         var first = live[0];
+        int maxHp = ThingHp.Wall(Host!.Map.GetWall(first));
+        _hp.Set(maxHp, maxHp); // current = max until a damage source exists
         if (live.Count == 1)
         {
             var type = Host!.Map.GetWall(first);
