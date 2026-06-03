@@ -26,9 +26,11 @@ public partial class DraftActionBar : CanvasLayer
     private static readonly Color BorderActive = UiTheme.Accent;
     private static readonly Color CheckColor = UiTheme.Accent;
     // Pocket Sand cells use a fill tint (not a border) for the active weapon,
-    // so the shared "+" gap between cells stays a single line.
+    // so the shared "+" gap between cells stays a single line. A visible line
+    // layer sits behind the grid; its color shows through the 2px gaps.
     private static readonly Color CellActive = new(0.20f, 0.36f, 0.50f);
-    private static readonly Color CellDivider = new(0.04f, 0.03f, 0.08f);
+    private static readonly Color CardPad = new(0.04f, 0.03f, 0.08f); // dark outer padding
+    private static readonly Color CellLine = UiTheme.Border;          // the shared "+" line
 
     private HBoxContainer _bar = null!;
 
@@ -462,12 +464,16 @@ public partial class DraftActionBar : CanvasLayer
 
         // Dark card backing — the 3px grid gaps show it through as the "+".
         var card = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Pass, CustomMinimumSize = new Vector2(TileSize, TileSize) };
-        card.AddThemeStyleboxOverride("panel", MakeBox(CellDivider, BorderIdle, 2, 4, 3));
+        card.AddThemeStyleboxOverride("panel", MakeBox(CardPad, BorderIdle, 2, 4, 3));
+        // Line layer behind the grid: its color peeks through the 2px gaps as a
+        // faux "+" between the four even cells.
+        var lineLayer = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        lineLayer.AddThemeStyleboxOverride("panel", MakeBox(CellLine, default, 0, 0));
+        card.AddChild(lineLayer);
         _segGrid = new GridContainer { Columns = 2, MouseFilter = Control.MouseFilterEnum.Pass };
-        // 2px gap shows the dark card bg through as a single shared "+" divider.
         _segGrid.AddThemeConstantOverride("h_separation", 2);
         _segGrid.AddThemeConstantOverride("v_separation", 2);
-        card.AddChild(_segGrid);
+        lineLayer.AddChild(_segGrid);
         wrap.AddChild(card);
 
         var caption = new Label
