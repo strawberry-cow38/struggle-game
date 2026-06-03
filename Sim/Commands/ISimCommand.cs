@@ -312,6 +312,9 @@ public sealed class IssueMoveOrderCommand : ISimCommand
         if (!ent.HasComponent<Drafted>()) return;
         if (!sim.MapView.Walkable(Tile)) return;
         if (sim.MapView.HasFurniture(Tile)) return;
+        // Don't pile onto a tile where another standing colonist already is —
+        // flood out to the nearest open tile around the click point.
+        var dest = sim.FindOpenMoveTile(Tile, EntityId);
 
         // A move order cancels any melee attack or treatment order.
         if (ent.HasComponent<MeleeTarget>()) ent.RemoveComponent<MeleeTarget>();
@@ -346,7 +349,7 @@ public sealed class IssueMoveOrderCommand : ISimCommand
                 pf.Index = 0;
             }
         }
-        oq.Tiles.Add(Tile);
+        oq.Tiles.Add(dest);
     }
 }
 
