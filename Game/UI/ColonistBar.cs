@@ -31,7 +31,6 @@ public partial class ColonistBar : CanvasLayer
     private VBoxContainer _bar = null!;
     private readonly List<(int id, PanelContainer card, PanelContainer frame, PortraitView portrait)> _cards = new();
     private readonly Dictionary<int, string> _loadoutSig = new();
-    private readonly Dictionary<int, int> _moodBucket = new(); // restyle only when the mood color changes
     // Stable display order — new colonists append to the right; the player can
     // drag to reorder. Removed colonists drop out, others keep their slot.
     private readonly List<int> _order = new();
@@ -92,28 +91,23 @@ public partial class ColonistBar : CanvasLayer
             Rebuild(ordered);
         }
 
-        // Selection border + loadout-throttled portrait refresh.
+        // Mood-coded card ring (border + glow), selection override, loadout refresh.
         var sel = new HashSet<int>(Host.SelectedDummyIds);
         foreach (var (id, card, frame, portrait) in _cards)
         {
             bool selected = sel.Contains(id);
-            card.AddThemeStyleboxOverride("panel", CardBox(selected ? UiTheme.Accent : UiTheme.Border));
-            if (byId.TryGetValue(id, out var d))
+            bool has = byId.TryGetValue(id, out var d);
+            // The whole card is the mood ring: border + glow colored by mood,
+            // overridden to cyan while selected so selection still reads.
+            Color ring = has ? MoodColor(d.Mood) : UiTheme.Border;
+            card.AddThemeStyleboxOverride("panel", CardBox(selected ? UiTheme.Accent : ring, ring));
+            if (has)
             {
                 string lo = LoadoutSig(d);
                 if (!_loadoutSig.TryGetValue(id, out var prev) || prev != lo)
                 {
                     _loadoutSig[id] = lo;
                     ApplyLoadout(portrait, d);
-                }
-
-                // Mood-coded portrait border + glow halo. Bucket by 5% so we
-                // only rebuild the stylebox when the color actually shifts.
-                int bucket = Mathf.Clamp((int)(d.Mood * 20f), 0, 20);
-                if (!_moodBucket.TryGetValue(id, out var pb) || pb != bucket)
-                {
-                    _moodBucket[id] = bucket;
-                    frame.AddThemeStyleboxOverride("panel", MoodFrame(MoodColor(d.Mood)));
                 }
             }
         }
@@ -308,13 +302,13 @@ public partial class ColonistBar : CanvasLayer
         foreach (var child in _bar.GetChildren()) { _bar.RemoveChild(child); child.QueueFree(); }
         _cards.Clear();
         _loadoutSig.Clear();
-        _moodBucket.Clear();
 
         BuildCards(colonists);
     }
 
-    // Purple colonist card: roomier left/right/top padding, snug at the bottom.
-    private static StyleBoxFlat CardBox(Color border)
+    // Purple colonist card with the mood ring: colored border + matching glow
+    // halo, roomier left/right/top padding, snug at the bottom.
+    private static StyleBoxFlat CardBox(Color border, Color glow)
     {
         var b = new StyleBoxFlat { BgColor = UiTheme.Panel };
         b.BorderColor = border;
@@ -322,6 +316,8 @@ public partial class ColonistBar : CanvasLayer
         b.CornerRadiusTopLeft = b.CornerRadiusTopRight = b.CornerRadiusBottomLeft = b.CornerRadiusBottomRight = 8;
         b.ContentMarginLeft = b.ContentMarginRight = b.ContentMarginTop = 11;
         b.ContentMarginBottom = 4;
+        b.ShadowColor = new Color(glow.R, glow.G, glow.B, 0.40f);
+        b.ShadowSize = 7;
         return b;
     }
 
@@ -333,18 +329,6 @@ public partial class ColonistBar : CanvasLayer
         var green = new Color(0.38f, 0.85f, 0.40f);
         mood = Mathf.Clamp(mood, 0f, 1f);
         return mood < 0.5f ? red.Lerp(amber, mood * 2f) : amber.Lerp(green, (mood - 0.5f) * 2f);
-    }
-
-    // Inset portrait frame with a mood-colored border + matching glow halo.
-    private static StyleBoxFlat MoodFrame(Color c)
-    {
-        var b = new StyleBoxFlat { BgColor = UiTheme.Inset };
-        b.BorderColor = c;
-        b.BorderWidthLeft = b.BorderWidthRight = b.BorderWidthTop = b.BorderWidthBottom = 2;
-        b.CornerRadiusTopLeft = b.CornerRadiusTopRight = b.CornerRadiusBottomLeft = b.CornerRadiusBottomRight = 4;
-        b.ShadowColor = new Color(c.R, c.G, c.B, 0.45f);
-        b.ShadowSize = 6;
-        return b;
     }
 
     private void BuildCards(List<DummyState> colonists)
@@ -372,7 +356,7 @@ public partial class ColonistBar : CanvasLayer
                 CustomMinimumSize = new Vector2(CardWidth, 0),
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            card.AddThemeStyleboxOverride("panel", CardBox(UiTheme.Border));
+            card.AddThemeStyleboxOverride("panel", CardBox(UiTheme.Border, UiTheme.Border)); // recolored per-mood each frame
             card.Theme = UiTheme.LabelTheme();
 
             var col = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
