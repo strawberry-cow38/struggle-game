@@ -276,14 +276,16 @@ public partial class HealthTabPanel : CanvasLayer
                 groups.Sort((a, b) => PartOrder(a.PartId).CompareTo(PartOrder(b.PartId)));
                 // Tree: a header per body part, its conditions indented beneath.
                 string? curPart = null;
-                foreach (var g in groups)
+                for (int gi = 0; gi < groups.Count; gi++)
                 {
+                    var g = groups[gi];
                     if (g.PartId != curPart)
                     {
                         curPart = g.PartId;
                         _conditionsCol.AddChild(BuildPartHeader(g.PartId));
                     }
-                    _conditionsCol.AddChild(BuildConditionRow(g));
+                    bool last = gi + 1 >= groups.Count || groups[gi + 1].PartId != g.PartId;
+                    _conditionsCol.AddChild(BuildConditionRow(g, last));
                 }
             }
         }
@@ -405,28 +407,25 @@ public partial class HealthTabPanel : CanvasLayer
         return h;
     }
 
-    private Control BuildConditionRow(InjuryGroup g)
+    private Control BuildConditionRow(InjuryGroup g, bool last)
     {
         string detail = g.Kind switch
         {
-            ConditionKind.Missing => "missing",
-            ConditionKind.Sickness => "sickness",
-            ConditionKind.Scar => "scar",
+            ConditionKind.Missing => "Missing",
+            ConditionKind.Sickness => "Sickness",
+            ConditionKind.Scar => "Scar",
             ConditionKind.Gunshot when g.Caliber is not null =>
-                $"gunshot — {ShortCaliber(g.Caliber)}",
-            _ => g.Kind.ToString().ToLower(),
+                $"Gunshot — {ShortCaliber(g.Caliber)}",
+            _ => g.Kind.ToString(),
         };
         string countTag = g.Count > 1 ? $"  x{g.Count}" : "";
         string queued = g.RemovalRequested ? "[Q] " : "";
 
         var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Stop };
-        row.AddThemeConstantOverride("separation", 0);
-        // Indent + a dim vertical line so children read as a tree under the part.
-        row.AddChild(new Control { CustomMinimumSize = new Vector2(12, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
-        var treeLine = new Panel { CustomMinimumSize = new Vector2(2, 0), SizeFlagsVertical = Control.SizeFlags.Fill, MouseFilter = Control.MouseFilterEnum.Ignore };
-        treeLine.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = new Color(UiTheme.Border.R, UiTheme.Border.G, UiTheme.Border.B, 0.5f) });
-        row.AddChild(treeLine);
-        row.AddChild(new Control { CustomMinimumSize = new Vector2(8, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
+        row.AddThemeConstantOverride("separation", 4);
+        // L/T tree connector to show the child belongs to the part above.
+        row.AddChild(new Control { CustomMinimumSize = new Vector2(10, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
+        row.AddChild(new TreeElbow { Last = last, CustomMinimumSize = new Vector2(16, 18), MouseFilter = Control.MouseFilterEnum.Ignore });
         // Right-click a lodged gunshot to queue/cancel bullet-removal surgery.
         if (g.Lodged && g.Kind == ConditionKind.Gunshot)
         {
