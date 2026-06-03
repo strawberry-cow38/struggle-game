@@ -14,23 +14,18 @@ public partial class PortraitView : Control
     private static readonly Color BladeColor = new(0.72f, 0.74f, 0.80f);
     private static readonly Color ArmorColor = new(0.55f, 0.60f, 0.72f, 0.85f);
 
+    private static readonly Color DraftBadge = new(0.82f, 0.20f, 0.18f); // combat red
+    private static readonly Color BadgeBack = new(0.05f, 0.04f, 0.08f, 0.92f);
+    private static readonly Color BadgeMark = new(0.96f, 0.96f, 1.00f);
+
     private bool _drafted;
     private float _rangedLen;  // 0 = no ranged weapon
     private bool _melee;
     private bool _armor;
-    private Color _mood = new(0, 0, 0, 0); // mood pip color (A=0 → no pip)
 
     public void Set(bool drafted, float rangedLen, bool melee, bool armor)
     {
         _drafted = drafted; _rangedLen = rangedLen; _melee = melee; _armor = armor;
-        QueueRedraw();
-    }
-
-    // Mood pip color, shown in the bottom-right corner. Redraws only on change.
-    public void SetMood(Color mood)
-    {
-        if (_mood == mood) return;
-        _mood = mood;
         QueueRedraw();
     }
 
@@ -69,13 +64,19 @@ public partial class PortraitView : Control
         if (_drafted)
             DrawArc(c, r + 2f, 0f, Mathf.Tau, 28, DraftedRing, 2f, antialiased: true);
 
-        // Mood pip, bottom-right corner, with a dark backing for contrast.
-        if (_mood.A > 0f)
+        // Draft indicator, bottom-right corner: a red badge with a white sword
+        // when this colonist is drafted (combat-ready); hidden otherwise.
+        if (_drafted)
         {
-            float pr = Mathf.Min(Size.X, Size.Y) * 0.15f;
+            float pr = Mathf.Min(Size.X, Size.Y) * 0.16f;
             var pc = new Vector2(Size.X - pr - 3f, Size.Y - pr - 3f);
-            DrawCircle(pc, pr + 2f, new Color(0.05f, 0.04f, 0.08f, 0.92f));
-            DrawCircle(pc, pr, _mood);
+            DrawCircle(pc, pr + 2f, BadgeBack);
+            DrawCircle(pc, pr, DraftBadge);
+            // Tiny sword glyph: blade with the crossguard up near the hilt so
+            // it reads as a sword, not a plus. Pommel dot at the base.
+            DrawLine(pc + new Vector2(0f, -pr * 0.60f), pc + new Vector2(0f, pr * 0.62f), BadgeMark, 1.6f);
+            DrawLine(pc + new Vector2(-pr * 0.42f, -pr * 0.30f), pc + new Vector2(pr * 0.42f, -pr * 0.30f), BadgeMark, 1.5f);
+            DrawCircle(pc + new Vector2(0f, pr * 0.62f), 1.4f, BadgeMark);
         }
     }
 }
