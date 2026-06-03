@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Godot;
 using StruggleGame.Sim;
+using StruggleGame.Sim.Items;
 using StruggleGame.Sim.Snapshots;
 using StruggleGame.Game.Camera;
 
@@ -25,13 +26,10 @@ public partial class ColonistBar : CanvasLayer
     private const int MarginTop = 8;
     private const float ClickSlopPx = 6f;
 
-    private static readonly Color CardBg = new(0.16f, 0.17f, 0.20f);
-    private static readonly Color BorderIdle = new(0.32f, 0.34f, 0.40f);
-    private static readonly Color BorderSel = new(0.95f, 0.86f, 0.30f);
-
     private HBoxContainer _bar = null!;
-    private readonly List<(int id, PanelContainer card)> _cards = new();
+    private readonly List<(int id, PanelContainer card, PortraitView portrait)> _cards = new();
     private readonly Dictionary<int, Vector2> _worldTile = new();
+    private readonly Dictionary<int, string> _loadoutSig = new();
     private string _lastSig = "";
 
     private bool _dragging;
@@ -76,9 +74,25 @@ public partial class ColonistBar : CanvasLayer
             Rebuild(colonists);
         }
 
+        // Selection border + loadout-throttled portrait refresh.
         var sel = new HashSet<int>(Host.SelectedDummyIds);
-        foreach (var (id, card) in _cards)
-            card.AddThemeStyleboxOverride("panel", MakeBox(CardBg, sel.Contains(id) ? BorderSel : BorderIdle, 2, 4, 4));
+        var byId = new Dictionary<int, DummyState>();
+        foreach (var c in colonists) byId[c.EntityId] = c;
+        foreach (var (id, card, portrait) in _cards)
+        {
+            bool selected = sel.Contains(id);
+            card.AddThemeStyleboxOverride("panel",
+                UiTheme.Box(UiTheme.Panel, selected ? UiTheme.Accent : UiTheme.Border, 2, 8, 4, glow: false));
+            if (byId.TryGetValue(id, out var d))
+            {
+                string lo = LoadoutSig(d);
+                if (!_loadoutSig.TryGetValue(id, out var prev) || prev != lo)
+                {
+                    _loadoutSig[id] = lo;
+                    ApplyLoadout(portrait, d);
+                }
+            }
+        }
 
         Reposition();
     }
@@ -133,7 +147,7 @@ public partial class ColonistBar : CanvasLayer
     {
         if (Host is null) return;
         var picked = new List<int>(_dragAdditive ? Host.SelectedDummyIds : System.Array.Empty<int>());
-        foreach (var (id, card) in _cards)
+        foreach (var (id, card, _) in _cards)
             if (card.GetGlobalRect().Intersects(rect) && !picked.Contains(id)) picked.Add(id);
         Host.SelectedDummyIds = picked.ToArray();
     }
@@ -148,7 +162,7 @@ public partial class ColonistBar : CanvasLayer
 
     private int CardAt(Vector2 pos)
     {
-        foreach (var (id, card) in _cards)
+        foreach (var (id, card, _) in _cards)
             if (card.GetGlobalRect().HasPoint(pos)) return id;
         return -1;
     }
@@ -164,6 +178,7 @@ public partial class ColonistBar : CanvasLayer
     {
         foreach (var child in _bar.GetChildren()) child.QueueFree();
         _cards.Clear();
+        _loadoutSig.Clear();
 
         foreach (var c in colonists)
         {
@@ -174,19 +189,19 @@ public partial class ColonistBar : CanvasLayer
                 CustomMinimumSize = new Vector2(CardWidth, 0),
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            card.AddThemeStyleboxOverride("panel", MakeBox(CardBg, BorderIdle, 2, 4, 4));
+            card.AddThemeStyleboxOverride("panel", UiTheme.Box(UiTheme.Panel, UiTheme.Border, 2, 8, 4, glow: false));
+            card.Theme = UiTheme.LabelTheme();
 
             var col = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
             col.AddThemeConstantOverride("separation", 3);
             card.AddChild(col);
 
-            var portrait = new Panel
-            {
-                CustomMinimumSize = new Vector2(PortraitSize, PortraitSize),
-                MouseFilter = Control.MouseFilterEnum.Ignore,
-            };
-            portrait.AddThemeStyleboxOverride("panel", MakeBox(PortraitTint(id), new Color(0.10f, 0.10f, 0.12f), 1, 3, 0));
-            col.AddChild(portrait);
+            // Top-down "clone" of the pawn + their equipment, on a dark inset.
+            var frame = new PanelContainer { CustomMinimumSize = new Vector2(PortraitSize, PortraitSize), MouseFilter = Control.MouseFilterEnum.Ignore };
+            frame.AddThemeStyleboxOverride("panel", UiTheme.InsetBox(UiTheme.Inset, corner: 4));
+            var portrait = new PortraitView { MouseFilter = Control.MouseFilterEnum.Ignore };
+            frame.AddChild(portrait);
+            col.AddChild(frame);
 
             var name = new Label
             {
@@ -197,17 +212,33 @@ public partial class ColonistBar : CanvasLayer
             name.AddThemeFontSizeOverride("font_size", 13);
             col.AddChild(name);
 
-            var weapon = new Panel
-            {
-                CustomMinimumSize = new Vector2(PortraitSize, 14),
-                MouseFilter = Control.MouseFilterEnum.Ignore,
-            };
-            weapon.AddThemeStyleboxOverride("panel", MakeBox(new Color(0.22f, 0.23f, 0.27f), new Color(0.10f, 0.10f, 0.12f), 1, 2, 0));
-            col.AddChild(weapon);
-
             _bar.AddChild(card);
-            _cards.Add((id, card));
+            _cards.Add((id, card, portrait));
         }
+    }
+
+    // Loadout signature — equipped item paths + drafted state. Portrait only
+    // redraws when this changes.
+    private static string LoadoutSig(DummyState d)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(d.Drafted ? 'D' : '-');
+        foreach (var eq in d.Equipped) sb.Append(eq.ItemPath).Append(';');
+        return sb.ToString();
+    }
+
+    private static void ApplyLoadout(PortraitView portrait, DummyState d)
+    {
+        float rangedLen = 0f;
+        bool melee = false, armor = false;
+        foreach (var eq in d.Equipped)
+        {
+            if (!ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var def)) continue;
+            if (def.Ranged is { } r) rangedLen = Mathf.Clamp(r.Range / 60f, 0.35f, 1f);
+            else if (def.IsWeapon) melee = true;
+            if (def.IsArmor) armor = true;
+        }
+        portrait.Set(d.Drafted, rangedLen, melee, armor);
     }
 
     private void Reposition()
@@ -217,19 +248,4 @@ public partial class ColonistBar : CanvasLayer
         _bar.Position = new Vector2((vp.X - _bar.Size.X) * 0.5f, MarginTop);
     }
 
-    private static Color PortraitTint(int id)
-    {
-        float h = (id * 0.61803398875f) % 1f;
-        return Color.FromHsv(h, 0.35f, 0.62f);
-    }
-
-    private static StyleBoxFlat MakeBox(Color bg, Color border, int borderWidth, int corner, int margin)
-    {
-        var box = new StyleBoxFlat { BgColor = bg };
-        box.BorderColor = border;
-        box.BorderWidthLeft = box.BorderWidthRight = box.BorderWidthTop = box.BorderWidthBottom = borderWidth;
-        box.CornerRadiusTopLeft = box.CornerRadiusTopRight = box.CornerRadiusBottomLeft = box.CornerRadiusBottomRight = corner;
-        box.ContentMarginLeft = box.ContentMarginRight = box.ContentMarginTop = box.ContentMarginBottom = margin;
-        return box;
-    }
 }
