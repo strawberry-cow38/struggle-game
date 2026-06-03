@@ -18,10 +18,19 @@ public partial class PortraitView : Control
     private float _rangedLen;  // 0 = no ranged weapon
     private bool _melee;
     private bool _armor;
+    private Color _mood = new(0, 0, 0, 0); // mood pip color (A=0 → no pip)
 
     public void Set(bool drafted, float rangedLen, bool melee, bool armor)
     {
         _drafted = drafted; _rangedLen = rangedLen; _melee = melee; _armor = armor;
+        QueueRedraw();
+    }
+
+    // Mood pip color, shown in the bottom-right corner. Redraws only on change.
+    public void SetMood(Color mood)
+    {
+        if (_mood == mood) return;
+        _mood = mood;
         QueueRedraw();
     }
 
@@ -59,5 +68,14 @@ public partial class PortraitView : Control
 
         if (_drafted)
             DrawArc(c, r + 2f, 0f, Mathf.Tau, 28, DraftedRing, 2f, antialiased: true);
+
+        // Mood pip, bottom-right corner, with a dark backing for contrast.
+        if (_mood.A > 0f)
+        {
+            float pr = Mathf.Min(Size.X, Size.Y) * 0.15f;
+            var pc = new Vector2(Size.X - pr - 3f, Size.Y - pr - 3f);
+            DrawCircle(pc, pr + 2f, new Color(0.05f, 0.04f, 0.08f, 0.92f));
+            DrawCircle(pc, pr, _mood);
+        }
     }
 }

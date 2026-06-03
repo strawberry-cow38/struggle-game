@@ -91,17 +91,14 @@ public partial class ColonistBar : CanvasLayer
             Rebuild(ordered);
         }
 
-        // Mood-coded card ring (border + glow), selection override, loadout refresh.
+        // Plain card (selection border only); mood shows as a portrait pip.
         var sel = new HashSet<int>(Host.SelectedDummyIds);
         foreach (var (id, card, frame, portrait) in _cards)
         {
             bool selected = sel.Contains(id);
-            bool has = byId.TryGetValue(id, out var d);
-            // The whole card is the mood ring: border + glow colored by mood,
-            // overridden to cyan while selected so selection still reads.
-            Color ring = has ? MoodColor(d.Mood) : UiTheme.Border;
-            card.AddThemeStyleboxOverride("panel", CardBox(selected ? UiTheme.Accent : ring, ring));
-            if (has)
+            Color edge = selected ? UiTheme.Accent : UiTheme.Border;
+            card.AddThemeStyleboxOverride("panel", CardBox(edge, selected ? UiTheme.Accent : UiTheme.Glow));
+            if (byId.TryGetValue(id, out var d))
             {
                 string lo = LoadoutSig(d);
                 if (!_loadoutSig.TryGetValue(id, out var prev) || prev != lo)
@@ -109,6 +106,7 @@ public partial class ColonistBar : CanvasLayer
                     _loadoutSig[id] = lo;
                     ApplyLoadout(portrait, d);
                 }
+                portrait.SetMood(MoodColor(d.Mood)); // bottom-right mood pip
             }
         }
 
