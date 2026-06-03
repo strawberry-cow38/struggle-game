@@ -19,6 +19,17 @@ public static class UiTheme
     public static readonly Color TextDim = new(0.72f, 0.76f, 0.92f);
     public static readonly Color Outline = new(0.03f, 0.03f, 0.09f, 0.88f);
 
+    // Buttons / tabs — a raised lighter indigo with a cyan edge so they pop
+    // off the near-opaque panels instead of blending in.
+    public static readonly Color Button = new(0.27f, 0.18f, 0.45f, 0.98f);
+    public static readonly Color ButtonHover = new(0.36f, 0.25f, 0.58f, 0.98f);
+    public static readonly Color ButtonActive = new(0.34f, 0.55f, 0.74f, 0.95f); // cyan-lit active tab
+    public static readonly Color ButtonEdge = new(0.60f, 0.82f, 0.99f, 0.60f);   // bright cyan edge
+
+    // A button/tab stylebox with the bright cyan edge.
+    public static StyleBoxFlat ButtonBox(Color bg, int corner = 6, int margin = 4)
+        => Box(bg, ButtonEdge, 1, corner, margin, glow: false);
+
     // Glassy panel: translucent fill, soft glow halo, thin pastel border,
     // rounded corners, uniform content margin.
     public static StyleBoxFlat PanelBox(int corner = 12, int margin = 12)

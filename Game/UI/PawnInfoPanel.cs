@@ -162,11 +162,11 @@ public partial class PawnInfoPanel : CanvasLayer
         {
             var t = new Button { Text = tab, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 24) };
             t.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-            var tabBox = UiTheme.Box(UiTheme.PanelDeep, UiTheme.Border, 1, 6, 4, glow: false);
+            var tabBox = UiTheme.ButtonBox(UiTheme.Button);
             t.AddThemeStyleboxOverride("normal", tabBox);
-            t.AddThemeStyleboxOverride("hover", UiTheme.Box(new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.22f), UiTheme.Border, 1, 6, 4, glow: false));
+            t.AddThemeStyleboxOverride("hover", UiTheme.ButtonBox(UiTheme.ButtonHover));
             t.AddThemeStyleboxOverride("pressed", tabBox);
-            t.AddThemeColorOverride("font_color", UiTheme.TextDim);
+            t.AddThemeColorOverride("font_color", UiTheme.Text);
             // Health tab toggles the health panel; any other tab closes it.
             if (tab == "Health")
                 t.Pressed += () =>

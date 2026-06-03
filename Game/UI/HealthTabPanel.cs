@@ -494,12 +494,11 @@ public partial class HealthTabPanel : CanvasLayer
 
     private static void StyleTab(Button t, bool active)
     {
-        var bg = active ? new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.30f) : UiTheme.PanelDeep;
-        var box = UiTheme.Box(bg, UiTheme.Border, 1, 6, 4, glow: false);
+        var box = UiTheme.ButtonBox(active ? UiTheme.ButtonActive : UiTheme.Button);
         t.AddThemeStyleboxOverride("normal", box);
-        t.AddThemeStyleboxOverride("hover", box);
         t.AddThemeStyleboxOverride("pressed", box);
-        t.AddThemeColorOverride("font_color", active ? UiTheme.Text : UiTheme.TextDim);
+        t.AddThemeStyleboxOverride("hover", UiTheme.ButtonBox(active ? UiTheme.ButtonActive : UiTheme.ButtonHover));
+        t.AddThemeColorOverride("font_color", UiTheme.Text);
     }
 
     // Highlight the open tab + swap its content (Operations is a stub for now).
