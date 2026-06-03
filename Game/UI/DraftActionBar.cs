@@ -542,7 +542,13 @@ public partial class DraftActionBar : CanvasLayer
         // square = a darker filler, not clickable.
         if (seg is not { } s)
         {
-            var blank = new PanelContainer { CustomMinimumSize = new Vector2(q, q), MouseFilter = Control.MouseFilterEnum.Ignore };
+            var blank = new PanelContainer
+            {
+                CustomMinimumSize = new Vector2(q, q),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+                SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+            };
             blank.AddThemeStyleboxOverride("panel", MakeBox(TileBg.Darkened(0.30f), default, 0, 0));
             return blank;
         }
@@ -551,6 +557,8 @@ public partial class DraftActionBar : CanvasLayer
         {
             CustomMinimumSize = new Vector2(q, q),
             FocusMode = Control.FocusModeEnum.None,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
             TooltipText = s.Path == "" ? "Go unarmed (stash your weapon)"
                 : ItemCatalog.ItemsByPath.TryGetValue(s.Path, out var d) ? d.DisplayName : s.Path,
         };
