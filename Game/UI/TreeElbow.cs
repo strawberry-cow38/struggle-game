@@ -12,9 +12,11 @@ public partial class TreeElbow : Control
     public override void _Draw()
     {
         var col = new Color(UiTheme.Border.R, UiTheme.Border.G, UiTheme.Border.B, 0.55f);
+        const float t = 2f; // thickness — filled rects keep it pixel-consistent
         float x = 5f;
-        float midY = Size.Y * 0.5f;
-        DrawLine(new Vector2(x, 0f), new Vector2(x, Last ? midY : Size.Y), col, 2f);
-        DrawLine(new Vector2(x, midY), new Vector2(Size.X - 2f, midY), col, 2f);
+        float midY = Mathf.Round(Size.Y * 0.5f);
+        float vBottom = Last ? midY : Size.Y;
+        DrawRect(new Rect2(x, 0f, t, vBottom), col);                 // vertical
+        DrawRect(new Rect2(x, midY, Size.X - 2f - x, t), col);       // horizontal stub
     }
 }
