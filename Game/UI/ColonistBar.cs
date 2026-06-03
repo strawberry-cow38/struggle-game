@@ -240,8 +240,14 @@ public partial class ColonistBar : CanvasLayer
 
     private void ClickAt(Vector2 pos)
     {
+        if (Host is null) return;
         int id = CardAt(pos);
-        if (id < 0 || Host is null) return;
+        if (id < 0)
+        {
+            // Plain click on empty play area deselects (shift-click leaves it).
+            if (!_dragAdditive) Host.SelectedDummyId = null;
+            return;
+        }
         if (_dragAdditive)
         {
             var cur = new List<int>(Host.SelectedDummyIds);
