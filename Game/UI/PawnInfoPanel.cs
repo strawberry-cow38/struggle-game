@@ -58,6 +58,8 @@ public partial class PawnInfoPanel : CanvasLayer
 
     private int _shownPawnId = -1;
     private readonly List<(string name, Button btn)> _cardTabs = new();
+    private string _activeCardTab = "";  // last-clicked non-Health tab
+    private string _appliedTab = ""; // currently-styled active tab (sentinel forces first apply)
     private long _lastSnapshotTick = -1;
 
     public override void _Ready()
@@ -171,13 +173,13 @@ public partial class PawnInfoPanel : CanvasLayer
             if (tab == "Health")
                 t.Pressed += () =>
                 {
-                    SetActiveCardTab(name);
                     if (HealthTab is null) return;
                     if (HealthTab.PanelOpen) HealthTab.Close();
                     else if (_shownPawnId >= 0) HealthTab.OpenFor(_shownPawnId);
+                    ApplyCardTabs();
                 };
             else
-                t.Pressed += () => { SetActiveCardTab(name); HealthTab?.Close(); };
+                t.Pressed += () => { _activeCardTab = name; HealthTab?.Close(); ApplyCardTabs(); };
             _cardTabs.Add((name, t));
             tabRow.AddChild(t);
         }
@@ -203,9 +205,14 @@ public partial class PawnInfoPanel : CanvasLayer
         t.AddThemeColorOverride("font_color", UiTheme.Text);
     }
 
-    private void SetActiveCardTab(string name)
+    // The Health tab is highlighted whenever its panel is open (even if the
+    // panel was opened from elsewhere); otherwise the last-clicked tab wins.
+    private void ApplyCardTabs()
     {
-        foreach (var (n, b) in _cardTabs) StyleCardTab(b, n == name);
+        string eff = (HealthTab?.PanelOpen ?? false) ? "Health" : _activeCardTab;
+        if (eff == _appliedTab) return;
+        _appliedTab = eff;
+        foreach (var (n, b) in _cardTabs) StyleCardTab(b, n == eff);
     }
 
     public override void _Process(double delta)
@@ -219,6 +226,7 @@ public partial class PawnInfoPanel : CanvasLayer
             return;
         }
         if (!_root.Visible) _root.Visible = true;
+        ApplyCardTabs(); // keep the Health tab lit while its panel is open
         _glowT += delta;
         UiTheme.AnimateGlow(_panelBox, _glowT);
         Reposition(); // re-anchor bottom-left as content height changes
