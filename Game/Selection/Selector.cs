@@ -234,6 +234,16 @@ public partial class Selector : Node2D
         return true;
     }
 
+    // True if the cursor is over another pawn (not one of the attackers).
+    // Used to swallow a right-click that produced no order so it never turns
+    // into a walk onto that pawn's tile.
+    private bool CursorOnOtherPawn(Vector2 world, int[] attackers)
+    {
+        if (Host?.LatestSnapshot is not { } snap) return false;
+        if (!TryPickPawn(snap, world, out int targetId)) return false;
+        return System.Array.IndexOf(attackers, targetId) < 0;
+    }
+
     // Drafted pawn(s) RMB on another pawn → "Melee attack X". Returns
     // false (→ move-order drag) if the cursor isn't on a different pawn.
     private bool TryShowMeleeMenu(Vector2 world, int[] attackers)
@@ -364,6 +374,14 @@ public partial class Selector : Node2D
                     // target (gun = shoot, else melee). A DOWNED pawn still pops
                     // the menu (Fire / Melee / Move here / finish-off).
                     if (TryDirectTargetOrMenu(GetGlobalMousePosition(), drafted))
+                    {
+                        GetViewport().SetInputAsHandled();
+                        return;
+                    }
+                    // RMB landed on another pawn but produced no order (e.g. a
+                    // healthy ally with no menu action): eat it so a drafted
+                    // pawn never walks ONTO a colonist/enemy tile.
+                    if (CursorOnOtherPawn(GetGlobalMousePosition(), drafted))
                     {
                         GetViewport().SetInputAsHandled();
                         return;
