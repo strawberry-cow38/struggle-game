@@ -120,14 +120,15 @@ public static class BodyTree
 
     public static float TotalWeight(HealthCapacity cap) => _capacityTotalWeight.GetValueOrDefault(cap);
 
-    // True if `id` or any ancestor is in the missing set.
+    // True if `id` or any ancestor is in the missing set. Tolerates virtual /
+    // unknown ids (e.g. "WholeBody") that aren't real body parts.
     public static bool IsGone(string id, HashSet<string> missing)
     {
         string? cur = id;
         while (cur is not null)
         {
             if (missing.Contains(cur)) return true;
-            cur = _byId[cur].ParentId;
+            cur = _byId.TryGetValue(cur, out var d) ? d.ParentId : null;
         }
         return false;
     }

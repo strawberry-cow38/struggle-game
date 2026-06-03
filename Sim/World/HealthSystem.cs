@@ -221,29 +221,36 @@ public sealed class HealthSystem
     }
 
     // Mark any part whose summed (non-missing) damage >= its MaxHp as Missing,
-    // clearing its other wounds. Mutates the injury list in place.
+    // clearing its other wounds. Also strips wounds from the descendants of any
+    // missing part — a part can't keep conditions once what it hangs off is
+    // gone. Mutates the injury list in place.
     private static void DestroyOverdamagedParts(List<PartInjury> injuries)
     {
         var dmg = _dmgScratch; dmg.Clear();
-        var alreadyMissing = _missingScratch2; alreadyMissing.Clear();
+        var missing = _missingScratch2; missing.Clear();
         foreach (var inj in injuries)
         {
-            if (inj.Kind == ConditionKind.Missing) { alreadyMissing.Add(inj.PartId); continue; }
+            if (inj.Kind == ConditionKind.Missing) { missing.Add(inj.PartId); continue; }
             dmg[inj.PartId] = dmg.GetValueOrDefault(inj.PartId) + inj.Severity;
         }
         List<string>? destroy = null;
         foreach (var kv in dmg)
         {
-            if (alreadyMissing.Contains(kv.Key)) continue;
+            if (missing.Contains(kv.Key)) continue;
             float max = BodyTree.MaxHp(kv.Key);
             if (max > 0f && kv.Value >= max) (destroy ??= new()).Add(kv.Key);
         }
-        if (destroy is null) return;
-        foreach (var part in destroy)
-        {
-            injuries.RemoveAll(i => i.PartId == part && i.Kind != ConditionKind.Missing);
-            injuries.Add(new PartInjury { PartId = part, Kind = ConditionKind.Missing, Severity = 1f });
-        }
+        if (destroy is not null)
+            foreach (var part in destroy)
+            {
+                injuries.RemoveAll(i => i.PartId == part && i.Kind != ConditionKind.Missing);
+                injuries.Add(new PartInjury { PartId = part, Kind = ConditionKind.Missing, Severity = 1f });
+                missing.Add(part);
+            }
+        // A missing part — and everything below it — can't keep other
+        // conditions; only the Missing markers themselves survive.
+        if (missing.Count > 0)
+            injuries.RemoveAll(i => i.Kind != ConditionKind.Missing && BodyTree.IsGone(i.PartId, missing));
     }
 
     [ThreadStatic] private static HashSet<string>? _missingScratchTls;
