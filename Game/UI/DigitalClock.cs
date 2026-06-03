@@ -103,6 +103,10 @@ public partial class DigitalClock : Control
     private double _redrawAccum;
     private SegPal _p;     // active segment palette during a draw
     private bool _soft;    // VFD soft gas-discharge bloom + control grid
+    private float _lw;     // logical (pre-scale) width during a draw
+
+    // Overall display scale (everything drawn at design size then scaled).
+    private const float Mag = 1.1f;
 
     public void SetTime(int hours, int minutes, int seconds, string date)
     {
@@ -119,24 +123,19 @@ public partial class DigitalClock : Control
 
     public override void _Ready() => UpdateMinSize();
 
-    private void UpdateMinSize()
-    {
-        float w, h;
-        if (_style == ClockStyle.Nixie)
-        {
-            w = PadX * 2 + TubeW * 4 + NixColonW + TubeGap * 4;
-            h = PadTop * 2 + TubeH + DateH;
-        }
-        else
-        {
-            w = PadX * 2 + DigitW * 4 + ColonW + DigitGap * 4;
-            h = PadTop * 2 + DigitH + DateH;
-        }
-        CustomMinimumSize = new Vector2(w, h);
-    }
+    // Design-space (pre-scale) size for the active style.
+    private Vector2 BaseSize()
+        => _style == ClockStyle.Nixie
+            ? new Vector2(PadX * 2 + TubeW * 4 + NixColonW + TubeGap * 4, PadTop * 2 + TubeH + DateH)
+            : new Vector2(PadX * 2 + DigitW * 4 + ColonW + DigitGap * 4, PadTop * 2 + DigitH + DateH);
+
+    private void UpdateMinSize() => CustomMinimumSize = BaseSize() * Mag;
 
     public override void _Draw()
     {
+        // Draw at design size, scaled up uniformly.
+        DrawSetTransform(Vector2.Zero, 0f, new Vector2(Mag, Mag));
+        _lw = BaseSize().X;
         switch (_style)
         {
             case ClockStyle.Nixie: DrawNixie(); break;
@@ -156,7 +155,7 @@ public partial class DigitalClock : Control
         if (font is null || _date.Length == 0) return;
         string s = _date.ToUpperInvariant();
         int fs = 14;
-        float w = Size.X;
+        float w = _lw;
         float tw = font.GetStringSize(s, HorizontalAlignment.Left, -1, fs).X;
         var pos = new Vector2((w - tw) * 0.5f, panelH - 6);
         float flick = Flick();
@@ -179,7 +178,7 @@ public partial class DigitalClock : Control
     private void DrawSevenSeg(SegPal pal)
     {
         _p = pal;
-        float w = Size.X, lcdH = PadTop * 2 + DigitH + DateH;
+        float w = _lw, lcdH = PadTop * 2 + DigitH + DateH;
         var screen = new Rect2(0, 0, w, lcdH);
         DrawRect(screen, pal.Bg, true);
 
