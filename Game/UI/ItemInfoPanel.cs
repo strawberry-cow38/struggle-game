@@ -14,7 +14,7 @@ public partial class ItemInfoPanel : CanvasLayer
 {
     public SimHost? Host { get; set; }
 
-    private const int PanelWidth = 280;
+    private const int PanelWidth = 560;
     private const int MarginLeft = 12;
     private const int MarginBottom = 16;
     private const int PanelPad = 10;
