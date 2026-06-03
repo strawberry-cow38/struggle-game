@@ -147,14 +147,32 @@ public partial class DigitalClock : Control
 
     private float Flick() => 0.86f + 0.14f * Flicker((float)_time);
 
-    private void DrawDateLine(float panelH, Color col)
+    // Date readout, themed to match the clock: a divider strip, then the
+    // date glowing in the same phosphor as the digits (uppercased for a
+    // display feel).
+    private void DrawDateLine(float panelH, Color core, Color bloom)
     {
         var font = UiTheme.Font;
         if (font is null || _date.Length == 0) return;
+        string s = _date.ToUpperInvariant();
         int fs = 14;
-        float tw = font.GetStringSize(_date, HorizontalAlignment.Left, -1, fs).X;
-        var pos = new Vector2((Size.X - tw) * 0.5f, panelH - 6);
-        DrawString(font, pos, _date, HorizontalAlignment.Left, -1, fs, col);
+        float w = Size.X;
+        float tw = font.GetStringSize(s, HorizontalAlignment.Left, -1, fs).X;
+        var pos = new Vector2((w - tw) * 0.5f, panelH - 6);
+        float flick = Flick();
+
+        // Divider between the time row and the date row.
+        float dy = panelH - DateH;
+        DrawLine(new Vector2(12, dy), new Vector2(w - 12, dy), new Color(core.R, core.G, core.B, 0.22f), 1f);
+
+        // Phosphor bloom around the text (8-way offset copies), then the core.
+        for (int i = 0; i < 8; i++)
+        {
+            float a = i * Mathf.Pi / 4f;
+            var off = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 1.8f;
+            DrawString(font, pos + off, s, HorizontalAlignment.Left, -1, fs, bloom);
+        }
+        DrawString(font, pos, s, HorizontalAlignment.Left, -1, fs, core * flick);
     }
 
     // ------------------------------------------------------- 7-segment (Vfd/Ember)
@@ -184,11 +202,11 @@ public partial class DigitalClock : Control
 
         // VFD: fine horizontal control-grid wires across the whole face.
         if (_soft)
-            for (float gy = PadTop - 2; gy < PadTop + DigitH + 2; gy += 4f)
+            for (float gy = PadTop - 2; gy < lcdH - 4; gy += 4f)
                 DrawLine(new Vector2(6, gy), new Vector2(w - 6, gy), VfdGrid, 1f);
 
         DrawRect(screen, pal.Edge, false, 2f);
-        DrawDateLine(lcdH, pal.Date);
+        DrawDateLine(lcdH, pal.Date, pal.Bloom);
     }
 
     private void DrawColon(float x, float y, float flick)
@@ -302,7 +320,7 @@ public partial class DigitalClock : Control
         DrawTube(_m / 10, x, y, flick); x += TubeW + TubeGap;
         DrawTube(_m % 10, x, y, flick);
 
-        DrawDateLine(panelH, NixNeon);
+        DrawDateLine(panelH, NixNeon, NixHalo);
     }
 
     private void DrawTube(int d, float ox, float oy, float flick)
