@@ -15,7 +15,7 @@ public partial class HudOverlay : CanvasLayer
     public PawnInfoPanel? PawnPanel { get; set; }
     public HealthTabPanel? HealthTab { get; set; }
 
-    private Label _label = null!;
+    private DigitalClock _clock = null!;
     private Label _perfLabel = null!;
     private Label _tileLabel = null!;
 
@@ -30,10 +30,11 @@ public partial class HudOverlay : CanvasLayer
     {
         Layer = 100;
 
-        // Clock / date — glass panel, top-left (matches the info panels).
-        _label = new Label { Name = "Readout", MouseFilter = Control.MouseFilterEnum.Ignore };
-        _label.AddThemeFontSizeOverride("font_size", 18);
-        var clockPanel = MakeHudPanel(_label);
+        // Clock / date — Zomboid-style fire digital watch, top-left.
+        _clock = new DigitalClock { Name = "Clock", MouseFilter = Control.MouseFilterEnum.Ignore };
+        var clockPanel = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        clockPanel.AddThemeStyleboxOverride("panel", UiTheme.Box(UiTheme.Panel, UiTheme.Border, 1, 8, 8, glow: false));
+        clockPanel.AddChild(_clock);
         clockPanel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
         clockPanel.OffsetLeft = 12; clockPanel.OffsetTop = 12;
         AddChild(clockPanel);
@@ -99,11 +100,8 @@ public partial class HudOverlay : CanvasLayer
         var dt = Host.LatestSnapshot is { } snap
             ? SimRuntime.WorldEpoch.AddSeconds(snap.WorldTimeSec)
             : SimRuntime.WorldEpoch;
-        string clock = dt.ToString("HH:mm");
-        string date = dt.ToString("ddd MMM d, yyyy");
-
         _perfLabel.Text = $"FPS  {fps:0}\nTPS  {tps:0} / {Host.TickHz}{paused}";
-        _label.Text = $"{clock}  {date}";
+        _clock.SetTime(dt.Hour, dt.Minute, dt.Second, dt.ToString("ddd MMM d, yyyy"));
 
         UpdateTileReadout(tx, ty);
     }
