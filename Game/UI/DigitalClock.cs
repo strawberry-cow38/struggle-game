@@ -97,7 +97,7 @@ public partial class DigitalClock : Control
         new[]{ true,  true,  true,  true,  false, true,  true  },
     };
 
-    private int _h, _m, _s;
+    private int _h, _m;
     private string _date = "";
     private double _time;
     private double _redrawAccum;
@@ -110,7 +110,9 @@ public partial class DigitalClock : Control
 
     public void SetTime(int hours, int minutes, int seconds, string date)
     {
-        _h = hours; _m = minutes; _s = seconds; _date = date;
+        // seconds no longer drive the colon (it blinks on real time); kept in
+        // the signature since the caller passes the full wall-clock time.
+        _h = hours; _m = minutes; _date = date;
         QueueRedraw();
     }
 
@@ -144,7 +146,13 @@ public partial class DigitalClock : Control
         }
     }
 
-    private float Flick() => 0.86f + 0.14f * Flicker((float)_time);
+    // Subtle brightness flicker, driven by real time (_time advances on the
+    // Godot frame delta, so it's independent of game speed / pause).
+    private float Flick() => 0.94f + 0.06f * Flicker((float)_time);
+
+    // Colon blink on real time too (1s on / 1s off), NOT in-world seconds —
+    // so it keeps ticking at the same rate when paused or fast-forwarded.
+    private bool ColonOn() => ((long)_time & 1L) == 0L;
 
     // Date readout, themed to match the clock: a divider strip, then the
     // date glowing in the same phosphor as the digits (uppercased for a
@@ -203,7 +211,7 @@ public partial class DigitalClock : Control
 
     private void DrawColon(float x, float y, float flick)
     {
-        bool on = (_s & 1) == 0;
+        bool on = ColonOn();
         float cx = x + ColonW * 0.5f;
         float r = Thick * 0.55f;
         DrawDot(new Vector2(cx, y + DigitH * 0.30f), r, on, flick);
@@ -377,7 +385,7 @@ public partial class DigitalClock : Control
     private void DrawNixColon(float x, float y, float flick)
     {
         float cx = x + NixColonW * 0.5f;
-        bool on = (_s & 1) == 0;
+        bool on = ColonOn();
         float r = 4.5f;
         DrawNeonDot(new Vector2(cx, y + TubeH * 0.34f), r, on, flick);
         DrawNeonDot(new Vector2(cx, y + TubeH * 0.66f), r, on, flick);
