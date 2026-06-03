@@ -247,10 +247,14 @@ public sealed class HealthSystem
                 injuries.Add(new PartInjury { PartId = part, Kind = ConditionKind.Missing, Severity = 1f });
                 missing.Add(part);
             }
-        // A missing part — and everything below it — can't keep other
-        // conditions; only the Missing markers themselves survive.
+        // A missing part — and everything below it — can't keep conditions.
+        // Keep ONLY the topmost Missing marker of each gone chain: a non-Missing
+        // wound on a gone part goes, and a Missing marker on a part that already
+        // has a missing ancestor goes too (so a hand lost with its arm doesn't
+        // list its own "Missing" under the arm's).
         if (missing.Count > 0)
-            injuries.RemoveAll(i => i.Kind != ConditionKind.Missing && BodyTree.IsGone(i.PartId, missing));
+            injuries.RemoveAll(i => BodyTree.IsGone(i.PartId, missing)
+                && (i.Kind != ConditionKind.Missing || BodyTree.HasMissingAncestor(i.PartId, missing)));
     }
 
     [ThreadStatic] private static HashSet<string>? _missingScratchTls;

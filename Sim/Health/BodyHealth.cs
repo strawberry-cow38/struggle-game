@@ -133,6 +133,19 @@ public static class BodyTree
         return false;
     }
 
+    // True if a STRICT ancestor of `id` is missing (id itself excluded).
+    public static bool HasMissingAncestor(string id, HashSet<string> missing)
+    {
+        if (!_byId.TryGetValue(id, out var d)) return false;
+        string? cur = d.ParentId;
+        while (cur is not null)
+        {
+            if (missing.Contains(cur)) return true;
+            cur = _byId.TryGetValue(cur, out var p) ? p.ParentId : null;
+        }
+        return false;
+    }
+
     // Max hit points of a part (0 if unknown).
     public static float MaxHp(string partId) => _byId.TryGetValue(partId, out var d) ? d.MaxHp : 0f;
 

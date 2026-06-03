@@ -4935,9 +4935,10 @@ public sealed class SimRuntime
             new PartInjury { PartId = "ArmL", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 4f, Caliber = "5.56x45mm NATO", Stabilized = true },
             new PartInjury { PartId = "LegR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 5f, Caliber = "9x19mm Parabellum", Tended = true, TendQuality = 0.75f },
             // Missing-limb coverage: the right arm is gone. Its own gunshots
-            // (above) and this child Right-Hand wound should all be wiped,
-            // leaving only the "Missing" marker on the arm.
+            // (above), this child Right-Hand wound, AND the hand's own Missing
+            // marker should all be wiped — only "Right Arm: Missing" survives.
             new PartInjury { PartId = "HandR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot, Severity = 2f, Caliber = "9x19mm Parabellum" },
+            new PartInjury { PartId = "HandR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Missing, Severity = 1f },
             new PartInjury { PartId = "ArmR", Kind = StruggleGame.Sim.Bodies.ConditionKind.Missing, Severity = 1f },
         };
         HealthSystem.Recompute(ref h); // run the destruction/cleanup pass on the demo set
