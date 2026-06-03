@@ -24,7 +24,7 @@ public partial class ColonistBar : CanvasLayer
     private const int PortraitSize = 62;  // +20% over the original 52
     private const int CardWidth = 80;
     private const int MarginTop = 8;
-    private const float ClickSlopPx = 6f;
+    private const float ClickSlopPx = 9f; // deadzone before a drag-select kicks in
 
     private HBoxContainer _bar = null!;
     private readonly List<(int id, PanelContainer card, PortraitView portrait)> _cards = new();
@@ -36,6 +36,7 @@ public partial class ColonistBar : CanvasLayer
     private bool _dragAdditive;
     private Vector2 _dragStart;
     private DragRectOverlay _overlay = null!;
+    private int _followId = -1;
 
     public override void _Ready()
     {
@@ -79,6 +80,15 @@ public partial class ColonistBar : CanvasLayer
         }
 
         // Selection border + loadout-throttled portrait refresh.
+        // Camera follow: feed the live pawn pos while following; drop it once
+        // the user pans (the camera clears Following on any non-zoom move).
+        if (Camera is not null)
+        {
+            if (!Camera.Following) _followId = -1;
+            else if (_followId >= 0 && _worldTile.TryGetValue(_followId, out var ft))
+                Camera.FollowTarget = ft * SimConstants.PixelsPerTile;
+        }
+
         var sel = new HashSet<int>(Host.SelectedDummyIds);
         var byId = new Dictionary<int, DummyState>();
         foreach (var c in colonists) byId[c.EntityId] = c;
@@ -108,6 +118,9 @@ public partial class ColonistBar : CanvasLayer
         if (@event is InputEventMouseMotion mm && _dragging)
         {
             _overlay.Cur = mm.Position;
+            // Only show the rect once we've moved past the deadzone (play).
+            if (!_overlay.Active && (mm.Position - _dragStart).Length() > ClickSlopPx)
+                _overlay.Active = true;
             _overlay.QueueRedraw();
             return;
         }
@@ -127,10 +140,9 @@ public partial class ColonistBar : CanvasLayer
                 _dragStart = pos;
                 _dragging = true;
                 _dragAdditive = mb.ShiftPressed || mb.CtrlPressed;
-                _overlay.Active = true;
+                _overlay.Active = false; // activates once past the deadzone
                 _overlay.Start = pos;
                 _overlay.Cur = pos;
-                _overlay.QueueRedraw();
                 GetViewport().SetInputAsHandled();
             }
             else if (_dragging)
@@ -171,9 +183,14 @@ public partial class ColonistBar : CanvasLayer
     private void FocusAt(Vector2 pos)
     {
         int id = CardAt(pos);
-        if (id >= 0 && Camera is not null && _worldTile.TryGetValue(id, out var tile))
-            Camera.FocusOn(tile * SimConstants.PixelsPerTile);
-        if (id >= 0 && Host is not null) Host.SelectedDummyId = id;
+        if (id < 0) return;
+        if (Host is not null) Host.SelectedDummyId = id;
+        if (Camera is not null && _worldTile.TryGetValue(id, out var tile))
+        {
+            _followId = id;
+            Camera.FollowTarget = tile * SimConstants.PixelsPerTile;
+            Camera.Following = true; // tracks until the user pans (not zoom)
+        }
     }
 
     private int CardAt(Vector2 pos)
@@ -261,7 +278,10 @@ public partial class ColonistBar : CanvasLayer
     {
         if (_bar is null) return;
         var vp = GetViewport().GetVisibleRect().Size;
-        _bar.Position = new Vector2((vp.X - _bar.Size.X) * 0.5f, MarginTop);
+        // Use the content min width (settles immediately, unlike Size) so the
+        // whole bar stays centered the same frame colonists are added/removed.
+        float w = _bar.GetCombinedMinimumSize().X;
+        _bar.Position = new Vector2((vp.X - w) * 0.5f, MarginTop);
     }
 
 }
