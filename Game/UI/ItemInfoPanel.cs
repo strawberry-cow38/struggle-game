@@ -127,7 +127,7 @@ public partial class ItemInfoPanel : CanvasLayer
     private void Reposition()
     {
         var vp = GetViewport().GetVisibleRect().Size;
-        float h = Math.Max(180, _vbox.GetCombinedMinimumSize().Y + PanelPad * 2);
+        float h = Math.Max(350, _vbox.GetCombinedMinimumSize().Y + PanelPad * 2);
         _root.Size = new Vector2(PanelWidth, h);
         _root.Position = new Vector2(MarginLeft, vp.Y - h - MarginBottom);
     }

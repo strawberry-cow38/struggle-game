@@ -38,7 +38,7 @@ public abstract partial class TileInfoPanel : CanvasLayer
     protected abstract TilePos[] SelectedTiles { get; set; }
     // Header text + default label.
     protected abstract string Title { get; }
-    protected virtual int MinHeight => 160;
+    protected virtual int MinHeight => 350; // match the colonist pane footprint
 
     // Add labels/buttons under the header separator.
     protected abstract void BuildBody(VBoxContainer vbox);
