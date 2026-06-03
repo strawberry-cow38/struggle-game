@@ -1067,11 +1067,22 @@ public partial class WorldRenderer : Node2D
             HorizontalAlignment.Left, -1f, StackLabelFontSize, Colors.White);
     }
 
+    // Reused segment buffers so every selected pawn's path collapses into two
+    // batched DrawMultiline calls (no AA) instead of thousands of DrawLines.
+    private readonly List<Vector2> _pathSegs = new();
+    private readonly List<Vector2> _queuedSegs = new();
+
     private void DrawSelectedPath(Sim.Snapshots.SimSnapshot snap)
     {
         if (snap.SelectedPaths.Length == 0) return;
+        _pathSegs.Clear();
+        _queuedSegs.Clear();
         foreach (var pp in snap.SelectedPaths)
             DrawPawnPath(snap, pp);
+        if (_pathSegs.Count > 0)
+            DrawMultiline(_pathSegs.ToArray(), PathLineColor, 2f);
+        if (_queuedSegs.Count > 0)
+            DrawMultiline(_queuedSegs.ToArray(), QueuedPathColor, 1.5f);
     }
 
     private void DrawPawnPath(Sim.Snapshots.SimSnapshot snap, Sim.Snapshots.PawnPathState pp)
@@ -1100,7 +1111,7 @@ public partial class WorldRenderer : Node2D
             for (int k = startK; k < path.Length; k++)
             {
                 var pt = new Vector2((path[k].X + 0.5f) * PixelsPerTile, (path[k].Y + 0.5f) * PixelsPerTile);
-                DrawLine(prevPt, pt, PathLineColor, width: 2f, antialiased: true);
+                _pathSegs.Add(prevPt); _pathSegs.Add(pt); // batched in DrawSelectedPath
                 prevPt = pt;
             }
 
@@ -1122,8 +1133,7 @@ public partial class WorldRenderer : Node2D
             foreach (var o in pp.Orders)
             {
                 var oc = new Vector2((o.X + 0.5f) * PixelsPerTile, (o.Y + 0.5f) * PixelsPerTile);
-                if (prev is Vector2 pv)
-                    DrawLine(pv, oc, QueuedPathColor, width: 1.5f, antialiased: true);
+                if (prev is Vector2 pv) { _queuedSegs.Add(pv); _queuedSegs.Add(oc); } // batched
                 DrawCircle(oc, r, OrderMarker);
                 prev = oc;
             }
