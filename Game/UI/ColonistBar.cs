@@ -35,6 +35,7 @@ public partial class ColonistBar : CanvasLayer
     private bool _dragging;
     private bool _dragAdditive;
     private Vector2 _dragStart;
+    private DragRectOverlay _overlay = null!;
 
     public override void _Ready()
     {
@@ -42,6 +43,9 @@ public partial class ColonistBar : CanvasLayer
         _bar = new HBoxContainer { Name = "ColonistRow", MouseFilter = Control.MouseFilterEnum.Ignore };
         _bar.AddThemeConstantOverride("separation", 6);
         AddChild(_bar);
+        _overlay = new DragRectOverlay { MouseFilter = Control.MouseFilterEnum.Ignore };
+        _overlay.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        AddChild(_overlay);
         _bar.Resized += Reposition;
         GetTree().Root.SizeChanged += Reposition;
     }
@@ -101,6 +105,12 @@ public partial class ColonistBar : CanvasLayer
     {
         if (Host is null || !_bar.Visible) return;
 
+        if (@event is InputEventMouseMotion mm && _dragging)
+        {
+            _overlay.Cur = mm.Position;
+            _overlay.QueueRedraw();
+            return;
+        }
         if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
         {
             var pos = mb.Position;
@@ -117,11 +127,17 @@ public partial class ColonistBar : CanvasLayer
                 _dragStart = pos;
                 _dragging = true;
                 _dragAdditive = mb.ShiftPressed || mb.CtrlPressed;
+                _overlay.Active = true;
+                _overlay.Start = pos;
+                _overlay.Cur = pos;
+                _overlay.QueueRedraw();
                 GetViewport().SetInputAsHandled();
             }
             else if (_dragging)
             {
                 _dragging = false;
+                _overlay.Active = false;
+                _overlay.QueueRedraw();
                 var rect = RectOf(_dragStart, pos);
                 if (rect.Size.X < ClickSlopPx && rect.Size.Y < ClickSlopPx) ClickAt(pos);
                 else RectSelect(rect);
