@@ -38,13 +38,13 @@ public partial class DraftActionBar : CanvasLayer
     private Button _draftBtn = null!;
     private Label _draftCap = null!;
 
-    // Pocket Sand — sidearm swap gizmo (leftmost drafted tile). A segmented
-    // card: one segment per weapon the pawn carries + an Unarmed segment;
-    // clicking a segment swaps straight to that weapon (active one highlit).
+    // Pocket Sand — sidearm swap gizmo (leftmost drafted tile). One tile-sized
+    // card split "+"-wise into a 2x2 grid of weapon squares (up to 3 weapons +
+    // an Unarmed square); clicking a square swaps straight to it (active one
+    // highlit).
     private Control _pocketSandWrap = null!;
-    private HBoxContainer _segRow = null!;
+    private GridContainer _segGrid = null!;
     private string _pocketSig = "";
-    private const int SegSize = 40;
 
     // Ranged-weapon tiles — shown whenever the pawn holds a ranged weapon
     // (drafted or not). Drafted-only tiles (fire-at-will, melee) are separate.
@@ -448,16 +448,22 @@ public partial class DraftActionBar : CanvasLayer
             Host.QueueCommand(new SetReloadAmmoCommand(_shownPawnId, _reloadAmmoPaths[(int)id]));
     }
 
-    // The Pocket Sand card: a row of weapon segments + a caption, styled like
-    // the other gizmo tiles. Segments are filled in by RebuildPocketSand.
+    // The Pocket Sand card: a single tile-sized panel holding a 2x2 grid of
+    // weapon squares (the dark "+" gap between them is the divider), with the
+    // caption beneath. Squares are filled in by RebuildPocketSand.
     private Control BuildPocketSandCard()
     {
         var wrap = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         wrap.AddThemeConstantOverride("separation", 2);
 
-        _segRow = new HBoxContainer { CustomMinimumSize = new Vector2(0, TileSize), MouseFilter = Control.MouseFilterEnum.Pass };
-        _segRow.AddThemeConstantOverride("separation", 3);
-        wrap.AddChild(_segRow);
+        // Dark card backing — the 3px grid gaps show it through as the "+".
+        var card = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Pass, CustomMinimumSize = new Vector2(TileSize, TileSize) };
+        card.AddThemeStyleboxOverride("panel", MakeBox(new Color(0.04f, 0.03f, 0.08f), BorderIdle, 2, 4, 3));
+        _segGrid = new GridContainer { Columns = 2, MouseFilter = Control.MouseFilterEnum.Pass };
+        _segGrid.AddThemeConstantOverride("h_separation", 3);
+        _segGrid.AddThemeConstantOverride("v_separation", 3);
+        card.AddChild(_segGrid);
+        wrap.AddChild(card);
 
         var caption = new Label
         {
@@ -470,15 +476,16 @@ public partial class DraftActionBar : CanvasLayer
         return wrap;
     }
 
-    // One weapon the pawn can switch to: its path, icon kind, and whether it's
-    // the currently-equipped one. Path "" = the Unarmed segment.
+    // One weapon square: path, icon kind, active flag. Path "" = Unarmed,
+    // a null entry = an empty square.
     private readonly record struct WpnSeg(string Path, WeaponGlyph.Kind Kind, bool Active);
 
-    // Collect the pawn's weapons (equipped + pocketed, de-duped by path) plus
-    // an Unarmed segment, then rebuild the row only when that set changes.
+    // Up to 3 carried weapons (equipped + pocketed, de-duped) fill the first
+    // three squares; the 4th is always Unarmed. Empty squares pad the grid to
+    // four. Rebuild only when the set changes.
     private void RebuildPocketSand(in DummyState p)
     {
-        var segs = new List<WpnSeg>();
+        var weapons = new List<WpnSeg>();
         var seen = new HashSet<string>();
         bool anyEquipped = false;
 
@@ -487,24 +494,26 @@ public partial class DraftActionBar : CanvasLayer
             if (!ItemCatalog.ItemsByPath.TryGetValue(path, out var def)) return;
             if (!def.IsWeapon && !def.IsRangedWeapon) return;
             if (equipped) anyEquipped = true;
-            if (!seen.Add(path)) { if (equipped) MarkActive(segs, path); return; }
-            segs.Add(new WpnSeg(path, def.IsRangedWeapon ? WeaponGlyph.Kind.Ranged : WeaponGlyph.Kind.Melee, equipped));
+            if (!seen.Add(path)) { if (equipped) MarkActive(weapons, path); return; }
+            weapons.Add(new WpnSeg(path, def.IsRangedWeapon ? WeaponGlyph.Kind.Ranged : WeaponGlyph.Kind.Melee, equipped));
         }
 
         foreach (var eq in p.Equipped) Consider(eq.ItemPath, equipped: true);
         foreach (var h in p.Held) Consider(h.ItemPath, equipped: false);
-        // Unarmed segment, active when no weapon is equipped.
-        segs.Add(new WpnSeg("", WeaponGlyph.Kind.Unarmed, !anyEquipped));
 
-        // Signature → skip the rebuild when nothing changed.
+        // Four squares: up to 3 weapons, empties, then Unarmed in the last.
+        var slots = new List<WpnSeg?>();
+        for (int i = 0; i < 3; i++) slots.Add(i < weapons.Count ? weapons[i] : (WpnSeg?)null);
+        slots.Add(new WpnSeg("", WeaponGlyph.Kind.Unarmed, !anyEquipped));
+
         var sb = new System.Text.StringBuilder();
-        foreach (var s in segs) sb.Append(s.Path).Append(s.Active ? '1' : '0').Append('|');
+        foreach (var s in slots) sb.Append(s is { } v ? v.Path + (v.Active ? "1" : "0") : "_").Append('|');
         string sig = sb.ToString();
         if (sig == _pocketSig) return;
         _pocketSig = sig;
 
-        foreach (var child in _segRow.GetChildren()) { _segRow.RemoveChild(child); child.QueueFree(); }
-        foreach (var s in segs) _segRow.AddChild(BuildSegment(s));
+        foreach (var child in _segGrid.GetChildren()) { _segGrid.RemoveChild(child); child.QueueFree(); }
+        foreach (var s in slots) _segGrid.AddChild(BuildSquare(s));
     }
 
     private static void MarkActive(List<WpnSeg> segs, string path)
@@ -513,27 +522,37 @@ public partial class DraftActionBar : CanvasLayer
             if (segs[i].Path == path) { segs[i] = segs[i] with { Active = true }; return; }
     }
 
-    private Button BuildSegment(WpnSeg seg)
+    private Control BuildSquare(WpnSeg? seg)
     {
-        var border = seg.Active ? BorderActive : BorderIdle;
+        int q = (TileSize - 6 - 3) / 2; // (tile - 2*margin - gap) / 2
+
+        // Empty square: a plain dark filler, not clickable.
+        if (seg is not { } s)
+        {
+            var blank = new PanelContainer { CustomMinimumSize = new Vector2(q, q), MouseFilter = Control.MouseFilterEnum.Ignore };
+            blank.AddThemeStyleboxOverride("panel", MakeBox(TileBg.Darkened(0.25f), default, 0, 3));
+            return blank;
+        }
+
+        var border = s.Active ? BorderActive : BorderIdle;
         var btn = new Button
         {
-            CustomMinimumSize = new Vector2(SegSize, TileSize),
+            CustomMinimumSize = new Vector2(q, q),
             FocusMode = Control.FocusModeEnum.None,
-            TooltipText = seg.Path == "" ? "Go unarmed (stash your weapon)"
-                : ItemCatalog.ItemsByPath.TryGetValue(seg.Path, out var d) ? d.DisplayName : seg.Path,
+            TooltipText = s.Path == "" ? "Go unarmed (stash your weapon)"
+                : ItemCatalog.ItemsByPath.TryGetValue(s.Path, out var d) ? d.DisplayName : s.Path,
         };
-        var box = MakeBox(seg.Active ? TileBg.Lightened(0.06f) : TileBg, border, 2, 4);
+        var box = MakeBox(s.Active ? TileBg.Lightened(0.08f) : TileBg, border, 2, 3);
         btn.AddThemeStyleboxOverride("normal", box);
-        btn.AddThemeStyleboxOverride("hover", MakeBox(TileBg.Lightened(0.10f), border, 2, 4));
+        btn.AddThemeStyleboxOverride("hover", MakeBox(TileBg.Lightened(0.12f), border, 2, 3));
         btn.AddThemeStyleboxOverride("pressed", box);
 
-        var icon = new WeaponGlyph { Glyph = seg.Kind, MouseFilter = Control.MouseFilterEnum.Ignore };
+        var icon = new WeaponGlyph { Glyph = s.Kind, MouseFilter = Control.MouseFilterEnum.Ignore };
         icon.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        icon.OffsetLeft = 6; icon.OffsetRight = -6; icon.OffsetTop = 6; icon.OffsetBottom = -6;
+        icon.OffsetLeft = 4; icon.OffsetRight = -4; icon.OffsetTop = 4; icon.OffsetBottom = -4;
         btn.AddChild(icon);
 
-        string path = seg.Path;
+        string path = s.Path;
         btn.Pressed += () =>
         {
             if (Host is null || _shownPawnId < 0) return;
