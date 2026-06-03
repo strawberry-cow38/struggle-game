@@ -25,6 +25,10 @@ public partial class DraftActionBar : CanvasLayer
     private static readonly Color BorderIdle = UiTheme.Border;
     private static readonly Color BorderActive = UiTheme.Accent;
     private static readonly Color CheckColor = UiTheme.Accent;
+    // Pocket Sand cells use a fill tint (not a border) for the active weapon,
+    // so the shared "+" gap between cells stays a single line.
+    private static readonly Color CellActive = new(0.20f, 0.36f, 0.50f);
+    private static readonly Color CellDivider = new(0.04f, 0.03f, 0.08f);
 
     private HBoxContainer _bar = null!;
 
@@ -458,10 +462,11 @@ public partial class DraftActionBar : CanvasLayer
 
         // Dark card backing — the 3px grid gaps show it through as the "+".
         var card = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Pass, CustomMinimumSize = new Vector2(TileSize, TileSize) };
-        card.AddThemeStyleboxOverride("panel", MakeBox(new Color(0.04f, 0.03f, 0.08f), BorderIdle, 2, 4, 3));
+        card.AddThemeStyleboxOverride("panel", MakeBox(CellDivider, BorderIdle, 2, 4, 3));
         _segGrid = new GridContainer { Columns = 2, MouseFilter = Control.MouseFilterEnum.Pass };
-        _segGrid.AddThemeConstantOverride("h_separation", 0); // boxes sit flush
-        _segGrid.AddThemeConstantOverride("v_separation", 0);
+        // 2px gap shows the dark card bg through as a single shared "+" divider.
+        _segGrid.AddThemeConstantOverride("h_separation", 2);
+        _segGrid.AddThemeConstantOverride("v_separation", 2);
         card.AddChild(_segGrid);
         wrap.AddChild(card);
 
@@ -524,17 +529,18 @@ public partial class DraftActionBar : CanvasLayer
 
     private Control BuildSquare(WpnSeg? seg)
     {
-        int q = (TileSize - 4 - 6) / 2; // (tile - 2*border - 2*margin) / 2, no gap
+        // (tile - 2*border - 2*margin - gap) / 2 — the 2x2 fills the card.
+        int q = (TileSize - 4 - 6 - 2) / 2;
 
-        // Empty square: a plain dark filler, not clickable.
+        // No cell borders: the shared "+" gap is the only divider. Empty
+        // square = a darker filler, not clickable.
         if (seg is not { } s)
         {
             var blank = new PanelContainer { CustomMinimumSize = new Vector2(q, q), MouseFilter = Control.MouseFilterEnum.Ignore };
-            blank.AddThemeStyleboxOverride("panel", MakeBox(TileBg.Darkened(0.25f), default, 0, 3));
+            blank.AddThemeStyleboxOverride("panel", MakeBox(TileBg.Darkened(0.30f), default, 0, 0));
             return blank;
         }
 
-        var border = s.Active ? BorderActive : BorderIdle;
         var btn = new Button
         {
             CustomMinimumSize = new Vector2(q, q),
@@ -542,10 +548,10 @@ public partial class DraftActionBar : CanvasLayer
             TooltipText = s.Path == "" ? "Go unarmed (stash your weapon)"
                 : ItemCatalog.ItemsByPath.TryGetValue(s.Path, out var d) ? d.DisplayName : s.Path,
         };
-        var box = MakeBox(s.Active ? TileBg.Lightened(0.08f) : TileBg, border, 2, 3);
-        btn.AddThemeStyleboxOverride("normal", box);
-        btn.AddThemeStyleboxOverride("hover", MakeBox(TileBg.Lightened(0.12f), border, 2, 3));
-        btn.AddThemeStyleboxOverride("pressed", box);
+        var fill = s.Active ? CellActive : TileBg;
+        btn.AddThemeStyleboxOverride("normal", MakeBox(fill, default, 0, 0));
+        btn.AddThemeStyleboxOverride("hover", MakeBox(fill.Lightened(0.10f), default, 0, 0));
+        btn.AddThemeStyleboxOverride("pressed", MakeBox(fill, default, 0, 0));
 
         var icon = new WeaponGlyph { Glyph = s.Kind, MouseFilter = Control.MouseFilterEnum.Ignore };
         icon.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
