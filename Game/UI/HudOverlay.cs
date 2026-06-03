@@ -30,34 +30,22 @@ public partial class HudOverlay : CanvasLayer
     {
         Layer = 100;
 
-        var settings = new LabelSettings
-        {
-            FontSize = 20,
-            FontColor = new Color(1.0f, 1.0f, 1.0f),
-            OutlineSize = 4,
-            OutlineColor = new Color(0f, 0f, 0f, 0.85f),
-        };
+        // Clock / date — glass panel, top-left (matches the info panels).
+        _label = new Label { Name = "Readout", MouseFilter = Control.MouseFilterEnum.Ignore };
+        _label.AddThemeFontSizeOverride("font_size", 18);
+        var clockPanel = MakeHudPanel(_label);
+        clockPanel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        clockPanel.OffsetLeft = 12; clockPanel.OffsetTop = 12;
+        AddChild(clockPanel);
 
-        _label = new Label
-        {
-            Name = "Readout",
-            LabelSettings = settings,
-            Position = new Vector2(12, 8),
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-        };
-        AddChild(_label);
-
-        // FPS / TPS readout, top-right.
-        _perfLabel = new Label
-        {
-            Name = "Perf",
-            LabelSettings = settings,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            AnchorLeft = 1, AnchorTop = 0, AnchorRight = 1, AnchorBottom = 0,
-            OffsetLeft = -260, OffsetTop = 8, OffsetRight = -12, OffsetBottom = 60,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-        };
-        AddChild(_perfLabel);
+        // FPS / TPS — glass panel, top-right.
+        _perfLabel = new Label { Name = "Perf", HorizontalAlignment = HorizontalAlignment.Right, MouseFilter = Control.MouseFilterEnum.Ignore };
+        _perfLabel.AddThemeFontSizeOverride("font_size", 18);
+        var perfPanel = MakeHudPanel(_perfLabel);
+        perfPanel.SetAnchorsPreset(Control.LayoutPreset.TopRight);
+        perfPanel.GrowHorizontal = Control.GrowDirection.Begin; // expand left from the right edge
+        perfPanel.OffsetRight = -12; perfPanel.OffsetTop = 12;
+        AddChild(perfPanel);
 
         // Hovered-tile contents + light, bottom-left.
         _tileLabel = new Label
@@ -73,6 +61,16 @@ public partial class HudOverlay : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         AddChild(_tileLabel);
+    }
+
+    // Wrap a label in a small glass HUD panel (shared dreamcore theme).
+    private static PanelContainer MakeHudPanel(Label label)
+    {
+        var p = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        p.AddThemeStyleboxOverride("panel", UiTheme.Box(UiTheme.Panel, UiTheme.Border, 1, 8, 8, glow: false));
+        p.Theme = UiTheme.LabelTheme();
+        p.AddChild(label);
+        return p;
     }
 
     public override void _Process(double delta)
