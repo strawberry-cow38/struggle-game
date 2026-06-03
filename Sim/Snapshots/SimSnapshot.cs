@@ -230,7 +230,9 @@ public readonly record struct DummyState(
     // Single-shot hit chance FROM the currently selected drafted shooter to
     // this pawn (null unless exactly one ranged shooter is selected). Drives
     // the hover hit-chance readout.
-    StruggleGame.Sim.Gunnery.HitChanceResult? AimHit);
+    StruggleGame.Sim.Gunnery.HitChanceResult? AimHit,
+    // Mood 0..1 (stubbed for now). Drives the colonist-bar portrait border.
+    float Mood);
 
 // What a ranged colonist is doing right now, for the overhead label.
 public enum RangedStatus : byte { None = 0, Firing = 1, Watching = 2, Reloading = 3, TooClose = 4 }

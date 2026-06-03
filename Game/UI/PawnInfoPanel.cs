@@ -316,7 +316,7 @@ public partial class PawnInfoPanel : CanvasLayer
         _healthPct.Text = $"{oh * 100f:0}%";
         StyleBar(_healthBar, BarColor(oh));
 
-        float mood = 1f; // stub
+        float mood = p.Mood; // stubbed in the sim for now
         _moodBar.Value = mood;
         _moodPct.Text = $"{mood * 100f:0}%";
         StyleBar(_moodBar, BarColor(mood));
