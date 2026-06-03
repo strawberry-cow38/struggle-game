@@ -828,6 +828,8 @@ public partial class Selector : Node2D
         // Pawn beats wood/tree if both are within radius.
         if (TryPickPawn(snap, world, out int pawnId))
         {
+            // Double-click a pawn in the world → camera follows it.
+            if (doubleClick && Camera is not null) Camera.FollowId = pawnId;
             Host.SelectedDummyIds = ToggleInt(Host.SelectedDummyIds, pawnId, shift);
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();

@@ -46,7 +46,7 @@ public partial class GameCamera : Camera2D
         }
         else if (@event is InputEventMouseMotion mm && _panning)
         {
-            Following = false; // user took control of the camera
+            FollowId = -1; // user took control of the camera
             // Drag in screen pixels — translate world by relative / zoom
             // so the world tracks the cursor 1:1.
             Position -= mm.Relative / Zoom;
@@ -73,21 +73,27 @@ public partial class GameCamera : Camera2D
         }
     }
 
-    // Follow a colonist (set by the portrait bar on double-click). Cancelled by
-    // any user pan (key/middle-drag) but not by zoom. Smoothed so a low-TPS
-    // target that jumps each tick doesn't jitter the camera.
-    public bool Following;
-    public Vector2 FollowTarget;
+    // Follow a pawn by entity id (set on double-click, in the bar or the
+    // world). Resolver returns its live world-pixel pos, or null if it's gone.
+    // Cancelled by any user pan (key/middle-drag) but not by zoom. Smoothed so
+    // a low-TPS target that jumps each tick doesn't jitter the camera.
+    public int FollowId = -1;
+    public System.Func<int, Vector2?>? ResolveWorldPx;
     private const float FollowLerp = 10f;
 
     public override void _Process(double delta)
     {
         ApplyKeyPan((float)delta);
 
-        if (Following)
+        if (FollowId >= 0)
         {
-            float t = 1f - Mathf.Exp(-(float)delta * FollowLerp);
-            Position = Position.Lerp(FollowTarget, t);
+            var target = ResolveWorldPx?.Invoke(FollowId);
+            if (target is Vector2 tp)
+            {
+                float t = 1f - Mathf.Exp(-(float)delta * FollowLerp);
+                Position = Position.Lerp(tp, t);
+            }
+            else FollowId = -1; // pawn vanished
         }
 
         if (!Mathf.IsEqualApprox(Zoom.X, _targetZoom))
@@ -132,7 +138,7 @@ public partial class GameCamera : Camera2D
         if (Input.IsKeyPressed(Key.D) || Input.IsKeyPressed(Key.Right)) input.X += 1f;
         if (input == Vector2.Zero) return;
 
-        Following = false; // user took control of the camera
+        FollowId = -1; // user took control of the camera
         input = input.Normalized();
         float speed = KeyPanPxPerSec;
         if (Input.IsKeyPressed(Key.Shift)) speed *= ShiftBoostMultiplier;

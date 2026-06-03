@@ -126,6 +126,15 @@ public partial class Bootstrap : Node2D
         AddChild(camera);
         camera.MakeCurrent();
         selector.Camera = camera;
+        // Resolve a followed pawn's live world-pixel position from the snapshot.
+        camera.ResolveWorldPx = id =>
+        {
+            var snap = _host?.LatestSnapshot;
+            if (snap is null) return null;
+            foreach (var d in snap.Dummies)
+                if (d.EntityId == id) return new Vector2(d.X, d.Y) * SimConstants.PixelsPerTile;
+            return null;
+        };
 
         var hud = new HudOverlay { Host = _host, Name = "Hud" };
         AddChild(hud);

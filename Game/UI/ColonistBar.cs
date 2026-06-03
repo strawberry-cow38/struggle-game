@@ -26,9 +26,10 @@ public partial class ColonistBar : CanvasLayer
     private const int MarginTop = 8;
     private const float ClickSlopPx = 9f; // deadzone before a drag-select kicks in
 
-    private HBoxContainer _bar = null!;
+    private const int MaxPerRow = 13; // 14+ colonists wrap to a new row
+
+    private VBoxContainer _bar = null!;
     private readonly List<(int id, PanelContainer card, PortraitView portrait)> _cards = new();
-    private readonly Dictionary<int, Vector2> _worldTile = new();
     private readonly Dictionary<int, string> _loadoutSig = new();
     private string _lastSig = "";
 
@@ -36,12 +37,11 @@ public partial class ColonistBar : CanvasLayer
     private bool _dragAdditive;
     private Vector2 _dragStart;
     private DragRectOverlay _overlay = null!;
-    private int _followId = -1;
 
     public override void _Ready()
     {
         Layer = 94;
-        _bar = new HBoxContainer { Name = "ColonistRow", MouseFilter = Control.MouseFilterEnum.Ignore };
+        _bar = new VBoxContainer { Name = "ColonistRows", MouseFilter = Control.MouseFilterEnum.Ignore };
         _bar.AddThemeConstantOverride("separation", 6);
         AddChild(_bar);
         _overlay = new DragRectOverlay { MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -67,9 +67,6 @@ public partial class ColonistBar : CanvasLayer
 
         _bar.Visible = colonists.Count > 0;
 
-        _worldTile.Clear();
-        foreach (var c in colonists) _worldTile[c.EntityId] = new Vector2(c.X, c.Y);
-
         var sb = new System.Text.StringBuilder();
         foreach (var c in colonists) sb.Append(c.EntityId).Append(',');
         string sig = sb.ToString();
@@ -80,15 +77,6 @@ public partial class ColonistBar : CanvasLayer
         }
 
         // Selection border + loadout-throttled portrait refresh.
-        // Camera follow: feed the live pawn pos while following; drop it once
-        // the user pans (the camera clears Following on any non-zoom move).
-        if (Camera is not null)
-        {
-            if (!Camera.Following) _followId = -1;
-            else if (_followId >= 0 && _worldTile.TryGetValue(_followId, out var ft))
-                Camera.FollowTarget = ft * SimConstants.PixelsPerTile;
-        }
-
         var sel = new HashSet<int>(Host.SelectedDummyIds);
         var byId = new Dictionary<int, DummyState>();
         foreach (var c in colonists) byId[c.EntityId] = c;
@@ -185,12 +173,7 @@ public partial class ColonistBar : CanvasLayer
         int id = CardAt(pos);
         if (id < 0) return;
         if (Host is not null) Host.SelectedDummyId = id;
-        if (Camera is not null && _worldTile.TryGetValue(id, out var tile))
-        {
-            _followId = id;
-            Camera.FollowTarget = tile * SimConstants.PixelsPerTile;
-            Camera.Following = true; // tracks until the user pans (not zoom)
-        }
+        if (Camera is not null) Camera.FollowId = id; // follows until the user pans
     }
 
     private int CardAt(Vector2 pos)
@@ -216,9 +199,23 @@ public partial class ColonistBar : CanvasLayer
         _cards.Clear();
         _loadoutSig.Clear();
 
+        HBoxContainer? row = null;
+        int inRow = 0;
         foreach (var c in colonists)
         {
             int id = c.EntityId;
+            if (row is null || inRow >= MaxPerRow)
+            {
+                row = new HBoxContainer
+                {
+                    MouseFilter = Control.MouseFilterEnum.Ignore,
+                    Alignment = BoxContainer.AlignmentMode.Center,
+                    SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+                };
+                row.AddThemeConstantOverride("separation", 6);
+                _bar.AddChild(row);
+                inRow = 0;
+            }
 
             var card = new PanelContainer
             {
@@ -248,8 +245,9 @@ public partial class ColonistBar : CanvasLayer
             name.AddThemeFontSizeOverride("font_size", 13);
             col.AddChild(name);
 
-            _bar.AddChild(card);
+            row.AddChild(card);
             _cards.Add((id, card, portrait));
+            inRow++;
         }
     }
 
