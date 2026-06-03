@@ -222,7 +222,13 @@ public partial class PawnInfoPanel : CanvasLayer
         int? sel = Host.SelectedDummyId;
         if (sel is null || snap is null)
         {
-            if (_root.Visible) { _root.Visible = false; _shownPawnId = -1; }
+            if (_root.Visible)
+            {
+                _root.Visible = false;
+                _shownPawnId = -1;
+                _activeCardTab = ""; // forget the selected tab when the panel closes
+                ApplyCardTabs();
+            }
             return;
         }
         if (!_root.Visible) _root.Visible = true;
