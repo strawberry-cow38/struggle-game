@@ -4405,38 +4405,6 @@ public sealed class SimRuntime
         });
     }
 
-    // How far (in tiles) a drafted move-order redirect floods out from the
-    // clicked tile looking for a spot with no standing colonist on it.
-    private const int MoveRedirectMaxRing = 24;
-
-    // A drafted "move here" must not pile the pawn onto a tile where another
-    // STANDING colonist already is. Returns `target` if it's a valid, open
-    // destination; otherwise floods outward in expanding rings for the nearest
-    // walkable, furniture-free tile with no standing colonist. Tiles holding
-    // only a DOWNED pawn stay valid (you can stand on the unconscious), and the
-    // mover itself is excluded so re-issuing onto your own tile is a no-op.
-    public TilePos FindOpenMoveTile(TilePos target, int moverId)
-    {
-        var blocked = new HashSet<TilePos>();
-        (_worldPosHealthQ ??= Store.Query<WorldPos, Health>()).ForEachEntity((ref WorldPos p, ref Health h, Entity e) =>
-        {
-            if (e.Id == moverId || h.Unconscious || e.HasComponent<Enemy>()) return;
-            blocked.Add(new TilePos((int)p.X, (int)p.Y));
-        });
-
-        bool Open(TilePos t) => MapView.Walkable(t) && !MapView.HasFurniture(t) && !blocked.Contains(t);
-        if (Open(target)) return target;
-        for (int r = 1; r <= MoveRedirectMaxRing; r++)
-            for (int dy = -r; dy <= r; dy++)
-                for (int dx = -r; dx <= r; dx++)
-                {
-                    if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != r) continue;
-                    var t = new TilePos(target.X + dx, target.Y + dy);
-                    if (Open(t)) return t;
-                }
-        return target; // nothing free nearby — fall back to the literal target
-    }
-
     // Rebuild the colonist-LOS threat field (throttled). For each conscious
     // colonist, mark every tile within ColonistLosRadius it has a clear line
     // to. Publishes a FRESH set (atomic ref swap) so any path worker holding
