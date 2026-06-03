@@ -116,14 +116,26 @@ public partial class ColonistBar : CanvasLayer
     {
         if (Host is null || !_bar.Visible) return;
 
-        if (@event is InputEventMouseMotion mm && _dragging)
+        if (@event is InputEventMouseMotion mm)
         {
-            _overlay.Cur = mm.Position;
-            // Only show the rect once we've moved past the deadzone (play).
-            if (!_overlay.Active && (mm.Position - _dragStart).Length() > ClickSlopPx)
-                _overlay.Active = true;
-            _overlay.QueueRedraw();
-            return;
+            if (_dragging)
+            {
+                _overlay.Cur = mm.Position;
+                if (!_overlay.Active && (mm.Position - _dragStart).Length() > ClickSlopPx)
+                    _overlay.Active = true;
+                _overlay.QueueRedraw();
+                return;
+            }
+            if (_reordering && (mm.Position - _dragStart).Length() > ClickSlopPx)
+            {
+                if (TryInsertSlot(mm.Position, out _, out float lx, out float top, out float h))
+                {
+                    _overlay.InsertActive = true;
+                    _overlay.InsertX = lx; _overlay.InsertTop = top; _overlay.InsertHeight = h;
+                    _overlay.QueueRedraw();
+                }
+                return;
+            }
         }
         if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
         {
@@ -145,6 +157,7 @@ public partial class ColonistBar : CanvasLayer
                 {
                     // Press on a card: reorder (or click-select if it doesn't move).
                     _reordering = true; _reorderId = hit; _dragging = false;
+                    if (CardOf(hit) is { } dc) dc.Modulate = new Color(1f, 1f, 1f, 0.5f);
                 }
                 else
                 {
@@ -167,6 +180,9 @@ public partial class ColonistBar : CanvasLayer
             else if (_reordering)
             {
                 _reordering = false;
+                if (CardOf(_reorderId) is { } dc) dc.Modulate = Colors.White;
+                _overlay.InsertActive = false;
+                _overlay.QueueRedraw();
                 if ((pos - _dragStart).Length() <= ClickSlopPx) ClickAt(_dragStart); // it was a click
                 else Reorder(_reorderId, pos);
                 GetViewport().SetInputAsHandled();
@@ -174,17 +190,47 @@ public partial class ColonistBar : CanvasLayer
         }
     }
 
-    // Drop the dragged card before/after whichever card it was released over.
+    // Drop the dragged colonist into the gap nearest the release point.
     private void Reorder(int draggedId, Vector2 releasePos)
     {
-        int over = CardAt(releasePos);
+        if (!TryInsertSlot(releasePos, out int slot, out _, out _, out _)) return;
         int from = _order.IndexOf(draggedId);
         if (from < 0) return;
-        int to = over >= 0 ? _order.IndexOf(over) : _order.Count - 1; // off the cards → far right
-        if (to < 0 || to == from) return;
+        int to = slot;
+        if (from < to) to--; // removal shifts everything after it left
+        to = Mathf.Clamp(to, 0, _order.Count - 1);
+        if (to == from) return;
         _order.RemoveAt(from);
         _order.Insert(to, draggedId);
         _lastSig = ""; // force a rebuild in the new order next frame
+    }
+
+    private Control? CardOf(int id)
+    {
+        foreach (var (cid, card, _) in _cards) if (cid == id) return card;
+        return null;
+    }
+
+    // Insertion slot (gap index in _order) + the drop-line geometry, chosen by
+    // the card nearest the cursor and which half it's on (squeeze between two).
+    private bool TryInsertSlot(Vector2 pos, out int slot, out float lineX, out float top, out float height)
+    {
+        slot = 0; lineX = top = height = 0f;
+        if (_cards.Count == 0) return false;
+        int best = -1; float bestD = float.MaxValue;
+        for (int i = 0; i < _cards.Count; i++)
+        {
+            var r = _cards[i].card.GetGlobalRect();
+            if (r.HasPoint(pos)) { best = i; break; }
+            float d = (pos - (r.Position + r.Size * 0.5f)).LengthSquared();
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        var rect = _cards[best].card.GetGlobalRect();
+        bool after = pos.X > rect.Position.X + rect.Size.X * 0.5f;
+        slot = best + (after ? 1 : 0);
+        lineX = after ? rect.Position.X + rect.Size.X + 3f : rect.Position.X - 3f;
+        top = rect.Position.Y; height = rect.Size.Y;
+        return true;
     }
 
     private void ClickAt(Vector2 pos)
