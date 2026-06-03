@@ -128,6 +128,8 @@ public partial class ColonistBar : CanvasLayer
             }
             if (_reordering && (mm.Position - _dragStart).Length() > ClickSlopPx)
             {
+                // Only dim once a real drag begins (not on a plain click).
+                if (CardOf(_reorderId) is { } dc) dc.Modulate = new Color(1f, 1f, 1f, 0.5f);
                 if (TryInsertSlot(mm.Position, out _, out float lx, out float top, out float h))
                 {
                     _overlay.InsertActive = true;
@@ -142,7 +144,7 @@ public partial class ColonistBar : CanvasLayer
             var pos = mb.Position;
             if (mb.Pressed)
             {
-                if (!_bar.GetGlobalRect().HasPoint(pos)) { _dragging = false; _reordering = false; return; }
+                if (!BarZone().HasPoint(pos)) { _dragging = false; _reordering = false; return; }
                 if (mb.DoubleClick)
                 {
                     FocusAt(pos);
@@ -157,7 +159,6 @@ public partial class ColonistBar : CanvasLayer
                 {
                     // Press on a card: reorder (or click-select if it doesn't move).
                     _reordering = true; _reorderId = hit; _dragging = false;
-                    if (CardOf(hit) is { } dc) dc.Modulate = new Color(1f, 1f, 1f, 0.5f);
                 }
                 else
                 {
@@ -204,6 +205,10 @@ public partial class ColonistBar : CanvasLayer
         _order.Insert(to, draggedId);
         _lastSig = ""; // force a rebuild in the new order next frame
     }
+
+    // The bar plus a generous margin — pressing anywhere in here (off a card)
+    // starts a rect-select, so it's easy to begin a drag near the portraits.
+    private Rect2 BarZone() => _bar.GetGlobalRect().Grow(70f);
 
     private Control? CardOf(int id)
     {
