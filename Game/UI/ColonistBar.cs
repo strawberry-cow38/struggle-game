@@ -31,9 +31,15 @@ public partial class ColonistBar : CanvasLayer
     private VBoxContainer _bar = null!;
     private readonly List<(int id, PanelContainer card, PortraitView portrait)> _cards = new();
     private readonly Dictionary<int, string> _loadoutSig = new();
+    // Stable display order — new colonists append to the right; the player can
+    // drag to reorder. Removed colonists drop out, others keep their slot.
+    private readonly List<int> _order = new();
+    private readonly List<int> _newScratch = new();
     private string _lastSig = "";
 
-    private bool _dragging;
+    private bool _dragging;       // rect-select (started on bar background)
+    private bool _reordering;     // dragging a card to a new slot
+    private int _reorderId = -1;
     private bool _dragAdditive;
     private Vector2 _dragStart;
     private DragRectOverlay _overlay = null!;
@@ -60,26 +66,33 @@ public partial class ColonistBar : CanvasLayer
     {
         if (Host?.LatestSnapshot is not { } snap) { _bar.Visible = false; return; }
 
-        var colonists = new List<DummyState>();
+        var byId = new Dictionary<int, DummyState>();
         foreach (var d in snap.Dummies)
-            if (!d.IsEnemy) colonists.Add(d);
-        colonists.Sort((a, b) => a.EntityId.CompareTo(b.EntityId));
+            if (!d.IsEnemy) byId[d.EntityId] = d;
 
-        _bar.Visible = colonists.Count > 0;
+        _bar.Visible = byId.Count > 0;
+
+        // Reconcile the persistent order: drop gone, append new (right).
+        for (int i = _order.Count - 1; i >= 0; i--)
+            if (!byId.ContainsKey(_order[i])) _order.RemoveAt(i);
+        _newScratch.Clear();
+        foreach (var id in byId.Keys) if (!_order.Contains(id)) _newScratch.Add(id);
+        _newScratch.Sort();
+        _order.AddRange(_newScratch);
 
         var sb = new System.Text.StringBuilder();
-        foreach (var c in colonists) sb.Append(c.EntityId).Append(',');
+        foreach (var id in _order) sb.Append(id).Append(',');
         string sig = sb.ToString();
         if (sig != _lastSig)
         {
             _lastSig = sig;
-            Rebuild(colonists);
+            var ordered = new List<DummyState>(_order.Count);
+            foreach (var id in _order) ordered.Add(byId[id]);
+            Rebuild(ordered);
         }
 
         // Selection border + loadout-throttled portrait refresh.
         var sel = new HashSet<int>(Host.SelectedDummyIds);
-        var byId = new Dictionary<int, DummyState>();
-        foreach (var c in colonists) byId[c.EntityId] = c;
         foreach (var (id, card, portrait) in _cards)
         {
             bool selected = sel.Contains(id);
@@ -117,20 +130,28 @@ public partial class ColonistBar : CanvasLayer
             var pos = mb.Position;
             if (mb.Pressed)
             {
-                if (!_bar.GetGlobalRect().HasPoint(pos)) { _dragging = false; return; }
+                if (!_bar.GetGlobalRect().HasPoint(pos)) { _dragging = false; _reordering = false; return; }
                 if (mb.DoubleClick)
                 {
                     FocusAt(pos);
-                    _dragging = false;
+                    _dragging = false; _reordering = false;
                     GetViewport().SetInputAsHandled();
                     return;
                 }
                 _dragStart = pos;
-                _dragging = true;
                 _dragAdditive = mb.ShiftPressed || mb.CtrlPressed;
-                _overlay.Active = false; // activates once past the deadzone
-                _overlay.Start = pos;
-                _overlay.Cur = pos;
+                int hit = CardAt(pos);
+                if (hit >= 0)
+                {
+                    // Press on a card: reorder (or click-select if it doesn't move).
+                    _reordering = true; _reorderId = hit; _dragging = false;
+                }
+                else
+                {
+                    // Press on bar background: rect-select.
+                    _dragging = true; _reordering = false;
+                    _overlay.Active = false; _overlay.Start = pos; _overlay.Cur = pos;
+                }
                 GetViewport().SetInputAsHandled();
             }
             else if (_dragging)
@@ -143,7 +164,27 @@ public partial class ColonistBar : CanvasLayer
                 else RectSelect(rect);
                 GetViewport().SetInputAsHandled();
             }
+            else if (_reordering)
+            {
+                _reordering = false;
+                if ((pos - _dragStart).Length() <= ClickSlopPx) ClickAt(_dragStart); // it was a click
+                else Reorder(_reorderId, pos);
+                GetViewport().SetInputAsHandled();
+            }
         }
+    }
+
+    // Drop the dragged card before/after whichever card it was released over.
+    private void Reorder(int draggedId, Vector2 releasePos)
+    {
+        int over = CardAt(releasePos);
+        int from = _order.IndexOf(draggedId);
+        if (from < 0) return;
+        int to = over >= 0 ? _order.IndexOf(over) : _order.Count - 1; // off the cards → far right
+        if (to < 0 || to == from) return;
+        _order.RemoveAt(from);
+        _order.Insert(to, draggedId);
+        _lastSig = ""; // force a rebuild in the new order next frame
     }
 
     private void ClickAt(Vector2 pos)
