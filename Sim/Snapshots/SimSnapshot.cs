@@ -232,7 +232,9 @@ public readonly record struct DummyState(
     // the hover hit-chance readout.
     StruggleGame.Sim.Gunnery.HitChanceResult? AimHit,
     // Mood 0..1 (stubbed for now). Drives the colonist-bar portrait border.
-    float Mood);
+    float Mood,
+    // Display name (placeholder, derived from the entity id for now).
+    string Name);
 
 // What a ranged colonist is doing right now, for the overhead label.
 public enum RangedStatus : byte { None = 0, Firing = 1, Watching = 2, Reloading = 3, TooClose = 4 }

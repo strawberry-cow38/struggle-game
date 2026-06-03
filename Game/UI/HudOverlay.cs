@@ -121,7 +121,7 @@ public partial class HudOverlay : CanvasLayer
 
         foreach (var d in snap.Dummies)
             if ((int)Math.Floor(d.X) == tx && (int)Math.Floor(d.Y) == ty)
-                lines.Add(d.IsEnemy ? $"Raider #{d.EntityId}" : $"Colonist #{d.EntityId}");
+                lines.Add(d.IsEnemy ? $"Raider #{d.EntityId}" : d.Name);
 
         foreach (var ip in snap.ItemPiles)
             if (Here(ip.Tile))

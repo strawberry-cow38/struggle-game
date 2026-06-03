@@ -1544,7 +1544,8 @@ public sealed class SimRuntime
                 aimHit,
                 // Mood stub: deterministic per-entity 0.25..1.0 so the portrait
                 // border color-coding is visible until a real mood system lands.
-                0.25f + 0.75f * (((ent.Id * 2654435761u) % 1000u) / 1000f));
+                0.25f + 0.75f * (((ent.Id * 2654435761u) % 1000u) / 1000f),
+                ColonistNames.For(ent.Id));
 
             // Capture path + queued tiles for every selected pawn, so the whole
             // squad shows its move lines + waypoints (not just the first pawn).

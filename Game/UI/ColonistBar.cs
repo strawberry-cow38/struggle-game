@@ -372,7 +372,7 @@ public partial class ColonistBar : CanvasLayer
 
             var name = new Label
             {
-                Text = $"#{id}",
+                Text = c.Name.Split(' ')[0], // first name fits the narrow card
                 HorizontalAlignment = HorizontalAlignment.Center,
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };

@@ -309,7 +309,7 @@ public partial class PawnInfoPanel : CanvasLayer
             return;
         }
         var p = found.Value;
-        _nameLabel.Text = $"Colonist #{p.EntityId}";
+        _nameLabel.Text = p.Name;
 
         float oh = p.Health.OverallHealth;
         _healthBar.Value = oh;
