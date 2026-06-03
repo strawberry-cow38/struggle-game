@@ -1050,6 +1050,27 @@ public sealed class EquipFromInventoryCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.EquipFromInventory(PawnEntityId, HeldIndex);
 }
 
+// Pocket Sand: stash equipped weapons + equip ItemPath (empty = go unarmed).
+public sealed class SwapToWeaponCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public string ItemPath { get; }
+    public SwapToWeaponCommand(int pawnId, string itemPath)
+    {
+        PawnEntityId = pawnId;
+        ItemPath = itemPath;
+    }
+    public void Apply(SimRuntime sim) => sim.SwapToWeapon(PawnEntityId, ItemPath);
+}
+
+// Debug/demo: hand a pawn a rifle + SMG + melee weapon for the Pocket Sand card.
+public sealed class DebugGiveSidearmsCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public DebugGiveSidearmsCommand(int pawnId) { PawnEntityId = pawnId; }
+    public void Apply(SimRuntime sim) => sim.DebugGiveSidearms(PawnEntityId);
+}
+
 // Pawn info panel: drop general-inventory stack [HeldIndex] on the ground.
 public sealed class DropHeldItemCommand : ISimCommand
 {

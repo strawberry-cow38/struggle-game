@@ -86,6 +86,16 @@ public partial class HarnessController : Node2D
                 _schedule.Add((12.0, h => h.MoveLowest(c - 8, c - 8, false), "move drafted SW"));
                 _schedule.Add((15.0, h => h.Finish("quick complete"), "finish"));
                 break;
+            case "pocketsand":
+                // Pocket Sand demo: give the lowest pawn a rifle + spare
+                // weapons, draft + select it, and screenshot the segmented card.
+                _schedule.Add((0.3, h => h.SetCameraZoom(3.0f), "zoom"));
+                _schedule.Add((0.5, h => h.GiveLowestSidearms(), "give weapons"));
+                _schedule.Add((0.9, h => h.DraftLowest(), "draft + select"));
+                _schedule.Add((2.0, h => h.Screenshot(), "shot"));
+                _schedule.Add((3.0, h => h.Finish("pocketsand done"), "finish"));
+                _screenshotEverySec = double.PositiveInfinity;
+                break;
             case "chop":
                 // Verify trees exist, chop rect drops a wood pile.
                 _schedule.Add((1.0, h => h.RecordTreeCount("start"), "record trees"));
@@ -976,6 +986,11 @@ public partial class HarnessController : Node2D
             Host.QueueCommand(new ToggleDraftCommand(id));
             Host.SelectedDummyId = id; // select so the draft action bar shows
         }
+    }
+
+    private void GiveLowestSidearms()
+    {
+        if (LowestPawnId() is int id) Host.QueueCommand(new DebugGiveSidearmsCommand(id));
     }
 
     private void FontShowcase()

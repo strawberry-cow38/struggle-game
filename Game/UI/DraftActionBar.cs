@@ -38,12 +38,13 @@ public partial class DraftActionBar : CanvasLayer
     private Button _draftBtn = null!;
     private Label _draftCap = null!;
 
-    // Pocket Sand — sidearm swap gizmo (leftmost drafted tile). Left-click
-    // opens a menu to stash the equipped weapon or draw one from inventory.
-    private Button _pocketSandBtn = null!;
-    private PopupMenu _pocketSandMenu = null!;
-    // Maps a menu id to an action: equip=true → draw Held[index]; else stash Equipped[index].
-    private readonly List<(bool equip, int index)> _pocketActions = new();
+    // Pocket Sand — sidearm swap gizmo (leftmost drafted tile). A segmented
+    // card: one segment per weapon the pawn carries + an Unarmed segment;
+    // clicking a segment swaps straight to that weapon (active one highlit).
+    private Control _pocketSandWrap = null!;
+    private HBoxContainer _segRow = null!;
+    private string _pocketSig = "";
+    private const int SegSize = 40;
 
     // Ranged-weapon tiles — shown whenever the pawn holds a ranged weapon
     // (drafted or not). Drafted-only tiles (fire-at-will, melee) are separate.
@@ -149,15 +150,11 @@ public partial class DraftActionBar : CanvasLayer
             Host.QueueCommand(new ToggleDraftCommand(_shownPawnId));
         };
 
-        // Pocket Sand — sidearm swap. Sits right after Draft so it's the
-        // leftmost drafted-only gizmo. Left-click opens the stash/draw menu.
-        _pocketSandMenu = new PopupMenu();
-        AddChild(_pocketSandMenu);
-        _pocketSandMenu.IdPressed += OnPocketSandPick;
-        _pocketSandBtn = BuildGizmo("Pocket Sand", toggle: false, parent: _bar, out _);
-        _pocketSandBtn.TooltipText = "Swap sidearms: stash your weapon or draw one from your pocket. (Actual sand not included.)";
-        _pocketSandBtn.Pressed += OpenPocketSand;
-        _draftedWraps.Add(WrapOf(_pocketSandBtn));
+        // Pocket Sand — segmented sidearm switcher. Sits right after Draft so
+        // it's the leftmost drafted-only gizmo. Rebuilt from the pawn's weapons.
+        _pocketSandWrap = BuildPocketSandCard();
+        _bar.AddChild(_pocketSandWrap);
+        _draftedWraps.Add(_pocketSandWrap);
 
         // Global "fire at will" toggle.
         _fireAtWillBtn = BuildGizmo("Fire at Will", toggle: true, parent: _bar, out _);
@@ -245,6 +242,7 @@ public partial class DraftActionBar : CanvasLayer
 
         if (p.Drafted)
         {
+            RebuildPocketSand(p);
             if (Tools is not null)
                 SetTileActive(_meleeBtn, Tools.Mode == ToolMode.MeleeAttackTarget);
             SetTileActive(_fireAtWillBtn, snap.FireAtWill);
@@ -450,53 +448,98 @@ public partial class DraftActionBar : CanvasLayer
             Host.QueueCommand(new SetReloadAmmoCommand(_shownPawnId, _reloadAmmoPaths[(int)id]));
     }
 
-    // Build + pop the Pocket Sand menu: stash any equipped weapon, draw any
-    // weapon carried in the pocket (general inventory).
-    private void OpenPocketSand()
+    // The Pocket Sand card: a row of weapon segments + a caption, styled like
+    // the other gizmo tiles. Segments are filled in by RebuildPocketSand.
+    private Control BuildPocketSandCard()
     {
-        if (Host?.LatestSnapshot is not { } snap || _shownPawnId < 0) return;
-        DummyState? found = null;
-        foreach (var d in snap.Dummies)
-            if (d.EntityId == _shownPawnId) { found = d; break; }
-        if (found is not { } p) return;
+        var wrap = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        wrap.AddThemeConstantOverride("separation", 2);
 
-        _pocketSandMenu.Clear();
-        _pocketActions.Clear();
+        _segRow = new HBoxContainer { CustomMinimumSize = new Vector2(0, TileSize), MouseFilter = Control.MouseFilterEnum.Pass };
+        _segRow.AddThemeConstantOverride("separation", 3);
+        wrap.AddChild(_segRow);
 
-        // Stash an equipped weapon back into the pocket.
-        foreach (var eq in p.Equipped)
+        var caption = new Label
         {
-            if (!ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var def)) continue;
-            if (!def.IsWeapon && !def.IsRangedWeapon) continue;
-            _pocketSandMenu.AddItem($"Stash {def.DisplayName}", _pocketActions.Count);
-            _pocketActions.Add((false, eq.Index));
-        }
-        if (_pocketActions.Count > 0) _pocketSandMenu.AddSeparator();
-
-        // Draw a weapon out of the pocket.
-        foreach (var h in p.Held)
-        {
-            if (!ItemCatalog.ItemsByPath.TryGetValue(h.ItemPath, out var def)) continue;
-            if (!def.Equippable || (!def.IsWeapon && !def.IsRangedWeapon)) continue;
-            _pocketSandMenu.AddItem($"Draw {def.DisplayName}" + (h.Count > 1 ? $" (x{h.Count})" : ""), _pocketActions.Count);
-            _pocketActions.Add((true, h.Index));
-        }
-
-        if (_pocketActions.Count == 0)
-            _pocketSandMenu.AddItem("(no sidearms in pocket)", -1);
-
-        _pocketSandMenu.Position = (Vector2I)GetViewport().GetMousePosition();
-        _pocketSandMenu.Popup();
+            Text = "Pocket Sand",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
+        caption.AddThemeFontSizeOverride("font_size", 11);
+        wrap.AddChild(caption);
+        return wrap;
     }
 
-    private void OnPocketSandPick(long id)
+    // One weapon the pawn can switch to: its path, icon kind, and whether it's
+    // the currently-equipped one. Path "" = the Unarmed segment.
+    private readonly record struct WpnSeg(string Path, WeaponGlyph.Kind Kind, bool Active);
+
+    // Collect the pawn's weapons (equipped + pocketed, de-duped by path) plus
+    // an Unarmed segment, then rebuild the row only when that set changes.
+    private void RebuildPocketSand(in DummyState p)
     {
-        if (Host is null || _shownPawnId < 0) return;
-        if (id < 0 || id >= _pocketActions.Count) return;
-        var (equip, index) = _pocketActions[(int)id];
-        Host.QueueCommand(equip
-            ? new EquipFromInventoryCommand(_shownPawnId, index)
-            : new ForceUnequipCommand(_shownPawnId, index));
+        var segs = new List<WpnSeg>();
+        var seen = new HashSet<string>();
+        bool anyEquipped = false;
+
+        void Consider(string path, bool equipped)
+        {
+            if (!ItemCatalog.ItemsByPath.TryGetValue(path, out var def)) return;
+            if (!def.IsWeapon && !def.IsRangedWeapon) return;
+            if (equipped) anyEquipped = true;
+            if (!seen.Add(path)) { if (equipped) MarkActive(segs, path); return; }
+            segs.Add(new WpnSeg(path, def.IsRangedWeapon ? WeaponGlyph.Kind.Ranged : WeaponGlyph.Kind.Melee, equipped));
+        }
+
+        foreach (var eq in p.Equipped) Consider(eq.ItemPath, equipped: true);
+        foreach (var h in p.Held) Consider(h.ItemPath, equipped: false);
+        // Unarmed segment, active when no weapon is equipped.
+        segs.Add(new WpnSeg("", WeaponGlyph.Kind.Unarmed, !anyEquipped));
+
+        // Signature → skip the rebuild when nothing changed.
+        var sb = new System.Text.StringBuilder();
+        foreach (var s in segs) sb.Append(s.Path).Append(s.Active ? '1' : '0').Append('|');
+        string sig = sb.ToString();
+        if (sig == _pocketSig) return;
+        _pocketSig = sig;
+
+        foreach (var child in _segRow.GetChildren()) { _segRow.RemoveChild(child); child.QueueFree(); }
+        foreach (var s in segs) _segRow.AddChild(BuildSegment(s));
+    }
+
+    private static void MarkActive(List<WpnSeg> segs, string path)
+    {
+        for (int i = 0; i < segs.Count; i++)
+            if (segs[i].Path == path) { segs[i] = segs[i] with { Active = true }; return; }
+    }
+
+    private Button BuildSegment(WpnSeg seg)
+    {
+        var border = seg.Active ? BorderActive : BorderIdle;
+        var btn = new Button
+        {
+            CustomMinimumSize = new Vector2(SegSize, TileSize),
+            FocusMode = Control.FocusModeEnum.None,
+            TooltipText = seg.Path == "" ? "Go unarmed (stash your weapon)"
+                : ItemCatalog.ItemsByPath.TryGetValue(seg.Path, out var d) ? d.DisplayName : seg.Path,
+        };
+        var box = MakeBox(seg.Active ? TileBg.Lightened(0.06f) : TileBg, border, 2, 4);
+        btn.AddThemeStyleboxOverride("normal", box);
+        btn.AddThemeStyleboxOverride("hover", MakeBox(TileBg.Lightened(0.10f), border, 2, 4));
+        btn.AddThemeStyleboxOverride("pressed", box);
+
+        var icon = new WeaponGlyph { Glyph = seg.Kind, MouseFilter = Control.MouseFilterEnum.Ignore };
+        icon.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        icon.OffsetLeft = 6; icon.OffsetRight = -6; icon.OffsetTop = 6; icon.OffsetBottom = -6;
+        btn.AddChild(icon);
+
+        string path = seg.Path;
+        btn.Pressed += () =>
+        {
+            if (Host is null || _shownPawnId < 0) return;
+            Host.QueueCommand(new SwapToWeaponCommand(_shownPawnId, path));
+        };
+        return btn;
     }
 
     private void HideBar()

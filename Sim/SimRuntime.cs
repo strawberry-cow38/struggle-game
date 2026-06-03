@@ -5025,6 +5025,52 @@ public sealed class SimRuntime
         inv.Equipped.Add(new EquippedItemSlot { Slot = slot, ItemPath = stack.ItemPath, Count = 1 });
     }
 
+    // Pocket Sand: stash every currently-equipped WEAPON back into the pocket
+    // (armor stays worn), then equip one unit of `itemPath` if given. Empty
+    // path = go unarmed. Path-based so it survives the index shuffle of doing
+    // both in one go. No-op if the chosen weapon isn't in the pocket.
+    public void SwapToWeapon(int pawnId, string itemPath)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var pawn) || !pawn.HasComponent<Inventory>()) return;
+        ref var inv = ref pawn.GetComponent<Inventory>();
+        inv.Equipped ??= new List<EquippedItemSlot>();
+        inv.Items ??= new List<InventoryStack>();
+
+        // Stash equipped weapons into the pocket (leave apparel/armor on).
+        for (int i = inv.Equipped.Count - 1; i >= 0; i--)
+        {
+            var slot = inv.Equipped[i];
+            if (!ItemCatalog.ItemsByPath.TryGetValue(slot.ItemPath, out var d)) continue;
+            if (!d.IsWeapon && !d.IsRangedWeapon) continue;
+            inv.Equipped.RemoveAt(i);
+            int ex = inv.Items.FindIndex(s => s.ItemPath == slot.ItemPath);
+            if (ex >= 0) { var s = inv.Items[ex]; s.Count += slot.Count; inv.Items[ex] = s; }
+            else inv.Items.Add(new InventoryStack { ItemPath = slot.ItemPath, Count = slot.Count });
+        }
+
+        if (string.IsNullOrEmpty(itemPath)) return; // unarmed
+        int hi = inv.Items.FindIndex(s => s.ItemPath == itemPath);
+        if (hi < 0 || !ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def) || !def.Equippable) return;
+        var st = inv.Items[hi];
+        st.Count -= 1;
+        if (st.Count <= 0) inv.Items.RemoveAt(hi); else inv.Items[hi] = st;
+        inv.Equipped.Add(new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = itemPath, Count = 1 });
+    }
+
+    // Debug/demo: give a pawn an equipped rifle plus an SMG and a melee weapon
+    // in the pocket, so the Pocket Sand card shows a few segments.
+    public void DebugGiveSidearms(int pawnId)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var pawn)) return;
+        if (!pawn.HasComponent<Inventory>()) pawn.AddComponent(new Inventory());
+        ref var inv = ref pawn.GetComponent<Inventory>();
+        inv.Equipped ??= new List<EquippedItemSlot>();
+        inv.Items ??= new List<InventoryStack>();
+        inv.Equipped.Add(new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = ItemCatalog.AssaultRifle.FullPath, Count = 1 });
+        inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.SubmachineGun.FullPath, Count = 1 });
+        inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.WoodenTrinket.FullPath, Count = 1 });
+    }
+
     // Drop a general-inventory stack on the ground at the pawn's feet.
     public void DropHeldItem(int pawnId, int heldIndex)
     {
