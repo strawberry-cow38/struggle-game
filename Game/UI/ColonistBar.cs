@@ -209,7 +209,10 @@ public partial class ColonistBar : CanvasLayer
 
     private void Rebuild(List<DummyState> colonists)
     {
-        foreach (var child in _bar.GetChildren()) child.QueueFree();
+        // Detach immediately (not just QueueFree) so the bar's width reflects
+        // only the new cards this frame — otherwise the stale cards linger one
+        // frame and the bar flickers off-center.
+        foreach (var child in _bar.GetChildren()) { _bar.RemoveChild(child); child.QueueFree(); }
         _cards.Clear();
         _loadoutSig.Clear();
 
