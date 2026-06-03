@@ -97,8 +97,7 @@ public partial class ColonistBar : CanvasLayer
         foreach (var (id, card, frame, portrait) in _cards)
         {
             bool selected = sel.Contains(id);
-            card.AddThemeStyleboxOverride("panel",
-                UiTheme.Box(UiTheme.Panel, selected ? UiTheme.Accent : UiTheme.Border, 2, 8, 4, glow: false));
+            card.AddThemeStyleboxOverride("panel", CardBox(selected ? UiTheme.Accent : UiTheme.Border));
             if (byId.TryGetValue(id, out var d))
             {
                 string lo = LoadoutSig(d);
@@ -314,6 +313,18 @@ public partial class ColonistBar : CanvasLayer
         BuildCards(colonists);
     }
 
+    // Purple colonist card: roomier left/right/top padding, snug at the bottom.
+    private static StyleBoxFlat CardBox(Color border)
+    {
+        var b = new StyleBoxFlat { BgColor = UiTheme.Panel };
+        b.BorderColor = border;
+        b.BorderWidthLeft = b.BorderWidthRight = b.BorderWidthTop = b.BorderWidthBottom = 2;
+        b.CornerRadiusTopLeft = b.CornerRadiusTopRight = b.CornerRadiusBottomLeft = b.CornerRadiusBottomRight = 8;
+        b.ContentMarginLeft = b.ContentMarginRight = b.ContentMarginTop = 11;
+        b.ContentMarginBottom = 4;
+        return b;
+    }
+
     // Red (low) → amber (mid) → green (high) mood ramp.
     private static Color MoodColor(float mood)
     {
@@ -361,7 +372,7 @@ public partial class ColonistBar : CanvasLayer
                 CustomMinimumSize = new Vector2(CardWidth, 0),
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            card.AddThemeStyleboxOverride("panel", UiTheme.Box(UiTheme.Panel, UiTheme.Border, 2, 8, 4, glow: false));
+            card.AddThemeStyleboxOverride("panel", CardBox(UiTheme.Border));
             card.Theme = UiTheme.LabelTheme();
 
             var col = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
