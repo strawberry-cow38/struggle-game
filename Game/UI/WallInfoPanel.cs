@@ -12,6 +12,8 @@ public partial class WallInfoPanel : TileInfoPanel
 {
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
+    private Button _uninstallBtn = null!;
+    private Button _reinstallBtn = null!;
     private Button _deconBtn = null!;
     private bool _deconQueued; // selection already has a decon job → button cancels
 
@@ -30,10 +32,30 @@ public partial class WallInfoPanel : TileInfoPanel
         _stateLabel = new Label { Text = "" };
         vbox.AddChild(_stateLabel);
 
+        // Spacer pushes the action row to the bottom of the panel.
+        vbox.AddChild(new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
+
+        // Bottom action row: Uninstall · Reinstall at · Deconstruct (equal width).
+        var btnRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
+        btnRow.AddThemeConstantOverride("separation", 6);
+        _uninstallBtn = UiTheme.ActionButton("Uninstall");
+        _uninstallBtn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        _uninstallBtn.Pressed += OnUninstallPressed;
+        btnRow.AddChild(_uninstallBtn);
+        _reinstallBtn = UiTheme.ActionButton("Reinstall at");
+        _reinstallBtn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        _reinstallBtn.Pressed += OnReinstallPressed;
+        btnRow.AddChild(_reinstallBtn);
         _deconBtn = UiTheme.ActionButton("Deconstruct");
+        _deconBtn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         _deconBtn.Pressed += OnDeconPressed;
-        vbox.AddChild(_deconBtn);
+        btnRow.AddChild(_deconBtn);
+        vbox.AddChild(btnRow);
     }
+
+    // Stubs for now — wired when minify/reinstall lands.
+    private void OnUninstallPressed() { }
+    private void OnReinstallPressed() { }
 
     protected override void Render(SimSnapshot snap, TilePos[] tiles)
     {
