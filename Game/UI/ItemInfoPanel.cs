@@ -15,10 +15,14 @@ public partial class ItemInfoPanel : CanvasLayer
     public SimHost? Host { get; set; }
 
     private const int PanelWidth = 280;
-    private const int MarginRight = 16;
-    private const int MarginTop = 16;
+    private const int MarginLeft = 12;
+    private const int MarginBottom = 16;
+    private const int PanelPad = 10;
 
     private Panel _root = null!;
+    private VBoxContainer _vbox = null!;
+    private StyleBoxFlat _panelBox = null!;
+    private double _glowT;
     private Label _nameLabel = null!;
     private Label _countLabel = null!;
     private Label _tileLabel = null!;
@@ -41,45 +45,51 @@ public partial class ItemInfoPanel : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Stop,
             Visible = false,
         };
+        AddChild(new GlassBackdrop { Target = _root, Corner = 12f }); // frosted blur behind
         AddChild(_root);
 
-        var vbox = new VBoxContainer
+        // Same dreamcore glass frame as the colonist pane.
+        _panelBox = UiTheme.PanelBox(corner: 12, margin: 10);
+        _root.AddThemeStyleboxOverride("panel", _panelBox);
+        _root.Theme = UiTheme.LabelTheme();
+
+        _vbox = new VBoxContainer
         {
             AnchorRight = 1, AnchorBottom = 1,
             OffsetLeft = 10, OffsetTop = 10, OffsetRight = -10, OffsetBottom = -10,
             MouseFilter = Control.MouseFilterEnum.Pass,
         };
-        vbox.AddThemeConstantOverride("separation", 6);
-        _root.AddChild(vbox);
+        _vbox.AddThemeConstantOverride("separation", 6);
+        _root.AddChild(_vbox);
 
         var headerRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        _nameLabel = new Label { Text = "Item", CustomMinimumSize = new Vector2(0, 24) };
-        _nameLabel.AddThemeFontSizeOverride("font_size", 18);
+        _nameLabel = new Label { Text = "Item", CustomMinimumSize = new Vector2(0, 28) };
+        _nameLabel.AddThemeFontSizeOverride("font_size", 22);
         _nameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         headerRow.AddChild(_nameLabel);
-        var closeBtn = new Button { Text = "X", CustomMinimumSize = new Vector2(28, 24) };
+        var closeBtn = UiTheme.CloseButton();
         closeBtn.Pressed += () => Host!.SelectedWoodIds = Array.Empty<int>();
         headerRow.AddChild(closeBtn);
-        vbox.AddChild(headerRow);
+        _vbox.AddChild(headerRow);
 
-        vbox.AddChild(new HSeparator());
+        _vbox.AddChild(new HSeparator());
 
         _countLabel = new Label { Text = "" };
-        vbox.AddChild(_countLabel);
+        _vbox.AddChild(_countLabel);
 
         _tileLabel = new Label { Text = "" };
-        vbox.AddChild(_tileLabel);
+        _vbox.AddChild(_tileLabel);
 
         _stateLabel = new Label { Text = "" };
-        vbox.AddChild(_stateLabel);
+        _vbox.AddChild(_stateLabel);
 
         _forbidBtn = new Button { Text = "Forbid", CustomMinimumSize = new Vector2(0, 28) };
         _forbidBtn.Pressed += OnForbidPressed;
-        vbox.AddChild(_forbidBtn);
+        _vbox.AddChild(_forbidBtn);
 
         var hint = new Label { Text = "Hotkey: F", AutowrapMode = TextServer.AutowrapMode.WordSmart };
         hint.AddThemeFontSizeOverride("font_size", 11);
-        vbox.AddChild(hint);
+        _vbox.AddChild(hint);
 
         GetTree().Root.SizeChanged += Reposition;
         CallDeferred(nameof(Reposition));
@@ -101,6 +111,9 @@ public partial class ItemInfoPanel : CanvasLayer
             return;
         }
         if (!_root.Visible) _root.Visible = true;
+        _glowT += delta;
+        UiTheme.AnimateGlow(_panelBox, _glowT);
+        Reposition();
         int first = ids[0];
         if (ids.Length != _shownCount || first != _shownFirstId || snap.Tick != _lastSnapshotTick)
         {
@@ -114,8 +127,9 @@ public partial class ItemInfoPanel : CanvasLayer
     private void Reposition()
     {
         var vp = GetViewport().GetVisibleRect().Size;
-        _root.Position = new Vector2(vp.X - PanelWidth - MarginRight, MarginTop);
-        _root.Size = new Vector2(PanelWidth, _root.Size.Y);
+        float h = Math.Max(180, _vbox.GetCombinedMinimumSize().Y + PanelPad * 2);
+        _root.Size = new Vector2(PanelWidth, h);
+        _root.Position = new Vector2(MarginLeft, vp.Y - h - MarginBottom);
     }
 
     // One selected dropped stack, normalized across Wood + ItemPile.

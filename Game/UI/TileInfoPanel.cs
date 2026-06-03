@@ -21,10 +21,14 @@ public abstract partial class TileInfoPanel : CanvasLayer
     public SimHost? Host { get; set; }
 
     protected const int PanelWidth = 280;
-    private const int MarginRight = 16;
-    private const int MarginTop = 16;
+    private const int MarginLeft = 12;
+    private const int MarginBottom = 16;
+    private const int PanelPad = 10;
 
     private Panel _root = null!;
+    private VBoxContainer _vbox = null!;
+    private StyleBoxFlat _panelBox = null!;
+    private double _glowT;
     protected Label NameLabel = null!;
 
     private TilePos[] _shownTiles = Array.Empty<TilePos>();
@@ -52,30 +56,38 @@ public abstract partial class TileInfoPanel : CanvasLayer
             MouseFilter = Control.MouseFilterEnum.Stop,
             Visible = false,
         };
+        AddChild(new GlassBackdrop { Target = _root, Corner = 12f }); // frosted blur behind
         AddChild(_root);
 
-        var vbox = new VBoxContainer
+        // Ethereal glass card — same dreamcore theme as the colonist pane.
+        _panelBox = UiTheme.PanelBox(corner: 12, margin: 10);
+        _root.AddThemeStyleboxOverride("panel", _panelBox);
+        _root.Theme = UiTheme.LabelTheme();
+
+        _vbox = new VBoxContainer
         {
             AnchorRight = 1, AnchorBottom = 1,
             OffsetLeft = 10, OffsetTop = 10, OffsetRight = -10, OffsetBottom = -10,
             MouseFilter = Control.MouseFilterEnum.Pass,
         };
-        vbox.AddThemeConstantOverride("separation", 6);
-        _root.AddChild(vbox);
+        _vbox.AddThemeConstantOverride("separation", 6);
+        _root.AddChild(_vbox);
 
         var headerRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        NameLabel = new Label { Text = Title, CustomMinimumSize = new Vector2(0, 24) };
-        NameLabel.AddThemeFontSizeOverride("font_size", 18);
+        NameLabel = new Label { Text = Title, CustomMinimumSize = new Vector2(0, 28) };
+        NameLabel.AddThemeFontSizeOverride("font_size", 22);
         NameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         headerRow.AddChild(NameLabel);
-        var closeBtn = new Button { Text = "X", CustomMinimumSize = new Vector2(28, 24) };
+
+        // Close: the shared red-box white-X button.
+        var closeBtn = UiTheme.CloseButton();
         closeBtn.Pressed += () => SelectedTiles = Array.Empty<TilePos>();
         headerRow.AddChild(closeBtn);
-        vbox.AddChild(headerRow);
+        _vbox.AddChild(headerRow);
 
-        vbox.AddChild(new HSeparator());
+        _vbox.AddChild(new HSeparator());
 
-        BuildBody(vbox);
+        BuildBody(_vbox);
 
         GetTree().Root.SizeChanged += Reposition;
         Callable.From(Reposition).CallDeferred();
@@ -97,6 +109,9 @@ public abstract partial class TileInfoPanel : CanvasLayer
             return;
         }
         if (!_root.Visible) _root.Visible = true;
+        _glowT += delta;
+        UiTheme.AnimateGlow(_panelBox, _glowT);
+        Reposition(); // re-anchor bottom-left as content height changes
         if (!TilesEqual(tiles, _shownTiles) || snap.Tick != _lastSnapshotTick)
         {
             Render(snap, tiles);
@@ -115,7 +130,10 @@ public abstract partial class TileInfoPanel : CanvasLayer
     private void Reposition()
     {
         var vp = GetViewport().GetVisibleRect().Size;
-        _root.Position = new Vector2(vp.X - PanelWidth - MarginRight, MarginTop);
-        _root.Size = new Vector2(PanelWidth, _root.Size.Y);
+        // Size to content so the bottom padding matches the sides, anchored
+        // bottom-left like the colonist pane.
+        float h = Math.Max(MinHeight, _vbox.GetCombinedMinimumSize().Y + PanelPad * 2);
+        _root.Size = new Vector2(PanelWidth, h);
+        _root.Position = new Vector2(MarginLeft, vp.Y - h - MarginBottom);
     }
 }

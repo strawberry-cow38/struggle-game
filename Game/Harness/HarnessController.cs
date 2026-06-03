@@ -96,6 +96,16 @@ public partial class HarnessController : Node2D
                 _schedule.Add((3.0, h => h.Finish("pocketsand done"), "finish"));
                 _screenshotEverySec = double.PositiveInfinity;
                 break;
+            case "tileinfo":
+                // Selection-panel demo: build a wall, select it, screenshot the
+                // (now colonist-pane-styled) info panel bottom-left.
+                _schedule.Add((0.1, h => h.SetCameraZoom(3.0f), "zoom"));
+                _schedule.Add((0.3, h => h.InstantWall(c, c), "wall"));
+                _schedule.Add((0.6, h => h.SelectWallAt(c, c), "select wall"));
+                _schedule.Add((2.0, h => h.Screenshot(), "shot"));
+                _schedule.Add((3.0, h => h.Finish("tileinfo done"), "finish"));
+                _screenshotEverySec = double.PositiveInfinity;
+                break;
             case "chop":
                 // Verify trees exist, chop rect drops a wood pile.
                 _schedule.Add((1.0, h => h.RecordTreeCount("start"), "record trees"));
@@ -992,6 +1002,8 @@ public partial class HarnessController : Node2D
     {
         if (LowestPawnId() is int id) Host.QueueCommand(new DebugGiveSidearmsCommand(id));
     }
+
+    private void SelectWallAt(int x, int y) => Host.SelectedWallTiles = new[] { new TilePos(x, y) };
 
     private void FontShowcase()
     {

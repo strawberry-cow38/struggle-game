@@ -31,6 +31,20 @@ public static class UiTheme
     public static StyleBoxFlat ButtonBox(Color bg, bool active = false, int corner = 6, int margin = 4)
         => Box(bg, active ? ButtonEdge : Border, 1, corner, margin, glow: false);
 
+    // The shared red-box white-X close button (header corner of info panes).
+    // Caller wires the Pressed handler.
+    public static Button CloseButton()
+    {
+        var b = new Button { Text = "X", CustomMinimumSize = new Vector2(30, 28), FocusMode = Control.FocusModeEnum.None };
+        var red = Box(new Color(0.80f, 0.20f, 0.20f, 0.98f), new Color(0.98f, 0.55f, 0.55f, 0.70f), 1, 6, 4, glow: false);
+        var hov = Box(new Color(0.92f, 0.28f, 0.28f, 0.98f), new Color(1f, 0.70f, 0.70f, 0.85f), 1, 6, 4, glow: false);
+        b.AddThemeStyleboxOverride("normal", red);
+        b.AddThemeStyleboxOverride("pressed", red);
+        b.AddThemeStyleboxOverride("hover", hov);
+        b.AddThemeColorOverride("font_color", new Color(1f, 1f, 1f));
+        return b;
+    }
+
     // Glassy panel: translucent fill, soft glow halo, thin pastel border,
     // rounded corners, uniform content margin.
     public static StyleBoxFlat PanelBox(int corner = 12, int margin = 12)
