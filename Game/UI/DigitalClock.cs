@@ -3,14 +3,27 @@ using Godot;
 
 namespace StruggleGame.Game.UI;
 
-// A Project-Zomboid-style digital watch readout: chamfered 7-segment digits
-// glowing like hot embers (amber core + orange bloom + a faint always-on
-// "off" segment), a blinking colon, and a small date line. Drawn entirely in
-// _Draw — no art assets. Sits on its own dark "LCD" screen so it reads like a
-// wrist watch instead of plain HUD text.
+// HUD watch readout with three looks:
+//   Vfd   — cyan-green vacuum-fluorescent segments (old hi-fi / microwave
+//           clock): teal phosphor glow on near-black, faint ghost segments.
+//   Ember — Project-Zomboid-style chamfered 7-segment digits glowing like hot
+//           coals (amber core + orange bloom).
+//   Nixie — neon-orange numeral cathodes inside glass tubes with ghosted
+//           digits behind and a wire anode mesh in front.
+// All drawn in _Draw, no art assets. Blinking colon + small date line.
+// Vfd/Ember share the 7-segment renderer; only the palette differs.
 public partial class DigitalClock : Control
 {
-    // Segment geometry (per digit cell).
+    public enum ClockStyle { Vfd, Ember, Nixie }
+
+    private ClockStyle _style = ClockStyle.Vfd;
+    public ClockStyle Style
+    {
+        get => _style;
+        set { _style = value; UpdateMinSize(); QueueRedraw(); }
+    }
+
+    // ---- 7-segment geometry (Vfd + Ember) ----
     private const float DigitW = 22f;
     private const float DigitH = 42f;
     private const float Thick = 6f;
@@ -20,34 +33,71 @@ public partial class DigitalClock : Control
     private const float PadTop = 14f;
     private const float DateH = 22f;
 
-    // Fire palette.
-    private static readonly Color CoreHot = new(1.00f, 0.82f, 0.42f);   // bright amber-white
-    private static readonly Color CoreAmber = new(1.00f, 0.55f, 0.14f); // ember orange
-    private static readonly Color Bloom = new(1.00f, 0.38f, 0.08f, 0.30f);
-    private static readonly Color Off = new(0.28f, 0.07f, 0.02f, 0.55f); // faint unlit segment
-    private static readonly Color Lcd = new(0.06f, 0.03f, 0.02f, 0.92f);  // screen background
-    private static readonly Color LcdEdge = new(0.55f, 0.22f, 0.06f, 0.55f);
-    private static readonly Color DateCol = new(1.00f, 0.50f, 0.16f, 0.92f);
+    // ---- Nixie tube geometry ----
+    private const float TubeW = 50f;
+    private const float TubeH = 80f;
+    private const float TubeGap = 6f;
+    private const float NixColonW = 22f;
+    private const int NixFont = 60;
+
+    // Per-segment-style palette.
+    private readonly struct SegPal
+    {
+        public readonly Color Core, Body, Bloom, Off, Bg, Edge, Date;
+        public SegPal(Color core, Color body, Color bloom, Color off, Color bg, Color edge, Color date)
+        { Core = core; Body = body; Bloom = bloom; Off = off; Bg = bg; Edge = edge; Date = date; }
+    }
+
+    // Cyan-green VFD phosphor.
+    private static readonly SegPal VfdPal = new(
+        core:  new Color(0.85f, 1.00f, 0.95f),        // near-white hot center
+        body:  new Color(0.32f, 1.00f, 0.78f),        // teal phosphor
+        bloom: new Color(0.20f, 0.95f, 0.72f, 0.26f), // soft cyan halo
+        off:   new Color(0.16f, 0.34f, 0.30f, 0.45f), // faint ghost segment
+        bg:    new Color(0.01f, 0.04f, 0.04f, 0.94f),  // near-black, slight teal
+        edge:  new Color(0.18f, 0.55f, 0.48f, 0.55f),
+        date:  new Color(0.42f, 1.00f, 0.82f, 0.92f));
+
+    // Warm amber ember.
+    private static readonly SegPal EmberPal = new(
+        core:  new Color(1.00f, 0.82f, 0.42f),
+        body:  new Color(1.00f, 0.55f, 0.14f),
+        bloom: new Color(1.00f, 0.38f, 0.08f, 0.30f),
+        off:   new Color(0.28f, 0.07f, 0.02f, 0.55f),
+        bg:    new Color(0.06f, 0.03f, 0.02f, 0.92f),
+        edge:  new Color(0.55f, 0.22f, 0.06f, 0.55f),
+        date:  new Color(1.00f, 0.50f, 0.16f, 0.92f));
+
+    // Nixie palette.
+    private static readonly Color NixCore = new(1.00f, 0.74f, 0.40f);
+    private static readonly Color NixNeon = new(1.00f, 0.46f, 0.12f);
+    private static readonly Color NixHalo = new(1.00f, 0.34f, 0.06f, 0.20f);
+    private static readonly Color NixGhost = new(1.00f, 0.30f, 0.06f, 0.07f);
+    private static readonly Color NixGlass = new(0.05f, 0.035f, 0.05f, 0.94f);
+    private static readonly Color NixGlassTop = new(0.16f, 0.10f, 0.09f, 0.55f);
+    private static readonly Color NixRim = new(0.55f, 0.40f, 0.30f, 0.55f);
+    private static readonly Color NixMesh = new(1.00f, 0.55f, 0.20f, 0.10f);
 
     // Which of the 7 segments (a b c d e f g) light up per digit 0-9.
-    // a=top, b=top-right, c=bottom-right, d=bottom, e=bottom-left, f=top-left, g=middle
     private static readonly bool[][] Glyphs =
     {
-        new[]{ true,  true,  true,  true,  true,  true,  false }, // 0
-        new[]{ false, true,  true,  false, false, false, false }, // 1
-        new[]{ true,  true,  false, true,  true,  false, true  }, // 2
-        new[]{ true,  true,  true,  true,  false, false, true  }, // 3
-        new[]{ false, true,  true,  false, false, true,  true  }, // 4
-        new[]{ true,  false, true,  true,  false, true,  true  }, // 5
-        new[]{ true,  false, true,  true,  true,  true,  true  }, // 6
-        new[]{ true,  true,  true,  false, false, false, false }, // 7
-        new[]{ true,  true,  true,  true,  true,  true,  true  }, // 8
-        new[]{ true,  true,  true,  true,  false, true,  true  }, // 9
+        new[]{ true,  true,  true,  true,  true,  true,  false },
+        new[]{ false, true,  true,  false, false, false, false },
+        new[]{ true,  true,  false, true,  true,  false, true  },
+        new[]{ true,  true,  true,  true,  false, false, true  },
+        new[]{ false, true,  true,  false, false, true,  true  },
+        new[]{ true,  false, true,  true,  false, true,  true  },
+        new[]{ true,  false, true,  true,  true,  true,  true  },
+        new[]{ true,  true,  true,  false, false, false, false },
+        new[]{ true,  true,  true,  true,  true,  true,  true  },
+        new[]{ true,  true,  true,  true,  false, true,  true  },
     };
 
     private int _h, _m, _s;
     private string _date = "";
-    private double _time; // drives flicker + colon blink
+    private double _time;
+    private double _redrawAccum;
+    private SegPal _p; // active segment palette during a draw
 
     public void SetTime(int hours, int minutes, int seconds, string date)
     {
@@ -58,79 +108,88 @@ public partial class DigitalClock : Control
     public override void _Process(double delta)
     {
         _time += delta;
-        QueueRedraw(); // cheap: only the small watch face redraws, for flicker
+        _redrawAccum += delta;
+        if (_redrawAccum >= 1.0 / 20.0) { _redrawAccum = 0; QueueRedraw(); }
     }
 
-    public override void _Ready()
+    public override void _Ready() => UpdateMinSize();
+
+    private void UpdateMinSize()
     {
-        // Layout: d d : d d  -> 5 elements, 4 gaps.
-        float w = PadX * 2 + DigitW * 4 + ColonW + DigitGap * 4;
-        float h = PadTop * 2 + DigitH + DateH;
+        float w, h;
+        if (_style == ClockStyle.Nixie)
+        {
+            w = PadX * 2 + TubeW * 4 + NixColonW + TubeGap * 4;
+            h = PadTop * 2 + TubeH + DateH;
+        }
+        else
+        {
+            w = PadX * 2 + DigitW * 4 + ColonW + DigitGap * 4;
+            h = PadTop * 2 + DigitH + DateH;
+        }
         CustomMinimumSize = new Vector2(w, h);
     }
 
     public override void _Draw()
     {
+        switch (_style)
+        {
+            case ClockStyle.Nixie: DrawNixie(); break;
+            case ClockStyle.Ember: DrawSevenSeg(EmberPal); break;
+            default:               DrawSevenSeg(VfdPal); break;
+        }
+    }
+
+    private float Flick() => 0.86f + 0.14f * Flicker((float)_time);
+
+    private void DrawDateLine(float panelH, Color col)
+    {
+        var font = UiTheme.Font;
+        if (font is null || _date.Length == 0) return;
+        int fs = 14;
+        float tw = font.GetStringSize(_date, HorizontalAlignment.Left, -1, fs).X;
+        var pos = new Vector2((Size.X - tw) * 0.5f, panelH - 6);
+        DrawString(font, pos, _date, HorizontalAlignment.Left, -1, fs, col);
+    }
+
+    // ------------------------------------------------------- 7-segment (Vfd/Ember)
+    private void DrawSevenSeg(SegPal pal)
+    {
+        _p = pal;
         float w = Size.X, lcdH = PadTop * 2 + DigitH + DateH;
-
-        // The LCD screen panel.
         var screen = new Rect2(0, 0, w, lcdH);
-        DrawRect(screen, Lcd, true);
-        DrawRect(screen, LcdEdge, false, 2f); // ember edge
+        DrawRect(screen, pal.Bg, true);
+        DrawRect(screen, pal.Edge, false, 2f);
 
-        // Subtle global ember flicker — deterministic, watch-like jitter.
-        float flick = 0.86f + 0.14f * Flicker((float)_time);
-
-        float x = PadX;
-        float y = PadTop;
+        float flick = Flick();
+        float x = PadX, y = PadTop;
         DrawDigit(_h / 10, x, y, flick); x += DigitW + DigitGap;
         DrawDigit(_h % 10, x, y, flick); x += DigitW + DigitGap;
         DrawColon(x, y, flick);          x += ColonW + DigitGap;
         DrawDigit(_m / 10, x, y, flick); x += DigitW + DigitGap;
         DrawDigit(_m % 10, x, y, flick);
 
-        // Date line, centered under the digits.
-        var font = UiTheme.Font;
-        if (font is not null && _date.Length > 0)
-        {
-            int fs = 14;
-            float tw = font.GetStringSize(_date, HorizontalAlignment.Left, -1, fs).X;
-            var pos = new Vector2((w - tw) * 0.5f, PadTop + DigitH + DateH - 4);
-            DrawString(font, pos, _date, HorizontalAlignment.Left, -1, fs, DateCol);
-        }
-    }
-
-    // Pseudo-noise flicker in [0,1] from layered sines (no RNG, frame-stable).
-    private static float Flicker(float t)
-    {
-        float n = Mathf.Sin(t * 27.3f) * 0.5f + Mathf.Sin(t * 11.1f + 1.7f) * 0.3f + Mathf.Sin(t * 53.7f) * 0.2f;
-        return Mathf.Clamp(0.5f + 0.5f * n, 0f, 1f);
+        DrawDateLine(lcdH, pal.Date);
     }
 
     private void DrawColon(float x, float y, float flick)
     {
-        // Blink off on even seconds for that ticking-watch feel.
         bool on = (_s & 1) == 0;
         float cx = x + ColonW * 0.5f;
         float r = Thick * 0.55f;
-        float y1 = y + DigitH * 0.30f;
-        float y2 = y + DigitH * 0.70f;
-        DrawDot(new Vector2(cx, y1), r, on, flick);
-        DrawDot(new Vector2(cx, y2), r, on, flick);
+        DrawDot(new Vector2(cx, y + DigitH * 0.30f), r, on, flick);
+        DrawDot(new Vector2(cx, y + DigitH * 0.70f), r, on, flick);
     }
 
     private void DrawDot(Vector2 c, float r, bool on, float flick)
     {
         if (on)
         {
-            DrawCircle(c, r * 2.1f, Bloom);
-            DrawCircle(c, r, CoreAmber * flick);
-            DrawCircle(c, r * 0.5f, CoreHot * flick);
+            DrawCircle(c, r * 2.1f, _p.Bloom);
+            DrawCircle(c, r, _p.Body * flick);
+            DrawCircle(c, r * 0.5f, _p.Core * flick);
         }
-        else
-        {
-            DrawCircle(c, r, Off);
-        }
+        else DrawCircle(c, r, _p.Off);
     }
 
     private void DrawDigit(int d, float ox, float oy, float flick)
@@ -139,12 +198,9 @@ public partial class DigitalClock : Control
         var on = Glyphs[d];
         float midX = ox + DigitW * 0.5f;
         float qtr = DigitH * 0.25f;
-
-        // a top, d bottom, g middle (horizontal)
         DrawSeg(HSeg(midX, oy, DigitW), on[0], flick);
         DrawSeg(HSeg(midX, oy + DigitH * 0.5f, DigitW), on[6], flick);
         DrawSeg(HSeg(midX, oy + DigitH, DigitW), on[3], flick);
-        // f top-left, e bottom-left, b top-right, c bottom-right (vertical)
         DrawSeg(VSeg(ox, oy + qtr, DigitH * 0.5f), on[5], flick);
         DrawSeg(VSeg(ox, oy + qtr * 3, DigitH * 0.5f), on[4], flick);
         DrawSeg(VSeg(ox + DigitW, oy + qtr, DigitH * 0.5f), on[1], flick);
@@ -155,19 +211,13 @@ public partial class DigitalClock : Control
     {
         if (on)
         {
-            // Bloom halo: same shape expanded around its centroid.
-            DrawColoredPolygon(Expand(core, 2.6f), Bloom);
-            DrawColoredPolygon(core, CoreAmber * flick);
-            // Hot inner streak.
-            DrawColoredPolygon(Expand(core, -1.4f), CoreHot * flick);
+            DrawColoredPolygon(Expand(core, 2.6f), _p.Bloom);
+            DrawColoredPolygon(core, _p.Body * flick);
+            DrawColoredPolygon(Expand(core, -1.4f), _p.Core * flick);
         }
-        else
-        {
-            DrawColoredPolygon(core, Off);
-        }
+        else DrawColoredPolygon(core, _p.Off);
     }
 
-    // Chamfered horizontal segment (flat hexagon) centered at (cx,cy).
     private static Vector2[] HSeg(float cx, float cy, float len)
     {
         float h = Thick * 0.5f, l = len * 0.5f;
@@ -182,7 +232,6 @@ public partial class DigitalClock : Control
         };
     }
 
-    // Chamfered vertical segment centered at (cx,cy).
     private static Vector2[] VSeg(float cx, float cy, float len)
     {
         float h = Thick * 0.5f, l = len * 0.5f;
@@ -197,7 +246,6 @@ public partial class DigitalClock : Control
         };
     }
 
-    // Expand/shrink a polygon by `amt` px along the centroid->vertex direction.
     private static Vector2[] Expand(Vector2[] pts, float amt)
     {
         var c = Vector2.Zero;
@@ -205,10 +253,105 @@ public partial class DigitalClock : Control
         c /= pts.Length;
         var outp = new Vector2[pts.Length];
         for (int i = 0; i < pts.Length; i++)
-        {
-            var dir = (pts[i] - c).Normalized();
-            outp[i] = pts[i] + dir * amt;
-        }
+            outp[i] = pts[i] + (pts[i] - c).Normalized() * amt;
         return outp;
+    }
+
+    private static float Flicker(float t)
+    {
+        float n = Mathf.Sin(t * 27.3f) * 0.5f + Mathf.Sin(t * 11.1f + 1.7f) * 0.3f + Mathf.Sin(t * 53.7f) * 0.2f;
+        return Mathf.Clamp(0.5f + 0.5f * n, 0f, 1f);
+    }
+
+    // ----------------------------------------------------------------- Nixie
+    private void DrawNixie()
+    {
+        float panelH = PadTop * 2 + TubeH + DateH;
+        float flick = Flick();
+
+        float x = PadX, y = PadTop;
+        DrawTube(_h / 10, x, y, flick); x += TubeW + TubeGap;
+        DrawTube(_h % 10, x, y, flick); x += TubeW + TubeGap;
+        DrawNixColon(x, y, flick);      x += NixColonW + TubeGap;
+        DrawTube(_m / 10, x, y, flick); x += TubeW + TubeGap;
+        DrawTube(_m % 10, x, y, flick);
+
+        DrawDateLine(panelH, NixNeon);
+    }
+
+    private void DrawTube(int d, float ox, float oy, float flick)
+    {
+        if (d < 0 || d > 9) d = 0;
+        var rect = new Rect2(ox, oy, TubeW, TubeH);
+        DrawRect(rect, NixGlass, true);
+        DrawRect(new Rect2(ox, oy, TubeW, TubeH * 0.32f), NixGlassTop, true);
+        DrawRect(rect, NixRim, false, 1.5f);
+
+        var center = new Vector2(ox + TubeW * 0.5f, oy + TubeH * 0.5f);
+        DrawGlyph((d + 4) % 10, center, NixGhost, NixFont, 1f);
+        DrawGlyph((d + 7) % 10, center, NixGhost, NixFont, 1f);
+        DrawGlyphGlow(d, center, flick);
+        DrawMesh(rect);
+    }
+
+    private void DrawGlyphGlow(int d, Vector2 center, float flick)
+    {
+        var halo = NixHalo * flick;
+        for (int ring = 0; ring < 2; ring++)
+        {
+            float spread = ring == 0 ? 5.5f : 2.8f;
+            for (int i = 0; i < 8; i++)
+            {
+                float a = i * Mathf.Pi / 4f;
+                var off = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * spread;
+                DrawGlyph(d, center + off, halo, NixFont, 1f);
+            }
+        }
+        DrawGlyph(d, center, NixNeon * flick, NixFont, 1f);
+        DrawGlyph(d, center, NixCore * flick, NixFont, 0.78f);
+    }
+
+    private void DrawGlyph(int d, Vector2 center, Color col, int size, float scale)
+    {
+        var font = UiTheme.Font;
+        if (font is null) return;
+        int fs = (int)(size * scale);
+        string s = d.ToString();
+        var sz = font.GetStringSize(s, HorizontalAlignment.Left, -1, fs);
+        float asc = font.GetAscent(fs), desc = font.GetDescent(fs);
+        var pos = new Vector2(center.X - sz.X * 0.5f, center.Y + (asc - desc) * 0.5f);
+        DrawString(font, pos, s, HorizontalAlignment.Left, -1, fs, col);
+    }
+
+    private void DrawMesh(Rect2 r)
+    {
+        const float step = 9f;
+        for (float o = -r.Size.Y; o < r.Size.X; o += step)
+        {
+            DrawLine(ClampX(new Vector2(r.Position.X + o, r.Position.Y), r),
+                     ClampX(new Vector2(r.Position.X + o + r.Size.Y, r.Position.Y + r.Size.Y), r), NixMesh, 1f);
+            DrawLine(ClampX(new Vector2(r.Position.X + o + r.Size.Y, r.Position.Y), r),
+                     ClampX(new Vector2(r.Position.X + o, r.Position.Y + r.Size.Y), r), NixMesh, 1f);
+        }
+    }
+
+    private static Vector2 ClampX(Vector2 p, Rect2 r)
+        => new(Mathf.Clamp(p.X, r.Position.X, r.Position.X + r.Size.X), p.Y);
+
+    private void DrawNixColon(float x, float y, float flick)
+    {
+        float cx = x + NixColonW * 0.5f;
+        bool on = (_s & 1) == 0;
+        float r = 4.5f;
+        DrawNeonDot(new Vector2(cx, y + TubeH * 0.34f), r, on, flick);
+        DrawNeonDot(new Vector2(cx, y + TubeH * 0.66f), r, on, flick);
+    }
+
+    private void DrawNeonDot(Vector2 c, float r, bool on, float flick)
+    {
+        if (!on) { DrawCircle(c, r, NixGhost); return; }
+        DrawCircle(c, r * 2.4f, NixHalo * flick);
+        DrawCircle(c, r, NixNeon * flick);
+        DrawCircle(c, r * 0.5f, NixCore * flick);
     }
 }
