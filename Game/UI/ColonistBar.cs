@@ -21,12 +21,12 @@ public partial class ColonistBar : CanvasLayer
     public SimHost? Host { get; set; }
     public GameCamera? Camera { get; set; }
 
-    private const int PortraitSize = 62;  // +20% over the original 52
-    private const int CardWidth = 80;
+    private const int PortraitSize = 65;  // +5% bump
+    private const int CardWidth = 84;
     private const int MarginTop = 8;
     private const float ClickSlopPx = 9f; // deadzone before a drag-select kicks in
 
-    private const int MaxPerRow = 13; // 14+ colonists wrap to a new row
+    private const int MaxPerRow = 12; // 13+ colonists wrap to a new row
 
     private VBoxContainer _bar = null!;
     private readonly List<(int id, PanelContainer card, PortraitView portrait)> _cards = new();
@@ -255,8 +255,11 @@ public partial class ColonistBar : CanvasLayer
     {
         if (Host is null) return;
         var picked = new List<int>(_dragAdditive ? Host.SelectedDummyIds : System.Array.Empty<int>());
+        int before = picked.Count;
         foreach (var (id, card, _) in _cards)
             if (card.GetGlobalRect().Intersects(rect) && !picked.Contains(id)) picked.Add(id);
+        // An empty drag over the bar shouldn't clear the current selection.
+        if (picked.Count == before && !_dragAdditive) return;
         Host.SelectedDummyIds = picked.ToArray();
     }
 
