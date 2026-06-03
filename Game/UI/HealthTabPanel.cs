@@ -494,10 +494,10 @@ public partial class HealthTabPanel : CanvasLayer
 
     private static void StyleTab(Button t, bool active)
     {
-        var box = UiTheme.ButtonBox(active ? UiTheme.ButtonActive : UiTheme.Button);
+        var box = UiTheme.ButtonBox(active ? UiTheme.ButtonActive : UiTheme.Button, active);
         t.AddThemeStyleboxOverride("normal", box);
         t.AddThemeStyleboxOverride("pressed", box);
-        t.AddThemeStyleboxOverride("hover", UiTheme.ButtonBox(active ? UiTheme.ButtonActive : UiTheme.ButtonHover));
+        t.AddThemeStyleboxOverride("hover", UiTheme.ButtonBox(active ? UiTheme.ButtonActive : UiTheme.ButtonHover, active));
         t.AddThemeColorOverride("font_color", UiTheme.Text);
     }
 

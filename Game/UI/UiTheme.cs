@@ -26,9 +26,10 @@ public static class UiTheme
     public static readonly Color ButtonActive = new(0.34f, 0.55f, 0.74f, 0.95f); // cyan-lit active tab
     public static readonly Color ButtonEdge = new(0.60f, 0.82f, 0.99f, 0.60f);   // bright cyan edge
 
-    // A button/tab stylebox with the bright cyan edge.
-    public static StyleBoxFlat ButtonBox(Color bg, int corner = 6, int margin = 4)
-        => Box(bg, ButtonEdge, 1, corner, margin, glow: false);
+    // A button/tab stylebox. Unselected uses the purple pane border; the
+    // active tab gets the bright cyan edge so only it stands out.
+    public static StyleBoxFlat ButtonBox(Color bg, bool active = false, int corner = 6, int margin = 4)
+        => Box(bg, active ? ButtonEdge : Border, 1, corner, margin, glow: false);
 
     // Glassy panel: translucent fill, soft glow halo, thin pastel border,
     // rounded corners, uniform content margin.

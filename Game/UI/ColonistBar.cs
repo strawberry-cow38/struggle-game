@@ -21,12 +21,12 @@ public partial class ColonistBar : CanvasLayer
     public SimHost? Host { get; set; }
     public GameCamera? Camera { get; set; }
 
-    private const int PortraitSize = 65;  // +5% bump
-    private const int CardWidth = 84;
+    private const int PortraitSize = 72;  // +10% bump
+    private const int CardWidth = 90;
     private const int MarginTop = 8;
     private const float ClickSlopPx = 9f; // deadzone before a drag-select kicks in
 
-    private const int MaxPerRow = 12; // 13+ colonists wrap to a new row
+    private const int MaxPerRow = 10; // 11+ colonists wrap to a new row
 
     private VBoxContainer _bar = null!;
     private readonly List<(int id, PanelContainer card, PortraitView portrait)> _cards = new();
