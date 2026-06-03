@@ -458,10 +458,10 @@ public partial class DraftActionBar : CanvasLayer
 
         // Dark card backing — the 3px grid gaps show it through as the "+".
         var card = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Pass, CustomMinimumSize = new Vector2(TileSize, TileSize) };
-        card.AddThemeStyleboxOverride("panel", MakeBox(new Color(0.04f, 0.03f, 0.08f), BorderIdle, 2, 4, 3));
+        card.AddThemeStyleboxOverride("panel", MakeBox(new Color(0.04f, 0.03f, 0.08f), BorderIdle, 2, 4, 0));
         _segGrid = new GridContainer { Columns = 2, MouseFilter = Control.MouseFilterEnum.Pass };
-        _segGrid.AddThemeConstantOverride("h_separation", 3);
-        _segGrid.AddThemeConstantOverride("v_separation", 3);
+        _segGrid.AddThemeConstantOverride("h_separation", 2); // the "+" divider
+        _segGrid.AddThemeConstantOverride("v_separation", 2);
         card.AddChild(_segGrid);
         wrap.AddChild(card);
 
@@ -524,7 +524,7 @@ public partial class DraftActionBar : CanvasLayer
 
     private Control BuildSquare(WpnSeg? seg)
     {
-        int q = (TileSize - 6 - 3) / 2; // (tile - 2*margin - gap) / 2
+        int q = (TileSize - 4 - 2) / 2; // (tile - 2*border - gap) / 2 — fills the card
 
         // Empty square: a plain dark filler, not clickable.
         if (seg is not { } s)
@@ -549,7 +549,7 @@ public partial class DraftActionBar : CanvasLayer
 
         var icon = new WeaponGlyph { Glyph = s.Kind, MouseFilter = Control.MouseFilterEnum.Ignore };
         icon.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        icon.OffsetLeft = 4; icon.OffsetRight = -4; icon.OffsetTop = 4; icon.OffsetBottom = -4;
+        icon.OffsetLeft = 1; icon.OffsetRight = -1; icon.OffsetTop = 1; icon.OffsetBottom = -1;
         btn.AddChild(icon);
 
         string path = s.Path;
