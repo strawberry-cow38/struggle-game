@@ -38,6 +38,13 @@ public partial class DraftActionBar : CanvasLayer
     private Button _draftBtn = null!;
     private Label _draftCap = null!;
 
+    // Pocket Sand — sidearm swap gizmo (leftmost drafted tile). Left-click
+    // opens a menu to stash the equipped weapon or draw one from inventory.
+    private Button _pocketSandBtn = null!;
+    private PopupMenu _pocketSandMenu = null!;
+    // Maps a menu id to an action: equip=true → draw Held[index]; else stash Equipped[index].
+    private readonly List<(bool equip, int index)> _pocketActions = new();
+
     // Ranged-weapon tiles — shown whenever the pawn holds a ranged weapon
     // (drafted or not). Drafted-only tiles (fire-at-will, melee) are separate.
     private readonly List<Control> _rangedWraps = new();
@@ -141,6 +148,16 @@ public partial class DraftActionBar : CanvasLayer
             if (Host is null || _shownPawnId < 0) return;
             Host.QueueCommand(new ToggleDraftCommand(_shownPawnId));
         };
+
+        // Pocket Sand — sidearm swap. Sits right after Draft so it's the
+        // leftmost drafted-only gizmo. Left-click opens the stash/draw menu.
+        _pocketSandMenu = new PopupMenu();
+        AddChild(_pocketSandMenu);
+        _pocketSandMenu.IdPressed += OnPocketSandPick;
+        _pocketSandBtn = BuildGizmo("Pocket Sand", toggle: false, parent: _bar, out _);
+        _pocketSandBtn.TooltipText = "Swap sidearms: stash your weapon or draw one from your pocket. (Actual sand not included.)";
+        _pocketSandBtn.Pressed += OpenPocketSand;
+        _draftedWraps.Add(WrapOf(_pocketSandBtn));
 
         // Global "fire at will" toggle.
         _fireAtWillBtn = BuildGizmo("Fire at Will", toggle: true, parent: _bar, out _);
@@ -431,6 +448,55 @@ public partial class DraftActionBar : CanvasLayer
         }
         if (id >= 0 && id < _reloadAmmoPaths.Count)
             Host.QueueCommand(new SetReloadAmmoCommand(_shownPawnId, _reloadAmmoPaths[(int)id]));
+    }
+
+    // Build + pop the Pocket Sand menu: stash any equipped weapon, draw any
+    // weapon carried in the pocket (general inventory).
+    private void OpenPocketSand()
+    {
+        if (Host?.LatestSnapshot is not { } snap || _shownPawnId < 0) return;
+        DummyState? found = null;
+        foreach (var d in snap.Dummies)
+            if (d.EntityId == _shownPawnId) { found = d; break; }
+        if (found is not { } p) return;
+
+        _pocketSandMenu.Clear();
+        _pocketActions.Clear();
+
+        // Stash an equipped weapon back into the pocket.
+        foreach (var eq in p.Equipped)
+        {
+            if (!ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var def)) continue;
+            if (!def.IsWeapon && !def.IsRangedWeapon) continue;
+            _pocketSandMenu.AddItem($"Stash {def.DisplayName}", _pocketActions.Count);
+            _pocketActions.Add((false, eq.Index));
+        }
+        if (_pocketActions.Count > 0) _pocketSandMenu.AddSeparator();
+
+        // Draw a weapon out of the pocket.
+        foreach (var h in p.Held)
+        {
+            if (!ItemCatalog.ItemsByPath.TryGetValue(h.ItemPath, out var def)) continue;
+            if (!def.Equippable || (!def.IsWeapon && !def.IsRangedWeapon)) continue;
+            _pocketSandMenu.AddItem($"Draw {def.DisplayName}" + (h.Count > 1 ? $" (x{h.Count})" : ""), _pocketActions.Count);
+            _pocketActions.Add((true, h.Index));
+        }
+
+        if (_pocketActions.Count == 0)
+            _pocketSandMenu.AddItem("(no sidearms in pocket)", -1);
+
+        _pocketSandMenu.Position = (Vector2I)GetViewport().GetMousePosition();
+        _pocketSandMenu.Popup();
+    }
+
+    private void OnPocketSandPick(long id)
+    {
+        if (Host is null || _shownPawnId < 0) return;
+        if (id < 0 || id >= _pocketActions.Count) return;
+        var (equip, index) = _pocketActions[(int)id];
+        Host.QueueCommand(equip
+            ? new EquipFromInventoryCommand(_shownPawnId, index)
+            : new ForceUnequipCommand(_shownPawnId, index));
     }
 
     private void HideBar()

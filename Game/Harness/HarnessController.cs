@@ -971,7 +971,11 @@ public partial class HarnessController : Node2D
 
     private void DraftLowest()
     {
-        if (LowestPawnId() is int id) Host.QueueCommand(new ToggleDraftCommand(id));
+        if (LowestPawnId() is int id)
+        {
+            Host.QueueCommand(new ToggleDraftCommand(id));
+            Host.SelectedDummyId = id; // select so the draft action bar shows
+        }
     }
 
     private void FontShowcase()
