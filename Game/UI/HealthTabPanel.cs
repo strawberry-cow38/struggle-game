@@ -330,9 +330,13 @@ public partial class HealthTabPanel : CanvasLayer
         float w = PanelWidth; // wider than the card so conditions fit
         float x = PawnPanel?.PanelLeft ?? 12f;
         float panelTop = PawnPanel is { PanelOpen: true } pp ? pp.PanelTop : vp.Y - (PawnPanel?.PanelMarginBottom ?? 16f);
-        // Fit the panel to its content (the capacity column) so there's no
-        // dead space below Digestion; clamp so the conditions area keeps a floor.
-        float h = _vbox is null ? PanelHeight : Mathf.Max(220f, _vbox.GetCombinedMinimumSize().Y + 24f);
+        // Minimum = the capacity column's height; grow upward when the
+        // conditions list is longer, capped at the top of the screen (then the
+        // conditions list scrolls inside).
+        float minH = _vbox is null ? PanelHeight : Mathf.Max(220f, _vbox.GetCombinedMinimumSize().Y + 24f);
+        float condNatural = (_conditionsCol?.GetCombinedMinimumSize().Y ?? 0f) + 120f;
+        float maxToTop = panelTop - GapAbovePanel - 12f;
+        float h = Mathf.Min(Mathf.Max(minH, condNatural), Mathf.Max(minH, maxToTop));
         float y = panelTop - GapAbovePanel - h;
         _root.Size = new Vector2(w, h);
         _root.Position = new Vector2(x, y);
