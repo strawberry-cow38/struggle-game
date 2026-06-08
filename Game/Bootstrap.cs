@@ -216,6 +216,9 @@ public partial class Bootstrap : Node2D
         var combatSfx = new CombatSfx { Host = _host, Name = "CombatSfx" };
         AddChild(combatSfx);
 
+        var selectSfx = new SelectSfx { Host = _host, Name = "SelectSfx" };
+        AddChild(selectSfx);
+
         var profiler = new FrameProfilerOverlay { Host = _host, Name = "FrameProfiler" };
         AddChild(profiler);
 
