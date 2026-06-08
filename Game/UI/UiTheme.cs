@@ -18,6 +18,7 @@ public static class UiTheme
     public static readonly Color Text = new(0.93f, 0.95f, 1.0f);
     public static readonly Color TextDim = new(0.72f, 0.76f, 0.92f);
     public static readonly Color Outline = new(0.03f, 0.03f, 0.09f, 0.88f);
+    public static readonly Color ScanLine = new(0.58f, 0.38f, 0.90f, 0.085f); // VFD control-grid wires (matches the clock)
 
     // Buttons / tabs — a raised lighter indigo with a cyan edge so they pop
     // off the near-opaque panels instead of blending in.
@@ -60,9 +61,15 @@ public static class UiTheme
     }
 
     // Glassy panel: translucent fill, soft glow halo, thin pastel border,
-    // rounded corners, uniform content margin.
-    public static StyleBoxFlat PanelBox(int corner = 12, int margin = 12)
-        => Box(Panel, Border, 1, corner, margin, glow: true);
+    // rounded corners, uniform content margin — overlaid with the clock's VFD
+    // scan-line grid so every pane reads like the digital watch face.
+    public static ScanlineStyleBox PanelBox(int corner = 12, int margin = 12)
+    {
+        var flat = Box(Panel, Border, 1, corner, margin, glow: true);
+        var sb = new ScanlineStyleBox { Flat = flat };
+        sb.SetContentMarginAll(margin);   // wrapper drives child layout, so mirror the inset
+        return sb;
+    }
 
     public static StyleBoxFlat InsetBox(Color bg, int corner = 6, int margin = 0)
         => Box(bg, new Color(Border.R, Border.G, Border.B, 0.25f), 1, corner, margin, glow: false);
@@ -105,6 +112,9 @@ public static class UiTheme
             return _font;
         }
     }
+
+    // Pulse a scan-line panel's glow (the pulse lives on its inner glass box).
+    public static void AnimateGlow(ScanlineStyleBox box, double t) => AnimateGlow(box.Flat, t);
 
     // Pulse a panel box's glow (call each frame with accumulated time).
     public static void AnimateGlow(StyleBoxFlat box, double t)

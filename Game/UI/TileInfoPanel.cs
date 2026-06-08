@@ -27,7 +27,7 @@ public abstract partial class TileInfoPanel : CanvasLayer
 
     private Panel _root = null!;
     private VBoxContainer _vbox = null!;
-    private StyleBoxFlat _panelBox = null!;
+    private ScanlineStyleBox _panelBox = null!;
     private double _glowT;
     protected Label NameLabel = null!;
 

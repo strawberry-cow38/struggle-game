@@ -28,7 +28,7 @@ public partial class PawnInfoPanel : CanvasLayer
 
     private Panel _root = null!;
     private VBoxContainer _vbox = null!;
-    private StyleBoxFlat _panelBox = null!;
+    private ScanlineStyleBox _panelBox = null!;
     private double _glowT;
     private const int PanelPad = 10; // vbox inset; bottom gap matches the sides
 
