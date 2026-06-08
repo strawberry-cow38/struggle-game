@@ -170,8 +170,16 @@ public partial class NeedsPanel : CanvasLayer
 
         if (list.Count == 0) list.Add(("Comfortable", 3, true));
 
-        list.Sort((a, b) => a.Item2.CompareTo(b.Item2)); // worst first
-        return list;
+        // Good group on top (biggest gain first), bad group below (biggest hit
+        // first) — so the worst bad sits right under the smallest good.
+        var goods = list.FindAll(t => t.Item3);
+        var bads = list.FindAll(t => !t.Item3);
+        goods.Sort((a, b) => b.Item2.CompareTo(a.Item2));
+        bads.Sort((a, b) => a.Item2.CompareTo(b.Item2));
+        var ordered = new List<(string label, int pts, bool good)>(goods.Count + bads.Count);
+        ordered.AddRange(goods);
+        ordered.AddRange(bads);
+        return ordered;
     }
 
     private static string ThoughtsSig(List<(string label, int pts, bool good)> ts)
