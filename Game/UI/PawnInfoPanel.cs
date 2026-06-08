@@ -175,12 +175,20 @@ public partial class PawnInfoPanel : CanvasLayer
                 t.Pressed += () =>
                 {
                     if (HealthTab is null) return;
-                    if (HealthTab.PanelOpen) HealthTab.Close();
-                    else if (_shownPawnId >= 0) HealthTab.OpenFor(_shownPawnId);
+                    if (HealthTab.PanelOpen) HealthTab.Close(); // re-click → none selected
+                    else if (_shownPawnId >= 0) { _activeCardTab = ""; HealthTab.OpenFor(_shownPawnId); }
                     ApplyCardTabs();
                 };
             else
-                t.Pressed += () => { _activeCardTab = name; HealthTab?.Close(); ApplyCardTabs(); };
+                t.Pressed += () =>
+                {
+                    // Click the active tab again to deselect (drop to none),
+                    // rather than falling back to the previously selected tab.
+                    bool isActive = !(HealthTab?.PanelOpen ?? false) && _activeCardTab == name;
+                    _activeCardTab = isActive ? "" : name;
+                    HealthTab?.Close();
+                    ApplyCardTabs();
+                };
             _cardTabs.Add((name, t));
             tabRow.AddChild(t);
         }
