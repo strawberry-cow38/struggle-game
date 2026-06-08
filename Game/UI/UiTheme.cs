@@ -172,11 +172,12 @@ public static class UiTheme
     }
 
     // Flicker a scan-line box's glow between two shadow sizes/alphas of `color`.
+    // Slow + gentle: time scaled way down, and the swing is ~half the original.
     public static void FlickerGlow(ScanlineStyleBox box, double t, Color color)
     {
-        float f = Flicker((float)t);
-        box.Flat.ShadowSize = (int)Mathf.Lerp(6f, 16f, f);
-        box.Flat.ShadowColor = new Color(color.R, color.G, color.B, Mathf.Lerp(0.22f, 0.60f, f));
+        float f = Flicker((float)t * 0.18f);
+        box.Flat.ShadowSize = (int)Mathf.Lerp(8f, 14f, f);
+        box.Flat.ShadowColor = new Color(color.R, color.G, color.B, Mathf.Lerp(0.31f, 0.50f, f));
         box.EmitChanged();
     }
 
