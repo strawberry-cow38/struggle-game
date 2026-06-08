@@ -399,6 +399,11 @@ public partial class ColonistBar : CanvasLayer
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
             name.AddThemeFontSizeOverride("font_size", 13);
+            // Fake bold to match the colonist-info-panel name: a light outline
+            // the same color as the text fattens the glyphs (overrides the
+            // theme's dark legibility outline).
+            name.AddThemeConstantOverride("outline_size", 3);
+            name.AddThemeColorOverride("font_outline_color", new Color(0.93f, 0.93f, 0.95f));
             col.AddChild(name);
 
             row.AddChild(card);
