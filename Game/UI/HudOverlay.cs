@@ -14,6 +14,7 @@ public partial class HudOverlay : CanvasLayer
     // When open, these bottom-left panels push the tile readout above them.
     public PawnInfoPanel? PawnPanel { get; set; }
     public HealthTabPanel? HealthTab { get; set; }
+    public NeedsPanel? NeedsTab { get; set; }
 
     private DigitalClock _clock = null!;
     private Label _perfLabel = null!;
@@ -164,6 +165,7 @@ public partial class HudOverlay : CanvasLayer
         float bottom = vp.Y - 12f;
         if (PawnPanel is { PanelOpen: true } pp) bottom = Math.Min(bottom, pp.PanelTop - 8f);
         if (HealthTab is { PanelOpen: true } ht) bottom = Math.Min(bottom, ht.PanelTop - 8f);
+        if (NeedsTab is { PanelOpen: true } nt) bottom = Math.Min(bottom, nt.PanelTop - 8f);
         _tileLabel.Position = new Vector2(12, bottom - min.Y);
     }
 }
