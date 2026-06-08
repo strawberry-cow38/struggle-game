@@ -1423,17 +1423,17 @@ public partial class WorldRenderer : Node2D
         float b = StruggleGame.Game.UI.UiTheme.PulseFlicker(age); // pulse + flicker
         float appear = Mathf.Clamp(age * 5f, 0f, 1f);   // fade in
 
-        float arm = h * 0.42f, r = h * 0.30f;
-        var line = new Color(SelBlue.R, SelBlue.G, SelBlue.B, Mathf.Lerp(0.55f, 1.0f, b) * appear);
-        var glow = new Color(SelBlue.R, SelBlue.G, SelBlue.B, 0.32f * b * appear);
+        float arm = h * 0.52f, r = h * 0.30f;
+        var line = new Color(SelBlue.R, SelBlue.G, SelBlue.B, Mathf.Lerp(0.80f, 1.0f, b) * appear);
+        var glow = new Color(SelBlue.R, SelBlue.G, SelBlue.B, 0.45f * b * appear);
 
         int[] sx = { 1, 1, -1, -1 };
         int[] sy = { 1, -1, -1, 1 };
         for (int i = 0; i < 4; i++)
         {
             var pts = CornerL(center, h, arm, r, sx[i], sy[i], rot);
-            DrawPolyline(pts, glow, 5f, antialiased: true);
-            DrawPolyline(pts, line, 2.2f, antialiased: true);
+            DrawPolyline(pts, glow, 6.5f, antialiased: true);
+            DrawPolyline(pts, line, 3.0f, antialiased: true);
         }
     }
 
