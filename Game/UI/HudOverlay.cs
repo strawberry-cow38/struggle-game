@@ -68,7 +68,9 @@ public partial class HudOverlay : CanvasLayer
     private static PanelContainer MakeHudPanel(Label label)
     {
         var p = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
-        p.AddThemeStyleboxOverride("panel", UiTheme.Box(UiTheme.Panel, UiTheme.Border, 1, 8, 8, glow: false));
+        var box = UiTheme.Scan(UiTheme.Box(UiTheme.Panel, UiTheme.Border, 1, 8, 8, glow: false), inset: 4f);
+        box.SetContentMarginAll(8);
+        p.AddThemeStyleboxOverride("panel", box);
         p.Theme = UiTheme.LabelTheme();
         p.AddChild(label);
         return p;

@@ -318,10 +318,9 @@ public partial class DraftActionBar : CanvasLayer
             FocusMode = Control.FocusModeEnum.None,
             ClipText = true,
         };
-        var box = MakeBox(TileBg, BorderIdle, 2, 4);
-        tile.AddThemeStyleboxOverride("normal", box);
-        tile.AddThemeStyleboxOverride("hover", MakeBox(TileBg.Lightened(0.06f), BorderIdle, 2, 4));
-        tile.AddThemeStyleboxOverride("pressed", box);
+        tile.AddThemeStyleboxOverride("normal", ScanTile(TileBg, BorderIdle));
+        tile.AddThemeStyleboxOverride("hover", ScanTile(TileBg.Lightened(0.06f), BorderIdle));
+        tile.AddThemeStyleboxOverride("pressed", ScanTile(TileBg, BorderIdle));
         tile.AddThemeFontSizeOverride("font_size", 14);
         wrap.AddChild(tile);
 
@@ -344,8 +343,8 @@ public partial class DraftActionBar : CanvasLayer
     private static void SetTileActive(Button tile, bool active)
     {
         var border = active ? BorderActive : BorderIdle;
-        tile.AddThemeStyleboxOverride("normal", MakeBox(TileBg, border, 2, 4));
-        tile.AddThemeStyleboxOverride("pressed", MakeBox(TileBg, border, 2, 4));
+        tile.AddThemeStyleboxOverride("normal", ScanTile(TileBg, border));
+        tile.AddThemeStyleboxOverride("pressed", ScanTile(TileBg, border));
         if (tile.ToggleMode)
         {
             tile.SetPressedNoSignal(active);
@@ -402,6 +401,10 @@ public partial class DraftActionBar : CanvasLayer
 
         return wrap;
     }
+
+    // A gizmo tile background with the VFD scan-line grid (matches the panes).
+    private static ScanlineStyleBox ScanTile(Color bg, Color border)
+        => UiTheme.Scan(MakeBox(bg, border, 2, 4), inset: 4f);
 
     private static StyleBoxFlat MakeBox(Color bg, Color border, int borderWidth, int corner, int margin = 0)
     {

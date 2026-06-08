@@ -46,6 +46,7 @@ public sealed class SimHost : IDisposable
 
     public SimHost(int seed)
     {
+        StruggleGame.Game.UI.UiTheme.WorldSeed = seed; // stable scan-line scatter per world
         _sim = new SimRuntime(seed, asyncPathfinding: true);
         _running = true;
         // Below-normal priority so the render/main thread wins CPU under
@@ -63,6 +64,7 @@ public sealed class SimHost : IDisposable
     {
         lock (_swapLock)
         {
+            StruggleGame.Game.UI.UiTheme.WorldSeed = seed; // refresh the scan-line scatter for the new world
             _sim = new SimRuntime(seed, asyncPathfinding: true);
             Volatile.Write(ref _selectedDummyId, -1);
             Volatile.Write(ref _selectedDummyIds, Array.Empty<int>());

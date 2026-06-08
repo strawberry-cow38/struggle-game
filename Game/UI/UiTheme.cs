@@ -18,7 +18,43 @@ public static class UiTheme
     public static readonly Color Text = new(0.93f, 0.95f, 1.0f);
     public static readonly Color TextDim = new(0.72f, 0.76f, 0.92f);
     public static readonly Color Outline = new(0.03f, 0.03f, 0.09f, 0.88f);
-    public static readonly Color ScanLine = new(0.58f, 0.38f, 0.90f, 0.085f); // VFD control-grid wires (matches the clock)
+    public static readonly Color ScanLine = new(0.58f, 0.38f, 0.90f, 0.085f);      // VFD control-grid wires (matches the clock)
+    public static readonly Color ScanLineBright = new(0.82f, 0.66f, 1.00f, 0.22f); // scattered brighter rows
+
+    // World seed — set by SimHost so the bright scan-line scatter is stable per
+    // world (same seed → same rows light up). Defaults to the sim's default seed.
+    public static int WorldSeed = 1337;
+    private const uint ScanlineBrightPct = 22; // ~1 in 5 rows gets the bright color
+
+    // Deterministic per-row brightness: hash the world seed with the row index
+    // so the scatter is fixed for a given world but differs between worlds.
+    private static bool ScanlineIsBright(int row)
+    {
+        uint h = (uint)(WorldSeed * 73856093) ^ (uint)((row + 1) * 19349663);
+        h ^= h >> 13; h *= 0x5bd1e995u; h ^= h >> 15;
+        return h % 100u < ScanlineBrightPct;
+    }
+
+    // Draw the VFD scan-line grid across a rect onto a canvas item: 1px lines
+    // every `spacing` px, inset off the border, with a seeded scatter of
+    // brighter rows. Shared by ScanlineStyleBox and any custom-drawn control.
+    public static void DrawScanlines(Rid canvasItem, Rect2 rect, float spacing = 4f, float inset = 6f)
+    {
+        float x0 = rect.Position.X + inset, x1 = rect.Position.X + rect.Size.X - inset;
+        if (x1 <= x0) return;
+        float yTop = rect.Position.Y + inset, yBot = rect.Position.Y + rect.Size.Y - inset;
+        int row = 0;
+        for (float y = yTop; y < yBot; y += spacing, row++)
+        {
+            var c = ScanlineIsBright(row) ? ScanLineBright : ScanLine;
+            RenderingServer.CanvasItemAddLine(canvasItem, new Vector2(x0, y), new Vector2(x1, y), c, 1f);
+        }
+    }
+
+    // Wrap a flat glass box so it draws the scan-line grid on top. Use for any
+    // pane/tile/card/button background that should match the clock face.
+    public static ScanlineStyleBox Scan(StyleBoxFlat flat, float inset = 5f, float spacing = 4f)
+        => new() { Flat = flat, Inset = inset, Spacing = spacing };
 
     // Buttons / tabs — a raised lighter indigo with a cyan edge so they pop
     // off the near-opaque panels instead of blending in.
@@ -28,9 +64,15 @@ public static class UiTheme
     public static readonly Color ButtonEdge = new(0.60f, 0.82f, 0.99f, 0.60f);   // bright cyan edge
 
     // A button/tab stylebox. Unselected uses the purple pane border; the
-    // active tab gets the bright cyan edge so only it stands out.
-    public static StyleBoxFlat ButtonBox(Color bg, bool active = false, int corner = 6, int margin = 4)
-        => Box(bg, active ? ButtonEdge : Border, 1, corner, margin, glow: false);
+    // active tab gets the bright cyan edge so only it stands out. Carries the
+    // scan-line grid so buttons match the panes.
+    public static ScanlineStyleBox ButtonBox(Color bg, bool active = false, int corner = 6, int margin = 4)
+    {
+        var flat = Box(bg, active ? ButtonEdge : Border, 1, corner, margin, glow: false);
+        var sb = Scan(flat, inset: 3f);
+        sb.SetContentMarginAll(margin);
+        return sb;
+    }
 
     // An action button styled like the colonist-pane tabs (raised indigo with
     // the purple edge, lighter on hover, cyan when held). Caller wires Pressed.
@@ -65,8 +107,7 @@ public static class UiTheme
     // scan-line grid so every pane reads like the digital watch face.
     public static ScanlineStyleBox PanelBox(int corner = 12, int margin = 12)
     {
-        var flat = Box(Panel, Border, 1, corner, margin, glow: true);
-        var sb = new ScanlineStyleBox { Flat = flat };
+        var sb = Scan(Box(Panel, Border, 1, corner, margin, glow: true), inset: 6f);
         sb.SetContentMarginAll(margin);   // wrapper drives child layout, so mirror the inset
         return sb;
     }

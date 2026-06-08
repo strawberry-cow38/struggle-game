@@ -99,7 +99,9 @@ public partial class ColonistBar : CanvasLayer
             bool selected = sel.Contains(id);
             bool has = byId.TryGetValue(id, out var d);
             Color ring = has ? MoodColor(d.Mood) : UiTheme.Border;
-            card.AddThemeStyleboxOverride("panel", CardBox(selected ? UiTheme.Accent : ring, ring));
+            Color edge = selected ? UiTheme.Accent : ring;
+            card.AddThemeStyleboxOverride("panel", CardBox(edge, ring));
+            frame.AddThemeStyleboxOverride("panel", FrameBox(edge, ring));
             if (has)
             {
                 string lo = LoadoutSig(d);
@@ -306,17 +308,35 @@ public partial class ColonistBar : CanvasLayer
     }
 
     // Purple colonist card with the mood ring: colored border + matching glow
-    // halo, roomier left/right/top padding, snug at the bottom.
-    private static StyleBoxFlat CardBox(Color border, Color glow)
+    // halo, roomier left/right/top padding, snug at the bottom. Carries the
+    // VFD scan-line grid so it matches the panes.
+    private static ScanlineStyleBox CardBox(Color border, Color glow)
     {
         var b = new StyleBoxFlat { BgColor = UiTheme.Panel };
         b.BorderColor = border;
         b.BorderWidthLeft = b.BorderWidthRight = b.BorderWidthTop = b.BorderWidthBottom = 2;
         b.CornerRadiusTopLeft = b.CornerRadiusTopRight = b.CornerRadiusBottomLeft = b.CornerRadiusBottomRight = 8;
-        b.ContentMarginLeft = b.ContentMarginRight = b.ContentMarginTop = 11;
-        b.ContentMarginBottom = 4;
         b.ShadowColor = new Color(glow.R, glow.G, glow.B, 0.40f);
         b.ShadowSize = 7;
+        var sb = UiTheme.Scan(b, inset: 5f);
+        // Mirror the card's asymmetric padding onto the wrapper (it drives layout).
+        sb.SetContentMargin(Side.Left, 11);
+        sb.SetContentMargin(Side.Right, 11);
+        sb.SetContentMargin(Side.Top, 11);
+        sb.SetContentMargin(Side.Bottom, 4);
+        return sb;
+    }
+
+    // Inner portrait frame: dark inset with the same mood-ring border + glow as
+    // the card, so the ring reads on both the card edge and the portrait edge.
+    private static StyleBoxFlat FrameBox(Color border, Color glow)
+    {
+        var b = new StyleBoxFlat { BgColor = UiTheme.Inset };
+        b.BorderColor = border;
+        b.BorderWidthLeft = b.BorderWidthRight = b.BorderWidthTop = b.BorderWidthBottom = 2;
+        b.CornerRadiusTopLeft = b.CornerRadiusTopRight = b.CornerRadiusBottomLeft = b.CornerRadiusBottomRight = 4;
+        b.ShadowColor = new Color(glow.R, glow.G, glow.B, 0.45f);
+        b.ShadowSize = 6;
         return b;
     }
 
@@ -364,7 +384,7 @@ public partial class ColonistBar : CanvasLayer
 
             // Top-down "clone" of the pawn + their equipment, on a dark inset.
             var frame = new PanelContainer { CustomMinimumSize = new Vector2(PortraitSize, PortraitSize), MouseFilter = Control.MouseFilterEnum.Ignore };
-            frame.AddThemeStyleboxOverride("panel", UiTheme.InsetBox(UiTheme.Inset, corner: 4));
+            frame.AddThemeStyleboxOverride("panel", FrameBox(UiTheme.Border, UiTheme.Border)); // recolored per-mood each frame
             var portrait = new PortraitView { MouseFilter = Control.MouseFilterEnum.Ignore };
             frame.AddChild(portrait);
             col.AddChild(frame);
