@@ -97,10 +97,10 @@ public partial class WorldRenderer : Node2D
     private readonly Dictionary<long, double> _selAgeMap = new(); // key → time selection began
     private readonly HashSet<long> _selSeen = new();              // keys drawn this frame
     private readonly List<long> _selPruneScratch = new();
-    private static readonly Color PathLineColor = new(1.0f, 0.92f, 0.10f, 0.85f);
-    private static readonly Color PathTargetColor = new(1.0f, 0.92f, 0.10f, 1.0f);
+    private static readonly Color PathLineColor = new(0.60f, 0.82f, 0.99f, 0.85f);  // button blue
+    private static readonly Color PathTargetColor = new(0.60f, 0.82f, 0.99f, 1.0f);
     // Dimmer line linking queued (not-yet-active) move/action waypoints.
-    private static readonly Color QueuedPathColor = new(1.0f, 0.92f, 0.10f, 0.45f);
+    private static readonly Color QueuedPathColor = new(0.60f, 0.82f, 0.99f, 0.42f);
     // Max-range ring for a selected drafted ranged colonist.
     private static readonly Color RangeCircleColor = new(1.0f, 0.45f, 0.30f, 0.35f);
     private static readonly Color DraftedRing = new(1.0f, 0.25f, 0.20f, 1.0f);
@@ -691,6 +691,13 @@ public partial class WorldRenderer : Node2D
         // Enemy ids, so combat labels can name a target "Raider" vs "Colonist".
         _enemyIdScratch.Clear();
         foreach (var d in snap.Dummies) if (d.IsEnemy) _enemyIdScratch.Add(d.EntityId);
+
+        // Paths render BEFORE the pawns so the lines sit under the colonists.
+        using (FrameProfiler.Instance.BeginScope("Path"))
+        {
+            DrawSelectedPath(snap);
+        }
+
         using (FrameProfiler.Instance.BeginScope("Dummies"))
         {
             foreach (var d in snap.Dummies)
@@ -869,11 +876,6 @@ public partial class WorldRenderer : Node2D
                     DrawMissedText(labelFont, center, radius, 1f - sinceMiss / (float)MissTextTicks);
                 }
             }
-        }
-
-        using (FrameProfiler.Instance.BeginScope("Path"))
-        {
-            DrawSelectedPath(snap);
         }
 
         // Hover hit-chance readout: a drafted ranged colonist selected + the
@@ -1114,7 +1116,7 @@ public partial class WorldRenderer : Node2D
         foreach (var pp in snap.SelectedPaths)
             DrawPawnPath(snap, pp);
         if (_pathSegs.Count > 0)
-            DrawMultiline(_pathSegs.ToArray(), PathLineColor, 2f);
+            DrawMultiline(_pathSegs.ToArray(), PathLineColor, 2.5f);
         if (_queuedSegs.Count > 0)
             DrawMultiline(_queuedSegs.ToArray(), QueuedPathColor, 1.5f);
     }
@@ -1150,10 +1152,10 @@ public partial class WorldRenderer : Node2D
             }
 
             var target = path[^1];
-            float t = PixelsPerTile * 0.35f;
             var tc = new Vector2((target.X + 0.5f) * PixelsPerTile, (target.Y + 0.5f) * PixelsPerTile);
-            DrawLine(tc + new Vector2(-t, -t), tc + new Vector2(t, t), PathTargetColor, width: 3f);
-            DrawLine(tc + new Vector2(-t, t), tc + new Vector2(t, -t), PathTargetColor, width: 3f);
+            // Clean destination marker: a ring with a small filled centre dot.
+            DrawArc(tc, PixelsPerTile * 0.30f, 0f, Mathf.Tau, 28, PathTargetColor, width: 2.5f, antialiased: true);
+            DrawCircle(tc, PixelsPerTile * 0.085f, PathTargetColor);
         }
 
         // Queued move/action waypoints, connected in order from the path end
