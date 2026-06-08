@@ -90,6 +90,7 @@ public partial class WorldRenderer : Node2D
     private static readonly Color BlueprintProgress = new(0.95f, 0.85f, 0.20f, 0.85f);
     private static readonly Color SelectionRing = new(1.0f, 1.0f, 0.20f, 1.0f);
     private static readonly Color SelBlue = new(0.60f, 0.82f, 0.99f); // button-edge cyan
+    private static readonly Color SelRed = new(0.97f, 0.34f, 0.31f);  // enemy selection
 
     // Animated selection brackets: per-id age (spawn → hone-in → rotate) + a
     // shared clock for the rotation/flicker.
@@ -99,6 +100,8 @@ public partial class WorldRenderer : Node2D
     private readonly List<long> _selPruneScratch = new();
     private static readonly Color PathLineColor = new(0.60f, 0.82f, 0.99f, 0.85f);  // button blue
     private static readonly Color PathTargetColor = new(0.60f, 0.82f, 0.99f, 1.0f);
+    private static readonly Color PathLineColorEnemy = new(0.97f, 0.34f, 0.31f, 0.85f);
+    private static readonly Color PathTargetColorEnemy = new(0.97f, 0.34f, 0.31f, 1.0f);
     // Dimmer line linking queued (not-yet-active) move/action waypoints.
     private static readonly Color QueuedPathColor = new(0.60f, 0.82f, 0.99f, 0.42f);
     // Max-range ring for a selected drafted ranged colonist.
@@ -808,7 +811,7 @@ public partial class WorldRenderer : Node2D
                 }
                 if (_selectedDummyIdsScratch.Contains(d.EntityId))
                 {
-                    DrawSelectionBrackets(center, radius + 7f, SelAge(IdKey(1, d.EntityId)), (float)_selTime);
+                    DrawSelectionBrackets(center, radius + 7f, SelAge(IdKey(1, d.EntityId)), (float)_selTime, rotate: true, color: d.IsEnemy ? SelRed : SelBlue);
                     // Drafted + holding a ranged weapon → show its max range ring.
                     // ONLY for a lone selection — a big tessellated arc per frame
                     // per pawn is costly (and N overlapping rings is just clutter).
@@ -1104,23 +1107,31 @@ public partial class WorldRenderer : Node2D
     // Reused segment buffers so every selected pawn's path collapses into two
     // batched DrawMultiline calls (no AA) instead of thousands of DrawLines.
     private readonly List<Vector2> _pathSegs = new();
+    private readonly List<Vector2> _pathSegsEnemy = new();
     private readonly List<Vector2> _queuedSegs = new();
 
     private void DrawSelectedPath(Sim.Snapshots.SimSnapshot snap)
     {
         if (snap.SelectedPaths.Length == 0) return;
         _pathSegs.Clear();
+        _pathSegsEnemy.Clear();
         _queuedSegs.Clear();
         foreach (var pp in snap.SelectedPaths)
             DrawPawnPath(snap, pp);
         if (_pathSegs.Count > 0)
             DrawMultiline(_pathSegs.ToArray(), PathLineColor, 2.5f);
+        if (_pathSegsEnemy.Count > 0)
+            DrawMultiline(_pathSegsEnemy.ToArray(), PathLineColorEnemy, 2.5f);
         if (_queuedSegs.Count > 0)
             DrawMultiline(_queuedSegs.ToArray(), QueuedPathColor, 1.5f);
     }
 
     private void DrawPawnPath(Sim.Snapshots.SimSnapshot snap, Sim.Snapshots.PawnPathState pp)
     {
+        bool isEnemy = _enemyIdScratch.Contains(pp.EntityId);
+        var segs = isEnemy ? _pathSegsEnemy : _pathSegs;
+        var targetCol = isEnemy ? PathTargetColorEnemy : PathTargetColor;
+
         // Find live dummy world pos so the line starts at the colonist, not the
         // tile they've already left.
         Vector2? start = null;
@@ -1162,15 +1173,15 @@ public partial class WorldRenderer : Node2D
             for (int k = startK; k < path.Length; k++)
             {
                 var pt = new Vector2((path[k].X + 0.5f) * PixelsPerTile, (path[k].Y + 0.5f) * PixelsPerTile);
-                _pathSegs.Add(prevPt); _pathSegs.Add(pt); // batched in DrawSelectedPath
+                segs.Add(prevPt); segs.Add(pt); // batched in DrawSelectedPath
                 prevPt = pt;
             }
 
             var target = path[^1];
             var tc = new Vector2((target.X + 0.5f) * PixelsPerTile, (target.Y + 0.5f) * PixelsPerTile);
             // Clean destination marker: a ring with a small filled centre dot.
-            DrawArc(tc, PixelsPerTile * 0.30f, 0f, Mathf.Tau, 28, PathTargetColor, width: 2.5f, antialiased: true);
-            DrawCircle(tc, PixelsPerTile * 0.085f, PathTargetColor);
+            DrawArc(tc, PixelsPerTile * 0.30f, 0f, Mathf.Tau, 28, targetCol, width: 2.5f, antialiased: true);
+            DrawCircle(tc, PixelsPerTile * 0.085f, targetCol);
         }
 
         // Queued move/action waypoints, connected in order from the path end
@@ -1445,12 +1456,13 @@ public partial class WorldRenderer : Node2D
     private static long IdKey(int tag, int id) => ((long)tag << 40) | (uint)id;
     private static long TileKey(int tag, TilePos t) => ((long)tag << 40) | (uint)(t.X * 100000 + t.Y);
 
-    private void DrawSelectionBrackets(Vector2 center, float half, float age, float time, bool rotate = true)
-        => DrawSelectionBrackets(center, half, half, age, time, rotate);
+    private void DrawSelectionBrackets(Vector2 center, float half, float age, float time, bool rotate = true, Color? color = null)
+        => DrawSelectionBrackets(center, half, half, age, time, rotate, color);
 
     // Rectangular footprint version — four rounded-L corners around the box.
-    private void DrawSelectionBrackets(Vector2 center, float halfW, float halfH, float age, float time, bool rotate = true)
+    private void DrawSelectionBrackets(Vector2 center, float halfW, float halfH, float age, float time, bool rotate = true, Color? color = null)
     {
+        var bc = color ?? SelBlue;
         float hone = Mathf.Exp(-age * 6f);              // 1 → 0: corners converge
         float hw = halfW * (1f + hone * 0.7f);          // start spread, settle in
         float hh = halfH * (1f + hone * 0.7f);
@@ -1460,8 +1472,8 @@ public partial class WorldRenderer : Node2D
 
         float m = Mathf.Min(hw, hh);
         float arm = m * 0.52f, r = m * 0.30f;
-        var line = new Color(SelBlue.R, SelBlue.G, SelBlue.B, Mathf.Lerp(0.80f, 1.0f, b) * appear);
-        var glow = new Color(SelBlue.R, SelBlue.G, SelBlue.B, 0.45f * b * appear);
+        var line = new Color(bc.R, bc.G, bc.B, Mathf.Lerp(0.80f, 1.0f, b) * appear);
+        var glow = new Color(bc.R, bc.G, bc.B, 0.45f * b * appear);
 
         int[] sx = { 1, 1, -1, -1 };
         int[] sy = { 1, -1, -1, 1 };
