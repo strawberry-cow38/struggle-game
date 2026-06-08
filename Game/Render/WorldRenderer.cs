@@ -1142,13 +1142,21 @@ public partial class WorldRenderer : Node2D
             int startK;
             if (start is Vector2 s)
             {
-                // Start the line a bit away from the pawn so it clears the
-                // selection bracket square instead of poking out from under it.
-                var firstPt = new Vector2((path[0].X + 0.5f) * PixelsPerTile, (path[0].Y + 0.5f) * PixelsPerTile);
-                var d = firstPt - s;
-                float gap = PixelsPerTile * 0.6f;
-                if (d.Length() > gap) s += d.Normalized() * gap;
-                prevPt = s; startK = 0;
+                // Begin the line a constant distance along the path from the
+                // pawn (not a hard on/off threshold — that blinked as the pawn
+                // crossed it each tile) so it always clears the selection square.
+                float budget = PixelsPerTile * 0.6f;
+                Vector2 cur = s;
+                int k = 0;
+                while (k < path.Length)
+                {
+                    var pt = new Vector2((path[k].X + 0.5f) * PixelsPerTile, (path[k].Y + 0.5f) * PixelsPerTile);
+                    var seg = pt - cur;
+                    float len = seg.Length();
+                    if (len >= budget) { cur += seg.Normalized() * budget; break; }
+                    budget -= len; cur = pt; k++;
+                }
+                prevPt = cur; startK = k;
             }
             else { prevPt = new Vector2((path[0].X + 0.5f) * PixelsPerTile, (path[0].Y + 0.5f) * PixelsPerTile); startK = 1; }
             for (int k = startK; k < path.Length; k++)
