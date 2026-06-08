@@ -119,7 +119,7 @@ public partial class NeedsPanel : CanvasLayer
         _thoughtsCol.AddThemeConstantOverride("separation", 3);
         // Right margin so the +N values clear the always-shown scrollbar.
         var thoughtsMargin = new MarginContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        thoughtsMargin.AddThemeConstantOverride("margin_right", 14);
+        thoughtsMargin.AddThemeConstantOverride("margin_right", 22);
         thoughtsMargin.AddChild(_thoughtsCol);
         _scroll.AddChild(thoughtsMargin);
     }
