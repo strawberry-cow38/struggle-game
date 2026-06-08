@@ -1140,7 +1140,16 @@ public partial class WorldRenderer : Node2D
             // -thread garbage. DrawLine takes scalars → zero managed alloc.
             Vector2 prevPt;
             int startK;
-            if (start is Vector2 s) { prevPt = s; startK = 0; }
+            if (start is Vector2 s)
+            {
+                // Start the line a bit away from the pawn so it clears the
+                // selection bracket square instead of poking out from under it.
+                var firstPt = new Vector2((path[0].X + 0.5f) * PixelsPerTile, (path[0].Y + 0.5f) * PixelsPerTile);
+                var d = firstPt - s;
+                float gap = PixelsPerTile * 0.6f;
+                if (d.Length() > gap) s += d.Normalized() * gap;
+                prevPt = s; startK = 0;
+            }
             else { prevPt = new Vector2((path[0].X + 0.5f) * PixelsPerTile, (path[0].Y + 0.5f) * PixelsPerTile); startK = 1; }
             for (int k = startK; k < path.Length; k++)
             {
