@@ -15,6 +15,8 @@ public partial class PortraitView : Control
     private static readonly Color ArmorColor = new(0.55f, 0.60f, 0.72f, 0.85f);
 
     private static readonly Color DraftBadge = new(0.82f, 0.20f, 0.18f); // combat red
+    private static readonly Color BleedBadge = new(0.74f, 0.09f, 0.10f); // blood red
+    private static readonly Color DownedBadge = new(0.95f, 0.70f, 0.15f); // warning amber
     private static readonly Color BadgeBack = new(0.05f, 0.04f, 0.08f, 0.92f);
     private static readonly Color BadgeMark = new(0.96f, 0.96f, 1.00f);
 
@@ -22,10 +24,13 @@ public partial class PortraitView : Control
     private float _rangedLen;  // 0 = no ranged weapon
     private bool _melee;
     private bool _armor;
+    private bool _bleeding;
+    private bool _downed;
 
-    public void Set(bool drafted, float rangedLen, bool melee, bool armor)
+    public void Set(bool drafted, float rangedLen, bool melee, bool armor, bool bleeding, bool downed)
     {
         _drafted = drafted; _rangedLen = rangedLen; _melee = melee; _armor = armor;
+        _bleeding = bleeding; _downed = downed;
         QueueRedraw();
     }
 
@@ -64,19 +69,53 @@ public partial class PortraitView : Control
         if (_drafted)
             DrawArc(c, r + 2f, 0f, Mathf.Tau, 28, DraftedRing, 2f, antialiased: true);
 
+        float br = Mathf.Min(Size.X, Size.Y) * 0.16f;
+
         // Draft indicator, bottom-right corner: a red badge with a white sword
         // when this colonist is drafted (combat-ready); hidden otherwise.
         if (_drafted)
         {
-            float pr = Mathf.Min(Size.X, Size.Y) * 0.16f;
-            var pc = new Vector2(Size.X - pr - 3f, Size.Y - pr - 3f);
-            DrawCircle(pc, pr + 2f, BadgeBack);
-            DrawCircle(pc, pr, DraftBadge);
+            var pc = new Vector2(Size.X - br - 3f, Size.Y - br - 3f);
+            DrawBadge(pc, br, DraftBadge);
             // Tiny sword glyph: blade with the crossguard up near the hilt so
             // it reads as a sword, not a plus. Pommel dot at the base.
-            DrawLine(pc + new Vector2(0f, -pr * 0.60f), pc + new Vector2(0f, pr * 0.62f), BadgeMark, 1.6f);
-            DrawLine(pc + new Vector2(-pr * 0.42f, -pr * 0.30f), pc + new Vector2(pr * 0.42f, -pr * 0.30f), BadgeMark, 1.5f);
-            DrawCircle(pc + new Vector2(0f, pr * 0.62f), 1.4f, BadgeMark);
+            DrawLine(pc + new Vector2(0f, -br * 0.60f), pc + new Vector2(0f, br * 0.62f), BadgeMark, 1.6f);
+            DrawLine(pc + new Vector2(-br * 0.42f, -br * 0.30f), pc + new Vector2(br * 0.42f, -br * 0.30f), BadgeMark, 1.5f);
+            DrawCircle(pc + new Vector2(0f, br * 0.62f), 1.4f, BadgeMark);
         }
+
+        // Bleeding indicator, top-right corner: a red badge with a white blood
+        // droplet (round bottom + pointed top).
+        if (_bleeding)
+        {
+            var pc = new Vector2(Size.X - br - 3f, br + 3f);
+            DrawBadge(pc, br, BleedBadge);
+            float dr = br * 0.42f;
+            DrawCircle(pc + new Vector2(0f, br * 0.22f), dr, BadgeMark);
+            var drop = new[]
+            {
+                pc + new Vector2(0f, -br * 0.58f),
+                pc + new Vector2(-dr, br * 0.10f),
+                pc + new Vector2(dr, br * 0.10f),
+            };
+            DrawColoredPolygon(drop, BadgeMark);
+        }
+
+        // Downed indicator, top-left corner: an amber badge with a white
+        // down-chevron (incapacitated / unconscious).
+        if (_downed)
+        {
+            var pc = new Vector2(br + 3f, br + 3f);
+            DrawBadge(pc, br, DownedBadge);
+            DrawLine(pc + new Vector2(-br * 0.45f, -br * 0.18f), pc + new Vector2(0f, br * 0.45f), BadgeMark, 1.9f);
+            DrawLine(pc + new Vector2(br * 0.45f, -br * 0.18f), pc + new Vector2(0f, br * 0.45f), BadgeMark, 1.9f);
+        }
+    }
+
+    // Corner badge backing: a dark outline ring under a colored face.
+    private void DrawBadge(Vector2 center, float r, Color face)
+    {
+        DrawCircle(center, r + 2f, BadgeBack);
+        DrawCircle(center, r, face);
     }
 }

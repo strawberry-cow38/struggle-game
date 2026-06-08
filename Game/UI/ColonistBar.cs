@@ -104,7 +104,7 @@ public partial class ColonistBar : CanvasLayer
             Color cardEdge = selected ? UiTheme.Accent : UiTheme.Border;
             Color cardGlow = selected ? new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.45f) : new Color(0, 0, 0, 0);
             card.AddThemeStyleboxOverride("panel", CardBox(cardEdge, cardGlow));
-            frame.AddThemeStyleboxOverride("panel", FrameBox(ring, ring));
+            frame.AddThemeStyleboxOverride("panel", FrameBox(ring));
             if (has)
             {
                 string lo = LoadoutSig(d);
@@ -331,16 +331,14 @@ public partial class ColonistBar : CanvasLayer
         return sb;
     }
 
-    // Inner portrait frame: dark inset with the same mood-ring border + glow as
-    // the card, so the ring reads on both the card edge and the portrait edge.
-    private static StyleBoxFlat FrameBox(Color border, Color glow)
+    // Inner portrait frame: dark inset with the mood-ring border (no glow — the
+    // ring reads as a colored edge on the portrait).
+    private static StyleBoxFlat FrameBox(Color border)
     {
         var b = new StyleBoxFlat { BgColor = UiTheme.Inset };
         b.BorderColor = border;
         b.BorderWidthLeft = b.BorderWidthRight = b.BorderWidthTop = b.BorderWidthBottom = 2;
         b.CornerRadiusTopLeft = b.CornerRadiusTopRight = b.CornerRadiusBottomLeft = b.CornerRadiusBottomRight = 4;
-        b.ShadowColor = new Color(glow.R, glow.G, glow.B, 0.45f);
-        b.ShadowSize = 6;
         return b;
     }
 
@@ -388,7 +386,7 @@ public partial class ColonistBar : CanvasLayer
 
             // Top-down "clone" of the pawn + their equipment, on a dark inset.
             var frame = new PanelContainer { CustomMinimumSize = new Vector2(PortraitSize, PortraitSize), MouseFilter = Control.MouseFilterEnum.Ignore };
-            frame.AddThemeStyleboxOverride("panel", FrameBox(UiTheme.Border, UiTheme.Border)); // recolored per-mood each frame
+            frame.AddThemeStyleboxOverride("panel", FrameBox(UiTheme.Border)); // recolored per-mood each frame
             var portrait = new PortraitView { MouseFilter = Control.MouseFilterEnum.Ignore };
             frame.AddChild(portrait);
             col.AddChild(frame);
@@ -414,9 +412,15 @@ public partial class ColonistBar : CanvasLayer
     {
         var sb = new System.Text.StringBuilder();
         sb.Append(d.Drafted ? 'D' : '-');
+        sb.Append(IsBleeding(d) ? 'B' : '-');
+        sb.Append(IsDowned(d) ? 'X' : '-');
         foreach (var eq in d.Equipped) sb.Append(eq.ItemPath).Append(';');
         return sb.ToString();
     }
+
+    private static bool IsBleeding(in DummyState d) => d.Health.BleedRate > 0f;
+    // Downed = knocked out, or legs wrecked enough that they can't move.
+    private static bool IsDowned(in DummyState d) => d.Health.Unconscious || d.Health.Moving < 0.10f;
 
     private static void ApplyLoadout(PortraitView portrait, DummyState d)
     {
@@ -429,7 +433,7 @@ public partial class ColonistBar : CanvasLayer
             else if (def.IsWeapon) melee = true;
             if (def.IsArmor) armor = true;
         }
-        portrait.Set(d.Drafted, rangedLen, melee, armor);
+        portrait.Set(d.Drafted, rangedLen, melee, armor, IsBleeding(d), IsDowned(d));
     }
 
     private void Reposition()
