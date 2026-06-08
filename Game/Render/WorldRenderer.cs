@@ -89,6 +89,13 @@ public partial class WorldRenderer : Node2D
     private static readonly Color BlueprintBorder = new(0.45f, 0.75f, 1.00f, 0.85f);
     private static readonly Color BlueprintProgress = new(0.95f, 0.85f, 0.20f, 0.85f);
     private static readonly Color SelectionRing = new(1.0f, 1.0f, 0.20f, 1.0f);
+    private static readonly Color SelBlue = new(0.60f, 0.82f, 0.99f); // button-edge cyan
+
+    // Animated selection brackets: per-id age (spawn → hone-in → rotate) + a
+    // shared clock for the rotation/flicker.
+    private double _selTime;
+    private Dictionary<int, double>? _selSince;
+    private readonly List<int> _selPruneScratch = new();
     private static readonly Color PathLineColor = new(1.0f, 0.92f, 0.10f, 0.85f);
     private static readonly Color PathTargetColor = new(1.0f, 0.92f, 0.10f, 1.0f);
     // Dimmer line linking queued (not-yet-active) move/action waypoints.
@@ -235,6 +242,7 @@ public partial class WorldRenderer : Node2D
 
     public override void _Process(double delta)
     {
+        _selTime += delta;
         QueueRedraw();
         _visualLighting?.Tick();
     }
@@ -678,6 +686,14 @@ public partial class WorldRenderer : Node2D
         _selectedDummyIdsScratch ??= new HashSet<int>();
         _selectedDummyIdsScratch.Clear();
         foreach (var sid in snap.SelectedDummyIds) _selectedDummyIdsScratch.Add(sid);
+        // Track when each selection began (for the spawn/hone-in animation) and
+        // drop ids no longer selected.
+        _selSince ??= new Dictionary<int, double>();
+        foreach (var sid in _selectedDummyIdsScratch)
+            if (!_selSince.ContainsKey(sid)) _selSince[sid] = _selTime;
+        _selPruneScratch.Clear();
+        foreach (var k in _selSince.Keys) if (!_selectedDummyIdsScratch.Contains(k)) _selPruneScratch.Add(k);
+        foreach (var k in _selPruneScratch) _selSince.Remove(k);
         // Enemy ids, so combat labels can name a target "Raider" vs "Colonist".
         _enemyIdScratch.Clear();
         foreach (var d in snap.Dummies) if (d.IsEnemy) _enemyIdScratch.Add(d.EntityId);
@@ -793,7 +809,8 @@ public partial class WorldRenderer : Node2D
                 }
                 if (_selectedDummyIdsScratch.Contains(d.EntityId))
                 {
-                    DrawArc(center, radius + 5f, 0f, Mathf.Tau, 32, SelectionRing, 2f, antialiased: true);
+                    float selAge = (float)(_selTime - (_selSince!.TryGetValue(d.EntityId, out var t0) ? t0 : _selTime));
+                    DrawSelectionBrackets(center, radius + 7f, selAge, (float)_selTime);
                     // Drafted + holding a ranged weapon → show its max range ring.
                     // ONLY for a lone selection — a big tessellated arc per frame
                     // per pawn is costly (and N overlapping rings is just clutter).
@@ -1393,6 +1410,55 @@ public partial class WorldRenderer : Node2D
     }
 
     private static readonly Color ForbiddenMarkColor = new(0.95f, 0.25f, 0.25f, 0.95f);
+
+    // Animated selection indicator: four rounded-square L-corner brackets in
+    // button-blue. On select they spawn spread out + faded, hone inward to snug
+    // around the target, then rotate slowly — with the same pulse-on-select +
+    // VFD flicker glow as the UI buttons.
+    private void DrawSelectionBrackets(Vector2 center, float half, float age, float time)
+    {
+        float hone = Mathf.Exp(-age * 6f);              // 1 → 0: corners converge
+        float h = half + hone * half * 0.7f;            // start spread, settle in
+        float rot = Mathf.Max(0f, age - 0.3f) * 0.5f;   // rotate only after honing in
+        float b = StruggleGame.Game.UI.UiTheme.PulseFlicker(age); // pulse + flicker
+        float appear = Mathf.Clamp(age * 5f, 0f, 1f);   // fade in
+
+        float arm = h * 0.42f, r = h * 0.30f;
+        var line = new Color(SelBlue.R, SelBlue.G, SelBlue.B, Mathf.Lerp(0.55f, 1.0f, b) * appear);
+        var glow = new Color(SelBlue.R, SelBlue.G, SelBlue.B, 0.32f * b * appear);
+
+        int[] sx = { 1, 1, -1, -1 };
+        int[] sy = { 1, -1, -1, 1 };
+        for (int i = 0; i < 4; i++)
+        {
+            var pts = CornerL(center, h, arm, r, sx[i], sy[i], rot);
+            DrawPolyline(pts, glow, 5f, antialiased: true);
+            DrawPolyline(pts, line, 2.2f, antialiased: true);
+        }
+    }
+
+    // One rounded-L corner: inward arm → quarter-arc → inward arm, rotated.
+    private static Vector2[] CornerL(Vector2 c, float H, float A, float r, int sx, int sy, float rot)
+    {
+        var local = new List<Vector2>(8)
+        {
+            new(sx * (H - A), sy * H),
+            new(sx * (H - r), sy * H),
+        };
+        var ac = new Vector2(sx * (H - r), sy * (H - r));
+        var p0 = new Vector2(0, sy * r);
+        var p1 = new Vector2(sx * r, 0);
+        for (int k = 1; k < 4; k++)
+            local.Add(ac + p0.Lerp(p1, k / 4f).Normalized() * r);
+        local.Add(new Vector2(sx * H, sy * (H - r)));
+        local.Add(new Vector2(sx * H, sy * (H - A)));
+
+        var outp = new Vector2[local.Count];
+        float cos = Mathf.Cos(rot), sin = Mathf.Sin(rot);
+        for (int i = 0; i < local.Count; i++)
+            outp[i] = c + new Vector2(local[i].X * cos - local[i].Y * sin, local[i].X * sin + local[i].Y * cos);
+        return outp;
+    }
 
     private void DrawForbiddenMark(TilePos tile)
     {
