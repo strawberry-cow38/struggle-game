@@ -195,7 +195,7 @@ public static class UiTheme
     {
         float a = (float)ageSinceSelect;
         float pulse = Mathf.Exp(-a * 6f);              // 1 → 0 over ~0.5s
-        float b = Mathf.Clamp(0.30f + FlickerNoise(a) * 0.35f + pulse * 0.85f, 0f, 1f);
+        float b = Mathf.Clamp(0.24f + FlickerNoise(a) * 0.22f + pulse * 0.85f, 0f, 1f);
         box.Flat.ShadowSize = (int)Mathf.Lerp(6f, 18f, b);
         box.Flat.ShadowColor = new Color(color.R, color.G, color.B, Mathf.Lerp(0.16f, 0.62f, b));
         box.EmitChanged();
