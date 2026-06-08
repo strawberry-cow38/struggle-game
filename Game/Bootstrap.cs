@@ -199,8 +199,10 @@ public partial class Bootstrap : Node2D
         hud.HealthTab = healthTab;
         hud.NeedsTab = needsTab;
         healthTab.PawnPanel = pawnInfoPanel;
+        healthTab.Hud = hud;
         needsTab.PawnPanel = pawnInfoPanel;
         needsTab.HealthRef = healthTab;
+        needsTab.Hud = hud;
 
         var debugBar = new DebugBar { Tools = _tools, Host = _host, Name = "DebugBar" };
         AddChild(debugBar);

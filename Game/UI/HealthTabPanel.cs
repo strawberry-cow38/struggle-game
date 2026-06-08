@@ -16,6 +16,7 @@ public partial class HealthTabPanel : CanvasLayer
     public SimHost? Host { get; set; }
     // Aligned to sit directly above the pawn card and share its width.
     public PawnInfoPanel? PawnPanel { get; set; }
+    public HudOverlay? Hud { get; set; } // cap growth at the clock's bottom
 
     private const int PanelWidth = 700;  // wider than the pawn card to fit conditions
     private const int PanelHeight = 460;
@@ -335,7 +336,8 @@ public partial class HealthTabPanel : CanvasLayer
         // conditions list scrolls inside).
         float minH = _vbox is null ? PanelHeight : Mathf.Max(220f, _vbox.GetCombinedMinimumSize().Y + 24f);
         float condNatural = (_conditionsCol?.GetCombinedMinimumSize().Y ?? 0f) + 120f;
-        float maxToTop = panelTop - GapAbovePanel - 12f;
+        float topLimit = Hud is not null ? Hud.ClockBottom + 10f : 12f;
+        float maxToTop = panelTop - GapAbovePanel - topLimit;
         float h = Mathf.Min(Mathf.Max(minH, condNatural), Mathf.Max(minH, maxToTop));
         float y = panelTop - GapAbovePanel - h;
         _root.Size = new Vector2(w, h);

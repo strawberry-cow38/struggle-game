@@ -16,6 +16,7 @@ public partial class NeedsPanel : CanvasLayer
     public SimHost? Host { get; set; }
     public PawnInfoPanel? PawnPanel { get; set; }
     public HealthTabPanel? HealthRef { get; set; } // match its height exactly
+    public HudOverlay? Hud { get; set; }           // cap growth at the clock's bottom
 
     private const int PanelWidth = 700;   // fixed, matches the health pane
     private const int PanelHeight = 460;
@@ -98,9 +99,22 @@ public partial class NeedsPanel : CanvasLayer
         thoughtsHeader.AddThemeColorOverride("font_color", UiTheme.TextDim);
         vbox.AddChild(thoughtsHeader);
 
-        _scroll = new ScrollContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ExpandFill };
-        _scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+        _scroll = new ScrollContainer
+        {
+            MouseFilter = Control.MouseFilterEnum.Pass,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            VerticalScrollMode = ScrollContainer.ScrollMode.ShowAlways,
+        };
         vbox.AddChild(_scroll);
+
+        // Style the scrollbar to match the health pane.
+        var vbar = _scroll.GetVScrollBar();
+        vbar.CustomMinimumSize = new Vector2(9, 0);
+        vbar.AddThemeStyleboxOverride("scroll", UiTheme.InsetBox(UiTheme.Inset, corner: 4));
+        vbar.AddThemeStyleboxOverride("grabber", UiTheme.Box(UiTheme.PanelDeep, UiTheme.Border, 1, 4, 0, glow: false));
+        vbar.AddThemeStyleboxOverride("grabber_highlight", UiTheme.Box(UiTheme.PanelDeep.Lightened(0.08f), UiTheme.Border, 1, 4, 0, glow: false));
+        vbar.AddThemeStyleboxOverride("grabber_pressed", UiTheme.Box(UiTheme.PanelDeep.Lightened(0.14f), UiTheme.Border, 1, 4, 0, glow: false));
         _thoughtsCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _thoughtsCol.AddThemeConstantOverride("separation", 3);
         _scroll.AddChild(_thoughtsCol);
@@ -230,7 +244,8 @@ public partial class NeedsPanel : CanvasLayer
         // list, capped at the top of the screen (then the list scrolls).
         float minH = HealthRef?.ContentHeight ?? (_vbox is null ? PanelHeight : Mathf.Max(220f, _vbox.GetCombinedMinimumSize().Y + 24f));
         float natural = (_vbox?.GetCombinedMinimumSize().Y ?? 0f) + (_thoughtsCol?.GetCombinedMinimumSize().Y ?? 0f) + 24f;
-        float maxToTop = panelTop - GapAbovePanel - 12f;
+        float topLimit = Hud is not null ? Hud.ClockBottom + 10f : 12f;
+        float maxToTop = panelTop - GapAbovePanel - topLimit;
         float h = Mathf.Min(Mathf.Max(natural, minH), Mathf.Max(minH, maxToTop));
         float y = panelTop - GapAbovePanel - h;
         _root.Size = new Vector2(PanelWidth, h);

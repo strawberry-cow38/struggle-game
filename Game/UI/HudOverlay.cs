@@ -17,8 +17,13 @@ public partial class HudOverlay : CanvasLayer
     public NeedsPanel? NeedsTab { get; set; }
 
     private DigitalClock _clock = null!;
+    private PanelContainer _clockPanel = null!;
     private Label _perfLabel = null!;
     private Label _tileLabel = null!;
+
+    // Bottom edge of the top-left clock panel, so bottom-left panes can cap
+    // their upward growth here instead of overlapping it.
+    public float ClockBottom => _clockPanel is null ? 0f : _clockPanel.GetGlobalRect().End.Y;
 
     // Refresh the readout at most this often. Per-frame at 1500+ fps the
     // sim queries + string interpolation showed up under the mouse-move
@@ -33,12 +38,12 @@ public partial class HudOverlay : CanvasLayer
 
         // Clock / date — Zomboid-style fire digital watch, top-left.
         _clock = new DigitalClock { Name = "Clock", MouseFilter = Control.MouseFilterEnum.Ignore };
-        var clockPanel = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
-        clockPanel.AddThemeStyleboxOverride("panel", UiTheme.Box(UiTheme.Panel, UiTheme.Border, 1, 8, 8, glow: false));
-        clockPanel.AddChild(_clock);
-        clockPanel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-        clockPanel.OffsetLeft = 12; clockPanel.OffsetTop = 12;
-        AddChild(clockPanel);
+        _clockPanel = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        _clockPanel.AddThemeStyleboxOverride("panel", UiTheme.Box(UiTheme.Panel, UiTheme.Border, 1, 8, 8, glow: false));
+        _clockPanel.AddChild(_clock);
+        _clockPanel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        _clockPanel.OffsetLeft = 12; _clockPanel.OffsetTop = 12;
+        AddChild(_clockPanel);
 
         // FPS / TPS — glass panel, top-right.
         _perfLabel = new Label { Name = "Perf", HorizontalAlignment = HorizontalAlignment.Right, MouseFilter = Control.MouseFilterEnum.Ignore };
