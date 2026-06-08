@@ -337,7 +337,7 @@ public partial class ColonistBar : CanvasLayer
     {
         var b = new StyleBoxFlat { BgColor = UiTheme.Inset };
         b.BorderColor = border;
-        b.BorderWidthLeft = b.BorderWidthRight = b.BorderWidthTop = b.BorderWidthBottom = 2;
+        b.BorderWidthLeft = b.BorderWidthRight = b.BorderWidthTop = b.BorderWidthBottom = 4;
         b.CornerRadiusTopLeft = b.CornerRadiusTopRight = b.CornerRadiusBottomLeft = b.CornerRadiusBottomRight = 4;
         return b;
     }
@@ -345,9 +345,10 @@ public partial class ColonistBar : CanvasLayer
     // Red (low) → amber (mid) → green (high) mood ramp.
     private static Color MoodColor(float mood)
     {
-        var red = new Color(0.90f, 0.26f, 0.22f);
-        var amber = new Color(0.95f, 0.78f, 0.22f);
-        var green = new Color(0.38f, 0.85f, 0.40f);
+        // Vivid, well-separated hues so orange and green don't blur together.
+        var red = new Color(0.98f, 0.10f, 0.10f);
+        var amber = new Color(1.00f, 0.58f, 0.00f);
+        var green = new Color(0.10f, 0.90f, 0.18f);
         mood = Mathf.Clamp(mood, 0f, 1f);
         return mood < 0.5f ? red.Lerp(amber, mood * 2f) : amber.Lerp(green, (mood - 0.5f) * 2f);
     }
