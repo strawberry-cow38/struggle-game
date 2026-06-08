@@ -43,6 +43,8 @@ public partial class HealthTabPanel : CanvasLayer
     private VBoxContainer _vbox = null!;
     private ScanlineStyleBox _panelBox = null!;
     private double _glowT;
+    private ScanlineStyleBox? _activeTabGlow; // active tab's box, flickered each frame
+    private double _tabSelectedAt;            // _glowT when the active tab last changed
     private Button _overviewTab = null!;
     private Button _opsTab = null!;
     private Control _body = null!;
@@ -210,6 +212,7 @@ public partial class HealthTabPanel : CanvasLayer
         if (!_open) return;
         _glowT += delta;
         UiTheme.AnimateGlow(_panelBox, _glowT);
+        if (_activeTabGlow is not null) UiTheme.FlickerGlow(_activeTabGlow, _glowT - _tabSelectedAt, UiTheme.ButtonEdge);
         if (Host?.LatestSnapshot is not { } snap) return;
 
         // Follow the live selection; close when nothing's selected.
@@ -449,27 +452,40 @@ public partial class HealthTabPanel : CanvasLayer
         return sb.ToString();
     }
 
-    private static Button MakeTab(string text)
+    private Button MakeTab(string text)
     {
         var t = new Button { Text = text, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(120, 30) };
         StyleTab(t, active: false);
         return t;
     }
 
-    private static void StyleTab(Button t, bool active)
+    private void StyleTab(Button t, bool active)
     {
-        var box = UiTheme.ButtonBox(active ? UiTheme.ButtonActive : UiTheme.Button, active);
-        t.AddThemeStyleboxOverride("normal", box);
-        t.AddThemeStyleboxOverride("pressed", box);
-        t.AddThemeStyleboxOverride("hover", UiTheme.ButtonBox(active ? UiTheme.ButtonActive : UiTheme.ButtonHover, active));
+        if (active)
+        {
+            var box = UiTheme.ActiveTabBox();
+            t.AddThemeStyleboxOverride("normal", box);
+            t.AddThemeStyleboxOverride("pressed", box);
+            t.AddThemeStyleboxOverride("hover", box);
+            _activeTabGlow = box;
+        }
+        else
+        {
+            var box = UiTheme.ButtonBox(UiTheme.Button, false);
+            t.AddThemeStyleboxOverride("normal", box);
+            t.AddThemeStyleboxOverride("pressed", box);
+            t.AddThemeStyleboxOverride("hover", UiTheme.ButtonBox(UiTheme.ButtonHover, false));
+        }
         t.AddThemeColorOverride("font_color", UiTheme.Text);
     }
 
     // Highlight the open tab + swap its content (Operations is a stub for now).
     private void SetActiveTab(bool overview)
     {
+        _activeTabGlow = null;          // recaptured by StyleTab for the active one
         StyleTab(_overviewTab, overview);
         StyleTab(_opsTab, !overview);
+        _tabSelectedAt = _glowT;        // restart the click pulse
         _body.Visible = overview;
         _opsStub.Visible = !overview;
     }

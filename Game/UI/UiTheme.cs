@@ -189,16 +189,37 @@ public static class UiTheme
         return Mathf.Clamp(level, 0f, 1f);
     }
 
-    // Selected-tab glow: a bright pulse right after selection (age≈0) that
-    // decays over ~0.5s, then settles into the uneven flicker above.
-    public static void FlickerGlow(ScanlineStyleBox box, double ageSinceSelect, Color color)
+    // Glow brightness 0..1: a bright pulse right after selection (age≈0) that
+    // decays over ~0.5s, then settles into the uneven flicker above. Shared by
+    // the info-panel tabs and the colonist-card selection outline.
+    public static float PulseFlicker(double ageSinceSelect)
     {
         float a = (float)ageSinceSelect;
         float pulse = Mathf.Exp(-a * 6f);              // 1 → 0 over ~0.5s
-        float b = Mathf.Clamp(0.24f + FlickerNoise(a) * 0.22f + pulse * 0.85f, 0f, 1f);
-        box.Flat.ShadowSize = (int)Mathf.Lerp(6f, 18f, b);
-        box.Flat.ShadowColor = new Color(color.R, color.G, color.B, Mathf.Lerp(0.16f, 0.62f, b));
+        return Mathf.Clamp(0.24f + FlickerNoise(a) * 0.22f + pulse * 0.85f, 0f, 1f);
+    }
+
+    // Map a glow brightness to a shadow size / alpha (kept together so every
+    // pulsing element matches).
+    public static int GlowSize(float b) => (int)Mathf.Lerp(6f, 18f, b);
+    public static float GlowAlpha(float b) => Mathf.Lerp(0.16f, 0.62f, b);
+
+    // Drive a scan-line box's glow from the pulse+flicker curve.
+    public static void FlickerGlow(ScanlineStyleBox box, double ageSinceSelect, Color color)
+    {
+        float b = PulseFlicker(ageSinceSelect);
+        box.Flat.ShadowSize = GlowSize(b);
+        box.Flat.ShadowColor = new Color(color.R, color.G, color.B, GlowAlpha(b));
         box.EmitChanged();
+    }
+
+    // The selected/active tab box: cyan-lit with the bright edge + a glow that
+    // callers animate via FlickerGlow.
+    public static ScanlineStyleBox ActiveTabBox()
+    {
+        var sb = Scan(Box(ButtonActive, ButtonEdge, 1, 6, 4, glow: true), inset: 3f);
+        sb.SetContentMarginAll(4);
+        return sb;
     }
 
     // Pulse a panel box's glow (call each frame with accumulated time).

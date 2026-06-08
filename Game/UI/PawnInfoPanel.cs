@@ -211,9 +211,7 @@ public partial class PawnInfoPanel : CanvasLayer
     {
         if (active)
         {
-            var flat = UiTheme.Box(UiTheme.ButtonActive, UiTheme.ButtonEdge, 1, 6, 4, glow: true);
-            var box = UiTheme.Scan(flat, inset: 3f);
-            box.SetContentMarginAll(4);
+            var box = UiTheme.ActiveTabBox();
             t.AddThemeStyleboxOverride("normal", box);
             t.AddThemeStyleboxOverride("pressed", box);
             t.AddThemeStyleboxOverride("hover", box);

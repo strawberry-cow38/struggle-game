@@ -37,6 +37,9 @@ public partial class ColonistBar : CanvasLayer
     private readonly List<int> _newScratch = new();
     private string _lastSig = "";
 
+    private double _glowClock;                          // advances each frame, drives the selection glow
+    private readonly Dictionary<int, double> _selSince = new(); // when each id became selected (for the pulse)
+
     private bool _dragging;       // rect-select (started on bar background)
     private bool _reordering;     // dragging a card to a new slot
     private int _reorderId = -1;
@@ -65,6 +68,7 @@ public partial class ColonistBar : CanvasLayer
     public override void _Process(double delta)
     {
         if (Host?.LatestSnapshot is not { } snap) { _bar.Visible = false; return; }
+        _glowClock += delta;
 
         var byId = new Dictionary<int, DummyState>();
         foreach (var d in snap.Dummies)
@@ -100,10 +104,20 @@ public partial class ColonistBar : CanvasLayer
             bool has = byId.TryGetValue(id, out var d);
             Color ring = has ? MoodColor(d.Mood) : UiTheme.Border;
             // Outer card: neutral edge, cyan selection outline around the whole
-            // card when selected (glow only then). Mood ring stays on the frame.
+            // card when selected, with a pulse-on-select + flicker glow (matches
+            // the info-panel tabs). Mood ring stays on the frame.
             Color cardEdge = selected ? UiTheme.Accent : UiTheme.Border;
-            Color cardGlow = selected ? new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.45f) : new Color(0, 0, 0, 0);
-            card.AddThemeStyleboxOverride("panel", CardBox(cardEdge, cardGlow));
+            Color cardGlow = new Color(0, 0, 0, 0);
+            int cardGlowSize = 0;
+            if (selected)
+            {
+                if (!_selSince.ContainsKey(id)) _selSince[id] = _glowClock;
+                float gb = UiTheme.PulseFlicker(_glowClock - _selSince[id]);
+                cardGlow = new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, UiTheme.GlowAlpha(gb));
+                cardGlowSize = UiTheme.GlowSize(gb);
+            }
+            else _selSince.Remove(id);
+            card.AddThemeStyleboxOverride("panel", CardBox(cardEdge, cardGlow, cardGlowSize));
             frame.AddThemeStyleboxOverride("panel", FrameBox(ring));
             if (has)
             {
@@ -314,14 +328,14 @@ public partial class ColonistBar : CanvasLayer
     // around the whole card), the VFD scan-line grid, and a glow only when a
     // glow color is supplied (alpha > 0) — the mood ring lives on the inner
     // frame now, not the card edge.
-    private static ScanlineStyleBox CardBox(Color border, Color glow)
+    private static ScanlineStyleBox CardBox(Color border, Color glow, int glowSize = 0)
     {
         var b = new StyleBoxFlat { BgColor = UiTheme.Panel };
         b.BorderColor = border;
         b.BorderWidthLeft = b.BorderWidthRight = b.BorderWidthTop = b.BorderWidthBottom = 2;
         b.CornerRadiusTopLeft = b.CornerRadiusTopRight = b.CornerRadiusBottomLeft = b.CornerRadiusBottomRight = 8;
         b.ShadowColor = glow;
-        b.ShadowSize = glow.A > 0f ? 7 : 0;
+        b.ShadowSize = glowSize;
         var sb = UiTheme.Scan(b, inset: 5f);
         // Mirror the card's asymmetric padding onto the wrapper (it drives layout).
         sb.SetContentMargin(Side.Left, 11);
