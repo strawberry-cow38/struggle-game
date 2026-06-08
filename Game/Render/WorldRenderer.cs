@@ -1428,11 +1428,11 @@ public partial class WorldRenderer : Node2D
     private static long IdKey(int tag, int id) => ((long)tag << 40) | (uint)id;
     private static long TileKey(int tag, TilePos t) => ((long)tag << 40) | (uint)(t.X * 100000 + t.Y);
 
-    private void DrawSelectionBrackets(Vector2 center, float half, float age, float time)
+    private void DrawSelectionBrackets(Vector2 center, float half, float age, float time, bool rotate = true)
     {
         float hone = Mathf.Exp(-age * 6f);              // 1 → 0: corners converge
         float h = half + hone * half * 0.7f;            // start spread, settle in
-        float rot = Mathf.Max(0f, age - 0.3f) * 0.5f;   // rotate only after honing in
+        float rot = rotate ? Mathf.Max(0f, age - 0.3f) * 0.5f : 0f; // rotate after honing in (off for buildings)
         float b = StruggleGame.Game.UI.UiTheme.PulseFlicker(age); // pulse + flicker
         float appear = Mathf.Clamp(age * 5f, 0f, 1f);   // fade in
 
@@ -1689,7 +1689,7 @@ public partial class WorldRenderer : Node2D
     {
         float cx = (tile.X + 0.5f) * PixelsPerTile;
         float cy = (tile.Y + 0.5f) * PixelsPerTile;
-        DrawSelectionBrackets(new Vector2(cx, cy), PixelsPerTile * 0.52f, SelAge(TileKey(3, tile)), (float)_selTime);
+        DrawSelectionBrackets(new Vector2(cx, cy), PixelsPerTile * 0.52f, SelAge(TileKey(3, tile)), (float)_selTime, rotate: false);
     }
 
     // Red X over a tile — same look as the door forbid mark, reused for
