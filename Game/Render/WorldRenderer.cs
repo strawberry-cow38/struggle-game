@@ -525,37 +525,35 @@ public partial class WorldRenderer : Node2D
                 foreach (var t in Host.SelectedDoorTiles) DrawSelectionOutline(t);
                 foreach (var t in Host.SelectedBlueprintTiles)
                 {
-                    DrawSelectionOutline(t);
+                    // Bed blueprints span two tiles → one box around the footprint.
+                    bool bed = false;
                     foreach (var bbp in snap.BedBlueprints)
-                    {
-                        if (bbp.Origin == t)
-                        {
-                            DrawSelectionOutline(BedOrientations.Foot(bbp.Origin, bbp.Orientation));
-                            break;
-                        }
-                    }
+                        if (bbp.Origin == t) { DrawStructBrackets(t, BedOrientations.Foot(bbp.Origin, bbp.Orientation), TileKey(3, t)); bed = true; break; }
+                    if (!bed) DrawSelectionOutline(t);
                 }
                 foreach (var t in Host.SelectedLampTiles) DrawSelectionOutline(t);
                 foreach (var t in Host.SelectedUrBoardTiles) DrawSelectionOutline(t);
                 foreach (var t in Host.SelectedBedTiles)
                 {
-                    DrawSelectionOutline(t);
+                    // Bed = origin + foot → one box around the whole bed.
+                    TilePos foot = t;
                     foreach (var b in snap.Beds)
-                    {
-                        if (b.Origin == t)
-                        {
-                            DrawSelectionOutline(BedOrientations.Foot(b.Origin, b.Orientation));
-                            break;
-                        }
-                    }
+                        if (b.Origin == t) { foot = BedOrientations.Foot(b.Origin, b.Orientation); break; }
+                    DrawStructBrackets(t, foot, TileKey(3, t));
                 }
                 foreach (var t in Host.SelectedStoveTiles)
                 {
                     foreach (var s in snap.Stoves)
                     {
                         if (s.Origin != t) continue;
+                        // One box around the stove body; the standing tile stays separate.
+                        int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
                         foreach (var bt in StoveOrientations.BodyTiles(s.Origin, s.Orientation))
-                            DrawSelectionOutline(bt);
+                        {
+                            minX = Mathf.Min(minX, bt.X); minY = Mathf.Min(minY, bt.Y);
+                            maxX = Mathf.Max(maxX, bt.X); maxY = Mathf.Max(maxY, bt.Y);
+                        }
+                        DrawTileBoxBrackets(minX, minY, maxX, maxY, TileKey(3, t));
                         DrawSelectionOutline(StoveOrientations.StandingTile(s.Origin, s.Orientation));
                         break;
                     }
@@ -1431,14 +1429,20 @@ public partial class WorldRenderer : Node2D
     private static long TileKey(int tag, TilePos t) => ((long)tag << 40) | (uint)(t.X * 100000 + t.Y);
 
     private void DrawSelectionBrackets(Vector2 center, float half, float age, float time, bool rotate = true)
+        => DrawSelectionBrackets(center, half, half, age, time, rotate);
+
+    // Rectangular footprint version — four rounded-L corners around the box.
+    private void DrawSelectionBrackets(Vector2 center, float halfW, float halfH, float age, float time, bool rotate = true)
     {
         float hone = Mathf.Exp(-age * 6f);              // 1 → 0: corners converge
-        float h = half + hone * half * 0.7f;            // start spread, settle in
-        float rot = rotate ? Mathf.Max(0f, age - 0.3f) * 0.5f : 0f; // rotate after honing in (off for buildings)
+        float hw = halfW * (1f + hone * 0.7f);          // start spread, settle in
+        float hh = halfH * (1f + hone * 0.7f);
+        float rot = rotate ? Mathf.Max(0f, age - 0.3f) * 0.5f : 0f; // off for buildings
         float b = StruggleGame.Game.UI.UiTheme.PulseFlicker(age); // pulse + flicker
         float appear = Mathf.Clamp(age * 5f, 0f, 1f);   // fade in
 
-        float arm = h * 0.52f, r = h * 0.30f;
+        float m = Mathf.Min(hw, hh);
+        float arm = m * 0.52f, r = m * 0.30f;
         var line = new Color(SelBlue.R, SelBlue.G, SelBlue.B, Mathf.Lerp(0.80f, 1.0f, b) * appear);
         var glow = new Color(SelBlue.R, SelBlue.G, SelBlue.B, 0.45f * b * appear);
 
@@ -1446,27 +1450,41 @@ public partial class WorldRenderer : Node2D
         int[] sy = { 1, -1, -1, 1 };
         for (int i = 0; i < 4; i++)
         {
-            var pts = CornerL(center, h, arm, r, sx[i], sy[i], rot);
+            var pts = CornerL(center, hw, hh, arm, r, sx[i], sy[i], rot);
             DrawPolyline(pts, glow, 6.5f, antialiased: true);
             DrawPolyline(pts, line, 3.0f, antialiased: true);
         }
     }
 
-    // One rounded-L corner: inward arm → quarter-arc → inward arm, rotated.
-    private static Vector2[] CornerL(Vector2 c, float H, float A, float r, int sx, int sy, float rot)
+    // Brackets around a tile bounding box (single tile = square).
+    private void DrawTileBoxBrackets(int minX, int minY, int maxX, int maxY, long key, bool rotate = false)
+    {
+        float cx = (minX + maxX + 1) * 0.5f * PixelsPerTile;
+        float cy = (minY + maxY + 1) * 0.5f * PixelsPerTile;
+        float hw = (maxX - minX + 1) * 0.5f * PixelsPerTile + 2f;
+        float hh = (maxY - minY + 1) * 0.5f * PixelsPerTile + 2f;
+        DrawSelectionBrackets(new Vector2(cx, cy), hw, hh, SelAge(key), (float)_selTime, rotate);
+    }
+
+    // Box brackets around the bounding box of two tiles (multi-tile structures).
+    private void DrawStructBrackets(TilePos a, TilePos b, long key)
+        => DrawTileBoxBrackets(Mathf.Min(a.X, b.X), Mathf.Min(a.Y, b.Y), Mathf.Max(a.X, b.X), Mathf.Max(a.Y, b.Y), key);
+
+    // One rounded-L corner of a (halfW × halfH) box: inward arm → arc → inward arm.
+    private static Vector2[] CornerL(Vector2 c, float W, float H, float A, float r, int sx, int sy, float rot)
     {
         var local = new List<Vector2>(8)
         {
-            new(sx * (H - A), sy * H),
-            new(sx * (H - r), sy * H),
+            new(sx * (W - A), sy * H),
+            new(sx * (W - r), sy * H),
         };
-        var ac = new Vector2(sx * (H - r), sy * (H - r));
+        var ac = new Vector2(sx * (W - r), sy * (H - r));
         var p0 = new Vector2(0, sy * r);
         var p1 = new Vector2(sx * r, 0);
         for (int k = 1; k < 4; k++)
             local.Add(ac + p0.Lerp(p1, k / 4f).Normalized() * r);
-        local.Add(new Vector2(sx * H, sy * (H - r)));
-        local.Add(new Vector2(sx * H, sy * (H - A)));
+        local.Add(new Vector2(sx * W, sy * (H - r)));
+        local.Add(new Vector2(sx * W, sy * (H - A)));
 
         var outp = new Vector2[local.Count];
         float cos = Mathf.Cos(rot), sin = Mathf.Sin(rot);
@@ -1688,11 +1706,7 @@ public partial class WorldRenderer : Node2D
     // Cyan ring around a selected tile (wall / door / blueprint / job).
     // Two pixels inset so it doesn't overdraw the tile's own border art.
     private void DrawSelectionOutline(TilePos tile)
-    {
-        float cx = (tile.X + 0.5f) * PixelsPerTile;
-        float cy = (tile.Y + 0.5f) * PixelsPerTile;
-        DrawSelectionBrackets(new Vector2(cx, cy), PixelsPerTile * 0.52f, SelAge(TileKey(3, tile)), (float)_selTime, rotate: false);
-    }
+        => DrawTileBoxBrackets(tile.X, tile.Y, tile.X, tile.Y, TileKey(3, tile));
 
     // Red X over a tile — same look as the door forbid mark, reused for
     // blueprints / jobs the player has flagged Forbidden.
