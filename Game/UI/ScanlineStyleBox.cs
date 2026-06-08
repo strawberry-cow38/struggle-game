@@ -29,8 +29,8 @@ public partial class ScanlineStyleBox : StyleBox
             RenderingServer.CanvasItemAddLine(toCanvasItem, new Vector2(x0, y), new Vector2(x1, y), LineColor, 1f);
     }
 
-    // Delegate hit-testing + the draw bounds (incl. the glow shadow) to the
-    // inner box so clicks and the halo behave exactly like a plain panel.
-    public override Rect2 _GetDrawRect(Rect2 rect) => Flat.GetDrawRect(rect);
+    // Grow the draw bounds by the inner box's glow shadow so the halo isn't
+    // clipped to the panel rect (ShadowOffset is unused here, so size suffices).
+    public override Rect2 _GetDrawRect(Rect2 rect) => rect.Grow(Flat.ShadowSize);
     public override bool _TestMask(Vector2 point, Rect2 rect) => Flat.TestMask(point, rect);
 }
