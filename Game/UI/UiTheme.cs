@@ -171,13 +171,33 @@ public static class UiTheme
         return Mathf.Clamp(0.5f + 0.5f * n, 0f, 1f);
     }
 
-    // Flicker a scan-line box's glow between two shadow sizes/alphas of `color`.
-    // Slow + gentle: time scaled way down, and the swing is ~half the original.
-    public static void FlickerGlow(ScanlineStyleBox box, double t, Color color)
+    // Held-value hash noise in 0..1 — stair-steps to a new random level a few
+    // times a second, so it reads as an uneven flicker (failing-tube feel)
+    // rather than a smooth pulse.
+    private static float Hash01(int n)
     {
-        float f = Flicker((float)t * 0.18f);
-        box.Flat.ShadowSize = (int)Mathf.Lerp(8f, 14f, f);
-        box.Flat.ShadowColor = new Color(color.R, color.G, color.B, Mathf.Lerp(0.31f, 0.50f, f));
+        uint h = (uint)n * 2654435761u;
+        h ^= h >> 15; h *= 0x2c1b3c6du; h ^= h >> 12;
+        return (h & 0xFFFFu) / 65535f;
+    }
+
+    private static float FlickerNoise(float t)
+    {
+        int slot = (int)MathF.Floor(t * 11f);          // ~11 changes/sec, held between
+        float level = 0.45f + 0.55f * Hash01(slot);     // mostly bright, some dips
+        if (Hash01(slot * 2 + 7) < 0.16f) level *= 0.45f; // occasional sharp dropout
+        return Mathf.Clamp(level, 0f, 1f);
+    }
+
+    // Selected-tab glow: a bright pulse right after selection (age≈0) that
+    // decays over ~0.5s, then settles into the uneven flicker above.
+    public static void FlickerGlow(ScanlineStyleBox box, double ageSinceSelect, Color color)
+    {
+        float a = (float)ageSinceSelect;
+        float pulse = Mathf.Exp(-a * 6f);              // 1 → 0 over ~0.5s
+        float b = Mathf.Clamp(0.30f + FlickerNoise(a) * 0.35f + pulse * 0.85f, 0f, 1f);
+        box.Flat.ShadowSize = (int)Mathf.Lerp(6f, 18f, b);
+        box.Flat.ShadowColor = new Color(color.R, color.G, color.B, Mathf.Lerp(0.16f, 0.62f, b));
         box.EmitChanged();
     }
 

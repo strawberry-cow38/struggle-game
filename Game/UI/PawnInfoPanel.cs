@@ -61,6 +61,7 @@ public partial class PawnInfoPanel : CanvasLayer
     private string _activeCardTab = "";  // last-clicked non-Health tab
     private string _appliedTab = ""; // currently-styled active tab (sentinel forces first apply)
     private ScanlineStyleBox? _activeTabGlow; // selected tab's box, flickered each frame
+    private double _tabSelectedAt;            // _glowT when the active tab last changed (drives the click pulse)
     private long _lastSnapshotTick = -1;
 
     public override void _Ready()
@@ -236,6 +237,7 @@ public partial class PawnInfoPanel : CanvasLayer
         if (eff == _appliedTab) return;
         _appliedTab = eff;
         _activeTabGlow = null; // recaptured below if a tab is active
+        if (eff != "") _tabSelectedAt = _glowT; // restart the click pulse
         foreach (var (n, b) in _cardTabs) StyleCardTab(b, n == eff);
     }
 
@@ -259,7 +261,7 @@ public partial class PawnInfoPanel : CanvasLayer
         ApplyCardTabs(); // keep the Health tab lit while its panel is open
         _glowT += delta;
         UiTheme.AnimateGlow(_panelBox, _glowT);
-        if (_activeTabGlow is not null) UiTheme.FlickerGlow(_activeTabGlow, _glowT, UiTheme.ButtonEdge);
+        if (_activeTabGlow is not null) UiTheme.FlickerGlow(_activeTabGlow, _glowT - _tabSelectedAt, UiTheme.ButtonEdge);
         Reposition(); // re-anchor bottom-left as content height changes
         if (sel.Value != _shownPawnId || snap.Tick != _lastSnapshotTick)
         {
