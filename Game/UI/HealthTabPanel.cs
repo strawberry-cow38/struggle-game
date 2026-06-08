@@ -486,6 +486,10 @@ public partial class HealthTabPanel : CanvasLayer
         StyleTab(_overviewTab, overview);
         StyleTab(_opsTab, !overview);
         _tabSelectedAt = _glowT;        // restart the click pulse
+        // Keep the operations view as tall as the overview so the panel doesn't
+        // shrink/smush when switching tabs.
+        if (!overview && _body.Size.Y > 0f)
+            _opsStub.CustomMinimumSize = new Vector2(_opsStub.CustomMinimumSize.X, _body.Size.Y);
         _body.Visible = overview;
         _opsStub.Visible = !overview;
     }
