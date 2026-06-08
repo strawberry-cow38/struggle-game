@@ -147,6 +147,10 @@ public partial class WorldRenderer : Node2D
     private static readonly Color ProgressBarBg = new(0f, 0f, 0f, 0.6f);
     private static readonly Color ProgressBarFg = new(1f, 0.9f, 0.2f, 1f);
     private static readonly Color JobLabelColor = new(1f, 1f, 1f, 0.95f);
+    // Colonist name floats one line above the task label, with a soft shadow.
+    private const int NameFontSize = 13;
+    private static readonly Color NameLabelColor = new(1f, 1f, 1f, 1f);
+    private static readonly Color NameShadowColor = new(0f, 0f, 0f, 0.6f);
 
     // Render hot-path scratch — reused across _Draw calls so the per-frame
     // path doesn't allocate. _zoneScratch is shared between DrawStockpile
@@ -813,6 +817,18 @@ public partial class WorldRenderer : Node2D
                     : d.MeleeTargetId != 0 ? CombatLabel(2, d.MeleeTargetId, _enemyIdScratch.Contains(d.MeleeTargetId))
                     : d.Sleeping ? "Sleeping"
                     : (string.IsNullOrEmpty(d.Job) ? null : d.Job);
+                // Colonist name over the head, one line above the task label.
+                if (!d.IsEnemy && labelFont is not null && !string.IsNullOrEmpty(d.Name))
+                {
+                    if (!_jobLabelSizes.TryGetValue(d.Name, out var nameSize))
+                    {
+                        nameSize = labelFont.GetStringSize(d.Name, HorizontalAlignment.Center, -1f, NameFontSize);
+                        _jobLabelSizes[d.Name] = nameSize;
+                    }
+                    var nameAnchor = center + labelOffset - new Vector2(nameSize.X * 0.5f, labelFontSize + 3f);
+                    DrawString(labelFont, nameAnchor + new Vector2(1f, 1f), d.Name, HorizontalAlignment.Left, -1f, NameFontSize, NameShadowColor);
+                    DrawString(labelFont, nameAnchor, d.Name, HorizontalAlignment.Left, -1f, NameFontSize, NameLabelColor);
+                }
                 if (labelFont is not null && labelText is not null)
                 {
                     // Cache label width by string — set of distinct labels
