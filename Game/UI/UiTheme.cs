@@ -155,7 +155,30 @@ public static class UiTheme
     }
 
     // Pulse a scan-line panel's glow (the pulse lives on its inner glass box).
-    public static void AnimateGlow(ScanlineStyleBox box, double t) => AnimateGlow(box.Flat, t);
+    // EmitChanged so the wrapper's observers redraw (they watch the wrapper,
+    // not the inner flat we just mutated).
+    public static void AnimateGlow(ScanlineStyleBox box, double t)
+    {
+        AnimateGlow(box.Flat, t);
+        box.EmitChanged();
+    }
+
+    // VFD-style brightness flicker in 0..1, driven by a time value. Same noise
+    // shape as the digital clock so animated glows feel like the same hardware.
+    public static float Flicker(float t)
+    {
+        float n = Mathf.Sin(t * 27.3f) * 0.5f + Mathf.Sin(t * 11.1f + 1.7f) * 0.3f + Mathf.Sin(t * 53.7f) * 0.2f;
+        return Mathf.Clamp(0.5f + 0.5f * n, 0f, 1f);
+    }
+
+    // Flicker a scan-line box's glow between two shadow sizes/alphas of `color`.
+    public static void FlickerGlow(ScanlineStyleBox box, double t, Color color)
+    {
+        float f = Flicker((float)t);
+        box.Flat.ShadowSize = (int)Mathf.Lerp(6f, 16f, f);
+        box.Flat.ShadowColor = new Color(color.R, color.G, color.B, Mathf.Lerp(0.22f, 0.60f, f));
+        box.EmitChanged();
+    }
 
     // Pulse a panel box's glow (call each frame with accumulated time).
     public static void AnimateGlow(StyleBoxFlat box, double t)

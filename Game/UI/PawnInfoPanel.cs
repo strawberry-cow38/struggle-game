@@ -60,6 +60,7 @@ public partial class PawnInfoPanel : CanvasLayer
     private readonly List<(string name, Button btn)> _cardTabs = new();
     private string _activeCardTab = "";  // last-clicked non-Health tab
     private string _appliedTab = ""; // currently-styled active tab (sentinel forces first apply)
+    private ScanlineStyleBox? _activeTabGlow; // selected tab's box, flickered each frame
     private long _lastSnapshotTick = -1;
 
     public override void _Ready()
@@ -195,13 +196,27 @@ public partial class PawnInfoPanel : CanvasLayer
     }
 
     // Tab styling mirrors HealthTabPanel: unselected = raised indigo w/ purple
-    // border, active = cyan-lit with the bright cyan edge.
-    private static void StyleCardTab(Button t, bool active)
+    // border, active = cyan-lit with the bright cyan edge + a flickering glow
+    // (the glow box is captured so _Process can animate it).
+    private void StyleCardTab(Button t, bool active)
     {
-        var box = UiTheme.ButtonBox(active ? UiTheme.ButtonActive : UiTheme.Button, active);
-        t.AddThemeStyleboxOverride("normal", box);
-        t.AddThemeStyleboxOverride("pressed", box);
-        t.AddThemeStyleboxOverride("hover", UiTheme.ButtonBox(active ? UiTheme.ButtonActive : UiTheme.ButtonHover, active));
+        if (active)
+        {
+            var flat = UiTheme.Box(UiTheme.ButtonActive, UiTheme.ButtonEdge, 1, 6, 4, glow: true);
+            var box = UiTheme.Scan(flat, inset: 3f);
+            box.SetContentMarginAll(4);
+            t.AddThemeStyleboxOverride("normal", box);
+            t.AddThemeStyleboxOverride("pressed", box);
+            t.AddThemeStyleboxOverride("hover", box);
+            _activeTabGlow = box;
+        }
+        else
+        {
+            var box = UiTheme.ButtonBox(UiTheme.Button, false);
+            t.AddThemeStyleboxOverride("normal", box);
+            t.AddThemeStyleboxOverride("pressed", box);
+            t.AddThemeStyleboxOverride("hover", UiTheme.ButtonBox(UiTheme.ButtonHover, false));
+        }
         t.AddThemeColorOverride("font_color", UiTheme.Text);
     }
 
@@ -212,6 +227,7 @@ public partial class PawnInfoPanel : CanvasLayer
         string eff = (HealthTab?.PanelOpen ?? false) ? "Health" : _activeCardTab;
         if (eff == _appliedTab) return;
         _appliedTab = eff;
+        _activeTabGlow = null; // recaptured below if a tab is active
         foreach (var (n, b) in _cardTabs) StyleCardTab(b, n == eff);
     }
 
@@ -235,6 +251,7 @@ public partial class PawnInfoPanel : CanvasLayer
         ApplyCardTabs(); // keep the Health tab lit while its panel is open
         _glowT += delta;
         UiTheme.AnimateGlow(_panelBox, _glowT);
+        if (_activeTabGlow is not null) UiTheme.FlickerGlow(_activeTabGlow, _glowT, UiTheme.ButtonEdge);
         Reposition(); // re-anchor bottom-left as content height changes
         if (sel.Value != _shownPawnId || snap.Tick != _lastSnapshotTick)
         {
