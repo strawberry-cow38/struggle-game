@@ -97,7 +97,7 @@ public partial class NeedsPanel : CanvasLayer
         thoughtsHeader.AddThemeColorOverride("font_color", UiTheme.TextDim);
         vbox.AddChild(thoughtsHeader);
 
-        _scroll = new ScrollContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+        _scroll = new ScrollContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 250) };
         _scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
         vbox.AddChild(_scroll);
         _thoughtsCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
@@ -225,7 +225,9 @@ public partial class NeedsPanel : CanvasLayer
         var vp = GetViewport().GetVisibleRect().Size;
         float x = PawnPanel?.PanelLeft ?? 12f;
         float panelTop = PawnPanel is { PanelOpen: true } pp ? pp.PanelTop : vp.Y - (PawnPanel?.PanelMarginBottom ?? 16f);
-        float h = PanelHeight; // fixed, matches the health pane
+        // Same content-fit formula as the health pane (with a 250px scroll min
+        // so the thought list stays a stable size and just scrolls).
+        float h = _vbox is null ? PanelHeight : Mathf.Max(220f, _vbox.GetCombinedMinimumSize().Y + 24f);
         float y = panelTop - GapAbovePanel - h;
         _root.Size = new Vector2(PanelWidth, h);
         _root.Position = new Vector2(x, y);
