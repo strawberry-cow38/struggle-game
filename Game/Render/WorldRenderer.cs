@@ -94,8 +94,9 @@ public partial class WorldRenderer : Node2D
     // Animated selection brackets: per-id age (spawn → hone-in → rotate) + a
     // shared clock for the rotation/flicker.
     private double _selTime;
-    private Dictionary<int, double>? _selSince;
-    private readonly List<int> _selPruneScratch = new();
+    private readonly Dictionary<long, double> _selAgeMap = new(); // key → time selection began
+    private readonly HashSet<long> _selSeen = new();              // keys drawn this frame
+    private readonly List<long> _selPruneScratch = new();
     private static readonly Color PathLineColor = new(1.0f, 0.92f, 0.10f, 0.85f);
     private static readonly Color PathTargetColor = new(1.0f, 0.92f, 0.10f, 1.0f);
     // Dimmer line linking queued (not-yet-active) move/action waypoints.
@@ -252,6 +253,7 @@ public partial class WorldRenderer : Node2D
         if (_groundTex is null || Host is null) return;
 
         FrameProfiler.Instance.BeginFrame();
+        _selSeen.Clear();
 
         var latest = Host.LatestSnapshot;
         // Reference compare, not Tick: paused republishes (selection
@@ -686,14 +688,6 @@ public partial class WorldRenderer : Node2D
         _selectedDummyIdsScratch ??= new HashSet<int>();
         _selectedDummyIdsScratch.Clear();
         foreach (var sid in snap.SelectedDummyIds) _selectedDummyIdsScratch.Add(sid);
-        // Track when each selection began (for the spawn/hone-in animation) and
-        // drop ids no longer selected.
-        _selSince ??= new Dictionary<int, double>();
-        foreach (var sid in _selectedDummyIdsScratch)
-            if (!_selSince.ContainsKey(sid)) _selSince[sid] = _selTime;
-        _selPruneScratch.Clear();
-        foreach (var k in _selSince.Keys) if (!_selectedDummyIdsScratch.Contains(k)) _selPruneScratch.Add(k);
-        foreach (var k in _selPruneScratch) _selSince.Remove(k);
         // Enemy ids, so combat labels can name a target "Raider" vs "Colonist".
         _enemyIdScratch.Clear();
         foreach (var d in snap.Dummies) if (d.IsEnemy) _enemyIdScratch.Add(d.EntityId);
@@ -809,8 +803,7 @@ public partial class WorldRenderer : Node2D
                 }
                 if (_selectedDummyIdsScratch.Contains(d.EntityId))
                 {
-                    float selAge = (float)(_selTime - (_selSince!.TryGetValue(d.EntityId, out var t0) ? t0 : _selTime));
-                    DrawSelectionBrackets(center, radius + 7f, selAge, (float)_selTime);
+                    DrawSelectionBrackets(center, radius + 7f, SelAge(IdKey(1, d.EntityId)), (float)_selTime);
                     // Drafted + holding a ranged weapon → show its max range ring.
                     // ONLY for a lone selection — a big tessellated arc per frame
                     // per pawn is costly (and N overlapping rings is just clutter).
@@ -887,6 +880,14 @@ public partial class WorldRenderer : Node2D
         // cursor over a pawn shows the single-shot odds + the factors at play.
         if (snap.AimShooterId != 0)
             DrawHoverHitChance(snap, cursorTileX, cursorTileY);
+
+        // Drop selection-age entries not drawn this frame (deselected).
+        if (_selAgeMap.Count > 0)
+        {
+            _selPruneScratch.Clear();
+            foreach (var k in _selAgeMap.Keys) if (!_selSeen.Contains(k)) _selPruneScratch.Add(k);
+            foreach (var k in _selPruneScratch) _selAgeMap.Remove(k);
+        }
 
         FrameProfiler.Instance.EndFrame();
     }
@@ -1231,7 +1232,7 @@ public partial class WorldRenderer : Node2D
 
         if (selectedTrees is not null && selectedTrees.Contains(t.EntityId))
         {
-            DrawArc(center, canopyR + 3f, 0f, Mathf.Tau, 36, TreeSelectColor, width: 2f, antialiased: true);
+            DrawSelectionBrackets(center, canopyR + 6f, SelAge(IdKey(2, t.EntityId)), (float)_selTime);
         }
     }
 
@@ -1415,6 +1416,18 @@ public partial class WorldRenderer : Node2D
     // button-blue. On select they spawn spread out + faded, hone inward to snug
     // around the target, then rotate slowly — with the same pulse-on-select +
     // VFD flicker glow as the UI buttons.
+    // Per-selection age (seconds since this key was first seen). Keys not drawn
+    // in a frame are pruned at the end of _Draw, so reselecting replays the
+    // spawn animation. Tag namespaces the id/tile so different types don't clash.
+    private float SelAge(long key)
+    {
+        if (!_selAgeMap.TryGetValue(key, out var t0)) { t0 = _selTime; _selAgeMap[key] = t0; }
+        _selSeen.Add(key);
+        return (float)(_selTime - t0);
+    }
+    private static long IdKey(int tag, int id) => ((long)tag << 40) | (uint)id;
+    private static long TileKey(int tag, TilePos t) => ((long)tag << 40) | (uint)(t.X * 100000 + t.Y);
+
     private void DrawSelectionBrackets(Vector2 center, float half, float age, float time)
     {
         float hone = Mathf.Exp(-age * 6f);              // 1 → 0: corners converge
@@ -1473,8 +1486,7 @@ public partial class WorldRenderer : Node2D
     {
         float cx = (tile.X + 0.5f) * PixelsPerTile;
         float cy = (tile.Y + 0.5f) * PixelsPerTile;
-        float r = PixelsPerTile * 0.45f;
-        DrawArc(new Vector2(cx, cy), r, 0f, Mathf.Tau, 32, SelectionRing, width: 2f, antialiased: true);
+        DrawSelectionBrackets(new Vector2(cx, cy), PixelsPerTile * 0.5f, SelAge(TileKey(4, tile)), (float)_selTime);
     }
 
     private void DrawDeconMark(TilePos tile, float progress)
@@ -1675,13 +1687,9 @@ public partial class WorldRenderer : Node2D
     // Two pixels inset so it doesn't overdraw the tile's own border art.
     private void DrawSelectionOutline(TilePos tile)
     {
-        float inset = 1.5f;
-        var rect = new Rect2(
-            tile.X * PixelsPerTile + inset,
-            tile.Y * PixelsPerTile + inset,
-            PixelsPerTile - inset * 2f,
-            PixelsPerTile - inset * 2f);
-        DrawRect(rect, SelectionOutline, filled: false, width: 3f);
+        float cx = (tile.X + 0.5f) * PixelsPerTile;
+        float cy = (tile.Y + 0.5f) * PixelsPerTile;
+        DrawSelectionBrackets(new Vector2(cx, cy), PixelsPerTile * 0.52f, SelAge(TileKey(3, tile)), (float)_selTime);
     }
 
     // Red X over a tile — same look as the door forbid mark, reused for
