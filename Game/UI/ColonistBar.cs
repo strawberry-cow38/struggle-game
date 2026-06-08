@@ -99,9 +99,12 @@ public partial class ColonistBar : CanvasLayer
             bool selected = sel.Contains(id);
             bool has = byId.TryGetValue(id, out var d);
             Color ring = has ? MoodColor(d.Mood) : UiTheme.Border;
-            Color edge = selected ? UiTheme.Accent : ring;
-            card.AddThemeStyleboxOverride("panel", CardBox(edge, ring));
-            frame.AddThemeStyleboxOverride("panel", FrameBox(edge, ring));
+            // Outer card: neutral edge, cyan selection outline around the whole
+            // card when selected (glow only then). Mood ring stays on the frame.
+            Color cardEdge = selected ? UiTheme.Accent : UiTheme.Border;
+            Color cardGlow = selected ? new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, 0.45f) : new Color(0, 0, 0, 0);
+            card.AddThemeStyleboxOverride("panel", CardBox(cardEdge, cardGlow));
+            frame.AddThemeStyleboxOverride("panel", FrameBox(ring, ring));
             if (has)
             {
                 string lo = LoadoutSig(d);
@@ -307,17 +310,18 @@ public partial class ColonistBar : CanvasLayer
         BuildCards(colonists);
     }
 
-    // Purple colonist card with the mood ring: colored border + matching glow
-    // halo, roomier left/right/top padding, snug at the bottom. Carries the
-    // VFD scan-line grid so it matches the panes.
+    // Purple colonist card: neutral border (the selection outline goes here,
+    // around the whole card), the VFD scan-line grid, and a glow only when a
+    // glow color is supplied (alpha > 0) — the mood ring lives on the inner
+    // frame now, not the card edge.
     private static ScanlineStyleBox CardBox(Color border, Color glow)
     {
         var b = new StyleBoxFlat { BgColor = UiTheme.Panel };
         b.BorderColor = border;
         b.BorderWidthLeft = b.BorderWidthRight = b.BorderWidthTop = b.BorderWidthBottom = 2;
         b.CornerRadiusTopLeft = b.CornerRadiusTopRight = b.CornerRadiusBottomLeft = b.CornerRadiusBottomRight = 8;
-        b.ShadowColor = new Color(glow.R, glow.G, glow.B, 0.40f);
-        b.ShadowSize = 7;
+        b.ShadowColor = glow;
+        b.ShadowSize = glow.A > 0f ? 7 : 0;
         var sb = UiTheme.Scan(b, inset: 5f);
         // Mirror the card's asymmetric padding onto the wrapper (it drives layout).
         sb.SetContentMargin(Side.Left, 11);

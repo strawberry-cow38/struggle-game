@@ -18,8 +18,8 @@ public static class UiTheme
     public static readonly Color Text = new(0.93f, 0.95f, 1.0f);
     public static readonly Color TextDim = new(0.72f, 0.76f, 0.92f);
     public static readonly Color Outline = new(0.03f, 0.03f, 0.09f, 0.88f);
-    public static readonly Color ScanLine = new(0.58f, 0.38f, 0.90f, 0.085f);      // VFD control-grid wires (matches the clock)
-    public static readonly Color ScanLineBright = new(0.82f, 0.66f, 1.00f, 0.22f); // scattered brighter rows
+    public static readonly Color ScanLine = new(0.58f, 0.38f, 0.90f, 0.085f);        // VFD control-grid wires (matches the clock)
+    public static readonly Color ScanLineBright = new(0.61f, 0.40f, 0.945f, 0.089f); // scattered rows, only ~5% brighter
 
     // World seed — set by SimHost so the bright scan-line scatter is stable per
     // world (same seed → same rows light up). Defaults to the sim's default seed.
