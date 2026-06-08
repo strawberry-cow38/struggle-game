@@ -117,7 +117,11 @@ public partial class NeedsPanel : CanvasLayer
         vbar.AddThemeStyleboxOverride("grabber_pressed", UiTheme.Box(UiTheme.PanelDeep.Lightened(0.14f), UiTheme.Border, 1, 4, 0, glow: false));
         _thoughtsCol = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _thoughtsCol.AddThemeConstantOverride("separation", 3);
-        _scroll.AddChild(_thoughtsCol);
+        // Right margin so the +N values clear the always-shown scrollbar.
+        var thoughtsMargin = new MarginContainer { MouseFilter = Control.MouseFilterEnum.Pass, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        thoughtsMargin.AddThemeConstantOverride("margin_right", 14);
+        thoughtsMargin.AddChild(_thoughtsCol);
+        _scroll.AddChild(thoughtsMargin);
     }
 
     // Route the scroll wheel into the list when hovering it (no map zoom).
