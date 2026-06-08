@@ -16,7 +16,8 @@ public partial class NeedsPanel : CanvasLayer
     public SimHost? Host { get; set; }
     public PawnInfoPanel? PawnPanel { get; set; }
 
-    private const int PanelWidth = 420;
+    private const int PanelWidth = 700;   // fixed, matches the health pane
+    private const int PanelHeight = 460;
     private const float GapAbovePanel = 8f;
 
     private static readonly Color Good = new(0.55f, 0.86f, 0.48f);
@@ -52,7 +53,7 @@ public partial class NeedsPanel : CanvasLayer
     {
         Layer = 97;
 
-        _root = new Panel { Visible = false, CustomMinimumSize = new Vector2(PanelWidth, 0), Size = new Vector2(PanelWidth, 320) };
+        _root = new Panel { Visible = false, CustomMinimumSize = new Vector2(PanelWidth, 0), Size = new Vector2(PanelWidth, PanelHeight) };
         _panelBox = UiTheme.PanelBox(corner: 12, margin: 0);
         _root.AddThemeStyleboxOverride("panel", _panelBox);
         _root.Theme = UiTheme.LabelTheme();
@@ -224,7 +225,7 @@ public partial class NeedsPanel : CanvasLayer
         var vp = GetViewport().GetVisibleRect().Size;
         float x = PawnPanel?.PanelLeft ?? 12f;
         float panelTop = PawnPanel is { PanelOpen: true } pp ? pp.PanelTop : vp.Y - (PawnPanel?.PanelMarginBottom ?? 16f);
-        float h = _vbox is null ? 320f : Mathf.Clamp(_vbox.GetCombinedMinimumSize().Y + 24f, 200f, 460f);
+        float h = PanelHeight; // fixed, matches the health pane
         float y = panelTop - GapAbovePanel - h;
         _root.Size = new Vector2(PanelWidth, h);
         _root.Position = new Vector2(x, y);
