@@ -15,6 +15,7 @@ public partial class NeedsPanel : CanvasLayer
 {
     public SimHost? Host { get; set; }
     public PawnInfoPanel? PawnPanel { get; set; }
+    public HealthTabPanel? HealthRef { get; set; } // match its height exactly
 
     private const int PanelWidth = 700;   // fixed, matches the health pane
     private const int PanelHeight = 460;
@@ -225,9 +226,8 @@ public partial class NeedsPanel : CanvasLayer
         var vp = GetViewport().GetVisibleRect().Size;
         float x = PawnPanel?.PanelLeft ?? 12f;
         float panelTop = PawnPanel is { PanelOpen: true } pp ? pp.PanelTop : vp.Y - (PawnPanel?.PanelMarginBottom ?? 16f);
-        // Same content-fit formula as the health pane (with a 250px scroll min
-        // so the thought list stays a stable size and just scrolls).
-        float h = _vbox is null ? PanelHeight : Mathf.Max(220f, _vbox.GetCombinedMinimumSize().Y + 24f);
+        // Match the health pane's exact height so the two are identical.
+        float h = HealthRef?.ContentHeight ?? (_vbox is null ? PanelHeight : Mathf.Max(220f, _vbox.GetCombinedMinimumSize().Y + 24f));
         float y = panelTop - GapAbovePanel - h;
         _root.Size = new Vector2(PanelWidth, h);
         _root.Position = new Vector2(x, y);

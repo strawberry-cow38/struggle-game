@@ -73,6 +73,8 @@ public partial class HealthTabPanel : CanvasLayer
 
     public bool PanelOpen => _root is not null && _root.Visible;
     public float PanelTop => _root is not null ? _root.Position.Y : float.MaxValue;
+    // The height this pane fits itself to (so siblings can match it exactly).
+    public float ContentHeight => _vbox is null ? PanelHeight : Mathf.Max(220f, _vbox.GetCombinedMinimumSize().Y + 24f);
 
     public override void _Ready()
     {
