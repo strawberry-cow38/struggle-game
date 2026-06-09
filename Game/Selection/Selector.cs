@@ -799,12 +799,21 @@ public partial class Selector : Node2D
         {
             if (doubleClick)
             {
-                // Double-click a pawn → focus the camera on it AND select every
-                // same-faction pawn in view ("select similar").
-                if (Camera is not null) Camera.FollowId = pawnId;
                 bool enemy = false;
                 foreach (var d in snap.Dummies) if (d.EntityId == pawnId) { enemy = d.IsEnemy; break; }
-                Host.SelectedDummyIds = AllPawnsInView(snap, enemy);
+                bool alreadyFocused = Camera is not null && Camera.FollowId == pawnId;
+                if (alreadyFocused)
+                {
+                    // Second double-click (already focused) → select every
+                    // same-faction pawn in view.
+                    Host.SelectedDummyIds = AllPawnsInView(snap, enemy);
+                }
+                else
+                {
+                    // First double-click → focus the camera on this pawn.
+                    if (Camera is not null) Camera.FollowId = pawnId;
+                    Host.SelectedDummyIds = new[] { pawnId };
+                }
             }
             else
             {
