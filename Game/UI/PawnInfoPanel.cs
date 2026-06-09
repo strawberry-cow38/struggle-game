@@ -268,7 +268,15 @@ public partial class PawnInfoPanel : CanvasLayer
             }
             return;
         }
-        if (!_root.Visible) _root.Visible = true;
+        if (!_root.Visible)
+        {
+            // Godot skips layout for hidden subtrees, so min-sizes are stale on
+            // the first visible frame → Reposition would misplace it. Show it
+            // transparent, then reveal once layout has settled (next idle).
+            _root.Visible = true;
+            _root.Modulate = new Color(1, 1, 1, 0);
+            CallDeferred(nameof(RevealPanel));
+        }
         ApplyCardTabs(); // keep the Health tab lit while its panel is open
         _glowT += delta;
         UiTheme.AnimateGlow(_panelBox, _glowT);
@@ -283,6 +291,13 @@ public partial class PawnInfoPanel : CanvasLayer
     }
 
     // Bottom-left anchored card (tracks the panel's current height each frame).
+    // Re-anchor after the first layout pass, then fade the panel in.
+    private void RevealPanel()
+    {
+        Reposition();
+        _root.Modulate = Colors.White;
+    }
+
     private void Reposition()
     {
         var vp = GetViewport().GetVisibleRect().Size;

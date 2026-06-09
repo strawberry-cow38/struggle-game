@@ -263,7 +263,9 @@ public partial class HealthTabPanel : CanvasLayer
         if (sig != _lastInjurySig || pawnChanged)
         {
             _lastInjurySig = sig;
-            foreach (var c in _conditionsCol.GetChildren()) c.QueueFree();
+            // RemoveChild immediately (not just QueueFree) so the old rows don't
+            // linger a frame and double-count the column height (flicker).
+            foreach (var c in _conditionsCol.GetChildren()) { _conditionsCol.RemoveChild(c); c.QueueFree(); }
             if (hs.Injuries.Length == 0)
             {
                 var empty = new Label { Text = "(no health conditions)" };
@@ -331,14 +333,12 @@ public partial class HealthTabPanel : CanvasLayer
         float w = PanelWidth; // wider than the card so conditions fit
         float x = PawnPanel?.PanelLeft ?? 12f;
         float panelTop = PawnPanel is { PanelOpen: true } pp ? pp.PanelTop : vp.Y - (PawnPanel?.PanelMarginBottom ?? 16f);
-        // Minimum = the capacity column's height; grow upward when the
-        // conditions list is longer, capped at the top of the screen (then the
-        // conditions list scrolls inside).
+        // Stable height = the capacity column; the conditions list scrolls
+        // inside it (no per-condition stretch/flicker). Capped at the clock.
         float minH = _vbox is null ? PanelHeight : Mathf.Max(220f, _vbox.GetCombinedMinimumSize().Y + 24f);
-        float condNatural = (_conditionsCol?.GetCombinedMinimumSize().Y ?? 0f) + 120f;
         float topLimit = Hud is not null ? Hud.ClockBottom + 10f : 12f;
         float maxToTop = panelTop - GapAbovePanel - topLimit;
-        float h = Mathf.Min(Mathf.Max(minH, condNatural), Mathf.Max(minH, maxToTop));
+        float h = Mathf.Min(minH, Mathf.Max(220f, maxToTop));
         float y = panelTop - GapAbovePanel - h;
         _root.Size = new Vector2(w, h);
         _root.Position = new Vector2(x, y);

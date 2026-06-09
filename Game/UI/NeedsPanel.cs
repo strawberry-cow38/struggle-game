@@ -162,7 +162,7 @@ public partial class NeedsPanel : CanvasLayer
         if (sig != _lastSig || pawnChanged)
         {
             _lastSig = sig;
-            foreach (var c in _thoughtsCol.GetChildren()) c.QueueFree();
+            foreach (var c in _thoughtsCol.GetChildren()) { _thoughtsCol.RemoveChild(c); c.QueueFree(); }
             foreach (var (label, pts, good) in thoughts)
                 _thoughtsCol.AddChild(ThoughtRow(label, pts, good));
         }
