@@ -797,9 +797,19 @@ public partial class Selector : Node2D
         // Pawn beats wood/tree if both are within radius.
         if (TryPickPawn(snap, world, out int pawnId))
         {
-            // Double-click a pawn in the world → camera follows it.
-            if (doubleClick && Camera is not null) Camera.FollowId = pawnId;
-            Host.SelectedDummyIds = ToggleInt(Host.SelectedDummyIds, pawnId, shift);
+            if (doubleClick)
+            {
+                // Double-click a pawn → focus the camera on it AND select every
+                // same-faction pawn in view ("select similar").
+                if (Camera is not null) Camera.FollowId = pawnId;
+                bool enemy = false;
+                foreach (var d in snap.Dummies) if (d.EntityId == pawnId) { enemy = d.IsEnemy; break; }
+                Host.SelectedDummyIds = AllPawnsInView(snap, enemy);
+            }
+            else
+            {
+                Host.SelectedDummyIds = ToggleInt(Host.SelectedDummyIds, pawnId, shift);
+            }
             Host.SelectedTreeIds = Array.Empty<int>();
             Host.SelectedWoodIds = Array.Empty<int>();
             Host.SelectedCropIds = Array.Empty<int>();
@@ -1295,6 +1305,26 @@ public partial class Selector : Node2D
             }
         }
         return id >= 0;
+    }
+
+    // All pawns of the given faction (colonist vs enemy) currently on screen.
+    private int[] AllPawnsInView(SimSnapshot snap, bool enemy)
+    {
+        var vp = GetViewport().GetVisibleRect();
+        var inv = GetCanvasTransform().AffineInverse();
+        var tl = inv * vp.Position;
+        var br = inv * (vp.Position + vp.Size);
+        float minX = Mathf.Min(tl.X, br.X), maxX = Mathf.Max(tl.X, br.X);
+        float minY = Mathf.Min(tl.Y, br.Y), maxY = Mathf.Max(tl.Y, br.Y);
+        var ids = new List<int>();
+        foreach (var d in snap.Dummies)
+        {
+            if (d.IsEnemy != enemy) continue;
+            float px = d.X * PixelsPerTile, py = d.Y * PixelsPerTile;
+            if (px < minX || px > maxX || py < minY || py > maxY) continue;
+            ids.Add(d.EntityId);
+        }
+        return ids.ToArray();
     }
 
     private void SelectAllTreesInView(SimSnapshot snap)
