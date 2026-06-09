@@ -172,7 +172,7 @@ public partial class NeedsPanel : CanvasLayer
 
     // Placeholder thought derivation from current pawn state. Replaced by the
     // real point-based thought system later; the row layout stays the same.
-    private static List<(string label, int pts, bool good)> DeriveThoughts(in DummyState p)
+    public static List<(string label, int pts, bool good)> DeriveThoughts(in DummyState p)
     {
         var list = new List<(string, int, bool)>();
         double sleep = p.SleepLevel, rec = p.RecreationLevel;

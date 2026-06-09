@@ -293,6 +293,34 @@ public partial class PawnInfoPanel : CanvasLayer
     }
 
     // One need row: name on the left, bar filling the middle, % on the right.
+    // Top 5 most severe conditions for the health-bar hover.
+    private static string HealthTooltip(in DummyState p)
+    {
+        var inj = p.Health.Injuries;
+        if (inj.Length == 0) return "No conditions";
+        var list = new List<InjuryState>(inj);
+        list.Sort((a, b) => b.Severity.CompareTo(a.Severity));
+        var sb = new System.Text.StringBuilder("Worst conditions:");
+        int n = System.Math.Min(5, list.Count);
+        for (int i = 0; i < n; i++)
+        {
+            var c = list[i];
+            sb.Append('\n').Append(c.PartId).Append(": ").Append(c.Kind).Append(' ').Append((int)(c.Severity * 100f)).Append('%');
+        }
+        return sb.ToString();
+    }
+
+    // Active moodlets for the mood-bar hover.
+    private static string MoodTooltip(in DummyState p)
+    {
+        var th = NeedsPanel.DeriveThoughts(p);
+        if (th.Count == 0) return "No moodlets";
+        var sb = new System.Text.StringBuilder("Moodlets:");
+        foreach (var (label, pts, _) in th)
+            sb.Append('\n').Append(label).Append(' ').Append(pts >= 0 ? "+" + pts : pts.ToString());
+        return sb.ToString();
+    }
+
     private static HBoxContainer BuildNeedRow(string title, Color fill, out Label name, out ProgressBar bar, out Label pct)
     {
         var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
@@ -358,11 +386,13 @@ public partial class PawnInfoPanel : CanvasLayer
         float oh = p.Health.OverallHealth;
         _healthBar.Value = oh;
         _healthPct.Text = $"{oh * 100f:0}%";
+        _healthBar.TooltipText = HealthTooltip(p);
         StyleBar(_healthBar, BarColor(oh));
 
         float mood = p.Mood; // stubbed in the sim for now
         _moodBar.Value = mood;
         _moodPct.Text = $"{mood * 100f:0}%";
+        _moodBar.TooltipText = MoodTooltip(p);
         StyleBar(_moodBar, BarColor(mood));
 
         float food = 1f; // stub
