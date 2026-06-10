@@ -743,8 +743,11 @@ public partial class WorldRenderer : Node2D
                 var colSprite = d.IsEnemy ? null : ColonistSprite(d.Facing);
                 if (colSprite is not null)
                 {
+                    // The sprite's character is centered in its (square) frame,
+                    // so center the frame on the pawn point — same spot the
+                    // circle occupied.
                     float sh = PixelsPerTile * 1.35f;
-                    var sr = new Rect2(center.X - sh * 0.5f, center.Y - sh * 0.78f, sh, sh);
+                    var sr = new Rect2(center.X - sh * 0.5f, center.Y - sh * 0.5f, sh, sh);
                     DrawTextureRect(colSprite, sr, tile: false);
                 }
                 else
