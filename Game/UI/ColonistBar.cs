@@ -427,7 +427,7 @@ public partial class ColonistBar : CanvasLayer
 
             var weapon = new Control
             {
-                CustomMinimumSize = new Vector2(0, 23), // ~5% taller icon
+                CustomMinimumSize = new Vector2(0, 24), // ~5% taller icon again
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
             wrap.AddChild(weapon);

@@ -104,7 +104,9 @@ public static class WeaponIcons
         Texture = tex,
         ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
         StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-        TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+        // Bilinear: the sprite is downscaled heavily (256px -> ~20px), so
+        // nearest aliases. Linear smooths it.
+        TextureFilter = CanvasItem.TextureFilterEnum.Linear,
         MouseFilter = Control.MouseFilterEnum.Ignore,
     };
 
