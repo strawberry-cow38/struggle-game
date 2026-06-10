@@ -59,6 +59,7 @@ public sealed class RangedSpec
     public int MagazineSize;
     public FireModeFlags Modes;        // which fire modes the gun supports
     public int BurstShots;             // shots per pull in Burst mode
+    public int PelletsPerShot = 1;     // pellets fired per shell (shotguns > 1)
     public float ProjectileSpeed;      // tiles per second
     // Aim dispersion: shots scatter within a cone of (SpreadDegrees + recoil)
     // half-angle; the radius at the target = tan(angle) * distance.
@@ -203,6 +204,9 @@ public static class ItemCatalog
     public static readonly ItemDef Aug;
     // M249 SAW — belt-fed 5.56 LMG: full-auto only, big belt, heavy.
     public static readonly ItemDef Lmg;
+    // AA-12 — full-auto combat shotgun: 8-pellet 12-gauge shells, drum mag.
+    public static readonly ItemDef AutoShotgun;
+    public static readonly ItemDef Ammo12ga;
     // Consumed per tend/stabilize job.
     public static readonly ItemDef Medicine;
 
@@ -374,6 +378,33 @@ public static class ItemCatalog
                 ShotCooldownTicks = 5,   // ~720 rpm
                 CycleCooldownTicks = 24,
                 ReloadTicks = 220,       // slow belt swap
+            });
+
+        // 12-gauge buckshot — each shell sprays a cluster of low-pen pellets.
+        Ammo12ga = RegisterItem("Ammo12ga", "12-gauge Buckshot", Ammo, weight: 0.05f, bulk: 0.05f, maxStack: 300,
+            ammo: new AmmoSpec { CategoryPath = "12ga", InjuryKind = ConditionKind.Gunshot, Damage = 7f, PenSharp = 3f, PenBlunt = 28f });
+
+        // AA-12 — full-auto combat shotgun: 8 pellets/shell, 20-round drum.
+        // Brutal point-blank, useless at range, heavy kick.
+        AutoShotgun = RegisterItem("AA12", "AA-12", Equipment, weight: 5.5f, bulk: 4f, equippable: true,
+            ranged: new RangedSpec
+            {
+                Range = 16f,
+                AmmoCategoryPath = "12ga",
+                MagazineSize = 20,
+                Modes = FireModeFlags.Single | FireModeFlags.Auto,
+                BurstShots = 1,
+                PelletsPerShot = 8,
+                ProjectileSpeed = 80f,
+                SpreadDegrees = 5.0f,
+                RecoilPerShot = 1.8f,
+                RecoilRecoverPerSec = 7f,
+                MaxRecoilDegrees = 10f,
+                WarmupTicks = 12,
+                AimTicks = 30,
+                ShotCooldownTicks = 8,   // ~450 rpm full-auto
+                CycleCooldownTicks = 20,
+                ReloadTicks = 160,
             });
 
         // Kevlar vest — torso only. Sharp 8 mmRHA deflects HP (3) + FMJ (6)

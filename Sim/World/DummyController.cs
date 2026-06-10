@@ -2896,28 +2896,34 @@ public sealed class DummyController
         // ballistic solve doesn't blow up on a near-zero flight time.
         float aimDist = MathF.Max(d, RangedMinShotDist);
         float radius = MathF.Tan(coneRad) * aimDist;
-        double ang = _rng.NextDouble() * Math.PI * 2.0;
-        float r = (float)Math.Sqrt(_rng.NextDouble()) * radius; // uniform in the disc
-        float toX = pos.X + dirx * aimDist + (float)Math.Cos(ang) * r;
-        float toY = pos.Y + diry * aimDist + (float)Math.Sin(ang) * r;
         // Aim at the chosen body region's height — or low for a downed/prone
         // target so finishing shots still connect.
-        float aimH = tgtDowned ? SimConstants.DownedAimHeight : rc.TargetArea switch
+        float aimHBase = tgtDowned ? SimConstants.DownedAimHeight : rc.TargetArea switch
         {
             Items.TargetArea.Head => SimConstants.AimHeadHeight,
             Items.TargetArea.Torso => SimConstants.BodyAimHeight,
             Items.TargetArea.Legs => SimConstants.AimLegsHeight,
             _ => SimConstants.AimAutoHeight, // Auto = center mass
         };
-        // Vertical inaccuracy too: the same cone scatters the impact height, so
-        // the aimed region is a BIAS, not a guarantee — a head-aimed round can
-        // stray up high or down into the neck/torso.
-        float vScatter = (float)(_rng.NextDouble() * 2.0 - 1.0) * radius;
-        aimH = MathF.Max(0.05f, aimH + vScatter);
-        PendingProjectiles.Add(new ProjectileSpawn(
-            pos.X, pos.Y, toX, toY, aimH, spec.ProjectileSpeed,
-            entity.Id, targetHintId, true, rc.LoadedAmmoPath ?? ""));
-        // Muzzle climb: this shot kicks the cone wider for the next.
+        // Shotguns spit a cluster of pellets per shell; everything else is one
+        // round. Each pellet draws its own scatter inside the cone (and its own
+        // vertical jitter), so the shell paints a spread pattern.
+        int pellets = Math.Max(1, spec.PelletsPerShot);
+        for (int pellet = 0; pellet < pellets; pellet++)
+        {
+            double ang = _rng.NextDouble() * Math.PI * 2.0;
+            float r = (float)Math.Sqrt(_rng.NextDouble()) * radius; // uniform in the disc
+            float toX = pos.X + dirx * aimDist + (float)Math.Cos(ang) * r;
+            float toY = pos.Y + diry * aimDist + (float)Math.Sin(ang) * r;
+            // Vertical inaccuracy too: the cone scatters the impact height, so
+            // the aimed region is a BIAS, not a guarantee.
+            float vScatter = (float)(_rng.NextDouble() * 2.0 - 1.0) * radius;
+            float aimH = MathF.Max(0.05f, aimHBase + vScatter);
+            PendingProjectiles.Add(new ProjectileSpawn(
+                pos.X, pos.Y, toX, toY, aimH, spec.ProjectileSpeed,
+                entity.Id, targetHintId, true, rc.LoadedAmmoPath ?? ""));
+        }
+        // Muzzle climb: each shot (not each pellet) kicks the cone wider.
         rc.Recoil = MathF.Min(spec.MaxRecoilDegrees, rc.Recoil + spec.RecoilPerShot);
     }
 
