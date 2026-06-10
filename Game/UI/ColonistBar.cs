@@ -451,6 +451,7 @@ public partial class ColonistBar : CanvasLayer
         // Empty-mag swaps the weapon to its no-mag sprite, so it's part of the
         // loadout signature (rebuild the icon when the mag crosses 0).
         sb.Append(d.HasRangedWeapon && d.RangedMag == 0 ? 'E' : '-');
+        sb.Append(d.LoadedAmmoPath ?? "-").Append(';'); // RPG warhead colour = loaded rocket
         foreach (var eq in d.Equipped) sb.Append(eq.ItemPath).Append(';');
         return sb.ToString();
     }
@@ -480,7 +481,7 @@ public partial class ColonistBar : CanvasLayer
         foreach (var ch in holder.GetChildren()) { holder.RemoveChild(ch); ch.QueueFree(); }
         var (path, kind) = WeaponIcons.PickEquipped(d);
         bool empty = kind == WeaponGlyph.Kind.Ranged && d.RangedMag == 0;
-        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2, shadow: true, empty: empty));
+        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2, shadow: true, empty: empty, loadedAmmoPath: d.LoadedAmmoPath));
     }
 
     private void Reposition()

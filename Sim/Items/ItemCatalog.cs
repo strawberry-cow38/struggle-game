@@ -214,6 +214,11 @@ public static class ItemCatalog
     public static readonly ItemDef BattleRifle;
     // RPD — belt-fed 7.62x39 LMG: full-auto, big belt, heavy. Shares AKM ammo.
     public static readonly ItemDef LmgRpd;
+    // RPG-7 + its 3 rocket types (frag/HEDP/incendiary), shown by warhead colour.
+    public static readonly ItemDef RocketLauncher;
+    public static readonly ItemDef RocketFrag;    // green — standard frag
+    public static readonly ItemDef RocketHedp;    // blue — HEDP
+    public static readonly ItemDef RocketIncend;  // red — incendiary
     // Consumed per tend/stabilize job.
     public static readonly ItemDef Medicine;
 
@@ -482,6 +487,38 @@ public static class ItemCatalog
                 ShotCooldownTicks = 6,
                 CycleCooldownTicks = 24,
                 ReloadTicks = 220,
+            });
+
+        // RPG-7 rockets — 3 warhead types in the "rpg" ammo category. The
+        // loaded type colours the launcher's warhead. (Damage values are
+        // placeholders — launch/explosion isn't wired yet.)
+        RocketFrag = RegisterItem("RocketFrag", "PG-7 Frag Rocket", Ammo, weight: 2f, bulk: 2f, maxStack: 20,
+            ammo: new AmmoSpec { CategoryPath = "rpg", InjuryKind = ConditionKind.Gunshot, Damage = 40f, PenSharp = 8f, PenBlunt = 60f });
+        RocketHedp = RegisterItem("RocketHEDP", "PG-7 HEDP Rocket", Ammo, weight: 2f, bulk: 2f, maxStack: 20,
+            ammo: new AmmoSpec { CategoryPath = "rpg", InjuryKind = ConditionKind.Gunshot, Damage = 35f, PenSharp = 30f, PenBlunt = 50f });
+        RocketIncend = RegisterItem("RocketIncend", "PG-7 Incendiary Rocket", Ammo, weight: 2f, bulk: 2f, maxStack: 20,
+            ammo: new AmmoSpec { CategoryPath = "rpg", InjuryKind = ConditionKind.Burn, Damage = 30f, PenSharp = 4f, PenBlunt = 40f });
+
+        // RPG-7 — shoulder rocket launcher. Holds one rocket; the warhead colour
+        // shows the loaded type. Launch + explosion behaviour is TODO (no shooty).
+        RocketLauncher = RegisterItem("RPG7", "RPG-7", Equipment, weight: 7f, bulk: 5f, equippable: true,
+            ranged: new RangedSpec
+            {
+                Range = 40f,
+                AmmoCategoryPath = "rpg",
+                MagazineSize = 1,
+                Modes = FireModeFlags.Single,
+                BurstShots = 1,
+                ProjectileSpeed = 60f,
+                SpreadDegrees = 1.0f,
+                RecoilPerShot = 3f,
+                RecoilRecoverPerSec = 5f,
+                MaxRecoilDegrees = 6f,
+                WarmupTicks = 20,
+                AimTicks = 90,
+                ShotCooldownTicks = 60,
+                CycleCooldownTicks = 60,
+                ReloadTicks = 240,
             });
 
         // Kevlar vest — torso only. Sharp 8 mmRHA deflects HP (3) + FMJ (6)

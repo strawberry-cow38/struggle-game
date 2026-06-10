@@ -18,7 +18,7 @@ public static class WeaponIcons
     // itemPath (+ empty-mag state) -> asset file stem. null = no art (use the
     // vector glyph). Empty mag swaps to the "<gun>_nomag" sprite where one
     // exists (the M700 is an internal-mag bolt rifle, so it has none).
-    private static string? ResolveFile(string itemPath, bool empty)
+    private static string? ResolveFile(string itemPath, bool empty, string? loadedAmmoPath)
     {
         if (string.IsNullOrEmpty(itemPath)) return null;
         // ItemsByPath is keyed by FullPath ("Equipment/AssaultRifle"); match on
@@ -26,6 +26,8 @@ public static class WeaponIcons
         string? id = ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def) ? def.Id : null;
         return id switch
         {
+            // RPG warhead colour = the loaded rocket type (empty = no rocket).
+            "RPG7" => empty ? "rpg_empty" : RpgFile(loadedAmmoPath),
             "AssaultRifle" => empty ? "m16_nomag" : "m16",
             "SubmachineGun" => empty ? "mp5_nomag" : "mp5",
             "BoltActionRifle" => "m700",
@@ -37,6 +39,19 @@ public static class WeaponIcons
             "G3" => empty ? "g3_nomag" : "g3",
             "RPD" => empty ? "rpd_nomag" : "rpd",
             _ => null,
+        };
+    }
+
+    // RPG loaded sprite by rocket type (default to frag).
+    private static string RpgFile(string? loadedAmmoPath)
+    {
+        string? aid = (loadedAmmoPath is not null && ItemCatalog.ItemsByPath.TryGetValue(loadedAmmoPath, out var ad))
+            ? ad.Id : null;
+        return aid switch
+        {
+            "RocketHEDP" => "rpg_hedp",
+            "RocketIncend" => "rpg_incend",
+            _ => "rpg_frag",
         };
     }
 
@@ -86,14 +101,14 @@ public static class WeaponIcons
         return sil;
     }
 
-    // Art texture for an item (empty = show the no-mag variant), or null if it
-    // has no pixel art.
-    public static ImageTexture? Texture(string itemPath, bool empty = false)
-        => TextureByFile(ResolveFile(itemPath, empty));
+    // Art texture for an item (empty = show the no-mag variant; loadedAmmoPath
+    // colours the RPG warhead), or null if it has no pixel art.
+    public static ImageTexture? Texture(string itemPath, bool empty = false, string? loadedAmmoPath = null)
+        => TextureByFile(ResolveFile(itemPath, empty, loadedAmmoPath));
 
-    // Drop-shadow silhouette matching Texture(itemPath, empty).
-    public static ImageTexture? Silhouette(string itemPath, bool empty = false)
-        => SilhouetteByFile(ResolveFile(itemPath, empty));
+    // Drop-shadow silhouette matching Texture(...).
+    public static ImageTexture? Silhouette(string itemPath, bool empty = false, string? loadedAmmoPath = null)
+        => SilhouetteByFile(ResolveFile(itemPath, empty, loadedAmmoPath));
 
     private static ImageTexture? UnarmedTexture() => TextureByFile("fist");
     private static ImageTexture? UnarmedSilhouette() => SilhouetteByFile("fist");
@@ -108,10 +123,10 @@ public static class WeaponIcons
     // An icon control that fills its parent rect (inset by pad): a TextureRect
     // when the item has art (or the fist for unarmed), otherwise the vector
     // WeaponGlyph. shadow lays a fat soft dark drop shadow behind the sprite.
-    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool shadow = false, bool empty = false)
+    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool shadow = false, bool empty = false, string? loadedAmmoPath = null)
     {
-        var tex = Texture(itemPath, empty);
-        var sil = shadow ? Silhouette(itemPath, empty) : null;
+        var tex = Texture(itemPath, empty, loadedAmmoPath);
+        var sil = shadow ? Silhouette(itemPath, empty, loadedAmmoPath) : null;
         if (tex is null && kind == WeaponGlyph.Kind.Unarmed)
         {
             tex = UnarmedTexture();

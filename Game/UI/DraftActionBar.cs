@@ -483,7 +483,7 @@ public partial class DraftActionBar : CanvasLayer
 
     // One weapon square: path, icon kind, active flag. Path "" = Unarmed,
     // a null entry = an empty square.
-    private readonly record struct WpnSeg(string Path, WeaponGlyph.Kind Kind, bool Active, bool Empty);
+    private readonly record struct WpnSeg(string Path, WeaponGlyph.Kind Kind, bool Active, bool Empty, string? AmmoPath);
 
     // Up to 3 carried weapons (equipped + pocketed, de-duped) fill the first
     // three squares; the 4th is always Unarmed. Empty squares pad the grid to
@@ -493,7 +493,8 @@ public partial class DraftActionBar : CanvasLayer
         var weapons = new List<WpnSeg>();
         var seen = new HashSet<string>();
         bool anyEquipped = false;
-        int pawnMag = p.RangedMag;  // local copy — `in p` can't be captured by Consider
+        int pawnMag = p.RangedMag;          // local copies — `in p` can't be captured
+        string? pawnAmmo = p.LoadedAmmoPath;
 
         void Consider(string path, bool equipped)
         {
@@ -501,9 +502,11 @@ public partial class DraftActionBar : CanvasLayer
             if (!def.IsWeapon && !def.IsRangedWeapon) return;
             if (equipped) anyEquipped = true;
             if (!seen.Add(path)) { if (equipped) MarkActive(weapons, path); return; }
-            // The active (equipped) ranged weapon shows its no-mag sprite when empty.
+            // The active (equipped) ranged weapon shows its no-mag sprite when
+            // empty, and its loaded ammo (RPG warhead colour).
             bool empty = equipped && def.IsRangedWeapon && pawnMag == 0;
-            weapons.Add(new WpnSeg(path, def.IsRangedWeapon ? WeaponGlyph.Kind.Ranged : WeaponGlyph.Kind.Melee, equipped, empty));
+            string? ammo = equipped && def.IsRangedWeapon ? pawnAmmo : null;
+            weapons.Add(new WpnSeg(path, def.IsRangedWeapon ? WeaponGlyph.Kind.Ranged : WeaponGlyph.Kind.Melee, equipped, empty, ammo));
         }
 
         foreach (var eq in p.Equipped) Consider(eq.ItemPath, equipped: true);
@@ -512,10 +515,10 @@ public partial class DraftActionBar : CanvasLayer
         // Four squares: up to 3 weapons, empties, then Unarmed in the last.
         var slots = new List<WpnSeg?>();
         for (int i = 0; i < 3; i++) slots.Add(i < weapons.Count ? weapons[i] : (WpnSeg?)null);
-        slots.Add(new WpnSeg("", WeaponGlyph.Kind.Unarmed, !anyEquipped, false));
+        slots.Add(new WpnSeg("", WeaponGlyph.Kind.Unarmed, !anyEquipped, false, null));
 
         var sb = new System.Text.StringBuilder();
-        foreach (var s in slots) sb.Append(s is { } v ? v.Path + (v.Active ? "1" : "0") + (v.Empty ? "E" : "") : "_").Append('|');
+        foreach (var s in slots) sb.Append(s is { } v ? v.Path + (v.Active ? "1" : "0") + (v.Empty ? "E" : "") + (v.AmmoPath ?? "") : "_").Append('|');
         string sig = sb.ToString();
         if (sig == _pocketSig) return;
         _pocketSig = sig;
@@ -566,7 +569,7 @@ public partial class DraftActionBar : CanvasLayer
 
         // Pixel-art icon if the item has one (assets/items/<key>.png);
         // otherwise the vector WeaponGlyph for that weapon kind.
-        btn.AddChild(WeaponIcons.Make(s.Path, s.Kind, empty: s.Empty));
+        btn.AddChild(WeaponIcons.Make(s.Path, s.Kind, empty: s.Empty, loadedAmmoPath: s.AmmoPath));
 
         string path = s.Path;
         btn.Pressed += () =>

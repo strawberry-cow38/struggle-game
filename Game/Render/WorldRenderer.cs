@@ -1124,9 +1124,10 @@ public partial class WorldRenderer : Node2D
     {
         var (path, kind) = StruggleGame.Game.UI.WeaponIcons.PickEquipped(d);
         if (kind != StruggleGame.Game.UI.WeaponGlyph.Kind.Ranged) return;
-        // Empty mag (reloading / out of ammo) shows the no-mag sprite.
+        // Empty mag (reloading / out of ammo) shows the no-mag sprite; the
+        // loaded ammo colours an RPG's warhead.
         bool empty = d.RangedMag == 0;
-        var tex = StruggleGame.Game.UI.WeaponIcons.Texture(path, empty);
+        var tex = StruggleGame.Game.UI.WeaponIcons.Texture(path, empty, d.LoadedAmmoPath);
         if (tex is null) return;
 
         float aspect = (float)tex.GetWidth() / tex.GetHeight();
@@ -1152,7 +1153,7 @@ public partial class WorldRenderer : Node2D
         // Fat soft drop shadow: dark silhouette copies offset down-right in
         // screen space, scaled to the gun length so it hugs the gun (same
         // proportions as the UI icon, not a floaty fixed gap).
-        var sil = StruggleGame.Game.UI.WeaponIcons.Silhouette(path, empty);
+        var sil = StruggleGame.Game.UI.WeaponIcons.Silhouette(path, empty, d.LoadedAmmoPath);
         if (sil is not null)
         {
             var shadow = new Color(0f, 0f, 0f, 0.16f);
