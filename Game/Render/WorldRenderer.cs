@@ -108,7 +108,6 @@ public partial class WorldRenderer : Node2D
     private static readonly Color RangeCircleColor = new(1.0f, 0.45f, 0.30f, 0.35f);
     private static readonly Color DraftedRing = new(1.0f, 0.25f, 0.20f, 1.0f);
     private static readonly Color CoverCrouchColor = new(0.55f, 0.80f, 0.95f, 0.9f);
-    private static readonly Color EquippedMarkerColor = new(0.30f, 0.85f, 1.0f, 1.0f);
     private static readonly Color FacingArrowColor = new(0.15f, 0.10f, 0.05f, 0.9f);
     private static readonly Color CorpseColor = new(0.45f, 0.42f, 0.40f, 1f);
     private static readonly Color CorpseXColor = new(0.95f, 0.10f, 0.10f, 1f);
@@ -127,7 +126,6 @@ public partial class WorldRenderer : Node2D
     // Reused polygon scratch so the per-pawn / per-crop draw loops don't
     // heap-allocate a fresh Vector2[] every frame. DrawColoredPolygon
     // copies the points immediately, so a shared buffer is safe.
-    private readonly Vector2[] _equipDiamondPts = new Vector2[4];
     private readonly Vector2[] _cropTriPts = new Vector2[3];
     private static readonly Color OrderMarker = new(1.0f, 0.40f, 0.20f, 0.95f);
     private static readonly Color TrunkColor = new(0.32f, 0.20f, 0.10f);
@@ -800,19 +798,6 @@ public partial class WorldRenderer : Node2D
                     DrawRect(carry, WoodColor, filled: true);
                     DrawRect(new Rect2(carry.Position + new Vector2(0, 1f), new Vector2(carry.Size.X, 2f)), WoodHighlight, filled: true);
                 }
-                if (d.Equipped.Length > 0)
-                {
-                    // Equipped-gear marker: a small cyan diamond pinned to
-                    // the pawn's lower-right. Dummy stand-in until real
-                    // per-item apparel sprites exist.
-                    float s = PixelsPerTile * 0.16f;
-                    var ec = new Vector2(center.X + radius * 0.6f, center.Y + radius * 0.6f);
-                    _equipDiamondPts[0] = new Vector2(ec.X, ec.Y - s);
-                    _equipDiamondPts[1] = new Vector2(ec.X + s, ec.Y);
-                    _equipDiamondPts[2] = new Vector2(ec.X, ec.Y + s);
-                    _equipDiamondPts[3] = new Vector2(ec.X - s, ec.Y);
-                    DrawColoredPolygon(_equipDiamondPts, EquippedMarkerColor);
-                }
                 if (_selectedDummyIdsScratch.Contains(d.EntityId))
                 {
                     DrawSelectionBrackets(center, radius + 7f, SelAge(IdKey(1, d.EntityId)), (float)_selTime, rotate: true, color: d.IsEnemy ? SelRed : SelBlue);
@@ -1069,6 +1054,14 @@ public partial class WorldRenderer : Node2D
     private const float DownedCycleMs = 1100f;
     private static readonly Color DownedColor = new(1f, 0.35f, 0.30f, 1f);
 
+    // Screen-space offsets (down-right cluster) for the held weapon's fat soft
+    // drop shadow — same idea as the UI icon's shadow.
+    private static readonly Vector2[] HeldShadowOffsets =
+    {
+        new(3f, 4f), new(4.4f, 4f), new(1.6f, 4f), new(3f, 5.4f), new(3f, 2.6f),
+        new(4f, 5f), new(2f, 5f), new(4f, 3f), new(2f, 3f),
+    };
+
     // Draw the equipped ranged weapon held in a carry pose: stock pinned to
     // the right shoulder, barrel angled 45° down toward the left of the body.
     // The M16 sprite has its muzzle on the left, stock on the right.
@@ -1082,12 +1075,27 @@ public partial class WorldRenderer : Node2D
         float aspect = (float)tex.GetWidth() / tex.GetHeight();
         float len = PixelsPerTile * 0.72f;          // ~1m rifle
         float h = len / aspect;
+        var rect = new Rect2(-len, -h * 0.5f, len, h);
+        const float rot = -Mathf.Pi / 4f;           // stock up-right, muzzle down-left
         // Stock anchor at the right shoulder (right + slightly up of center).
         var stock = center + new Vector2(radius * 0.55f, -radius * 0.30f);
-        // Rotate so the stock (image right) points up-right and the muzzle
-        // (image left) points down-left at 45°.
-        DrawSetTransform(stock, -Mathf.Pi / 4f, Vector2.One);
-        DrawTextureRect(tex, new Rect2(-len, -h * 0.5f, len, h), tile: false);
+
+        // Fat soft drop shadow: dark silhouette copies offset down-right in
+        // screen space (under the rotated gun).
+        var sil = StruggleGame.Game.UI.WeaponIcons.Silhouette(path);
+        if (sil is not null)
+        {
+            var shadow = new Color(0f, 0f, 0f, 0.16f);
+            foreach (var off in HeldShadowOffsets)
+            {
+                DrawSetTransform(stock + off, rot, Vector2.One);
+                DrawTextureRect(sil, rect, tile: false, modulate: shadow);
+                DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+            }
+        }
+
+        DrawSetTransform(stock, rot, Vector2.One);
+        DrawTextureRect(tex, rect, tile: false);
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
     }
 
