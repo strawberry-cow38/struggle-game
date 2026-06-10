@@ -33,8 +33,6 @@ public partial class ColonistBar : CanvasLayer
     private readonly Dictionary<int, string> _loadoutSig = new();
     // Weapon-icon holder per card (below the name), refreshed when loadout changes.
     private readonly Dictionary<int, Control> _weaponSlots = new();
-    // Weapon-plate stylebox per card — pulsed with a cyan glow like selection.
-    private readonly Dictionary<int, ScanlineStyleBox> _weaponPlateBox = new();
     // Stable display order — new colonists append to the right; the player can
     // drag to reorder. Removed colonists drop out, others keep their slot.
     private readonly List<int> _order = new();
@@ -124,19 +122,6 @@ public partial class ColonistBar : CanvasLayer
             else _selSince.Remove(id);
             card.AddThemeStyleboxOverride("panel", CardBox(cardEdge, cardGlow, cardGlowSize));
             frame.AddThemeStyleboxOverride("panel", FrameBox(ring));
-
-            // Weapon plate mirrors the card's selection: cyan outline + pulsing
-            // glow when selected, plain panel otherwise.
-            if (_weaponPlateBox.TryGetValue(id, out var pbox))
-            {
-                pbox.Flat.BorderColor = cardEdge;
-                int bw = selected ? 2 : 1;
-                pbox.Flat.BorderWidthLeft = pbox.Flat.BorderWidthRight = bw;
-                pbox.Flat.BorderWidthTop = pbox.Flat.BorderWidthBottom = bw;
-                pbox.Flat.ShadowColor = cardGlow;
-                pbox.Flat.ShadowSize = cardGlowSize;
-                pbox.EmitChanged();
-            }
             if (has)
             {
                 string lo = LoadoutSig(d);
@@ -340,7 +325,6 @@ public partial class ColonistBar : CanvasLayer
         _cards.Clear();
         _loadoutSig.Clear();
         _weaponSlots.Clear();
-        _weaponPlateBox.Clear();
 
         BuildCards(colonists);
     }
@@ -442,16 +426,13 @@ public partial class ColonistBar : CanvasLayer
             wrap.AddThemeConstantOverride("separation", 4);
             wrap.AddChild(card);
 
-            var weapon = new PanelContainer
+            var weapon = new Control
             {
                 CustomMinimumSize = new Vector2(0, 30),
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            var plateBox = UiTheme.PanelBox(corner: 6, margin: 4);
-            weapon.AddThemeStyleboxOverride("panel", plateBox);
             wrap.AddChild(weapon);
             _weaponSlots[id] = weapon;
-            _weaponPlateBox[id] = plateBox;
 
             row.AddChild(wrap);
             _cards.Add((id, card, frame, portrait));
@@ -495,7 +476,7 @@ public partial class ColonistBar : CanvasLayer
         if (!_weaponSlots.TryGetValue(id, out var holder)) return;
         foreach (var ch in holder.GetChildren()) { holder.RemoveChild(ch); ch.QueueFree(); }
         var (path, kind) = WeaponIcons.PickEquipped(d);
-        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2));
+        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2, shadow: true));
     }
 
     private void Reposition()
