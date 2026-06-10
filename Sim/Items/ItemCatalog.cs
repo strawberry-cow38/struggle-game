@@ -212,6 +212,8 @@ public static class ItemCatalog
     public static readonly ItemDef Ammo22lr;
     // G3 — 7.62x51 battle rifle: select-fire, hard-hitting, heavy recoil.
     public static readonly ItemDef BattleRifle;
+    // RPD — belt-fed 7.62x39 LMG: full-auto, big belt, heavy. Shares AKM ammo.
+    public static readonly ItemDef LmgRpd;
     // Consumed per tend/stabilize job.
     public static readonly ItemDef Medicine;
 
@@ -458,6 +460,28 @@ public static class ItemCatalog
                 ShotCooldownTicks = 6,
                 CycleCooldownTicks = 26,
                 ReloadTicks = 130,
+            });
+
+        // RPD — belt-fed 7.62x39 LMG: full-auto only, 100-round belt, heavy,
+        // looser cone but low per-shot recoil. Shares the AKM's Soviet ammo.
+        LmgRpd = RegisterItem("RPD", "RPD", Equipment, weight: 7.5f, bulk: 5f, equippable: true,
+            ranged: new RangedSpec
+            {
+                Range = 46f,
+                AmmoCategoryPath = "762x39",
+                MagazineSize = 100,
+                Modes = FireModeFlags.Auto,
+                BurstShots = 1,
+                ProjectileSpeed = 140f,
+                SpreadDegrees = 2.0f,
+                RecoilPerShot = 0.7f,
+                RecoilRecoverPerSec = 8f,
+                MaxRecoilDegrees = 9f,
+                WarmupTicks = 16,
+                AimTicks = 60,
+                ShotCooldownTicks = 6,
+                CycleCooldownTicks = 24,
+                ReloadTicks = 220,
             });
 
         // Kevlar vest — torso only. Sharp 8 mmRHA deflects HP (3) + FMJ (6)

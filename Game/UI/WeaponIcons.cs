@@ -35,6 +35,7 @@ public static class WeaponIcons
             "AA12" => empty ? "aa12_nomag" : "aa12",
             "CP33" => empty ? "cp33_nomag" : "cp33",
             "G3" => empty ? "g3_nomag" : "g3",
+            "RPD" => empty ? "rpd_nomag" : "rpd",
             _ => null,
         };
     }

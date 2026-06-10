@@ -28,6 +28,7 @@ public partial class CombatSfx : Node
             (ItemCatalog.SubmachineGun, "Shot_GTEK_MP5Type.ogg"),
             (ItemCatalog.BoltActionRifle, "Shot_GTEK762mm.ogg"),
             (ItemCatalog.Akm, "Shot_GTEK762mmSoviet.ogg"),
+            (ItemCatalog.LmgRpd, "Shot_GTEK762mmSoviet.ogg"),  // shares the AKM's 7.62x39
             (ItemCatalog.Lmg, "Shot_GTEK556mm_BeltA.ogg"),
             (ItemCatalog.AutoShotgun, "ShotA.ogg"),
             (ItemCatalog.Pistol, "Shot_GTEK22.ogg"),
