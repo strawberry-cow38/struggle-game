@@ -1128,7 +1128,10 @@ public partial class WorldRenderer : Node2D
         if (tex is null) return;
 
         float aspect = (float)tex.GetWidth() / tex.GetHeight();
-        float len = PixelsPerTile * 0.72f;          // ~1m rifle
+        // Sprites are sized at a consistent pixels-per-metre (m16 = 256px ≈ 1m),
+        // so scale the drawn length by the sprite width to keep real proportions
+        // (an MP5 draws shorter than an M16).
+        float len = PixelsPerTile * 0.72f * (tex.GetWidth() / 256f);
         float h = len / aspect;
         var rect = new Rect2(-len, -h * 0.5f, len, h);
 

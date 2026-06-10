@@ -62,7 +62,13 @@ public static class WeaponIcons
         // ItemsByPath is keyed by FullPath ("Equipment/AssaultRifle"); match on
         // the item Id so category nesting doesn't matter.
         string? id = ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def) ? def.Id : null;
-        string? file = id switch { "AssaultRifle" => "m16", _ => null };
+        string? file = id switch
+        {
+            "AssaultRifle" => "m16",
+            "SubmachineGun" => "mp5",
+            "BoltActionRifle" => "m700",
+            _ => null,
+        };
         var tex = file is not null ? LoadIcon(file) : null;
         _cache[itemPath] = tex;
         return tex;
