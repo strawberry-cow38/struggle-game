@@ -27,6 +27,7 @@ public partial class CombatSfx : Node
             (ItemCatalog.AssaultRifle, "Shot_GTEK556mm.ogg"),
             (ItemCatalog.SubmachineGun, "Shot_GTEK_MP5Type.ogg"),
             (ItemCatalog.BoltActionRifle, "Shot_GTEK762mm.ogg"),
+            (ItemCatalog.Akm, "Shot_GTEK762mmSoviet.ogg"),
         };
         foreach (var (weapon, ogg) in map)
         {

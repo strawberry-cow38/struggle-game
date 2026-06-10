@@ -234,13 +234,13 @@ public static class ItemCatalog
         // 7.62x51mm NATO — full-power rifle round: high damage + penetration.
         Ammo762x51 = RegisterItem("Ammo762x51", "7.62x51mm NATO", Ammo, weight: 0.025f, bulk: 0.025f, maxStack: 500,
             ammo: new AmmoSpec { CategoryPath = "762x51", InjuryKind = ConditionKind.Gunshot, Damage = 32f, PenSharp = 16f, PenBlunt = 45f });
-        AssaultRifle = RegisterItem("AssaultRifle", "M16A1", Equipment, weight: 4f, bulk: 3f, equippable: true,
+        AssaultRifle = RegisterItem("AssaultRifle", "M16A2", Equipment, weight: 4f, bulk: 3f, equippable: true,
             ranged: new RangedSpec
             {
                 Range = 50f,
                 AmmoCategoryPath = "Rifle",
                 MagazineSize = 30,
-                Modes = FireModeFlags.Single | FireModeFlags.Burst | FireModeFlags.Auto,
+                Modes = FireModeFlags.Single | FireModeFlags.Burst, // M16A2: 3-rnd burst, no full auto
                 BurstShots = 3,
                 // Fast round — snappy, not floaty. Tracer length scales with
                 // this so it reads as a continuous streak, not stepping dots.
@@ -317,7 +317,7 @@ public static class ItemCatalog
                 Range = 46f,
                 AmmoCategoryPath = "762x39",
                 MagazineSize = 30,
-                Modes = FireModeFlags.Single | FireModeFlags.Burst | FireModeFlags.Auto,
+                Modes = FireModeFlags.Single | FireModeFlags.Auto, // AKM: semi + full auto, no burst
                 BurstShots = 3,
                 ProjectileSpeed = 140f,
                 SpreadDegrees = 1.7f,
@@ -338,7 +338,7 @@ public static class ItemCatalog
                 Range = 52f,
                 AmmoCategoryPath = "Rifle",
                 MagazineSize = 30,
-                Modes = FireModeFlags.Single | FireModeFlags.Burst | FireModeFlags.Auto,
+                Modes = FireModeFlags.Single | FireModeFlags.Auto, // AUG: semi + full auto, no burst
                 BurstShots = 3,
                 ProjectileSpeed = 150f,
                 SpreadDegrees = 1.0f,
