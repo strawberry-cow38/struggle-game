@@ -196,6 +196,11 @@ public static class ItemCatalog
     // M700 7.62x51 bolt rifle — high damage, long range, slow.
     public static readonly ItemDef BoltActionRifle;
     public static readonly ItemDef Ammo762x51;
+    // AKM 7.62x39 — punchy assault rifle, more recoil + less precise than the M16.
+    public static readonly ItemDef Akm;
+    public static readonly ItemDef Ammo762x39;
+    // AUG 5.56 bullpup — accurate, shares the M16's Rifle ammo.
+    public static readonly ItemDef Aug;
     // Consumed per tend/stabilize job.
     public static readonly ItemDef Medicine;
 
@@ -297,6 +302,54 @@ public static class ItemCatalog
                 ShotCooldownTicks = 90,
                 CycleCooldownTicks = 90, // 1.5s bolt cycle between shots
                 ReloadTicks = 180,
+            });
+
+        // 7.62x39mm Soviet — intermediate round: harder-hitting than 5.56,
+        // less than the full-power 7.62x51.
+        Ammo762x39 = RegisterItem("Ammo762x39", "7.62x39mm Soviet", Ammo, weight: 0.018f, bulk: 0.018f, maxStack: 500,
+            ammo: new AmmoSpec { CategoryPath = "762x39", InjuryKind = ConditionKind.Gunshot, Damage = 20f, PenSharp = 10f, PenBlunt = 38f });
+
+        // AKM — 7.62x39 assault rifle: more punch + recoil, looser cone than the
+        // M16, a touch slower cyclic. Select-fire.
+        Akm = RegisterItem("AKM", "AKM", Equipment, weight: 4.3f, bulk: 3f, equippable: true,
+            ranged: new RangedSpec
+            {
+                Range = 46f,
+                AmmoCategoryPath = "762x39",
+                MagazineSize = 30,
+                Modes = FireModeFlags.Single | FireModeFlags.Burst | FireModeFlags.Auto,
+                BurstShots = 3,
+                ProjectileSpeed = 140f,
+                SpreadDegrees = 1.7f,
+                RecoilPerShot = 1.5f,
+                RecoilRecoverPerSec = 8.0f,
+                MaxRecoilDegrees = 8.5f,
+                WarmupTicks = 12,
+                AimTicks = 54,
+                ShotCooldownTicks = 6,   // ~600 rpm cyclic
+                CycleCooldownTicks = 26,
+                ReloadTicks = 120,
+            });
+
+        // AUG — 5.56 bullpup: accurate, shares the M16's Rifle ammo, snappy.
+        Aug = RegisterItem("AUG", "AUG", Equipment, weight: 3.6f, bulk: 3f, equippable: true,
+            ranged: new RangedSpec
+            {
+                Range = 52f,
+                AmmoCategoryPath = "Rifle",
+                MagazineSize = 30,
+                Modes = FireModeFlags.Single | FireModeFlags.Burst | FireModeFlags.Auto,
+                BurstShots = 3,
+                ProjectileSpeed = 150f,
+                SpreadDegrees = 1.0f,
+                RecoilPerShot = 0.9f,
+                RecoilRecoverPerSec = 9.5f,
+                MaxRecoilDegrees = 6.5f,
+                WarmupTicks = 10,
+                AimTicks = 48,
+                ShotCooldownTicks = 5,
+                CycleCooldownTicks = 22,
+                ReloadTicks = 115,
             });
 
         // Kevlar vest — torso only. Sharp 8 mmRHA deflects HP (3) + FMJ (6)

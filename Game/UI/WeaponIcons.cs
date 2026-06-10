@@ -67,6 +67,8 @@ public static class WeaponIcons
             "AssaultRifle" => "m16",
             "SubmachineGun" => "mp5",
             "BoltActionRifle" => "m700",
+            "AKM" => "akm",
+            "AUG" => "aug",
             _ => null,
         };
         var tex = file is not null ? LoadIcon(file) : null;
