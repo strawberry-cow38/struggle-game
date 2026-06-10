@@ -527,6 +527,26 @@ public partial class DraftActionBar : CanvasLayer
             if (segs[i].Path == path) { segs[i] = segs[i] with { Active = true }; return; }
     }
 
+    // Per-item pixel-art icons, loaded once from assets/items/<file>.png at
+    // runtime (no Godot import, same as the ground texture). null = no art,
+    // fall back to the vector glyph. Maps item key -> asset file.
+    private static readonly Dictionary<string, ImageTexture?> _itemIconCache = new();
+    private static ImageTexture? ItemIcon(string itemPath)
+    {
+        if (string.IsNullOrEmpty(itemPath)) return null;
+        if (_itemIconCache.TryGetValue(itemPath, out var cached)) return cached;
+        string? file = itemPath switch { "AssaultRifle" => "m16", _ => null };
+        ImageTexture? tex = null;
+        if (file is not null)
+        {
+            var img = new Image();
+            if (img.Load(ProjectSettings.GlobalizePath($"res://assets/items/{file}.png")) == Error.Ok)
+                tex = ImageTexture.CreateFromImage(img);
+        }
+        _itemIconCache[itemPath] = tex;
+        return tex;
+    }
+
     private Control BuildSquare(WpnSeg? seg)
     {
         // (tile - 2*border - 2*margin - gap) / 2 — the 2x2 fills the card.
@@ -561,7 +581,21 @@ public partial class DraftActionBar : CanvasLayer
         btn.AddThemeStyleboxOverride("hover", MakeBox(fill.Lightened(0.10f), default, 0, 0));
         btn.AddThemeStyleboxOverride("pressed", MakeBox(fill, default, 0, 0));
 
-        var icon = new WeaponGlyph { Glyph = s.Kind, MouseFilter = Control.MouseFilterEnum.Ignore };
+        // Pixel-art icon if the item has one (assets/items/<key>.png);
+        // otherwise the vector WeaponGlyph for that weapon kind.
+        Control icon;
+        var tex = ItemIcon(s.Path);
+        if (tex is not null)
+            icon = new TextureRect
+            {
+                Texture = tex,
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+        else
+            icon = new WeaponGlyph { Glyph = s.Kind, MouseFilter = Control.MouseFilterEnum.Ignore };
         icon.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         icon.OffsetLeft = 4; icon.OffsetRight = -4; icon.OffsetTop = 4; icon.OffsetBottom = -4;
         btn.AddChild(icon);
