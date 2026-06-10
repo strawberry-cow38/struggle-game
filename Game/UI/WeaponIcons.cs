@@ -13,28 +13,43 @@ public static class WeaponIcons
 {
     private static readonly Dictionary<string, ImageTexture?> _cache = new();
     private static readonly Dictionary<string, ImageTexture?> _silhouette = new();
+    // "unarmed" is keyed separately (no item path) in these same maps.
+    private const string UnarmedKey = "\0unarmed";
 
-    // Solid white silhouette of an item's art (opaque pixels -> white, alpha
-    // kept), tinted via Modulate to build a drop shadow. Null if no art.
+    // Load assets/items/<file>.png with mipmaps (trilinear keeps the heavy
+    // downscale clean). No Godot import — same path as the ground texture.
+    private static ImageTexture? LoadIcon(string file)
+    {
+        var img = new Image();
+        if (img.Load(ProjectSettings.GlobalizePath($"res://assets/items/{file}.png")) != Error.Ok)
+            return null;
+        img.GenerateMipmaps();
+        return ImageTexture.CreateFromImage(img);
+    }
+
+    // Solid white silhouette (opaque pixels -> white, alpha kept), tinted via
+    // Modulate to build a drop shadow.
+    private static ImageTexture BuildSilhouette(ImageTexture src)
+    {
+        var img = src.GetImage();
+        img.Convert(Image.Format.Rgba8);
+        int w = img.GetWidth(), h = img.GetHeight();
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                float a = img.GetPixel(x, y).A;
+                if (a > 0f) img.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+            }
+        img.GenerateMipmaps();
+        return ImageTexture.CreateFromImage(img);
+    }
+
+    // Drop-shadow silhouette of an item's art, or null if no art.
     public static ImageTexture? Silhouette(string itemPath)
     {
         if (string.IsNullOrEmpty(itemPath)) return null;
         if (_silhouette.TryGetValue(itemPath, out var cached)) return cached;
-        ImageTexture? sil = null;
-        if (Texture(itemPath) is { } tex)
-        {
-            var img = tex.GetImage();
-            img.Convert(Image.Format.Rgba8);
-            int w = img.GetWidth(), h = img.GetHeight();
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                {
-                    float a = img.GetPixel(x, y).A;
-                    if (a > 0f) img.SetPixel(x, y, new Color(1f, 1f, 1f, a));
-                }
-            img.GenerateMipmaps();
-            sil = ImageTexture.CreateFromImage(img);
-        }
+        var sil = Texture(itemPath) is { } tex ? BuildSilhouette(tex) : null;
         _silhouette[itemPath] = sil;
         return sil;
     }
@@ -48,20 +63,27 @@ public static class WeaponIcons
         // the item Id so category nesting doesn't matter.
         string? id = ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def) ? def.Id : null;
         string? file = id switch { "AssaultRifle" => "m16", _ => null };
-        ImageTexture? tex = null;
-        if (file is not null)
-        {
-            var img = new Image();
-            if (img.Load(ProjectSettings.GlobalizePath($"res://assets/items/{file}.png")) == Error.Ok)
-            {
-                // Mipmaps so the heavy 256px->~24px downscale stays clean
-                // (trilinear) instead of muddy/aliased.
-                img.GenerateMipmaps();
-                tex = ImageTexture.CreateFromImage(img);
-            }
-        }
+        var tex = file is not null ? LoadIcon(file) : null;
         _cache[itemPath] = tex;
         return tex;
+    }
+
+    // The unarmed icon (a fist) + its shadow silhouette, shown in place of the
+    // vector glyph everywhere a pawn is empty-handed.
+    private static ImageTexture? UnarmedTexture()
+    {
+        if (_cache.TryGetValue(UnarmedKey, out var cached)) return cached;
+        var tex = LoadIcon("fist");
+        _cache[UnarmedKey] = tex;
+        return tex;
+    }
+
+    private static ImageTexture? UnarmedSilhouette()
+    {
+        if (_silhouette.TryGetValue(UnarmedKey, out var cached)) return cached;
+        var sil = UnarmedTexture() is { } tex ? BuildSilhouette(tex) : null;
+        _silhouette[UnarmedKey] = sil;
+        return sil;
     }
 
     // Cluster of offsets (centered on a down-right base) for a fat soft shadow.
@@ -72,33 +94,51 @@ public static class WeaponIcons
     };
 
     // An icon control that fills its parent rect (inset by pad): a TextureRect
-    // when the item has art, otherwise the vector WeaponGlyph for the kind.
-    // shadow lays a fat soft dark drop shadow (down-right) behind the sprite.
+    // when the item has art (or the fist for unarmed), otherwise the vector
+    // WeaponGlyph. shadow lays a fat soft dark drop shadow behind the sprite.
     public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool shadow = false)
     {
         var tex = Texture(itemPath);
-        if (tex is not null && shadow && Silhouette(itemPath) is { } sil)
+        var sil = shadow ? Silhouette(itemPath) : null;
+        if (tex is null && kind == WeaponGlyph.Kind.Unarmed)
         {
-            const float baseX = 2.5f, baseY = 3.0f, spread = 1.8f;
-            var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
-            holder.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-            foreach (var (dx, dy) in ShadowDirs)
-            {
-                var s = TexRect(sil);
-                s.Modulate = new Color(0f, 0f, 0f, 0.16f); // soft dark, stacks to fatten
-                Inset(s, pad, baseX + dx * spread, baseY + dy * spread);
-                holder.AddChild(s);
-            }
-            var sprite = TexRect(tex);
-            Inset(sprite, pad);
-            holder.AddChild(sprite);
-            return holder;
+            tex = UnarmedTexture();
+            sil = shadow ? UnarmedSilhouette() : null;
         }
 
-        Control icon = tex is not null ? TexRect(tex)
-            : (Control)new WeaponGlyph { Glyph = kind, MouseFilter = Control.MouseFilterEnum.Ignore };
-        Inset(icon, pad);
-        return icon;
+        if (tex is not null)
+            return sil is not null ? ShadowedIcon(tex, sil, pad) : InsetTex(tex, pad);
+
+        var glyph = new WeaponGlyph { Glyph = kind, MouseFilter = Control.MouseFilterEnum.Ignore };
+        Inset(glyph, pad);
+        return glyph;
+    }
+
+    private static Control InsetTex(ImageTexture tex, int pad)
+    {
+        var t = TexRect(tex);
+        Inset(t, pad);
+        return t;
+    }
+
+    // Sprite over a fat soft drop shadow (dark silhouette copies offset
+    // down-right, clustered to soften).
+    private static Control ShadowedIcon(ImageTexture tex, ImageTexture sil, int pad)
+    {
+        const float baseX = 2.5f, baseY = 3.0f, spread = 1.8f;
+        var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
+        holder.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        foreach (var (dx, dy) in ShadowDirs)
+        {
+            var s = TexRect(sil);
+            s.Modulate = new Color(0f, 0f, 0f, 0.16f);
+            Inset(s, pad, baseX + dx * spread, baseY + dy * spread);
+            holder.AddChild(s);
+        }
+        var sprite = TexRect(tex);
+        Inset(sprite, pad);
+        holder.AddChild(sprite);
+        return holder;
     }
 
     private static TextureRect TexRect(Texture2D tex) => new()
