@@ -12,6 +12,32 @@ namespace StruggleGame.Game.UI;
 public static class WeaponIcons
 {
     private static readonly Dictionary<string, ImageTexture?> _cache = new();
+    private static readonly Dictionary<string, ImageTexture?> _silhouette = new();
+
+    // Solid silhouette of an item's art (opaque pixels recolored white, alpha
+    // kept), tinted via Modulate to build a shape-following aura. Null if the
+    // item has no art.
+    public static ImageTexture? Silhouette(string itemPath)
+    {
+        if (string.IsNullOrEmpty(itemPath)) return null;
+        if (_silhouette.TryGetValue(itemPath, out var cached)) return cached;
+        ImageTexture? sil = null;
+        if (Texture(itemPath) is { } tex)
+        {
+            var img = tex.GetImage();
+            img.Convert(Image.Format.Rgba8);
+            int w = img.GetWidth(), h = img.GetHeight();
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    float a = img.GetPixel(x, y).A;
+                    if (a > 0f) img.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+                }
+            sil = ImageTexture.CreateFromImage(img);
+        }
+        _silhouette[itemPath] = sil;
+        return sil;
+    }
 
     // Art texture for an item full-path, or null if it has no pixel art.
     public static ImageTexture? Texture(string itemPath)
@@ -33,11 +59,41 @@ public static class WeaponIcons
         return tex;
     }
 
+    // Eight unit directions for the aura fan.
+    private static readonly (float dx, float dy)[] AuraDirs =
+    {
+        (1f, 0f), (-1f, 0f), (0f, 1f), (0f, -1f),
+        (0.7f, 0.7f), (-0.7f, 0.7f), (0.7f, -0.7f), (-0.7f, -0.7f),
+    };
+
     // An icon control that fills its parent rect (inset by pad): a TextureRect
     // when the item has art, otherwise the vector WeaponGlyph for the kind.
-    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4)
+    // aura adds a soft dark gray halo following the sprite shape (PNG only).
+    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool aura = false)
     {
-        Control icon = Texture(itemPath) is { } tex ? TexRect(tex)
+        var tex = Texture(itemPath);
+        if (tex is not null && aura)
+        {
+            // Soft dark gray aura: dark silhouette copies fanned out at two radii
+            // so overlap builds a gradient, with the real sprite on top.
+            var sil = Silhouette(itemPath) ?? tex;
+            var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
+            holder.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+            foreach (float r in new[] { 1.5f, 3f })
+                foreach (var (dx, dy) in AuraDirs)
+                {
+                    var halo = TexRect(sil);
+                    halo.Modulate = new Color(0.13f, 0.13f, 0.15f, 0.22f); // soft dark gray
+                    Inset(halo, pad, dx * r, dy * r);
+                    holder.AddChild(halo);
+                }
+            var top = TexRect(tex);
+            Inset(top, pad);
+            holder.AddChild(top);
+            return holder;
+        }
+
+        Control icon = tex is not null ? TexRect(tex)
             : (Control)new WeaponGlyph { Glyph = kind, MouseFilter = Control.MouseFilterEnum.Ignore };
         Inset(icon, pad);
         return icon;
