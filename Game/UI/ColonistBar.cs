@@ -430,7 +430,7 @@ public partial class ColonistBar : CanvasLayer
                 CustomMinimumSize = new Vector2(0, 30),
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            weapon.AddThemeStyleboxOverride("panel", WeaponPlateBox());
+            weapon.AddThemeStyleboxOverride("panel", UiTheme.PanelBox(corner: 6, margin: 4));
             wrap.AddChild(weapon);
             _weaponSlots[id] = weapon;
 
@@ -476,18 +476,7 @@ public partial class ColonistBar : CanvasLayer
         if (!_weaponSlots.TryGetValue(id, out var holder)) return;
         foreach (var ch in holder.GetChildren()) { holder.RemoveChild(ch); ch.QueueFree(); }
         var (path, kind) = WeaponIcons.PickEquipped(d);
-        holder.AddChild(WeaponIcons.Make(path, kind, pad: 3));
-    }
-
-    // Muted slate plate behind the weapon icon so a dark sprite reads against
-    // the terrain instead of blending in.
-    private static StyleBoxFlat WeaponPlateBox()
-    {
-        var b = new StyleBoxFlat { BgColor = new Color(0.30f, 0.28f, 0.40f, 0.94f) };
-        b.BorderColor = new Color(0.55f, 0.50f, 0.66f, 0.85f);
-        b.BorderWidthLeft = b.BorderWidthRight = b.BorderWidthTop = b.BorderWidthBottom = 1;
-        b.CornerRadiusTopLeft = b.CornerRadiusTopRight = b.CornerRadiusBottomLeft = b.CornerRadiusBottomRight = 5;
-        return b;
+        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2));
     }
 
     private void Reposition()
