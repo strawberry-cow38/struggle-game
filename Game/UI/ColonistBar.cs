@@ -31,6 +31,8 @@ public partial class ColonistBar : CanvasLayer
     private VBoxContainer _bar = null!;
     private readonly List<(int id, PanelContainer card, PanelContainer frame, PortraitView portrait)> _cards = new();
     private readonly Dictionary<int, string> _loadoutSig = new();
+    // Weapon-icon holder per card (below the name), refreshed when loadout changes.
+    private readonly Dictionary<int, Control> _weaponSlots = new();
     // Stable display order — new colonists append to the right; the player can
     // drag to reorder. Removed colonists drop out, others keep their slot.
     private readonly List<int> _order = new();
@@ -126,6 +128,7 @@ public partial class ColonistBar : CanvasLayer
                 {
                     _loadoutSig[id] = lo;
                     ApplyLoadout(portrait, d);
+                    RefreshWeaponIcon(id, d);
                 }
             }
         }
@@ -320,6 +323,7 @@ public partial class ColonistBar : CanvasLayer
         foreach (var child in _bar.GetChildren()) { _bar.RemoveChild(child); child.QueueFree(); }
         _cards.Clear();
         _loadoutSig.Clear();
+        _weaponSlots.Clear();
 
         BuildCards(colonists);
     }
@@ -415,6 +419,16 @@ public partial class ColonistBar : CanvasLayer
             name.AddThemeFontSizeOverride("font_size", 13);
             col.AddChild(name);
 
+            // Weapon icon strip under the name — PNG art or vector glyph,
+            // filled in by RefreshWeaponIcon when the loadout is read.
+            var weapon = new Control
+            {
+                CustomMinimumSize = new Vector2(0, 20),
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            col.AddChild(weapon);
+            _weaponSlots[id] = weapon;
+
             row.AddChild(card);
             _cards.Add((id, card, frame, portrait));
             inRow++;
@@ -449,6 +463,15 @@ public partial class ColonistBar : CanvasLayer
             if (def.IsArmor) armor = true;
         }
         portrait.Set(d.Drafted, rangedLen, melee, armor, IsBleeding(d), IsDowned(d));
+    }
+
+    // Rebuild the under-name weapon icon for a colonist's current loadout.
+    private void RefreshWeaponIcon(int id, in DummyState d)
+    {
+        if (!_weaponSlots.TryGetValue(id, out var holder)) return;
+        foreach (var ch in holder.GetChildren()) { holder.RemoveChild(ch); ch.QueueFree(); }
+        var (path, kind) = WeaponIcons.PickEquipped(d);
+        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2));
     }
 
     private void Reposition()
