@@ -22,9 +22,15 @@ public partial class NotificationPanel : CanvasLayer
     private const int StackGap = 6;
     private const int RightMargin = 16;
     private const float TooltipWidth = 270f;
+    private const string AudioDir = "res://Game/Assets/Audio/";
 
     private Control _root = null!;
     private VBoxContainer _stack = null!;
+
+    // Chime played when a new letter arrives (dc5_4). Pre-existing letters
+    // present on the first snapshot don't play it (no spam on load).
+    private AudioStreamPlayer _spawnSfx = null!;
+    private bool _seeded;
 
     // Hover tooltip (single reused control).
     private Panel _tooltip = null!;
@@ -72,6 +78,11 @@ public partial class NotificationPanel : CanvasLayer
 
         BuildTooltip();
         BuildDetailPane();
+
+        _spawnSfx = new AudioStreamPlayer { Name = "LetterSfx", Bus = "Master" };
+        AddChild(_spawnSfx);
+        var s = AudioStreamOggVorbis.LoadFromFile(ProjectSettings.GlobalizePath(AudioDir + "Letter.ogg"));
+        if (s is not null) _spawnSfx.Stream = s;
     }
 
     private void BuildTooltip()
@@ -197,8 +208,9 @@ public partial class NotificationPanel : CanvasLayer
         {
             _present.Add(note.Id);
             _data[note.Id] = note;
-            if (!_rows.ContainsKey(note.Id)) AddRow(note);
+            if (!_rows.ContainsKey(note.Id)) AddRow(note, animate: _seeded);
         }
+        _seeded = true;
 
         // Drop rows for letters the sim has cleared (dismissed elsewhere, etc).
         _toRemove.Clear();
@@ -206,12 +218,20 @@ public partial class NotificationPanel : CanvasLayer
             if (!_present.Contains(id)) _toRemove.Add(id);
         foreach (var id in _toRemove) RemoveRow(id);
 
+        // Letters added this/last frame need their resting position captured
+        // once the VBox has laid them out, then slide in from the right edge.
+        if (_pendingSlide.Count > 0) StartPendingSlides();
+
         // Keep the tooltip glued to its letter once its size resolves.
         if (_hoveredId != 0 && _rows.TryGetValue(_hoveredId, out var hov))
             PositionTooltip(hov);
     }
 
-    private void AddRow(GameNotificationState note)
+    // Buttons awaiting a resting-position capture (one frame after add) before
+    // their slide-in tween can start.
+    private readonly List<Button> _pendingSlide = new();
+
+    private void AddRow(GameNotificationState note, bool animate)
     {
         var color = KindColor(note.Kind);
         var btn = new Button
@@ -237,6 +257,32 @@ public partial class NotificationPanel : CanvasLayer
         _stack.AddChild(btn);
         _stack.MoveChild(btn, 0); // newest on top
         _rows[id] = btn;
+
+        if (animate)
+        {
+            _spawnSfx.Play();
+            btn.Modulate = new Color(1, 1, 1, 0); // hide until the slide kicks in next frame
+            _pendingSlide.Add(btn);
+        }
+    }
+
+    // Once the VBox has placed the freshly added letters, read each resting
+    // position, shove it off the right edge, and tween it back in.
+    private void StartPendingSlides()
+    {
+        const float slideDist = LetterWidth + RightMargin + 12f;
+        foreach (var btn in _pendingSlide)
+        {
+            if (!IsInstanceValid(btn)) continue;
+            var rest = btn.Position;
+            btn.Position = rest + new Vector2(slideDist, 0);
+            btn.Modulate = Colors.White;
+            var tw = CreateTween().SetParallel();
+            tw.TweenProperty(btn, "position", rest, 0.26f)
+              .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
+            tw.TweenProperty(btn, "modulate:a", 1f, 0.18f).From(0f);
+        }
+        _pendingSlide.Clear();
     }
 
     private void RemoveRow(int id)
