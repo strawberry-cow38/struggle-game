@@ -27,7 +27,12 @@ public static class WeaponIcons
         {
             var img = new Image();
             if (img.Load(ProjectSettings.GlobalizePath($"res://assets/items/{file}.png")) == Error.Ok)
+            {
+                // Mipmaps so the heavy 256px->~24px downscale stays clean
+                // (trilinear) instead of muddy/aliased.
+                img.GenerateMipmaps();
                 tex = ImageTexture.CreateFromImage(img);
+            }
         }
         _cache[itemPath] = tex;
         return tex;
@@ -48,9 +53,9 @@ public static class WeaponIcons
         Texture = tex,
         ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
         StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-        // Bilinear: the sprite is downscaled heavily (256px -> ~20px), so
-        // nearest aliases. Linear smooths it.
-        TextureFilter = CanvasItem.TextureFilterEnum.Linear,
+        // Trilinear: the sprite downscales heavily (256px -> ~24px). Mipmaps +
+        // linear keep it clean instead of muddy/aliased.
+        TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps,
         MouseFilter = Control.MouseFilterEnum.Ignore,
     };
 
