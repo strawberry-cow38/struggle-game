@@ -23,6 +23,7 @@ public partial class WorldRenderer : Node2D
     private ImageTexture? _wallOverlayTex;
     // Directional colonist sprites (S/N/E/W), chosen by facing.
     private ImageTexture? _colonistS, _colonistN, _colonistE, _colonistW;
+    private ImageTexture? _treeTex;
     // Cached flooring layer (one byte per tile). Drawn per-frame as small
     // DrawRects rather than as a giant per-pixel texture overlay — the
     // old (mapSize*PixelsPerTile)^2 image was 1GB at 256x256 tiles and
@@ -227,6 +228,7 @@ public partial class WorldRenderer : Node2D
         _colonistN = LoadGroundTexture("res://assets/colonist/north.png");
         _colonistE = LoadGroundTexture("res://assets/colonist/east.png");
         _colonistW = LoadGroundTexture("res://assets/colonist/west.png");
+        _treeTex = LoadGroundTexture("res://assets/world/tree.png");
 
         _wallSpritesRoot = new Node2D { Name = "WallSprites", TextureFilter = TextureFilterEnum.Nearest };
         AddChild(_wallSpritesRoot);
@@ -1310,14 +1312,24 @@ public partial class WorldRenderer : Node2D
 
         // Visually grow with stage. Saplings start at ~35% scale so they
         // still read as a tree (not invisible) and mature at 1.0.
-        float trunkW = PixelsPerTile * 0.18f * scale;
-        float trunkH = PixelsPerTile * 0.40f * scale;
-        var trunkRect = new Rect2(center.X - trunkW * 0.5f, center.Y, trunkW, trunkH);
-        DrawRect(trunkRect, TrunkColor, filled: true);
-
         float canopyR = PixelsPerTile * 0.42f * scale;
-        DrawCircle(center + new Vector2(0, -PixelsPerTile * 0.10f * scale), canopyR, CanopyDark);
-        DrawCircle(center + new Vector2(0, -PixelsPerTile * 0.12f * scale), canopyR * 0.78f, CanopyColor);
+        if (_treeTex is not null)
+        {
+            // Sprite tree: trunk base sits just below the tile point, canopy
+            // rises above. Height ~1.6 tiles at full growth.
+            float th = PixelsPerTile * 1.6f * scale;
+            float tw = th * ((float)_treeTex.GetWidth() / _treeTex.GetHeight());
+            var tr = new Rect2(center.X - tw * 0.5f, center.Y + PixelsPerTile * 0.18f - th, tw, th);
+            DrawTextureRect(_treeTex, tr, tile: false);
+        }
+        else
+        {
+            float trunkW = PixelsPerTile * 0.18f * scale;
+            float trunkH = PixelsPerTile * 0.40f * scale;
+            DrawRect(new Rect2(center.X - trunkW * 0.5f, center.Y, trunkW, trunkH), TrunkColor, filled: true);
+            DrawCircle(center + new Vector2(0, -PixelsPerTile * 0.10f * scale), canopyR, CanopyDark);
+            DrawCircle(center + new Vector2(0, -PixelsPerTile * 0.12f * scale), canopyR * 0.78f, CanopyColor);
+        }
 
         if (t.HasJob)
         {
