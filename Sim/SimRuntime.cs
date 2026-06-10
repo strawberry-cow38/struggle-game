@@ -5305,8 +5305,8 @@ public sealed class SimRuntime
             if (_trees.ContainsKey(tile)) continue;
             if (IsOccupied(x, y)) continue;
 
-            float stage = 0.3f + (float)_spawnRng.NextDouble() * 0.7f;
-            SpawnTreeAt(tile, stage);
+            // Map-start trees spawn fully grown.
+            SpawnTreeAt(tile, 1f);
             return true;
         }
         return false;
