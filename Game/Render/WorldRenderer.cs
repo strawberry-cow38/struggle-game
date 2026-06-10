@@ -24,6 +24,12 @@ public partial class WorldRenderer : Node2D
     // Directional colonist sprites (S/N/E/W), chosen by facing.
     private ImageTexture? _colonistS, _colonistN, _colonistE, _colonistW;
     private ImageTexture? _treeTex;
+    // Reused each frame to Y-sort trees + colonists into one draw order so a
+    // tree draws in front of a colonist standing above (behind) it. kind 0=tree,
+    // 1=dummy; idx into the snapshot list.
+    private readonly List<(float y, int kind, int idx)> _entitySort = new();
+    private static readonly System.Comparison<(float y, int kind, int idx)> _entityCmp =
+        (a, b) => a.y.CompareTo(b.y);
     // Cached flooring layer (one byte per tile). Drawn per-frame as small
     // DrawRects rather than as a giant per-pixel texture overlay — the
     // old (mapSize*PixelsPerTile)^2 image was 1GB at 256x256 tiles and
@@ -575,17 +581,8 @@ public partial class WorldRenderer : Node2D
         int cursorTileX = Mathf.FloorToInt(mouseLocal.X / PixelsPerTile);
         int cursorTileY = Mathf.FloorToInt(mouseLocal.Y / PixelsPerTile);
 
-        using (FrameProfiler.Instance.BeginScope("Trees"))
-        {
-            var selectedTreeSet = GetCachedSelectedSet(
-                snap.SelectedTreeIds, ref _cachedSelectedTreeIdRef, ref _cachedSelectedTreeSet);
-            foreach (var t in snap.Trees)
-            {
-                if (t.Tile.X < viewMinTileX || t.Tile.X > viewMaxTileX
-                    || t.Tile.Y < viewMinTileY || t.Tile.Y > viewMaxTileY) continue;
-                DrawTree(t, selectedTreeSet, simpleLod);
-            }
-        }
+        // Trees are drawn in the Y-sorted Entities pass (with colonists) so a
+        // tree can render in front of a colonist standing behind it.
 
         using (FrameProfiler.Instance.BeginScope("Crops"))
         {
@@ -705,21 +702,44 @@ public partial class WorldRenderer : Node2D
             DrawSelectedPath(snap);
         }
 
-        using (FrameProfiler.Instance.BeginScope("Dummies"))
+        using (FrameProfiler.Instance.BeginScope("Entities"))
         {
-            foreach (var d in snap.Dummies)
+            var selectedTreeSet = GetCachedSelectedSet(
+                snap.SelectedTreeIds, ref _cachedSelectedTreeIdRef, ref _cachedSelectedTreeSet);
+
+            // The interpolated base Y a dummy stands at — used for both the
+            // sort key and its draw position.
+            float DummyDrawY(in DummyState dd) =>
+                _prevDummyByIdScratch.TryGetValue(dd.EntityId, out var p)
+                    ? Mathf.Lerp(p.Y, dd.Y, interpAlpha) : dd.Y;
+
+            // Y-sort trees + colonists into one pass: lower base Y (further
+            // north / "above") draws first, so an entity to the south draws in
+            // front. A tree below a colonist thus occludes them.
+            _entitySort.Clear();
+            for (int i = 0; i < snap.Trees.Length; i++)
             {
-                int tx = (int)d.X;
-                int ty = (int)d.Y;
-                if (tx < viewMinTileX || tx > viewMaxTileX
-                    || ty < viewMinTileY || ty > viewMaxTileY) continue;
-                float drawX = d.X;
-                float drawY = d.Y;
-                if (_prevDummyByIdScratch.TryGetValue(d.EntityId, out var prev))
-                {
-                    drawX = Mathf.Lerp(prev.X, d.X, interpAlpha);
-                    drawY = Mathf.Lerp(prev.Y, d.Y, interpAlpha);
-                }
+                var t = snap.Trees[i];
+                if (t.Tile.X < viewMinTileX || t.Tile.X > viewMaxTileX
+                    || t.Tile.Y < viewMinTileY || t.Tile.Y > viewMaxTileY) continue;
+                _entitySort.Add((t.Tile.Y + 0.5f, 0, i));
+            }
+            for (int i = 0; i < snap.Dummies.Length; i++)
+            {
+                var d = snap.Dummies[i];
+                if ((int)d.X < viewMinTileX || (int)d.X > viewMaxTileX
+                    || (int)d.Y < viewMinTileY || (int)d.Y > viewMaxTileY) continue;
+                _entitySort.Add((DummyDrawY(d), 1, i));
+            }
+            _entitySort.Sort(_entityCmp);
+
+            foreach (var (_, kind, idx) in _entitySort)
+            {
+                if (kind == 0) { DrawTree(snap.Trees[idx], selectedTreeSet, simpleLod); continue; }
+                var d = snap.Dummies[idx];
+                float drawX = _prevDummyByIdScratch.TryGetValue(d.EntityId, out var prev)
+                    ? Mathf.Lerp(prev.X, d.X, interpAlpha) : d.X;
+                float drawY = DummyDrawY(d);
                 var center = new Vector2(drawX * PixelsPerTile, drawY * PixelsPerTile);
                 // Combat juice: lunge forward on a swing. (No victim flinch.)
                 {
