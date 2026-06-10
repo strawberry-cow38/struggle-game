@@ -210,6 +210,8 @@ public static class ItemCatalog
     // CP33 — .22 LR pistol: 33-round mag, low damage, fast, light sidearm.
     public static readonly ItemDef Pistol;
     public static readonly ItemDef Ammo22lr;
+    // G3 — 7.62x51 battle rifle: select-fire, hard-hitting, heavy recoil.
+    public static readonly ItemDef BattleRifle;
     // Consumed per tend/stabilize job.
     public static readonly ItemDef Medicine;
 
@@ -434,6 +436,28 @@ public static class ItemCatalog
                 ShotCooldownTicks = 5,
                 CycleCooldownTicks = 9,
                 ReloadTicks = 90,
+            });
+
+        // G3 — 7.62x51 battle rifle: select-fire (semi + full auto), full-power
+        // round so it hits hard with heavy recoil; 20-round mag. Shares 762x51.
+        BattleRifle = RegisterItem("G3", "G3", Equipment, weight: 4.5f, bulk: 3f, equippable: true,
+            ranged: new RangedSpec
+            {
+                Range = 55f,
+                AmmoCategoryPath = "762x51",
+                MagazineSize = 20,
+                Modes = FireModeFlags.Single | FireModeFlags.Auto,
+                BurstShots = 1,
+                ProjectileSpeed = 180f,
+                SpreadDegrees = 1.4f,
+                RecoilPerShot = 1.9f,
+                RecoilRecoverPerSec = 8f,
+                MaxRecoilDegrees = 9.5f,
+                WarmupTicks = 14,
+                AimTicks = 56,
+                ShotCooldownTicks = 6,
+                CycleCooldownTicks = 26,
+                ReloadTicks = 130,
             });
 
         // Kevlar vest — torso only. Sharp 8 mmRHA deflects HP (3) + FMJ (6)

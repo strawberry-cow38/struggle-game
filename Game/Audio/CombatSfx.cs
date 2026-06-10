@@ -31,6 +31,7 @@ public partial class CombatSfx : Node
             (ItemCatalog.Lmg, "Shot_GTEK556mm_BeltA.ogg"),
             (ItemCatalog.AutoShotgun, "ShotA.ogg"),
             (ItemCatalog.Pistol, "Shot_GTEK22.ogg"),
+            (ItemCatalog.BattleRifle, "Shot_GTEK762mm.ogg"),  // 7.62 NATO, shared with the M700
         };
         foreach (var (weapon, ogg) in map)
         {
