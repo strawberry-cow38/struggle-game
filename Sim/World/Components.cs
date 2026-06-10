@@ -756,6 +756,8 @@ public struct RangedCombat : IComponent
     public bool Reloading;         // mag refill in progress until NextActionTick
     public long ShotTick;          // last tick a shot left the muzzle (flash anim)
     public float Recoil;           // accumulated recoil cone (degrees); decays over time
+    public float LastSeenX, LastSeenY; // last fired-at target position — a lost
+                                   // burst sprays its remaining rounds here
     // True when the order was issued on an already-downed target (manual
     // retarget) — keeps firing until death. Otherwise fire stops when a
     // conscious target goes down, mirroring melee.

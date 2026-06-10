@@ -750,6 +750,14 @@ public sealed class DummyController
                         ExecuteRangedFire(entity, nt, spec, ref pos, ref path, ref w, dt, view, here);
                         return;
                     }
+                    // Committed burst with the target lost (gone / out of range /
+                    // no LoS) + nothing else to shoot: spray the rest toward the
+                    // last spot it was seen, then release.
+                    if (rc.Mode == Items.FireMode.Burst && rc.BurstRemaining > 0)
+                    {
+                        FinishBurstBlind(entity, spec, ref pos, ref path, ref w, dt, here);
+                        return;
+                    }
                     rc.TargetEntityId = 0; rc.BurstRemaining = 0;
                     // fall through to normal drafted hold/move
                 }
@@ -2343,6 +2351,16 @@ public sealed class DummyController
             || !store.TryGetEntityById(targetId, out var tgt)
             || !tgt.HasComponent<Health>() || !tgt.HasComponent<WorldPos>())
         {
+            // Target vanished mid-burst: spray the rest toward its last spot.
+            if (entity.HasComponent<RangedCombat>() && TryGetRangedWeapon(entity, out var lostGun))
+            {
+                ref var rcL = ref entity.GetComponent<RangedCombat>();
+                if (rcL.Mode == Items.FireMode.Burst && rcL.BurstRemaining > 0)
+                {
+                    FinishBurstBlind(entity, lostGun.Ranged!, ref pos, ref path, ref w, dt, here);
+                    return;
+                }
+            }
             return; // nothing valid to fight
         }
         var spec = wdef.Ranged!;
@@ -2672,6 +2690,8 @@ public sealed class DummyController
         var tgtWp = tgt.GetComponent<WorldPos>();
         EffectivePos(tgt, tgtWp.X, tgtWp.Y, out float tpx, out float tpy);
         var tp = new WorldPos { X = tpx, Y = tpy };
+        // Remember where we last engaged, so a lost burst can spray here.
+        { ref var rcSeen = ref entity.GetComponent<RangedCombat>(); rcSeen.LastSeenX = tpx; rcSeen.LastSeenY = tpy; }
         float ddx = tp.X - pos.X, ddy = tp.Y - pos.Y;
         float distTiles = MathF.Sqrt(ddx * ddx + ddy * ddy);
         var ttile = new TilePos((int)tp.X, (int)tp.Y);
@@ -2762,11 +2782,38 @@ public sealed class DummyController
         if (rc.BurstRemaining <= 0)
             rc.BurstRemaining = ShotsForMode(rc.Mode, spec); // start a burst (aim already paid)
 
-        FireOneShot(entity, tgt, spec, ref rc, pos, tp, dist, snapshot);
+        bool tgtDowned = tgt.HasComponent<Health>() && tgt.GetComponent<Health>().Unconscious;
+        FireOneShot(entity, tgt.Id, tgtDowned, spec, ref rc, pos, tp, dist, snapshot);
         rc.MagCount--;
         rc.BurstRemaining--;
         rc.ShotTick = _tick;
         rc.NextActionTick = _tick + (rc.BurstRemaining > 0 ? spec.ShotCooldownTicks : spec.CycleCooldownTicks);
+    }
+
+    // Spray the rest of a committed burst toward the last position the target
+    // was fired at — "into the unknown" when the target is gone / out of sight.
+    // Holds position, fires on the burst cadence (wide snapshot cone), and
+    // releases once the rounds are spent.
+    private void FinishBurstBlind(Entity entity, Items.RangedSpec spec, ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, TilePos here)
+    {
+        if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
+        path.Waypoints = null; path.Index = 0;
+        SnapToNearestTile(ref pos, dt, out _, out _);
+
+        ref var rc = ref entity.GetComponent<RangedCombat>();
+        var tp = new WorldPos { X = rc.LastSeenX, Y = rc.LastSeenY };
+        float ddx = tp.X - pos.X, ddy = tp.Y - pos.Y;
+        if (ddx * ddx + ddy * ddy > 1e-9f) w.Facing = MathF.Atan2(ddy, ddx);
+
+        if (rc.MagCount <= 0) { rc.TargetEntityId = 0; rc.BurstRemaining = 0; return; } // dry → stop
+        if (_tick < rc.NextActionTick) return;                                          // shot cooldown
+
+        FireOneShot(entity, 0, false, spec, ref rc, pos, tp, MathF.Sqrt(ddx * ddx + ddy * ddy), snapshot: true);
+        rc.MagCount--;
+        rc.BurstRemaining--;
+        rc.ShotTick = _tick;
+        rc.NextActionTick = _tick + (rc.BurstRemaining > 0 ? spec.ShotCooldownTicks : spec.CycleCooldownTicks);
+        if (rc.BurstRemaining <= 0) rc.TargetEntityId = 0; // burst spent → release
     }
 
     // Begin a reload: drop the spent mag now (MagCount -> 0) and start the
@@ -2828,7 +2875,7 @@ public sealed class DummyController
         => mode == Items.AimMode.Snapshot
         || (mode == Items.AimMode.Auto && dist <= range * SimConstants.SnapshotRangeFraction);
 
-    private void FireOneShot(Entity entity, Entity tgt, Items.RangedSpec spec, ref RangedCombat rc, WorldPos pos, WorldPos tp, float dist, bool snapshot)
+    private void FireOneShot(Entity entity, int targetHintId, bool tgtDowned, Items.RangedSpec spec, ref RangedCombat rc, WorldPos pos, WorldPos tp, float dist, bool snapshot)
     {
         // Dispersion cone = steady spread + current recoil. The scatter radius
         // at the target is tan(cone) * distance; the round flies a FIXED line
@@ -2855,7 +2902,6 @@ public sealed class DummyController
         float toY = pos.Y + diry * aimDist + (float)Math.Sin(ang) * r;
         // Aim at the chosen body region's height — or low for a downed/prone
         // target so finishing shots still connect.
-        bool tgtDowned = tgt.HasComponent<Health>() && tgt.GetComponent<Health>().Unconscious;
         float aimH = tgtDowned ? SimConstants.DownedAimHeight : rc.TargetArea switch
         {
             Items.TargetArea.Head => SimConstants.AimHeadHeight,
@@ -2870,7 +2916,7 @@ public sealed class DummyController
         aimH = MathF.Max(0.05f, aimH + vScatter);
         PendingProjectiles.Add(new ProjectileSpawn(
             pos.X, pos.Y, toX, toY, aimH, spec.ProjectileSpeed,
-            entity.Id, tgt.Id, true, rc.LoadedAmmoPath ?? ""));
+            entity.Id, targetHintId, true, rc.LoadedAmmoPath ?? ""));
         // Muzzle climb: this shot kicks the cone wider for the next.
         rc.Recoil = MathF.Min(spec.MaxRecoilDegrees, rc.Recoil + spec.RecoilPerShot);
     }
