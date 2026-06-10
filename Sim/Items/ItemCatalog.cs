@@ -422,7 +422,7 @@ public static class ItemCatalog
                 Range = 20f,
                 AmmoCategoryPath = "22lr",
                 MagazineSize = 33,
-                Modes = FireModeFlags.Single | FireModeFlags.Auto,
+                Modes = FireModeFlags.Single, // semi-auto pistol
                 BurstShots = 1,
                 ProjectileSpeed = 100f,
                 SpreadDegrees = 1.8f,
