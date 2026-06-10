@@ -479,13 +479,18 @@ public partial class ColonistBar : CanvasLayer
         holder.AddChild(WeaponIcons.Make(path, kind, pad: 2));
     }
 
-    // Dark gray bordered box framing a colonist's weapon icon.
+    // Weapon icon slot styled as a pressed blue button: a blue face with a
+    // sunken inner shadow (darker, thicker top/left border) and content nudged
+    // down-right so the gun reads as pushed in.
     private static StyleBoxFlat WeaponSlotBox()
     {
-        var b = new StyleBoxFlat { BgColor = new Color(0f, 0f, 0f, 0f) };
-        b.BorderColor = new Color(0.28f, 0.28f, 0.31f);
-        b.BorderWidthLeft = b.BorderWidthRight = b.BorderWidthTop = b.BorderWidthBottom = 2;
+        var b = new StyleBoxFlat { BgColor = new Color(0.18f, 0.36f, 0.56f, 0.96f) };
+        b.BorderColor = new Color(0.05f, 0.11f, 0.22f, 0.9f);
+        b.BorderWidthTop = 3; b.BorderWidthLeft = 3;
+        b.BorderWidthRight = 1; b.BorderWidthBottom = 1;
         b.CornerRadiusTopLeft = b.CornerRadiusTopRight = b.CornerRadiusBottomLeft = b.CornerRadiusBottomRight = 4;
+        b.SetContentMargin(Side.Top, 4); b.SetContentMargin(Side.Left, 4);
+        b.SetContentMargin(Side.Right, 2); b.SetContentMargin(Side.Bottom, 2);
         return b;
     }
 
