@@ -21,6 +21,8 @@ public partial class WorldRenderer : Node2D
     // whole map with Nearest filter so the texel grit stays crisp.
     private ImageTexture? _groundTex;
     private ImageTexture? _wallOverlayTex;
+    // Directional colonist sprites (S/N/E/W), chosen by facing.
+    private ImageTexture? _colonistS, _colonistN, _colonistE, _colonistW;
     // Cached flooring layer (one byte per tile). Drawn per-frame as small
     // DrawRects rather than as a giant per-pixel texture overlay — the
     // old (mapSize*PixelsPerTile)^2 image was 1GB at 256x256 tiles and
@@ -221,6 +223,10 @@ public partial class WorldRenderer : Node2D
         _mapPixelWidth = _mapWidth * PixelsPerTile;
         _mapPixelHeight = _mapHeight * PixelsPerTile;
         _groundTex = LoadGroundTexture("res://assets/ground/dirt.png");
+        _colonistS = LoadGroundTexture("res://assets/colonist/south.png");
+        _colonistN = LoadGroundTexture("res://assets/colonist/north.png");
+        _colonistE = LoadGroundTexture("res://assets/colonist/east.png");
+        _colonistW = LoadGroundTexture("res://assets/colonist/west.png");
 
         _wallSpritesRoot = new Node2D { Name = "WallSprites", TextureFilter = TextureFilterEnum.Nearest };
         AddChild(_wallSpritesRoot);
@@ -732,7 +738,19 @@ public partial class WorldRenderer : Node2D
                 {
                     bodyR = radius * 0.6f;
                 }
-                DrawCircle(center, bodyR, d.IsEnemy ? EnemyColor : DummyColor);
+                // Colonists render as a directional character sprite; enemies
+                // (and any pawn whose sprite failed to load) stay a circle.
+                var colSprite = d.IsEnemy ? null : ColonistSprite(d.Facing);
+                if (colSprite is not null)
+                {
+                    float sh = PixelsPerTile * 1.35f;
+                    var sr = new Rect2(center.X - sh * 0.5f, center.Y - sh * 0.78f, sh, sh);
+                    DrawTextureRect(colSprite, sr, tile: false);
+                }
+                else
+                {
+                    DrawCircle(center, bodyR, d.IsEnemy ? EnemyColor : DummyColor);
+                }
                 if (ShowHitboxes)
                 {
                     // Debug (P): the actual projectile hitbox — at the same
@@ -753,8 +771,9 @@ public partial class WorldRenderer : Node2D
                         d.FireMeterProgress, d.FireMeterPhase == 1 ? AimMeterColor : CooldownMeterColor);
                 if (d.TreatProgress > 0f)
                     DrawProgressBar(center - new Vector2(0f, radius + PixelsPerTile * 0.42f), d.TreatProgress, TreatBarColor);
-                // Facing arrow: a small triangle on the rim pointing the
-                // way the colonist last moved.
+                // Facing arrow: only when drawn as a circle (the character
+                // sprite already shows which way it faces).
+                if (colSprite is null)
                 {
                     var dir = new Vector2(Mathf.Cos(d.Facing), Mathf.Sin(d.Facing));
                     var perp = new Vector2(-dir.Y, dir.X);
@@ -1062,6 +1081,16 @@ public partial class WorldRenderer : Node2D
         new(0f, 0f), new(1f, 0f), new(-1f, 0f), new(0f, 1f), new(0f, -1f),
         new(0.7f, 0.7f), new(-0.7f, 0.7f), new(0.7f, -0.7f), new(-0.7f, -0.7f),
     };
+
+    // Pick the directional colonist sprite for a facing angle (0=E, +y down=S).
+    private ImageTexture? ColonistSprite(float facing)
+    {
+        float a = Mathf.Wrap(facing, -Mathf.Pi, Mathf.Pi);
+        if (a >= -Mathf.Pi / 4f && a < Mathf.Pi / 4f) return _colonistE;
+        if (a >= Mathf.Pi / 4f && a < 3f * Mathf.Pi / 4f) return _colonistS;
+        if (a >= -3f * Mathf.Pi / 4f && a < -Mathf.Pi / 4f) return _colonistN;
+        return _colonistW;
+    }
 
     // Draw the equipped ranged weapon held in a carry pose: stock pinned to
     // the right shoulder, barrel angled 45° down toward the left of the body.
