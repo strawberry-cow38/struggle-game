@@ -709,13 +709,19 @@ public sealed class DummyController
             {
                 var spec = rwDef.Ranged!;
                 int targetId = entity.GetComponent<RangedCombat>().TargetEntityId;
+                // A burst, once started, is committed: keep firing its remaining
+                // rounds even if the target goes down mid-burst (the target is
+                // still in place, so the shots land). Burst mode only.
+                var rcNow = entity.GetComponent<RangedCombat>();
+                bool burstCommit = rcNow.Mode == Items.FireMode.Burst && rcNow.BurstRemaining > 0;
                 // Stop when a conscious target goes down — UNLESS this is a
-                // finish-off (ordered on an already-downed pawn), which runs
-                // until death. Mirrors melee.
+                // finish-off (ordered on an already-downed pawn) or a committed
+                // burst. Mirrors melee.
                 bool valid = store.TryGetEntityById(targetId, out var tgt)
                     && tgt.HasComponent<Health>() && tgt.HasComponent<WorldPos>()
                     && (!tgt.GetComponent<Health>().Unconscious
-                        || entity.GetComponent<RangedCombat>().FinishOff);
+                        || entity.GetComponent<RangedCombat>().FinishOff
+                        || burstCommit);
                 // Auto-acquired targets drop once they leave the engagement
                 // envelope (out of range, or no LoS and no lean) so the pawn
                 // re-acquires a fresh one; player-forced targets hold.
@@ -2341,15 +2347,25 @@ public sealed class DummyController
         }
         var spec = wdef.Ranged!;
         // Target down: transfer the spray to a fresh colonist if mid-burst (no
-        // re-aim); otherwise stop (the next think re-plans).
+        // re-aim). With no fresh target, a committed burst finishes its rounds
+        // into the downed target; otherwise stop (the next think re-plans).
         if (tgt.GetComponent<Health>().Unconscious)
         {
             ref var rcE = ref entity.GetComponent<RangedCombat>();
+            bool burstCommit = rcE.Mode == Items.FireMode.Burst && rcE.BurstRemaining > 0;
             float sight = MathF.Max(EnemySightRange, spec.Range);
             int nt = rcE.BurstRemaining > 0 ? PerceiveNearestColonist(here, sight) : 0;
-            if (nt == 0 || !store.TryGetEntityById(nt, out tgt)) return;
-            brain.TargetEntityId = nt;
-            RedirectFire(ref rcE, nt, spec.AimTicks);
+            if (nt != 0 && store.TryGetEntityById(nt, out var fresh))
+            {
+                tgt = fresh;
+                brain.TargetEntityId = nt;
+                RedirectFire(ref rcE, nt, spec.AimTicks);
+            }
+            else if (!burstCommit)
+            {
+                return; // no transfer + not a committed burst → stop
+            }
+            // committed burst, no transfer: keep firing into the downed target
         }
 
         // Caught in the open: if we're standing in a colonist sightline and a
