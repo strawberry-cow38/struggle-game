@@ -59,6 +59,8 @@ public partial class DraftActionBar : CanvasLayer
 
     private Button _forceTargetBtn = null!;
     private Label _forceTargetCap = null!;
+    private Button _rocketBtn = null!;
+    private Control _rocketWrap = null!;
     private Button _meleeBtn = null!;
     private Button _fireAtWillBtn = null!;
     private Button _reloadBtn = null!;
@@ -192,6 +194,17 @@ public partial class DraftActionBar : CanvasLayer
             Tools.Mode = _forceTargetBtn.ButtonPressed ? ToolMode.ForceFireTarget : ToolMode.None;
         };
         _rangedWraps.Add(WrapOf(_forceTargetBtn));
+
+        // Rocket strike tile — shown instead of "Fire" for rocket launchers.
+        // Click, then a GROUND tile, to lob a rocket there.
+        _rocketBtn = BuildGizmo("Rocket", toggle: true, parent: _bar, out _);
+        _rocketBtn.TooltipText = "Click, then a ground tile, to launch a rocket (min range 5 tiles).";
+        _rocketBtn.Pressed += () =>
+        {
+            if (Tools is null) return;
+            Tools.Mode = _rocketBtn.ButtonPressed ? ToolMode.RocketStrike : ToolMode.None;
+        };
+        _rocketWrap = WrapOf(_rocketBtn);
     }
 
     private static Control WrapOf(Button tile) => (Control)tile.GetParent();
@@ -218,6 +231,11 @@ public partial class DraftActionBar : CanvasLayer
         // not); fire-at-will + melee only once drafted.
         foreach (var w in _rangedWraps) w.Visible = p.HasRangedWeapon;
         foreach (var w in _draftedWraps) w.Visible = p.Drafted;
+        // Rocket launchers target the ground, not pawns: swap the "Fire" tile
+        // for the "Rocket" strike tile.
+        bool rocket = p.HasRangedWeapon && p.HasRocketLauncher;
+        _rocketWrap.Visible = rocket;
+        WrapOf(_forceTargetBtn).Visible = p.HasRangedWeapon && !rocket;
 
         if (p.HasRangedWeapon)
         {
@@ -243,7 +261,10 @@ public partial class DraftActionBar : CanvasLayer
             _aimModeBtn.Text = p.RangedAimMode.ToString();
 
             if (Tools is not null)
+            {
                 SetTileActive(_forceTargetBtn, Tools.Mode == ToolMode.ForceFireTarget);
+                SetTileActive(_rocketBtn, Tools.Mode == ToolMode.RocketStrike);
+            }
         }
 
         if (p.Drafted)

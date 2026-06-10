@@ -328,6 +328,7 @@ public sealed class IssueMoveOrderCommand : ISimCommand
         {
             ref var rc = ref ent.GetComponent<RangedCombat>();
             rc.TargetEntityId = 0; rc.BurstRemaining = 0;
+            rc.TileTarget = false; // ...and any rocket ground-strike order
             // A fresh move order aborts an in-progress reload so the pawn can
             // reposition now. The mag only fills on reload COMPLETION, so the
             // dropped mag stays empty — no free instant reload from interrupting.
@@ -865,6 +866,22 @@ public sealed class SetFireTargetCommand : ISimCommand
         TargetEntityId = targetId;
     }
     public void Apply(SimRuntime sim) => sim.SetFireTarget(ShooterEntityId, TargetEntityId);
+}
+
+// "Rocket strike" tool on a drafted pawn with a rocket launcher: lob a rocket
+// at the clicked GROUND tile (validated for min/max range + LoS sim-side).
+public sealed class LaunchRocketCommand : ISimCommand
+{
+    public int ShooterEntityId { get; }
+    public int TileX { get; }
+    public int TileY { get; }
+    public LaunchRocketCommand(int shooterId, int tileX, int tileY)
+    {
+        ShooterEntityId = shooterId;
+        TileX = tileX;
+        TileY = tileY;
+    }
+    public void Apply(SimRuntime sim) => sim.LaunchRocket(ShooterEntityId, TileX, TileY);
 }
 
 // Draft action bar: switch the selected pawn's ranged weapon fire mode.

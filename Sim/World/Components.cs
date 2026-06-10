@@ -745,6 +745,11 @@ public enum CoverStance : byte { None = 0, Tucked = 1, Popped = 2 }
 public struct RangedCombat : IComponent
 {
     public int TargetEntityId;     // forced fire target, 0 = none
+    // Rocket launchers fire at a GROUND TILE, not a pawn. When TileTarget is
+    // set the pawn lobs one rocket at (FireTileX, FireTileY) then clears it
+    // (single shot). Player-issued via LaunchRocketCommand.
+    public bool TileTarget;
+    public int FireTileX, FireTileY;
     public int MagCount;           // rounds currently in the magazine
     public string? LoadedAmmoPath; // which ammo is chambered (decides the wound)
     public string? PreferredAmmoPath; // player-chosen reload ammo; null = any matching
@@ -797,6 +802,10 @@ public struct Projectile : IComponent
     public bool HitWall;           // impact was a wall/sandbag (dust at HitHeight) vs a clean miss
     public string AmmoPath;        // wound source on a hit
     public float Angle;            // travel heading, for the streak render
+    // A rocket: flies low + flat to the locked GROUND tile (passing through any
+    // pawn in the way), drops a smoke trail, and detonates in an AoE on arrival
+    // instead of wounding a single pawn. AmmoPath's AmmoSpec carries the blast.
+    public bool IsRocket;
     // Set the tick the round reaches its destination — it's drawn AT the
     // target that tick (so the tracer visibly connects) and removed the next.
     public bool Arrived;
@@ -807,7 +816,8 @@ public struct Projectile : IComponent
 // change, so it can't happen mid-iteration).
 public readonly record struct ProjectileSpawn(
     float FromX, float FromY, float ToX, float ToY, float ToHeight,
-    float Speed, int ShooterEntityId, int TargetEntityId, bool WillHit, string AmmoPath);
+    float Speed, int ShooterEntityId, int TargetEntityId, bool WillHit, string AmmoPath,
+    bool IsRocket = false);
 
 // A dead colonist's body, dropped on the ground where they fell. Stashes
 // the colonist's data (health/injuries) so future resurrection magic can

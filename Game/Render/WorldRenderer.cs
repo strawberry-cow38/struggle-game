@@ -607,6 +607,17 @@ public partial class WorldRenderer : Node2D
             }
         }
 
+        using (FrameProfiler.Instance.BeginScope("SmokePuffs"))
+        {
+            foreach (var s in snap.SmokePuffs)
+            {
+                int stx = (int)s.X, sty = (int)s.Y;
+                if (stx < viewMinTileX || stx > viewMaxTileX
+                    || sty < viewMinTileY || sty > viewMaxTileY) continue;
+                DrawSmokePuff(s);
+            }
+        }
+
         using (FrameProfiler.Instance.BeginScope("Projectiles"))
         {
             foreach (var pr in snap.Projectiles)
@@ -626,6 +637,17 @@ public partial class WorldRenderer : Node2D
                 if (bx < viewMinTileX || bx > viewMaxTileX
                     || by < viewMinTileY || by > viewMaxTileY) continue;
                 DrawBloodImpact(bi);
+            }
+        }
+
+        using (FrameProfiler.Instance.BeginScope("Explosions"))
+        {
+            foreach (var x in snap.Explosions)
+            {
+                int ex = (int)x.X, ey = (int)x.Y;
+                if (ex < viewMinTileX || ex > viewMaxTileX
+                    || ey < viewMinTileY || ey > viewMaxTileY) continue;
+                DrawExplosion(x);
             }
         }
 
@@ -1444,8 +1466,63 @@ public partial class WorldRenderer : Node2D
     // muzzle-height round visually at the gun, not floating over the head.
     private const float HeightObliqueScale = 0.22f;
 
+    private static readonly Color RocketBodyColor = new(0.24f, 0.24f, 0.27f);
+    private static Color WarheadColor(Sim.Snapshots.RocketWarhead w) => w switch
+    {
+        Sim.Snapshots.RocketWarhead.Hedp => new Color(0.40f, 0.58f, 1.0f),   // blue
+        Sim.Snapshots.RocketWarhead.Incend => new Color(1.0f, 0.42f, 0.22f), // red
+        _ => new Color(0.45f, 0.85f, 0.40f),                                  // frag = green
+    };
+
+    private void DrawRocket(Sim.Snapshots.ProjectileState pr)
+    {
+        var dir = new Vector2(Mathf.Cos(pr.Angle), Mathf.Sin(pr.Angle));
+        var ground = new Vector2(pr.X * PixelsPerTile, pr.Y * PixelsPerTile);
+        float lift = pr.Height * PixelsPerTile * HeightObliqueScale;
+        var head = ground - new Vector2(0f, lift);
+        // Ground shadow.
+        DrawCircle(ground, PixelsPerTile * 0.13f, new Color(0f, 0f, 0f, 0.28f));
+        // Body: a short fat capsule, nose tinted to the loaded warhead.
+        float len = PixelsPerTile * 0.42f;
+        var nose = head + dir * (len * 0.5f);
+        var tail = head - dir * (len * 0.5f);
+        DrawLine(tail, nose, RocketBodyColor, PixelsPerTile * 0.18f, antialiased: true);
+        DrawCircle(nose, PixelsPerTile * 0.12f, WarheadColor(pr.Warhead));
+        // Exhaust flare at the tail.
+        DrawCircle(tail, PixelsPerTile * 0.10f, new Color(1.0f, 0.85f, 0.4f, 0.75f));
+    }
+
+    private static readonly Color SmokeColor = new(0.55f, 0.55f, 0.57f);
+    private void DrawSmokePuff(Sim.Snapshots.SmokePuffState s)
+    {
+        var center = new Vector2(s.X * PixelsPerTile, s.Y * PixelsPerTile)
+            - new Vector2(0f, s.Height * PixelsPerTile * HeightObliqueScale);
+        float a = Mathf.Clamp(s.Alpha, 0f, 1f);
+        float prog = 1f - a; // 0 fresh → 1 dissipated
+        float rad = PixelsPerTile * (0.10f + 0.22f * prog + 0.08f * s.Seed);
+        var col = SmokeColor; col.A = a * 0.5f;
+        DrawCircle(center, rad, col);
+    }
+
+    private void DrawExplosion(Sim.Snapshots.ExplosionState x)
+    {
+        var center = new Vector2(x.X * PixelsPerTile, x.Y * PixelsPerTile);
+        float a = Mathf.Clamp(x.Alpha, 0f, 1f);
+        float prog = 1f - a; // 0 at detonation → 1 at fade
+        float maxR = x.Radius * PixelsPerTile;
+        // Expanding shockwave ring.
+        float ringR = maxR * (0.3f + 0.7f * prog);
+        DrawArc(center, ringR, 0, Mathf.Tau, 48, new Color(1.0f, 0.9f, 0.6f, a * 0.6f), 3.0f * a + 1f, true);
+        // Fireball core (incendiary burns oranger) + bright center flash.
+        var fire = x.Incend ? new Color(1.0f, 0.45f, 0.15f) : new Color(1.0f, 0.70f, 0.30f);
+        fire.A = a * 0.8f;
+        DrawCircle(center, maxR * 0.55f * a, fire);
+        DrawCircle(center, maxR * 0.30f * a, new Color(1.0f, 1.0f, 0.85f, a * 0.9f));
+    }
+
     private void DrawProjectile(Sim.Snapshots.ProjectileState pr)
     {
+        if (pr.IsRocket) { DrawRocket(pr); return; }
         var dir = new Vector2(Mathf.Cos(pr.Angle), Mathf.Sin(pr.Angle));
         // Ground position, then lift by the round's height (screen up = -Y) so
         // the bullet rides above its shadow on the floor. Top-down oblique view:

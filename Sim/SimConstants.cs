@@ -69,6 +69,18 @@ public static class SimConstants
     public const float ProjectileHitRadius = 0.45f;
     public const float LeanHitFraction = 0.5f;
 
+    // === Rockets (RPG-7) ===
+    // Can't lob a rocket closer than this (tiles) — arming distance / backblast.
+    public const float RocketMinTargetRange = 5f;
+    // The rocket flies low and flat at this height (tiles) so it skims toward
+    // the ground tile it was aimed at rather than arcing like a bullet.
+    public const float RocketFlightHeight = 0.55f;
+    // Smoke-trail puff lifetime (seconds) and how often a flying rocket drops one.
+    public const float RocketSmokeSec = 1.4f;
+    public const int RocketSmokeEveryTicks = 2;
+    // Explosion flash lifetime (seconds).
+    public const float ExplosionSec = 0.5f;
+
     // Inventory caps for a colonist. Either one being exceeded stops them
     // adding more to their carry. Both default to 75 so a single wood
     // stack (also capped 75) maxes them out exactly.

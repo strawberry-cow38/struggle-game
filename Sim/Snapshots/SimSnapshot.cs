@@ -56,6 +56,14 @@ public sealed class SimSnapshot
     internal int BloodImpactsCount;
     public SnapshotList<BloodImpactState> BloodImpacts => new(BloodImpactsBuf, BloodImpactsCount);
 
+    internal SmokePuffState[] SmokePuffsBuf = System.Array.Empty<SmokePuffState>();
+    internal int SmokePuffsCount;
+    public SnapshotList<SmokePuffState> SmokePuffs => new(SmokePuffsBuf, SmokePuffsCount);
+
+    internal ExplosionState[] ExplosionsBuf = System.Array.Empty<ExplosionState>();
+    internal int ExplosionsCount;
+    public SnapshotList<ExplosionState> Explosions => new(ExplosionsBuf, ExplosionsCount);
+
 
     internal DeconState[] DeconsBuf = System.Array.Empty<DeconState>();
     internal int DeconsCount;
@@ -199,6 +207,9 @@ public readonly record struct DummyState(
     int MeleeTargetId,
     // Ranged-weapon state (HasRangedWeapon false → the rest is unused).
     bool HasRangedWeapon,
+    // True when the equipped ranged weapon is a rocket launcher — the action
+    // bar swaps the "Fire" (pawn-target) tile for a "Rocket" ground-strike tile.
+    bool HasRocketLauncher,
     int RangedMag,
     int RangedMagSize,
     string? LoadedAmmoPath,
@@ -309,7 +320,19 @@ public readonly record struct BloodPuddleState(TilePos Tile, float Amount);
 // A bullet in flight, in tile coordinates. Angle is the travel heading for
 // drawing the streak; Speed (tiles/sec) sets the tracer length so it spans
 // one tick of travel (no gaps); IsAp tints AP rounds differently from HP.
-public readonly record struct ProjectileState(float X, float Y, float Height, float Angle, float Speed, bool IsAp, float OriginX, float OriginY);
+public readonly record struct ProjectileState(float X, float Y, float Height, float Angle, float Speed, bool IsAp, float OriginX, float OriginY, bool IsRocket = false, RocketWarhead Warhead = RocketWarhead.None);
+
+// Which warhead a flying rocket carries — colours its nose cone in flight to
+// match the launcher's loaded round.
+public enum RocketWarhead : byte { None = 0, Frag = 1, Hedp = 2, Incend = 3 }
+
+// A drifting smoke puff dropped by a flying rocket. Alpha 1 = just spawned →
+// 0 = gone. Seed varies the per-puff drift/size so the trail isn't uniform.
+public readonly record struct SmokePuffState(float X, float Y, float Height, float Alpha, float Seed);
+
+// An explosion flash. Radius = blast radius in tiles; Alpha 1 = detonation
+// instant → 0 = faded. Incend tints the fireball oranger.
+public readonly record struct ExplosionState(float X, float Y, float Radius, float Alpha, bool Incend);
 
 // A transient blood spray at a bullet-hit point. Angle = the bullet's travel
 // heading so droplets fan out the exit side. Scale shrinks entry pops vs the

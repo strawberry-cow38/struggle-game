@@ -210,6 +210,12 @@ public sealed class SimRuntime
     // drip is an O(1) lookup instead of a full BloodPuddle scan.
     private readonly Dictionary<TilePos, Entity> _bloodPuddleMap = new();
     private const float BloodImpactSec = 0.45f;
+    // Transient rocket smoke puffs (world coords, height, remaining seconds,
+    // and a 0..1 seed for per-puff drift/size jitter). Cosmetic; aged each tick.
+    private readonly List<(float X, float Y, float Height, float Seed, float Sec)> _smokePuffs = new();
+    // Transient explosion flashes (world coords, blast radius tiles, remaining
+    // seconds, incendiary flag for the oranger fireball).
+    private readonly List<(float X, float Y, float Radius, bool Incend, float Sec)> _explosions = new();
     // Cached per-lamp disc bake. Each entry is the lamp's static
     // contribution pattern (relative to its tile) baked against the
     // current wall/door layout. Color and power state are NOT baked —
@@ -1387,6 +1393,7 @@ public sealed class SimRuntime
             int meleeTargetId = ent.HasComponent<MeleeTarget>() ? ent.GetComponent<MeleeTarget>().TargetEntityId : 0;
 
             bool hasRanged = false;
+            bool hasRocket = false;
             string? loadedAmmo = null;
             int rangedMag = 0, rangedMagSize = 0, fireTargetId = 0;
             long shotTick = 0;
@@ -1414,6 +1421,7 @@ public sealed class SimRuntime
             {
                 var rc = ent.GetComponent<RangedCombat>();
                 hasRanged = true;
+                hasRocket = rspec.AmmoCategoryPath == Items.ItemCatalog.RocketCategory;
                 coverStance = (byte)rc.Stance;
                 leaning = rc.Leaning;
                 peekX = rc.PeekX; peekY = rc.PeekY;
@@ -1533,7 +1541,7 @@ public sealed class SimRuntime
                 sleepLevel, isSleeping, assignedBedId,
                 recLevel, atRecKind, equipped, held, healthState, wr.Facing,
                 swingT, missT, flinchT, meleeTargetId,
-                hasRanged, rangedMag, rangedMagSize, loadedAmmo, rangedMode, rangedModes,
+                hasRanged, hasRocket, rangedMag, rangedMagSize, loadedAmmo, rangedMode, rangedModes,
                 fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea, rangedAimMode,
                 coverStance, leaning, peekX, peekY, rangedHasAmmo,
                 fireMeterPhase, fireMeterProgress, treatProgress,
@@ -1749,7 +1757,11 @@ public sealed class SimRuntime
         projQuery.ForEachEntity((ref Projectile pr, Entity _) =>
         {
             bool isAp = pr.AmmoPath == Items.ItemCatalog.RifleAmmoAp.FullPath;
-            projBuf[pri++] = new ProjectileState(pr.X, pr.Y, pr.Height, pr.Angle, pr.Speed, isAp, pr.OriginX, pr.OriginY);
+            var warhead = !pr.IsRocket ? RocketWarhead.None
+                : pr.AmmoPath == Items.ItemCatalog.RocketHedp.FullPath ? RocketWarhead.Hedp
+                : pr.AmmoPath == Items.ItemCatalog.RocketIncend.FullPath ? RocketWarhead.Incend
+                : RocketWarhead.Frag;
+            projBuf[pri++] = new ProjectileState(pr.X, pr.Y, pr.Height, pr.Angle, pr.Speed, isAp, pr.OriginX, pr.OriginY, pr.IsRocket, warhead);
         });
         snap.ProjectilesCount = pri;
 
@@ -1761,6 +1773,24 @@ public sealed class SimRuntime
             biBuf[bi] = new BloodImpactState(b.X, b.Y, b.Height, b.Angle, b.Scale, b.Dirt, b.Sec / BloodImpactSec);
         }
         snap.BloodImpactsCount = _bloodImpacts.Count;
+
+        EnsureCap(ref snap.SmokePuffsBuf, _smokePuffs.Count);
+        var smkBuf = snap.SmokePuffsBuf;
+        for (int si = 0; si < _smokePuffs.Count; si++)
+        {
+            var s = _smokePuffs[si];
+            smkBuf[si] = new SmokePuffState(s.X, s.Y, s.Height, s.Sec / SimConstants.RocketSmokeSec, s.Seed);
+        }
+        snap.SmokePuffsCount = _smokePuffs.Count;
+
+        EnsureCap(ref snap.ExplosionsBuf, _explosions.Count);
+        var exBuf = snap.ExplosionsBuf;
+        for (int xi = 0; xi < _explosions.Count; xi++)
+        {
+            var x = _explosions[xi];
+            exBuf[xi] = new ExplosionState(x.X, x.Y, x.Radius, x.Sec / SimConstants.ExplosionSec, x.Incend);
+        }
+        snap.ExplosionsCount = _explosions.Count;
 
 
         int[] selTreeArr = Array.Empty<int>();
@@ -4191,6 +4221,29 @@ public sealed class SimRuntime
         rc.FinishOff = t.GetComponent<Health>().Unconscious;
     }
 
+    // Player order: lob a rocket at a GROUND tile. Rejects shots inside the
+    // min range, out of weapon range, or with no line of sight. Sets the
+    // pawn's tile-fire target; the controller handles aim/reload/launch.
+    public bool LaunchRocket(int shooterId, int tileX, int tileY)
+    {
+        if (!Store.TryGetEntityById(shooterId, out var s) || !s.HasComponent<Drafted>()) return false;
+        if (!s.HasComponent<RangedCombat>() || !s.HasComponent<WorldPos>()) return false;
+        if (!TryGetEquippedRangedSpec(s, out var spec)) return false;
+        if (spec.AmmoCategoryPath != Items.ItemCatalog.RocketCategory) return false; // not a launcher
+        var wp = s.GetComponent<WorldPos>();
+        float dx = (tileX + 0.5f) - wp.X, dy = (tileY + 0.5f) - wp.Y;
+        float dist = MathF.Sqrt(dx * dx + dy * dy);
+        if (dist < SimConstants.RocketMinTargetRange || dist > spec.Range) return false;
+        if (!RangedLosClear((int)wp.X, (int)wp.Y, tileX, tileY)) return false;
+        ref var rc = ref s.GetComponent<RangedCombat>();
+        rc.TileTarget = true;
+        rc.FireTileX = tileX; rc.FireTileY = tileY;
+        rc.TargetEntityId = 0; // ground strike supersedes any pawn target
+        rc.AutoTarget = false;
+        rc.BurstRemaining = 0;
+        return true;
+    }
+
     // Draft action bar: manually reload. Returns any partial mag to
     // inventory first (no rounds lost), then refills from a matching ammo
     // stack — honoring a locked ammo type if one is set.
@@ -4281,7 +4334,7 @@ public sealed class SimRuntime
         if (!Store.TryGetEntityById(doctorId, out var d) || !d.HasComponent<Drafted>()) return;
         if (!Store.TryGetEntityById(patientId, out var pt) || !pt.HasComponent<Health>()) return;
         // A treatment order supersedes any combat order.
-        if (d.HasComponent<RangedCombat>()) { ref var rc = ref d.GetComponent<RangedCombat>(); rc.TargetEntityId = 0; rc.BurstRemaining = 0; }
+        if (d.HasComponent<RangedCombat>()) { ref var rc = ref d.GetComponent<RangedCombat>(); rc.TargetEntityId = 0; rc.BurstRemaining = 0; rc.TileTarget = false; }
         if (d.HasComponent<MeleeTarget>()) d.RemoveComponent<MeleeTarget>();
         if (d.HasComponent<TreatmentTarget>())
         {
@@ -4442,6 +4495,35 @@ public sealed class SimRuntime
         {
             float ddx = ps.ToX - ps.FromX, ddy = ps.ToY - ps.FromY;
             float ang = MathF.Atan2(ddy, ddx);
+            // Rockets don't hitscan to a pawn — they fly low + flat to the
+            // chosen GROUND tile, passing through anyone in the way, and stop
+            // early only at the first WALL on the line (then detonate there).
+            if (ps.IsRocket)
+            {
+                float rdist = MathF.Sqrt(ddx * ddx + ddy * ddy);
+                float hx = ps.ToX, hy = ps.ToY;
+                int rsamples = Math.Max(2, (int)(rdist / 0.2f));
+                int aimTX = (int)ps.ToX, aimTY = (int)ps.ToY;
+                for (int k = 1; k <= rsamples; k++)
+                {
+                    float f = (float)k / rsamples;
+                    int cx = (int)(ps.FromX + ddx * f), cy = (int)(ps.FromY + ddy * f);
+                    if ((cx == aimTX && cy == aimTY)) break; // reached the target tile
+                    if (Map.GetWall(cx, cy) != WallType.None)
+                    { hx = ps.FromX + ddx * f; hy = ps.FromY + ddy * f; break; }
+                }
+                var re = Store.CreateEntity();
+                re.AddComponent(new Projectile
+                {
+                    X = ps.FromX, Y = ps.FromY, OriginX = ps.FromX, OriginY = ps.FromY,
+                    ToX = hx, ToY = hy, HitHeight = SimConstants.RocketFlightHeight,
+                    Height = SimConstants.RocketFlightHeight, VertVel = 0f,
+                    Speed = ps.Speed, ShooterEntityId = ps.ShooterEntityId,
+                    ResolvedHitId = 0, HitWall = false, AmmoPath = ps.AmmoPath, Angle = ang,
+                    IsRocket = true,
+                });
+                continue;
+            }
             // Ballistic launch: fire from muzzle height, pick a vertical
             // velocity that lands the round at torso-aim height by the time it
             // covers the horizontal distance (gravity arcs it). For fast rifle
@@ -4644,13 +4726,24 @@ public sealed class SimRuntime
             {
                 pr.X += ddx / dist * step;
                 pr.Y += ddy / dist * step;
-                pr.Height += pr.VertVel * dt;
-                pr.VertVel -= SimConstants.ProjectileGravity * dt; // gravity arc
+                if (pr.IsRocket)
+                {
+                    // Rockets fly flat (no gravity) and bleed a smoke trail.
+                    if (Tick % SimConstants.RocketSmokeEveryTicks == 0)
+                        _smokePuffs.Add((pr.X, pr.Y, pr.Height, NextSmokeSeed(), SimConstants.RocketSmokeSec));
+                }
+                else
+                {
+                    pr.Height += pr.VertVel * dt;
+                    pr.VertVel -= SimConstants.ProjectileGravity * dt; // gravity arc
+                }
                 continue;
             }
 
             // Arrived at the locked impact — snap on, apply the outcome.
             pr.X = pr.ToX; pr.Y = pr.ToY; pr.Height = pr.HitHeight; pr.Arrived = true;
+            // A rocket detonates in an AoE rather than wounding one pawn.
+            if (pr.IsRocket) { ExplodeRocket(pr.ToX, pr.ToY, pr.AmmoPath); continue; }
             float ih = pr.HitHeight;
             bool hitPawn = pr.ResolvedHitId != 0
                 && Store.TryGetEntityById(pr.ResolvedHitId, out var vt) && vt.HasComponent<Health>();
@@ -4766,6 +4859,79 @@ public sealed class SimRuntime
             b.Sec -= dt;
             if (b.Sec <= 0f) _bloodImpacts.RemoveAt(i);
             else _bloodImpacts[i] = b;
+        }
+        for (int i = _smokePuffs.Count - 1; i >= 0; i--)
+        {
+            var s = _smokePuffs[i];
+            s.Sec -= dt;
+            s.Height += dt * 0.25f; // smoke rises a little as it lingers
+            if (s.Sec <= 0f) _smokePuffs.RemoveAt(i);
+            else _smokePuffs[i] = s;
+        }
+        for (int i = _explosions.Count - 1; i >= 0; i--)
+        {
+            var x = _explosions[i];
+            x.Sec -= dt;
+            if (x.Sec <= 0f) _explosions.RemoveAt(i);
+            else _explosions[i] = x;
+        }
+    }
+
+    private float NextSmokeSeed() => (float)_spawnRng.NextDouble();
+    private readonly List<(int Id, float X, float Y, float Dmg)> _explodeScratch = new();
+
+    // Detonate a rocket at the impact tile. Damage is DUMB AoE — every pawn in
+    // the blast takes it (friend OR foe), scaled by distance. Frag/incendiary
+    // use a round blast with linear falloff; HEDP (a shaped, direct-hit charge)
+    // uses a tight + pattern with almost no splash. Incendiary's ground-fire is
+    // a TODO until fire mechanics exist, so for now it just booms like frag.
+    private void ExplodeRocket(float cx, float cy, string ammoPath)
+    {
+        float centerDmg = 35f, radius = 2.6f;
+        bool plus = false, incend = false;
+        var kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot;
+        if (Items.ItemCatalog.ItemsByPath.TryGetValue(ammoPath, out var def) && def.Ammo is not null)
+        {
+            centerDmg = def.Ammo.Damage;
+            if (def.Ammo.BlastRadius > 0f) radius = def.Ammo.BlastRadius;
+            plus = def.Ammo.BlastPlus;
+            kind = def.Ammo.InjuryKind;
+            incend = def.Ammo.InjuryKind == StruggleGame.Sim.Bodies.ConditionKind.Burn;
+        }
+        // Flash + a dirt kick at ground zero.
+        _explosions.Add((cx, cy, radius, incend, SimConstants.ExplosionSec));
+        _bloodImpacts.Add((cx, cy, 0f, 0f, 1.4f, true, BloodImpactSec));
+
+        int ctx = (int)cx, cty = (int)cy;
+        _explodeScratch.Clear();
+        (_worldPosHealthQ ??= Store.Query<WorldPos, Health>()).ForEachEntity((ref WorldPos wp, ref Health _, Entity pe) =>
+        {
+            float frac; // 1 at the center → 0 at the edge
+            if (plus)
+            {
+                // Shaped charge: only the impact tile + its 4 orthogonal
+                // neighbours, no diagonal reach or smooth falloff.
+                int md = Math.Abs((int)wp.X - ctx) + Math.Abs((int)wp.Y - cty);
+                if (md > 1) return;
+                frac = md == 0 ? 1f : 0.5f;
+            }
+            else
+            {
+                float dx = wp.X - cx, dy = wp.Y - cy;
+                float d = MathF.Sqrt(dx * dx + dy * dy);
+                if (d > radius) return;
+                frac = 1f - d / radius;
+            }
+            float dmg = centerDmg * frac;
+            if (dmg >= 1f) _explodeScratch.Add((pe.Id, wp.X, wp.Y, dmg));
+        });
+        // Apply outside the query (ApplyInjury mutates Health + may cascade).
+        var parts = StruggleGame.Sim.Bodies.BodyTree.PunchableParts;
+        foreach (var (id, hx, hy, dmg) in _explodeScratch)
+        {
+            ApplyInjury(id, parts[_spawnRng.Next(parts.Count)], kind, dmg, "RPG-7");
+            _bloodImpacts.Add((hx, hy, SimConstants.BodyAimHeight,
+                (float)(_spawnRng.NextDouble() * Math.PI * 2.0), 0.9f, false, BloodImpactSec));
         }
     }
 

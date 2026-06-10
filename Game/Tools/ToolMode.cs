@@ -33,4 +33,5 @@ public enum ToolMode
     ForceFireTarget = 28,
     Sandbag = 29,
     MeleeAttackTarget = 30,
+    RocketStrike = 31,
 }

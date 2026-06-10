@@ -699,6 +699,17 @@ public sealed class DummyController
                 }
             }
 
+            // Rocket ground-strike order: hold position, aim at the target
+            // tile, lob a single rocket when the aim + cooldown clear. Sits
+            // ahead of the pawn-target block since a strike supersedes it.
+            if (entity.HasComponent<RangedCombat>()
+                && entity.GetComponent<RangedCombat>().TileTarget
+                && TryGetRangedWeapon(entity, out var rktDef))
+            {
+                ExecuteRocketFire(entity, rktDef.Ranged!, ref pos, ref path, ref w, dt, view, here);
+                return;
+            }
+
             // Ranged fire order: hold the firing position (never chase). Ease
             // onto the nearest tile on engage; fire while range + LoS hold;
             // if the target slips out, wait in place for it to return (or a
@@ -2814,6 +2825,66 @@ public sealed class DummyController
         rc.ShotTick = _tick;
         rc.NextActionTick = _tick + (rc.BurstRemaining > 0 ? spec.ShotCooldownTicks : spec.CycleCooldownTicks);
         if (rc.BurstRemaining <= 0) rc.TargetEntityId = 0; // burst spent → release
+    }
+
+    // Hold-and-launch a rocket at a fixed GROUND tile. Reuses the standard
+    // reload + aim machinery (the launcher is a normal ranged weapon), but
+    // fires ONE rocket toward the tile then clears the order (single shot).
+    private void ExecuteRocketFire(Entity entity, Items.RangedSpec spec, ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, MapView view, TilePos here)
+    {
+        ref var rc = ref entity.GetComponent<RangedCombat>();
+        var targetTile = new TilePos(rc.FireTileX, rc.FireTileY);
+
+        // Hold ground: drop any path, snap to the tile.
+        if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
+        path.Waypoints = null; path.Index = 0;
+        SnapToNearestTile(ref pos, dt, out _, out _);
+
+        float tpx = targetTile.X + 0.5f, tpy = targetTile.Y + 0.5f;
+        float ddx = tpx - pos.X, ddy = tpy - pos.Y;
+        float dist = MathF.Sqrt(ddx * ddx + ddy * ddy);
+        if (ddx * ddx + ddy * ddy > 1e-9f) w.Facing = MathF.Atan2(ddy, ddx);
+
+        // Bail if the shot's no longer legal (walked out of range, lost LoS).
+        bool inRange = dist >= SimConstants.RocketMinTargetRange && dist <= spec.Range;
+        bool los = LosClear?.Invoke(here.X, here.Y, targetTile.X, targetTile.Y) ?? true;
+        if (!inRange || !los) { rc.TileTarget = false; rc.AimTargetId = 0; return; }
+
+        // Reload phases (same two-step as guns).
+        if (rc.Reloading)
+        {
+            if (_tick < rc.NextActionTick) return;
+            CompleteReload(entity, ref rc, spec);
+        }
+        if (rc.MagCount <= 0)
+        {
+            if (!TryStartReload(entity, ref rc, spec)) { rc.TileTarget = false; rc.AimTargetId = 0; } // no rockets
+            return;
+        }
+
+        // Per-target aim delay. AimTargetId == -1 marks an in-progress tile aim,
+        // so switching from a pawn target (or first acquire) re-pays the aim.
+        if (rc.AimTargetId != -1) { rc.AimReadyTick = _tick + spec.AimTicks; rc.AimTargetId = -1; }
+        rc.LastAimTick = _tick;
+        if (_tick < rc.AimReadyTick) return;   // still aiming
+        if (_tick < rc.NextActionTick) return; // cooldown
+
+        FireRocket(entity, ref rc, pos, tpx, tpy, spec);
+        rc.MagCount--;
+        rc.ShotTick = _tick;
+        rc.NextActionTick = _tick + spec.CycleCooldownTicks;
+        rc.TileTarget = false; // single shot — order consumed
+        rc.AimTargetId = 0;    // clear the tile-aim sentinel
+    }
+
+    // Emit one rocket projectile toward a ground tile (flies through pawns,
+    // detonates on arrival — handled sim-side in StepProjectiles/ExplodeRocket).
+    private void FireRocket(Entity entity, ref RangedCombat rc, WorldPos pos, float tpx, float tpy, Items.RangedSpec spec)
+    {
+        PendingProjectiles.Add(new ProjectileSpawn(
+            pos.X, pos.Y, tpx, tpy, SimConstants.RocketFlightHeight, spec.ProjectileSpeed,
+            entity.Id, 0, true, rc.LoadedAmmoPath ?? "", IsRocket: true));
+        rc.Recoil = MathF.Min(spec.MaxRecoilDegrees, rc.Recoil + spec.RecoilPerShot);
     }
 
     // Begin a reload: drop the spent mag now (MagCount -> 0) and start the

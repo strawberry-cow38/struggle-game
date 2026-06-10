@@ -110,6 +110,9 @@ public partial class Bootstrap : Node2D
         var forceTargetDesignator = new ForceTargetDesignator { Host = _host, Tools = _tools, Name = "ForceTargetDesignator" };
         AddChild(forceTargetDesignator);
 
+        var rocketStrikeDesignator = new RocketStrikeDesignator { Host = _host, Tools = _tools, Name = "RocketStrikeDesignator" };
+        AddChild(rocketStrikeDesignator);
+
         var selector = new Selector { Host = _host, Tools = _tools, Name = "Selector" };
         AddChild(selector);
 

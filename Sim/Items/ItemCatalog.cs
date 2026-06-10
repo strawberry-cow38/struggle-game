@@ -84,6 +84,14 @@ public sealed class AmmoSpec
     public float Damage;               // hit-point damage per hit (RimWorld/CE scale)
     public float PenSharp;             // sharp armor penetration, mmRHA
     public float PenBlunt;             // blunt/concussive penetration, MPa — banked for the armor system
+    // === Explosive warheads (rockets) ===
+    // BlastRadius > 0 marks the round explosive: on impact it deals Damage at
+    // the center, falling off linearly to 0 at the edge, to EVERY pawn in range
+    // (friend or foe — dumb AoE). BlastPlus swaps the round blast for a tight
+    // plus/cross pattern (center + the 4 orthogonal tiles) — a direct-hit
+    // warhead (HEDP) with barely any splash.
+    public float BlastRadius;
+    public bool BlastPlus;
 }
 
 // Worn-armor stat block. Defends the listed body parts: a round with sharp
@@ -215,6 +223,9 @@ public static class ItemCatalog
     // RPD — belt-fed 7.62x39 LMG: full-auto, big belt, heavy. Shares AKM ammo.
     public static readonly ItemDef LmgRpd;
     // RPG-7 + its 3 rocket types (frag/HEDP/incendiary), shown by warhead colour.
+    // Shared ammo category that flags a weapon as a rocket launcher (ground-tile
+    // targeting + explosive impact) and its ammo as rockets.
+    public const string RocketCategory = "rpg";
     public static readonly ItemDef RocketLauncher;
     public static readonly ItemDef RocketFrag;    // green — standard frag
     public static readonly ItemDef RocketHedp;    // blue — HEDP
@@ -492,12 +503,15 @@ public static class ItemCatalog
         // RPG-7 rockets — 3 warhead types in the "rpg" ammo category. The
         // loaded type colours the launcher's warhead. (Damage values are
         // placeholders — launch/explosion isn't wired yet.)
+        // Frag = wide fragmentation blast, falloff dmg. HEDP = shaped-charge,
+        // direct-hit weapon → tiny + shaped splash. Incendiary = same boom as
+        // frag for now (ground-fire is a TODO until fire mechanics exist).
         RocketFrag = RegisterItem("RocketFrag", "PG-7 Frag Rocket", Ammo, weight: 2f, bulk: 2f, maxStack: 20,
-            ammo: new AmmoSpec { CategoryPath = "rpg", InjuryKind = ConditionKind.Gunshot, Damage = 40f, PenSharp = 8f, PenBlunt = 60f });
+            ammo: new AmmoSpec { CategoryPath = RocketCategory, InjuryKind = ConditionKind.Gunshot, Damage = 40f, PenSharp = 8f, PenBlunt = 60f, BlastRadius = 2.6f });
         RocketHedp = RegisterItem("RocketHEDP", "PG-7 HEDP Rocket", Ammo, weight: 2f, bulk: 2f, maxStack: 20,
-            ammo: new AmmoSpec { CategoryPath = "rpg", InjuryKind = ConditionKind.Gunshot, Damage = 35f, PenSharp = 30f, PenBlunt = 50f });
+            ammo: new AmmoSpec { CategoryPath = RocketCategory, InjuryKind = ConditionKind.Gunshot, Damage = 35f, PenSharp = 30f, PenBlunt = 50f, BlastRadius = 1.2f, BlastPlus = true });
         RocketIncend = RegisterItem("RocketIncend", "PG-7 Incendiary Rocket", Ammo, weight: 2f, bulk: 2f, maxStack: 20,
-            ammo: new AmmoSpec { CategoryPath = "rpg", InjuryKind = ConditionKind.Burn, Damage = 30f, PenSharp = 4f, PenBlunt = 40f });
+            ammo: new AmmoSpec { CategoryPath = RocketCategory, InjuryKind = ConditionKind.Burn, Damage = 30f, PenSharp = 4f, PenBlunt = 40f, BlastRadius = 2.6f });
 
         // RPG-7 — shoulder rocket launcher. Holds one rocket; the warhead colour
         // shows the loaded type. Launch + explosion behaviour is TODO (no shooty).
