@@ -35,24 +35,46 @@ public static class WeaponIcons
 
     // An icon control that fills its parent rect (inset by pad): a TextureRect
     // when the item has art, otherwise the vector WeaponGlyph for the kind.
-    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4)
+    // dropShadow adds a soft offset silhouette beneath the art (PNG only).
+    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool dropShadow = false)
     {
-        Control icon;
         var tex = Texture(itemPath);
-        if (tex is not null)
-            icon = new TextureRect
-            {
-                Texture = tex,
-                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
-                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-                TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
-                MouseFilter = Control.MouseFilterEnum.Ignore,
-            };
-        else
-            icon = new WeaponGlyph { Glyph = kind, MouseFilter = Control.MouseFilterEnum.Ignore };
-        icon.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        icon.OffsetLeft = pad; icon.OffsetRight = -pad; icon.OffsetTop = pad; icon.OffsetBottom = -pad;
+        if (tex is not null && dropShadow)
+        {
+            // Shape-following drop shadow: a darkened copy offset down-right,
+            // with the real sprite on top.
+            var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
+            holder.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+            var shadow = TexRect(tex);
+            shadow.Modulate = new Color(0f, 0f, 0f, 0.5f);
+            Inset(shadow, pad, dx: 1.5f, dy: 2f);
+            holder.AddChild(shadow);
+            var top = TexRect(tex);
+            Inset(top, pad);
+            holder.AddChild(top);
+            return holder;
+        }
+
+        Control icon = tex is not null ? TexRect(tex)
+            : (Control)new WeaponGlyph { Glyph = kind, MouseFilter = Control.MouseFilterEnum.Ignore };
+        Inset(icon, pad);
         return icon;
+    }
+
+    private static TextureRect TexRect(Texture2D tex) => new()
+    {
+        Texture = tex,
+        ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+        StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+        TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+        MouseFilter = Control.MouseFilterEnum.Ignore,
+    };
+
+    private static void Inset(Control c, int pad, float dx = 0f, float dy = 0f)
+    {
+        c.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        c.OffsetLeft = pad + dx; c.OffsetRight = -pad + dx;
+        c.OffsetTop = pad + dy; c.OffsetBottom = -pad + dy;
     }
 
     // The weapon a colonist should show: equipped ranged first, then melee,

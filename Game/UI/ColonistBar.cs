@@ -419,17 +419,21 @@ public partial class ColonistBar : CanvasLayer
             name.AddThemeFontSizeOverride("font_size", 13);
             col.AddChild(name);
 
-            // Weapon icon strip under the name — PNG art or vector glyph,
-            // filled in by RefreshWeaponIcon when the loadout is read.
+            // Card + a free-floating weapon icon just BELOW it (outside the card
+            // panel), wrapped together so they move/center as one.
+            var wrap = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+            wrap.AddThemeConstantOverride("separation", 4);
+            wrap.AddChild(card);
+
             var weapon = new Control
             {
-                CustomMinimumSize = new Vector2(0, 20),
+                CustomMinimumSize = new Vector2(0, 22),
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            col.AddChild(weapon);
+            wrap.AddChild(weapon);
             _weaponSlots[id] = weapon;
 
-            row.AddChild(card);
+            row.AddChild(wrap);
             _cards.Add((id, card, frame, portrait));
             inRow++;
         }
@@ -471,7 +475,7 @@ public partial class ColonistBar : CanvasLayer
         if (!_weaponSlots.TryGetValue(id, out var holder)) return;
         foreach (var ch in holder.GetChildren()) { holder.RemoveChild(ch); ch.QueueFree(); }
         var (path, kind) = WeaponIcons.PickEquipped(d);
-        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2));
+        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2, dropShadow: true));
     }
 
     private void Reposition()
