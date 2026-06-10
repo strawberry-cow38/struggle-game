@@ -64,6 +64,7 @@ public partial class DebugBar : CanvasLayer
         AddButton(_hbox, ToolMode.DebugAddInjury, "Add Injury");
         AddOneShotButton(_hbox, "Spawn Raider", () => Host?.QueueCommand(new SpawnRaiderCommand()));
         AddOneShotButton(_hbox, "Trigger Raid", () => Host?.QueueCommand(new TriggerRaidCommand(4)));
+        AddOneShotButton(_hbox, "Spawn Event", () => Host?.QueueCommand(new SpawnEventCommand()));
         AddSpawnItemControls(_hbox);
         AddOneShotButton(_hbox, "Reroll Map", () => Host?.Reroll(System.Environment.TickCount));
         AddOneShotButton(_hbox, "-1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(-3600)));

@@ -77,6 +77,13 @@ public sealed class SetFireAtWillCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetFireAtWill(On);
 }
 
+// Dev "Spawn Event" button: raise a sample player letter to exercise the
+// notification stack (hover tooltip / detail pane / right-click dismiss).
+public sealed class SpawnEventCommand : ISimCommand
+{
+    public void Apply(SimRuntime sim) => sim.RaiseTestEvent();
+}
+
 // Clear a player notification once the UI has shown + dismissed it.
 public sealed class DismissNotificationCommand : ISimCommand
 {

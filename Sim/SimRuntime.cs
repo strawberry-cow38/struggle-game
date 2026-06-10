@@ -6674,14 +6674,57 @@ public sealed class SimRuntime
     private readonly List<GameNotificationState> _notifications = new();
     private int _nextNotificationId = 1;
 
+    // 2-arg overload keeps the message doubling as the full detail body and
+    // defaults to a neutral tile.
     public int RaiseNotification(string title, string message)
+        => RaiseNotification(title, message, message, LetterKind.Neutral);
+
+    public int RaiseNotification(string title, string message, string detail, LetterKind kind)
     {
         int id = _nextNotificationId++;
-        _notifications.Add(new GameNotificationState(id, title, message));
+        _notifications.Add(new GameNotificationState(id, title, message, detail, kind));
         return id;
     }
 
     public void DismissNotification(int id) => _notifications.RemoveAll(n => n.Id == id);
+
+    // Dev "Spawn Event" button: cycles through a few sample letters so the
+    // notification stack (hover tooltip / detail pane / dismiss) can be
+    // exercised without staging a real raid.
+    private int _testEventIx;
+    private static readonly (string Title, string Message, string Detail, LetterKind Kind)[] _testEvents =
+    {
+        ("Wanderer joins",
+         "A traveller wants to join the colony.",
+         "A lone wanderer has approached the colony and asks to stay. They bring a "
+         + "modest set of skills and a willingness to work. Accepting another mouth "
+         + "to feed is a gamble, but more hands ease the workload.",
+         LetterKind.Positive),
+        ("Raid!",
+         "Raiders are approaching from the map edge.",
+         "A hostile band has been spotted massing at the map edge. They will push "
+         + "into the colony and attack on sight. Draft your colonists, take cover "
+         + "behind sandbags, and hold the line.",
+         LetterKind.Threat),
+        ("Colonist mood low",
+         "Someone is on the edge of a breakdown.",
+         "One of your colonists has had a rough stretch — poor food, cramped quarters, "
+         + "and little recreation have worn them down. If their mood keeps sliding they "
+         + "may break and stop working. Consider lighter duties or a morale boost.",
+         LetterKind.Negative),
+        ("Harvest ready",
+         "Crops in the grow zone are ready to harvest.",
+         "The first crops of the season have ripened. Assign colonists to harvesting "
+         + "before the plants wither, and stockpile the yield for the leaner days ahead.",
+         LetterKind.Neutral),
+    };
+
+    public int RaiseTestEvent()
+    {
+        var e = _testEvents[_testEventIx % _testEvents.Length];
+        _testEventIx++;
+        return RaiseNotification(e.Title, e.Message, e.Detail, e.Kind);
+    }
 
     // Spawn a raid: a cluster of `count` raiders arriving together at one
     // random map edge, each running its own brain (no squad coordination yet),
@@ -6709,7 +6752,13 @@ public sealed class SimRuntime
             from = label;
             SpawnEnemy(sx, sy, RaidMission()); // assault the colony, then exfil when it's cleared
             if (k == count - 1)
-                RaiseNotification("Raid!", $"{count} raiders are attacking from the {from}.");
+                RaiseNotification(
+                    "Raid!",
+                    $"{count} raiders are attacking from the {from}.",
+                    $"A group of {count} raiders has entered the map from the {from} edge. "
+                    + "They are hostile and will push into the colony, attacking colonists "
+                    + "on sight. Draft your colonists and prepare your defenses.",
+                    LetterKind.Threat);
         }
     }
 
