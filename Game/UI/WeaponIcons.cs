@@ -12,35 +12,6 @@ namespace StruggleGame.Game.UI;
 public static class WeaponIcons
 {
     private static readonly Dictionary<string, ImageTexture?> _cache = new();
-    private static readonly Dictionary<string, ImageTexture?> _highlights = new();
-
-    // Bright-pixels-only copy of an item's art (whitened, dim pixels dropped),
-    // softly fanned out to fake a tiny bloom. Null if the item has no art.
-    public static ImageTexture? Highlights(string itemPath)
-    {
-        if (string.IsNullOrEmpty(itemPath)) return null;
-        if (_highlights.TryGetValue(itemPath, out var cached)) return cached;
-        ImageTexture? hi = null;
-        if (Texture(itemPath) is { } tex)
-        {
-            var img = tex.GetImage();
-            img.Convert(Image.Format.Rgba8);
-            int w = img.GetWidth(), h = img.GetHeight();
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                {
-                    var c = img.GetPixel(x, y);
-                    float lum = 0.299f * c.R + 0.587f * c.G + 0.114f * c.B;
-                    // keep only the brighter metal, ramped above the threshold
-                    float a = c.A > 0f ? Mathf.Clamp((lum - 0.40f) / 0.35f, 0f, 1f) : 0f;
-                    img.SetPixel(x, y, new Color(1f, 1f, 1f, a));
-                }
-            img.GenerateMipmaps();
-            hi = ImageTexture.CreateFromImage(img);
-        }
-        _highlights[itemPath] = hi;
-        return hi;
-    }
 
     // Art texture for an item full-path, or null if it has no pixel art.
     public static ImageTexture? Texture(string itemPath)
@@ -67,40 +38,11 @@ public static class WeaponIcons
         return tex;
     }
 
-    // Eight unit directions for the bloom fan.
-    private static readonly (float dx, float dy)[] BloomDirs =
-    {
-        (1f, 0f), (-1f, 0f), (0f, 1f), (0f, -1f),
-        (0.7f, 0.7f), (-0.7f, 0.7f), (0.7f, -0.7f), (-0.7f, -0.7f),
-    };
-
     // An icon control that fills its parent rect (inset by pad): a TextureRect
     // when the item has art, otherwise the vector WeaponGlyph for the kind.
-    // bloom layers faint, slightly-offset copies of the bright highlights over
-    // the sprite so its metal gives off a tiny light bleed.
-    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool bloom = false)
+    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4)
     {
-        var tex = Texture(itemPath);
-        if (tex is not null && bloom && Highlights(itemPath) is { } hi)
-        {
-            var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
-            holder.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-            var sprite = TexRect(tex);
-            Inset(sprite, pad);
-            holder.AddChild(sprite);
-            // Faint white highlight copies fanned out 1-2px = soft bloom.
-            foreach (float r in new[] { 1f, 2f })
-                foreach (var (dx, dy) in BloomDirs)
-                {
-                    var b = TexRect(hi);
-                    b.Modulate = new Color(1f, 1f, 1f, 0.10f);
-                    Inset(b, pad, dx * r, dy * r);
-                    holder.AddChild(b);
-                }
-            return holder;
-        }
-
-        Control icon = tex is not null ? TexRect(tex)
+        Control icon = Texture(itemPath) is { } tex ? TexRect(tex)
             : (Control)new WeaponGlyph { Glyph = kind, MouseFilter = Control.MouseFilterEnum.Ignore };
         Inset(icon, pad);
         return icon;

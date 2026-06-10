@@ -33,6 +33,8 @@ public partial class ColonistBar : CanvasLayer
     private readonly Dictionary<int, string> _loadoutSig = new();
     // Weapon-icon holder per card (below the name), refreshed when loadout changes.
     private readonly Dictionary<int, Control> _weaponSlots = new();
+    // Weapon-plate stylebox per card — pulsed with a cyan glow like selection.
+    private readonly Dictionary<int, ScanlineStyleBox> _weaponPlateBox = new();
     // Stable display order — new colonists append to the right; the player can
     // drag to reorder. Removed colonists drop out, others keep their slot.
     private readonly List<int> _order = new();
@@ -132,6 +134,11 @@ public partial class ColonistBar : CanvasLayer
                 }
             }
         }
+
+        // Pulse each weapon plate's glow cyan, the same neon flicker as the
+        // selected portrait frame, with a per-id phase offset.
+        foreach (var (id, box) in _weaponPlateBox)
+            UiTheme.FlickerGlow(box, _glowClock + id * 0.13, UiTheme.Accent);
 
         Reposition();
     }
@@ -324,6 +331,7 @@ public partial class ColonistBar : CanvasLayer
         _cards.Clear();
         _loadoutSig.Clear();
         _weaponSlots.Clear();
+        _weaponPlateBox.Clear();
 
         BuildCards(colonists);
     }
@@ -430,9 +438,11 @@ public partial class ColonistBar : CanvasLayer
                 CustomMinimumSize = new Vector2(0, 30),
                 MouseFilter = Control.MouseFilterEnum.Ignore,
             };
-            weapon.AddThemeStyleboxOverride("panel", UiTheme.PanelBox(corner: 6, margin: 4));
+            var plateBox = UiTheme.PanelBox(corner: 6, margin: 4);
+            weapon.AddThemeStyleboxOverride("panel", plateBox);
             wrap.AddChild(weapon);
             _weaponSlots[id] = weapon;
+            _weaponPlateBox[id] = plateBox;
 
             row.AddChild(wrap);
             _cards.Add((id, card, frame, portrait));
@@ -476,7 +486,7 @@ public partial class ColonistBar : CanvasLayer
         if (!_weaponSlots.TryGetValue(id, out var holder)) return;
         foreach (var ch in holder.GetChildren()) { holder.RemoveChild(ch); ch.QueueFree(); }
         var (path, kind) = WeaponIcons.PickEquipped(d);
-        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2, bloom: true));
+        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2));
     }
 
     private void Reposition()
