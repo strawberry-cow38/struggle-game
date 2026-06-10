@@ -83,7 +83,7 @@ public static class WeaponIcons
             foreach (var (dx, dy) in GlowDirs)
             {
                 var halo = TexRect(sil);
-                halo.Modulate = new Color(1f, 1f, 1f, 0.55f);
+                halo.Modulate = new Color(0.55f, 0.55f, 0.58f, 0.6f); // muted gray glow
                 Inset(halo, pad, dx, dy);
                 holder.AddChild(halo);
             }
