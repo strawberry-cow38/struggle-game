@@ -33,22 +33,34 @@ public static class WeaponIcons
         return tex;
     }
 
+    // Eight-direction offsets for the glow halo.
+    private static readonly (float dx, float dy)[] GlowDirs =
+    {
+        (1.5f, 0f), (-1.5f, 0f), (0f, 1.5f), (0f, -1.5f),
+        (1.1f, 1.1f), (-1.1f, 1.1f), (1.1f, -1.1f), (-1.1f, -1.1f),
+    };
+
     // An icon control that fills its parent rect (inset by pad): a TextureRect
     // when the item has art, otherwise the vector WeaponGlyph for the kind.
-    // dropShadow adds a soft offset silhouette beneath the art (PNG only).
-    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool dropShadow = false)
+    // glow adds a soft white halo behind the sprite (PNG only) so a dark sprite
+    // stands off a dark background.
+    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool glow = false)
     {
         var tex = Texture(itemPath);
-        if (tex is not null && dropShadow)
+        if (tex is not null && glow)
         {
-            // Shape-following drop shadow: a darkened copy offset down-right,
-            // with the real sprite on top.
+            // White glow: offset silhouette copies of the sprite fanned out in
+            // eight directions, low alpha so they read as a soft outline, with
+            // the real sprite on top.
             var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
             holder.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-            var shadow = TexRect(tex);
-            shadow.Modulate = new Color(0f, 0f, 0f, 0.5f);
-            Inset(shadow, pad, dx: 1.5f, dy: 2f);
-            holder.AddChild(shadow);
+            foreach (var (dx, dy) in GlowDirs)
+            {
+                var halo = TexRect(tex);
+                halo.Modulate = new Color(1f, 1f, 1f, 0.3f);
+                Inset(halo, pad, dx, dy);
+                holder.AddChild(halo);
+            }
             var top = TexRect(tex);
             Inset(top, pad);
             holder.AddChild(top);

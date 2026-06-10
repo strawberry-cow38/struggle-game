@@ -475,7 +475,7 @@ public partial class ColonistBar : CanvasLayer
         if (!_weaponSlots.TryGetValue(id, out var holder)) return;
         foreach (var ch in holder.GetChildren()) { holder.RemoveChild(ch); ch.QueueFree(); }
         var (path, kind) = WeaponIcons.PickEquipped(d);
-        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2, dropShadow: true));
+        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2, glow: true));
     }
 
     private void Reposition()
