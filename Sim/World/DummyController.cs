@@ -2792,8 +2792,8 @@ public sealed class DummyController
 
     // Spray the rest of a committed burst toward the last position the target
     // was fired at — "into the unknown" when the target is gone / out of sight.
-    // Holds position, fires on the burst cadence (wide snapshot cone), and
-    // releases once the rounds are spent.
+    // Holds position, fires on the burst cadence with the gun's normal aimed
+    // spread, and releases once the rounds are spent.
     private void FinishBurstBlind(Entity entity, Items.RangedSpec spec, ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, TilePos here)
     {
         if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
@@ -2808,7 +2808,7 @@ public sealed class DummyController
         if (rc.MagCount <= 0) { rc.TargetEntityId = 0; rc.BurstRemaining = 0; return; } // dry → stop
         if (_tick < rc.NextActionTick) return;                                          // shot cooldown
 
-        FireOneShot(entity, 0, false, spec, ref rc, pos, tp, MathF.Sqrt(ddx * ddx + ddy * ddy), snapshot: true);
+        FireOneShot(entity, 0, false, spec, ref rc, pos, tp, MathF.Sqrt(ddx * ddx + ddy * ddy), snapshot: false);
         rc.MagCount--;
         rc.BurstRemaining--;
         rc.ShotTick = _tick;
