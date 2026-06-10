@@ -1054,12 +1054,13 @@ public partial class WorldRenderer : Node2D
     private const float DownedCycleMs = 1100f;
     private static readonly Color DownedColor = new(1f, 0.35f, 0.30f, 1f);
 
-    // Screen-space offsets (down-right cluster) for the held weapon's fat soft
-    // drop shadow — same idea as the UI icon's shadow.
-    private static readonly Vector2[] HeldShadowOffsets =
+    // Unit cluster (center + 8 dirs) for the held weapon's drop shadow; the
+    // actual offset scales with the gun length so it matches the UI icon's
+    // shadow proportions (not a fixed pixel gap that looks like floating).
+    private static readonly Vector2[] HeldShadowDirs =
     {
-        new(3f, 4f), new(4.4f, 4f), new(1.6f, 4f), new(3f, 5.4f), new(3f, 2.6f),
-        new(4f, 5f), new(2f, 5f), new(4f, 3f), new(2f, 3f),
+        new(0f, 0f), new(1f, 0f), new(-1f, 0f), new(0f, 1f), new(0f, -1f),
+        new(0.7f, 0.7f), new(-0.7f, 0.7f), new(0.7f, -0.7f), new(-0.7f, -0.7f),
     };
 
     // Draw the equipped ranged weapon held in a carry pose: stock pinned to
@@ -1081,13 +1082,16 @@ public partial class WorldRenderer : Node2D
         var stock = center + new Vector2(radius * 0.55f, -radius * 0.30f);
 
         // Fat soft drop shadow: dark silhouette copies offset down-right in
-        // screen space (under the rotated gun).
+        // screen space, scaled to the gun length so it hugs the gun like the
+        // UI icon's shadow (same proportions, not a floaty fixed gap).
         var sil = StruggleGame.Game.UI.WeaponIcons.Silhouette(path);
         if (sil is not null)
         {
             var shadow = new Color(0f, 0f, 0f, 0.16f);
-            foreach (var off in HeldShadowOffsets)
+            float bx = len * 0.031f, by = len * 0.037f, sp = len * 0.022f; // UI ratios
+            foreach (var dir in HeldShadowDirs)
             {
+                var off = new Vector2(bx + dir.X * sp, by + dir.Y * sp);
                 DrawSetTransform(stock + off, rot, Vector2.One);
                 DrawTextureRect(sil, rect, tile: false, modulate: shadow);
                 DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
