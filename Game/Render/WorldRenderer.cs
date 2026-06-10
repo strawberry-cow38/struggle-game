@@ -1315,6 +1315,12 @@ public partial class WorldRenderer : Node2D
             // per canopy). Cuts ~95% of the per-tree vertex cost at low
             // zoom where the detail isn't visible anyway.
             float r = PixelsPerTile * 0.42f * scale;
+            // Selection outline goes UNDER the canopy so the tree sits on top.
+            if (selectedTrees is not null && selectedTrees.Contains(t.EntityId))
+            {
+                var ring = new Rect2(center.X - r - 1f, center.Y - r - 1f, (r + 1f) * 2f, (r + 1f) * 2f);
+                DrawRect(ring, TreeSelectColor, filled: false, width: 1.5f);
+            }
             DrawRect(new Rect2(center.X - r, center.Y - r, r * 2f, r * 2f), CanopyColor, filled: true);
             if (t.HasJob)
             {
@@ -1322,17 +1328,15 @@ public partial class WorldRenderer : Node2D
                 DrawLine(center + new Vector2(-s, -s), center + new Vector2(s, s), TreeMarkColor, width: 2f);
                 DrawLine(center + new Vector2(-s, s), center + new Vector2(s, -s), TreeMarkColor, width: 2f);
             }
-            if (selectedTrees is not null && selectedTrees.Contains(t.EntityId))
-            {
-                var ring = new Rect2(center.X - r - 1f, center.Y - r - 1f, (r + 1f) * 2f, (r + 1f) * 2f);
-                DrawRect(ring, TreeSelectColor, filled: false, width: 1.5f);
-            }
             return;
         }
 
         // Visually grow with stage. Saplings start at ~35% scale so they
         // still read as a tree (not invisible) and mature at 1.0.
         float canopyR = PixelsPerTile * 0.42f * scale;
+        // Selection outline goes UNDER the tree so the canopy renders over it.
+        if (selectedTrees is not null && selectedTrees.Contains(t.EntityId))
+            DrawSelectionBrackets(center, canopyR + 6f, SelAge(IdKey(2, t.EntityId)), (float)_selTime);
         if (_treeTex is not null)
         {
             // Sprite tree: trunk base sits just below the tile point, canopy
@@ -1367,11 +1371,6 @@ public partial class WorldRenderer : Node2D
                 var barFg = new Rect2(barBg.Position, new Vector2(bw * Mathf.Clamp(t.ChopProgress, 0f, 1f), bh));
                 DrawRect(barFg, ProgressBarFg, filled: true);
             }
-        }
-
-        if (selectedTrees is not null && selectedTrees.Contains(t.EntityId))
-        {
-            DrawSelectionBrackets(center, canopyR + 6f, SelAge(IdKey(2, t.EntityId)), (float)_selTime);
         }
     }
 
