@@ -79,7 +79,7 @@ public static class WeaponIcons
             var sil = Silhouette(itemPath) ?? tex;
             var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
             holder.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-            foreach (float r in new[] { 1.5f, 3f })
+            foreach (float r in new[] { 2f, 3.5f, 5f, 6.5f })
                 foreach (var (dx, dy) in AuraDirs)
                 {
                     var halo = TexRect(sil);
