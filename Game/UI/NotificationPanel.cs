@@ -27,10 +27,16 @@ public partial class NotificationPanel : CanvasLayer
     private Control _root = null!;
     private VBoxContainer _stack = null!;
 
-    // Chime played when a new letter arrives (dc5_4). Pre-existing letters
-    // present on the first snapshot don't play it (no spam on load).
+    // Chime on arrival (dc5_4) / on removal (dc5_3). Pre-existing letters
+    // present on the first snapshot play neither (no spam on load).
     private AudioStreamPlayer _spawnSfx = null!;
+    private AudioStreamPlayer _deleteSfx = null!;
     private bool _seeded;
+
+    // Ids removed locally (right-click dismiss) that the next snapshot may
+    // still carry for a frame until the sim applies the command. Tracking them
+    // stops the row — and its spawn chime — from flickering back in.
+    private readonly HashSet<int> _dismissing = new();
 
     // Hover tooltip (single reused control).
     private Panel _tooltip = null!;
@@ -83,6 +89,11 @@ public partial class NotificationPanel : CanvasLayer
         AddChild(_spawnSfx);
         var s = AudioStreamOggVorbis.LoadFromFile(ProjectSettings.GlobalizePath(AudioDir + "Letter.ogg"));
         if (s is not null) _spawnSfx.Stream = s;
+
+        _deleteSfx = new AudioStreamPlayer { Name = "LetterDeleteSfx", Bus = "Master" };
+        AddChild(_deleteSfx);
+        var d = AudioStreamOggVorbis.LoadFromFile(ProjectSettings.GlobalizePath(AudioDir + "Delete.ogg"));
+        if (d is not null) _deleteSfx.Stream = d;
     }
 
     private void BuildTooltip()
@@ -208,9 +219,13 @@ public partial class NotificationPanel : CanvasLayer
         {
             _present.Add(note.Id);
             _data[note.Id] = note;
-            if (!_rows.ContainsKey(note.Id)) AddRow(note, animate: _seeded);
+            if (!_rows.ContainsKey(note.Id) && !_dismissing.Contains(note.Id))
+                AddRow(note, animate: _seeded);
         }
         _seeded = true;
+
+        // The sim has caught up on a locally-dismissed letter — stop tracking it.
+        _dismissing.RemoveWhere(id => !_present.Contains(id));
 
         // Drop rows for letters the sim has cleared (dismissed elsewhere, etc).
         _toRemove.Clear();
@@ -289,11 +304,24 @@ public partial class NotificationPanel : CanvasLayer
     {
         if (_rows.TryGetValue(id, out var btn))
         {
-            btn.QueueFree();
             _rows.Remove(id);
+            _pendingSlide.Remove(btn);
+            FadeOutAndFree(btn);
         }
         _data.Remove(id);
         if (_hoveredId == id) HideTooltip();
+    }
+
+    // Letter delete: play dc5_3 and fade the tile out in place (no slide), then
+    // free it. The node lingers a moment so the fade reads before it collapses.
+    private void FadeOutAndFree(Button btn)
+    {
+        _deleteSfx.Play();
+        btn.MouseFilter = Control.MouseFilterEnum.Ignore; // no more hover/clicks mid-fade
+        var tw = CreateTween();
+        tw.TweenProperty(btn, "modulate:a", 0f, 0.2f)
+          .SetTrans(Tween.TransitionType.Sine).SetEase(Tween.EaseType.In);
+        tw.TweenCallback(Callable.From(() => { if (IsInstanceValid(btn)) btn.QueueFree(); }));
     }
 
     private void OnLetterInput(InputEvent e, int id, Button btn)
@@ -357,9 +385,12 @@ public partial class NotificationPanel : CanvasLayer
 
     private void Dismiss(int id)
     {
+        if (!_rows.ContainsKey(id)) return; // already fading out
         Host?.QueueCommand(new DismissNotificationCommand(id));
-        // Optimistically pull the row now so it disappears on click; the next
-        // snapshot won't carry it back since the sim clears it.
+        // Optimistically pull the row now so it fades on click. Track the id so
+        // the snapshot frames before the sim clears it don't re-spawn the row
+        // (which would re-fire the arrival chime).
+        _dismissing.Add(id);
         RemoveRow(id);
     }
 
