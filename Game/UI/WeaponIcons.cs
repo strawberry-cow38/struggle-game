@@ -68,35 +68,46 @@ public static class WeaponIcons
 
     // An icon control that fills its parent rect (inset by pad): a TextureRect
     // when the item has art, otherwise the vector WeaponGlyph for the kind.
-    // glow adds a soft white halo behind the sprite (PNG only) so a dark sprite
-    // stands off a dark background.
-    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool glow = false)
+    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4)
     {
-        var tex = Texture(itemPath);
-        if (tex is not null && glow)
-        {
-            // White glow: a white silhouette of the sprite fanned out in eight
-            // directions behind the real one, so a dark gun reads on a dark bg.
-            var sil = Silhouette(itemPath) ?? tex;
-            var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
-            holder.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-            foreach (var (dx, dy) in GlowDirs)
-            {
-                var halo = TexRect(sil);
-                halo.Modulate = new Color(0.55f, 0.55f, 0.58f, 0.6f); // muted gray glow
-                Inset(halo, pad, dx, dy);
-                holder.AddChild(halo);
-            }
-            var top = TexRect(tex);
-            Inset(top, pad);
-            holder.AddChild(top);
-            return holder;
-        }
-
-        Control icon = tex is not null ? TexRect(tex)
+        Control icon = Texture(itemPath) is { } tex ? TexRect(tex)
             : (Control)new WeaponGlyph { Glyph = kind, MouseFilter = Control.MouseFilterEnum.Ignore };
         Inset(icon, pad);
         return icon;
+    }
+
+    // Like Make, but with a separate glow layer behind the sprite (PNG only):
+    // a white silhouette fanned out in eight directions. The caller animates it
+    // by setting glowLayer.Modulate each frame (color + flickering alpha) — a
+    // separate layer so the glow pulses without fading the sprite on top.
+    // glowLayer is null when the item has no art (vector glyph, no glow).
+    public static Control MakeGlowing(string itemPath, WeaponGlyph.Kind kind, int pad, out Control? glowLayer)
+    {
+        glowLayer = null;
+        var tex = Texture(itemPath);
+        if (tex is null) return Make(itemPath, kind, pad);
+
+        var sil = Silhouette(itemPath) ?? tex;
+        var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
+        holder.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+
+        var glow = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
+        glow.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        foreach (var (dx, dy) in GlowDirs)
+        {
+            var halo = TexRect(sil);
+            halo.Modulate = new Color(1f, 1f, 1f, 0.4f); // tinted/faded via glow.Modulate
+            Inset(halo, pad, dx, dy);
+            glow.AddChild(halo);
+        }
+        holder.AddChild(glow);
+
+        var top = TexRect(tex);
+        Inset(top, pad);
+        holder.AddChild(top);
+
+        glowLayer = glow;
+        return holder;
     }
 
     private static TextureRect TexRect(Texture2D tex) => new()
