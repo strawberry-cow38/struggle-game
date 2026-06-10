@@ -535,7 +535,10 @@ public partial class DraftActionBar : CanvasLayer
     {
         if (string.IsNullOrEmpty(itemPath)) return null;
         if (_itemIconCache.TryGetValue(itemPath, out var cached)) return cached;
-        string? file = itemPath switch { "AssaultRifle" => "m16", _ => null };
+        // ItemsByPath is keyed by FullPath ("Equipment/AssaultRifle"); match on
+        // the item Id so category nesting doesn't matter.
+        string? id = ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def) ? def.Id : null;
+        string? file = id switch { "AssaultRifle" => "m16", _ => null };
         ImageTexture? tex = null;
         if (file is not null)
         {
