@@ -113,16 +113,30 @@ public partial class ColonistBar : CanvasLayer
             Color cardEdge = selected ? UiTheme.Accent : UiTheme.Border;
             Color cardGlow = new Color(0, 0, 0, 0);
             int cardGlowSize = 0;
+            float gb = 0f;
             if (selected)
             {
                 if (!_selSince.ContainsKey(id)) _selSince[id] = _glowClock;
-                float gb = UiTheme.PulseFlicker(_glowClock - _selSince[id]);
+                gb = UiTheme.PulseFlicker(_glowClock - _selSince[id]);
                 cardGlow = new Color(UiTheme.Accent.R, UiTheme.Accent.G, UiTheme.Accent.B, UiTheme.GlowAlpha(gb));
                 cardGlowSize = UiTheme.GlowSize(gb);
             }
             else _selSince.Remove(id);
             card.AddThemeStyleboxOverride("panel", CardBox(cardEdge, cardGlow, cardGlowSize));
             frame.AddThemeStyleboxOverride("panel", FrameBox(ring));
+
+            // Weapon plate mirrors the card's selection: cyan outline + pulsing
+            // glow when selected, plain panel otherwise.
+            if (_weaponPlateBox.TryGetValue(id, out var pbox))
+            {
+                pbox.Flat.BorderColor = cardEdge;
+                int bw = selected ? 2 : 1;
+                pbox.Flat.BorderWidthLeft = pbox.Flat.BorderWidthRight = bw;
+                pbox.Flat.BorderWidthTop = pbox.Flat.BorderWidthBottom = bw;
+                pbox.Flat.ShadowColor = cardGlow;
+                pbox.Flat.ShadowSize = cardGlowSize;
+                pbox.EmitChanged();
+            }
             if (has)
             {
                 string lo = LoadoutSig(d);
@@ -134,11 +148,6 @@ public partial class ColonistBar : CanvasLayer
                 }
             }
         }
-
-        // Pulse each weapon plate's glow cyan, the same neon flicker as the
-        // selected portrait frame, with a per-id phase offset.
-        foreach (var (id, box) in _weaponPlateBox)
-            UiTheme.FlickerGlow(box, _glowClock + id * 0.13, UiTheme.Accent);
 
         Reposition();
     }
