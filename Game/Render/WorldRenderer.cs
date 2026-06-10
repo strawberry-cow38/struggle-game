@@ -769,6 +769,10 @@ public partial class WorldRenderer : Node2D
                 {
                     DrawArc(center, radius + 2f, 0f, Mathf.Tau, 32, DraftedRing, 2f, antialiased: true);
                 }
+                // Drafted carry pose: hold the rifle with the stock at the right
+                // shoulder, muzzle angled down-left across the body (idle/moving).
+                if (d.Drafted)
+                    DrawHeldWeapon(d, center, radius);
                 long sinceShot = snap.Tick - d.ShotTick;
                 if (d.HasRangedWeapon && d.ShotTick > 0 && sinceShot >= 0 && sinceShot < MuzzleFlashTicks)
                 {
@@ -1064,6 +1068,28 @@ public partial class WorldRenderer : Node2D
     private const int DownedFontSize = 28;
     private const float DownedCycleMs = 1100f;
     private static readonly Color DownedColor = new(1f, 0.35f, 0.30f, 1f);
+
+    // Draw the equipped ranged weapon held in a carry pose: stock pinned to
+    // the right shoulder, barrel angled 45° down toward the left of the body.
+    // The M16 sprite has its muzzle on the left, stock on the right.
+    private void DrawHeldWeapon(in DummyState d, Vector2 center, float radius)
+    {
+        var (path, kind) = StruggleGame.Game.UI.WeaponIcons.PickEquipped(d);
+        if (kind != StruggleGame.Game.UI.WeaponGlyph.Kind.Ranged) return;
+        var tex = StruggleGame.Game.UI.WeaponIcons.Texture(path);
+        if (tex is null) return;
+
+        float aspect = (float)tex.GetWidth() / tex.GetHeight();
+        float len = PixelsPerTile * 0.72f;          // ~1m rifle
+        float h = len / aspect;
+        // Stock anchor at the right shoulder (right + slightly up of center).
+        var stock = center + new Vector2(radius * 0.55f, -radius * 0.30f);
+        // Rotate so the stock (image right) points up-right and the muzzle
+        // (image left) points down-left at 45°.
+        DrawSetTransform(stock, -Mathf.Pi / 4f, Vector2.One);
+        DrawTextureRect(tex, new Rect2(-len, -h * 0.5f, len, h), tile: false);
+        DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+    }
 
     private void DrawDownedExclaims(Font font, Vector2 center, float radius)
     {
