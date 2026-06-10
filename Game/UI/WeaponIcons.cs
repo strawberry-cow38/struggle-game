@@ -11,10 +11,29 @@ namespace StruggleGame.Game.UI;
 // the ground texture). Used by both the Pocket Sand grid and the colonist bar.
 public static class WeaponIcons
 {
+    // Caches keyed by asset file stem (so mag / no-mag variants are distinct).
     private static readonly Dictionary<string, ImageTexture?> _cache = new();
     private static readonly Dictionary<string, ImageTexture?> _silhouette = new();
-    // "unarmed" is keyed separately (no item path) in these same maps.
-    private const string UnarmedKey = "\0unarmed";
+
+    // itemPath (+ empty-mag state) -> asset file stem. null = no art (use the
+    // vector glyph). Empty mag swaps to the "<gun>_nomag" sprite where one
+    // exists (the M700 is an internal-mag bolt rifle, so it has none).
+    private static string? ResolveFile(string itemPath, bool empty)
+    {
+        if (string.IsNullOrEmpty(itemPath)) return null;
+        // ItemsByPath is keyed by FullPath ("Equipment/AssaultRifle"); match on
+        // the item Id so category nesting doesn't matter.
+        string? id = ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def) ? def.Id : null;
+        return id switch
+        {
+            "AssaultRifle" => empty ? "m16_nomag" : "m16",
+            "SubmachineGun" => empty ? "mp5_nomag" : "mp5",
+            "BoltActionRifle" => "m700",
+            "AKM" => empty ? "akm_nomag" : "akm",
+            "AUG" => empty ? "aug_nomag" : "aug",
+            _ => null,
+        };
+    }
 
     // Load assets/items/<file>.png with mipmaps (trilinear keeps the heavy
     // downscale clean). No Godot import — same path as the ground texture.
@@ -25,6 +44,15 @@ public static class WeaponIcons
             return null;
         img.GenerateMipmaps();
         return ImageTexture.CreateFromImage(img);
+    }
+
+    private static ImageTexture? TextureByFile(string? file)
+    {
+        if (file is null) return null;
+        if (_cache.TryGetValue(file, out var cached)) return cached;
+        var tex = LoadIcon(file);
+        _cache[file] = tex;
+        return tex;
     }
 
     // Solid white silhouette (opaque pixels -> white, alpha kept), tinted via
@@ -44,55 +72,26 @@ public static class WeaponIcons
         return ImageTexture.CreateFromImage(img);
     }
 
-    // Drop-shadow silhouette of an item's art, or null if no art.
-    public static ImageTexture? Silhouette(string itemPath)
+    private static ImageTexture? SilhouetteByFile(string? file)
     {
-        if (string.IsNullOrEmpty(itemPath)) return null;
-        if (_silhouette.TryGetValue(itemPath, out var cached)) return cached;
-        var sil = Texture(itemPath) is { } tex ? BuildSilhouette(tex) : null;
-        _silhouette[itemPath] = sil;
+        if (file is null) return null;
+        if (_silhouette.TryGetValue(file, out var cached)) return cached;
+        var sil = TextureByFile(file) is { } tex ? BuildSilhouette(tex) : null;
+        _silhouette[file] = sil;
         return sil;
     }
 
-    // Art texture for an item full-path, or null if it has no pixel art.
-    public static ImageTexture? Texture(string itemPath)
-    {
-        if (string.IsNullOrEmpty(itemPath)) return null;
-        if (_cache.TryGetValue(itemPath, out var cached)) return cached;
-        // ItemsByPath is keyed by FullPath ("Equipment/AssaultRifle"); match on
-        // the item Id so category nesting doesn't matter.
-        string? id = ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def) ? def.Id : null;
-        string? file = id switch
-        {
-            "AssaultRifle" => "m16",
-            "SubmachineGun" => "mp5",
-            "BoltActionRifle" => "m700",
-            "AKM" => "akm",
-            "AUG" => "aug",
-            _ => null,
-        };
-        var tex = file is not null ? LoadIcon(file) : null;
-        _cache[itemPath] = tex;
-        return tex;
-    }
+    // Art texture for an item (empty = show the no-mag variant), or null if it
+    // has no pixel art.
+    public static ImageTexture? Texture(string itemPath, bool empty = false)
+        => TextureByFile(ResolveFile(itemPath, empty));
 
-    // The unarmed icon (a fist) + its shadow silhouette, shown in place of the
-    // vector glyph everywhere a pawn is empty-handed.
-    private static ImageTexture? UnarmedTexture()
-    {
-        if (_cache.TryGetValue(UnarmedKey, out var cached)) return cached;
-        var tex = LoadIcon("fist");
-        _cache[UnarmedKey] = tex;
-        return tex;
-    }
+    // Drop-shadow silhouette matching Texture(itemPath, empty).
+    public static ImageTexture? Silhouette(string itemPath, bool empty = false)
+        => SilhouetteByFile(ResolveFile(itemPath, empty));
 
-    private static ImageTexture? UnarmedSilhouette()
-    {
-        if (_silhouette.TryGetValue(UnarmedKey, out var cached)) return cached;
-        var sil = UnarmedTexture() is { } tex ? BuildSilhouette(tex) : null;
-        _silhouette[UnarmedKey] = sil;
-        return sil;
-    }
+    private static ImageTexture? UnarmedTexture() => TextureByFile("fist");
+    private static ImageTexture? UnarmedSilhouette() => SilhouetteByFile("fist");
 
     // Cluster of offsets (centered on a down-right base) for a fat soft shadow.
     private static readonly (float dx, float dy)[] ShadowDirs =
@@ -104,10 +103,10 @@ public static class WeaponIcons
     // An icon control that fills its parent rect (inset by pad): a TextureRect
     // when the item has art (or the fist for unarmed), otherwise the vector
     // WeaponGlyph. shadow lays a fat soft dark drop shadow behind the sprite.
-    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool shadow = false)
+    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool shadow = false, bool empty = false)
     {
-        var tex = Texture(itemPath);
-        var sil = shadow ? Silhouette(itemPath) : null;
+        var tex = Texture(itemPath, empty);
+        var sil = shadow ? Silhouette(itemPath, empty) : null;
         if (tex is null && kind == WeaponGlyph.Kind.Unarmed)
         {
             tex = UnarmedTexture();
