@@ -4379,14 +4379,15 @@ public sealed class SimRuntime
                 // CORNER. If either cell flanking the diagonal is a wall, a real
                 // round would clip it — so it's blocked (the pawn must lean to
                 // open the lane instead of grazing the corner).
-                if (Map.GetWall(x + sx, y) != WallType.None || Map.GetWall(x, y + sy) != WallType.None)
+                if (Map.GetWall(x + sx, y) != WallType.None || Map.GetWall(x, y + sy) != WallType.None
+                    || TreeCoverAt(x + sx, y) || TreeCoverAt(x, y + sy))
                     return false;
                 err -= dy; err += dx; x += sx; y += sy;
             }
             else if (stepX) { err -= dy; x += sx; }
             else { err += dx; y += sy; }
             if (x == x1 && y == y1) return true;
-            if (Map.GetWall(x, y) != WallType.None) return false;
+            if (Map.GetWall(x, y) != WallType.None || TreeCoverAt(x, y)) return false;
         }
     }
 
@@ -4524,6 +4525,15 @@ public sealed class SimRuntime
     // the nearest blocker — first wall/low-sandbag (one sampled scan) vs nearest
     // pawn within hit radius (one projection pass over pawns). O(samples+pawns)
     // per shot, not O(samples×pawns). Height-aware so cover behaves the same.
+    // A grown tree blocks shots / sight like a wall. Gated on growth so tiny
+    // saplings don't stop a bullet.
+    private const float TreeCoverMinGrowth = 0.5f;
+    private bool TreeCoverAt(int x, int y)
+    {
+        if (!_trees.TryGetValue(new TilePos(x, y), out var te)) return false;
+        return !te.HasComponent<Growth>() || te.GetComponent<Growth>().Stage >= TreeCoverMinGrowth;
+    }
+
     private void ResolveArcImpact(float fromX, float fromY, float aimX, float aimY,
         float vVel, float speed, int shooterId,
         out float hitX, out float hitY, out float hitH, out int hitId, out bool hitWall)
@@ -4540,15 +4550,21 @@ public sealed class SimRuntime
             hitX = aimX; hitY = aimY; hitH = MathF.Max(0f, muzzle); hitId = 0; hitWall = false; return;
         }
 
-        // 1) First wall / low sandbag along the line (single sampled scan).
+        // 1) First wall / tree / low sandbag along the line (single sampled scan).
         float blockFrac = 1f; bool blocked = false;
         bool haveSandbags = _sandbagMap.Count > 0;
         int samples = Math.Max(2, (int)(dist / 0.2f));
+        // A tree blocks only BETWEEN shooter and target (not at either end), so
+        // standing in a tree doesn't make you bulletproof — only one between you
+        // and the threat is cover.
+        int shTX = (int)fromX, shTY = (int)fromY, aimTX = (int)aimX, aimTY = (int)aimY;
         for (int k = 1; k <= samples; k++)
         {
             float f = (float)k / samples;
             int cx = (int)(fromX + ddx * f), cy = (int)(fromY + ddy * f);
             if (Map.GetWall(cx, cy) != WallType.None) { blockFrac = f; blocked = true; break; }
+            if ((cx != shTX || cy != shTY) && (cx != aimTX || cy != aimTY) && TreeCoverAt(cx, cy))
+            { blockFrac = f; blocked = true; break; }
             if (haveSandbags && HeightAt(f) <= SimConstants.SandbagCoverHeight
                 && _sandbagMap.ContainsKey(new TilePos(cx, cy)))
             { blockFrac = f; blocked = true; break; }
