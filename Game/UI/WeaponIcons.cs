@@ -12,6 +12,32 @@ namespace StruggleGame.Game.UI;
 public static class WeaponIcons
 {
     private static readonly Dictionary<string, ImageTexture?> _cache = new();
+    private static readonly Dictionary<string, ImageTexture?> _silhouette = new();
+
+    // White silhouette of an item's art (opaque pixels recolored white, alpha
+    // kept) for building a glow. Modulate can only darken, so a real white
+    // texture is needed to brighten a dark sprite. Null if the item has no art.
+    public static ImageTexture? Silhouette(string itemPath)
+    {
+        if (string.IsNullOrEmpty(itemPath)) return null;
+        if (_silhouette.TryGetValue(itemPath, out var cached)) return cached;
+        ImageTexture? sil = null;
+        if (Texture(itemPath) is { } tex)
+        {
+            var img = tex.GetImage();
+            img.Convert(Image.Format.Rgba8);
+            int w = img.GetWidth(), h = img.GetHeight();
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    float a = img.GetPixel(x, y).A;
+                    if (a > 0f) img.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+                }
+            sil = ImageTexture.CreateFromImage(img);
+        }
+        _silhouette[itemPath] = sil;
+        return sil;
+    }
 
     // Art texture for an item full-path, or null if it has no pixel art.
     public static ImageTexture? Texture(string itemPath)
@@ -49,15 +75,15 @@ public static class WeaponIcons
         var tex = Texture(itemPath);
         if (tex is not null && glow)
         {
-            // White glow: offset silhouette copies of the sprite fanned out in
-            // eight directions, low alpha so they read as a soft outline, with
-            // the real sprite on top.
+            // White glow: a white silhouette of the sprite fanned out in eight
+            // directions behind the real one, so a dark gun reads on a dark bg.
+            var sil = Silhouette(itemPath) ?? tex;
             var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
             holder.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
             foreach (var (dx, dy) in GlowDirs)
             {
-                var halo = TexRect(tex);
-                halo.Modulate = new Color(1f, 1f, 1f, 0.3f);
+                var halo = TexRect(sil);
+                halo.Modulate = new Color(1f, 1f, 1f, 0.55f);
                 Inset(halo, pad, dx, dy);
                 holder.AddChild(halo);
             }
