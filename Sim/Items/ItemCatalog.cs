@@ -201,6 +201,8 @@ public static class ItemCatalog
     public static readonly ItemDef Ammo762x39;
     // AUG 5.56 bullpup — accurate, shares the M16's Rifle ammo.
     public static readonly ItemDef Aug;
+    // M249 SAW — belt-fed 5.56 LMG: full-auto only, big belt, heavy.
+    public static readonly ItemDef Lmg;
     // Consumed per tend/stabilize job.
     public static readonly ItemDef Medicine;
 
@@ -350,6 +352,28 @@ public static class ItemCatalog
                 ShotCooldownTicks = 5,
                 CycleCooldownTicks = 22,
                 ReloadTicks = 115,
+            });
+
+        // M249 SAW — belt-fed 5.56 LMG: 100-round belt, full-auto only, heavy,
+        // looser cone than a rifle but lower per-shot recoil (bipod-steady).
+        Lmg = RegisterItem("M249", "M249 SAW", Equipment, weight: 8f, bulk: 5f, equippable: true,
+            ranged: new RangedSpec
+            {
+                Range = 48f,
+                AmmoCategoryPath = "Rifle",
+                MagazineSize = 100,
+                Modes = FireModeFlags.Auto,
+                BurstShots = 1,
+                ProjectileSpeed = 150f,
+                SpreadDegrees = 2.0f,
+                RecoilPerShot = 0.55f,
+                RecoilRecoverPerSec = 8f,
+                MaxRecoilDegrees = 9f,
+                WarmupTicks = 16,
+                AimTicks = 60,
+                ShotCooldownTicks = 5,   // ~720 rpm
+                CycleCooldownTicks = 24,
+                ReloadTicks = 220,       // slow belt swap
             });
 
         // Kevlar vest — torso only. Sharp 8 mmRHA deflects HP (3) + FMJ (6)

@@ -31,6 +31,7 @@ public static class WeaponIcons
             "BoltActionRifle" => "m700",
             "AKM" => empty ? "akm_nomag" : "akm",
             "AUG" => empty ? "aug_nomag" : "aug",
+            "M249" => empty ? "m249_nomag" : "m249",
             _ => null,
         };
     }
