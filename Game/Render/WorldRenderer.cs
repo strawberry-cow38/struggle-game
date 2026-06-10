@@ -1077,13 +1077,22 @@ public partial class WorldRenderer : Node2D
         float len = PixelsPerTile * 0.72f;          // ~1m rifle
         float h = len / aspect;
         var rect = new Rect2(-len, -h * 0.5f, len, h);
-        const float rot = -Mathf.Pi / 4f;           // stock up-right, muzzle down-left
-        // Stock anchor at the right shoulder (right + slightly up of center).
-        var stock = center + new Vector2(radius * 0.55f, -radius * 0.30f);
+
+        // Pose follows the colonist's facing. fwd = facing dir, right = the
+        // colonist's right-hand side (facing rotated 90° CW in screen space).
+        float facing = d.Facing;
+        var fwd = new Vector2(Mathf.Cos(facing), Mathf.Sin(facing));
+        var right = new Vector2(-fwd.Y, fwd.X);
+        // Stock pinned to the right shoulder; muzzle angled across to the
+        // colonist's forward-left. Flip horizontally — colonists are right-handed.
+        var stock = center + right * (radius * 0.50f) + fwd * (radius * 0.10f);
+        var muzzleDir = fwd * 0.5f - right * 1.0f;
+        float rot = Mathf.Atan2(muzzleDir.Y, muzzleDir.X);
+        var flip = new Vector2(-1f, 1f);
 
         // Fat soft drop shadow: dark silhouette copies offset down-right in
-        // screen space, scaled to the gun length so it hugs the gun like the
-        // UI icon's shadow (same proportions, not a floaty fixed gap).
+        // screen space, scaled to the gun length so it hugs the gun (same
+        // proportions as the UI icon, not a floaty fixed gap).
         var sil = StruggleGame.Game.UI.WeaponIcons.Silhouette(path);
         if (sil is not null)
         {
@@ -1092,13 +1101,13 @@ public partial class WorldRenderer : Node2D
             foreach (var dir in HeldShadowDirs)
             {
                 var off = new Vector2(bx + dir.X * sp, by + dir.Y * sp);
-                DrawSetTransform(stock + off, rot, Vector2.One);
+                DrawSetTransform(stock + off, rot, flip);
                 DrawTextureRect(sil, rect, tile: false, modulate: shadow);
                 DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
             }
         }
 
-        DrawSetTransform(stock, rot, Vector2.One);
+        DrawSetTransform(stock, rot, flip);
         DrawTextureRect(tex, rect, tile: false);
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
     }
