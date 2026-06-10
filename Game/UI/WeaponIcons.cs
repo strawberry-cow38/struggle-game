@@ -33,6 +33,7 @@ public static class WeaponIcons
             "AUG" => empty ? "aug_nomag" : "aug",
             "M249" => empty ? "m249_nomag" : "m249",
             "AA12" => "aa12",   // no no-drum art yet
+            "CP33" => empty ? "cp33_nomag" : "cp33",
             _ => null,
         };
     }

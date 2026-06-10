@@ -207,6 +207,9 @@ public static class ItemCatalog
     // AA-12 — full-auto combat shotgun: 8-pellet 12-gauge shells, drum mag.
     public static readonly ItemDef AutoShotgun;
     public static readonly ItemDef Ammo12ga;
+    // CP33 — .22 LR pistol: 33-round mag, low damage, fast, light sidearm.
+    public static readonly ItemDef Pistol;
+    public static readonly ItemDef Ammo22lr;
     // Consumed per tend/stabilize job.
     public static readonly ItemDef Medicine;
 
@@ -405,6 +408,32 @@ public static class ItemCatalog
                 ShotCooldownTicks = 8,   // ~450 rpm full-auto
                 CycleCooldownTicks = 20,
                 ReloadTicks = 160,
+            });
+
+        // .22 LR — tiny rimfire round: low damage + pen, but light + cheap.
+        Ammo22lr = RegisterItem("Ammo22lr", ".22 LR", Ammo, weight: 0.004f, bulk: 0.004f, maxStack: 800,
+            ammo: new AmmoSpec { CategoryPath = "22lr", InjuryKind = ConditionKind.Gunshot, Damage = 5f, PenSharp = 2f, PenBlunt = 16f });
+
+        // CP33 — .22 LR pistol: 33-round mag, low damage, fast cycle, light +
+        // quick to bring up. Semi-auto sidearm (+ full-auto for a bullet hose).
+        Pistol = RegisterItem("CP33", "CP33", Equipment, weight: 1.2f, bulk: 1f, equippable: true,
+            ranged: new RangedSpec
+            {
+                Range = 20f,
+                AmmoCategoryPath = "22lr",
+                MagazineSize = 33,
+                Modes = FireModeFlags.Single | FireModeFlags.Auto,
+                BurstShots = 1,
+                ProjectileSpeed = 100f,
+                SpreadDegrees = 1.8f,
+                RecoilPerShot = 0.45f,
+                RecoilRecoverPerSec = 12f,
+                MaxRecoilDegrees = 5f,
+                WarmupTicks = 6,
+                AimTicks = 30,
+                ShotCooldownTicks = 5,
+                CycleCooldownTicks = 9,
+                ReloadTicks = 90,
             });
 
         // Kevlar vest — torso only. Sharp 8 mmRHA deflects HP (3) + FMJ (6)
