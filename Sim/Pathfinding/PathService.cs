@@ -31,6 +31,12 @@ public sealed class PathService
     // result for an id discarded before it finished.
     private readonly ConcurrentDictionary<long, byte> _pending = new();
     private long _nextId; // sim thread only
+    // A standing soft-avoid applied to every request that doesn't pass its own
+    // (e.g. tiles occupied by stationary colonists). Published once per tick by
+    // the sim; MUST be swapped to a fresh immutable set, never mutated in place,
+    // since worker threads read the reference captured into a WorkItem.
+    private IReadOnlySet<TilePos>? _defaultAvoid;
+    private float _defaultAvoidPenalty;
     // async=false runs A* inline (same tick, deterministic) — used by tests and
     // the harness so results don't depend on worker-thread timing. async=true
     // is the game path: off-thread workers.
@@ -75,8 +81,19 @@ public sealed class PathService
     // Sim-thread only. Async: queue for a worker. Sync: compute inline now.
     // avoid/avoidPenalty: tiles to route around (extra step cost) — must be an
     // IMMUTABLE set; a worker may read it on another thread.
+    // Sim-thread only. Sets the standing soft-avoid for subsequent requests.
+    // Pass a FRESH immutable set each time (don't mutate the previous one).
+    public void SetDefaultAvoid(IReadOnlySet<TilePos>? avoid, float penalty)
+    {
+        _defaultAvoid = avoid;
+        _defaultAvoidPenalty = penalty;
+    }
+
     public long Request(TilePos from, TilePos to, IReadOnlySet<TilePos>? avoid = null, float avoidPenalty = 0f)
     {
+        // Fall back to the standing per-tick avoid (stationary colonists) when
+        // the caller doesn't specify one.
+        if (avoid is null) { avoid = _defaultAvoid; avoidPenalty = _defaultAvoidPenalty; }
         long id = ++_nextId;
         _pending[id] = 0;
         var view = _viewProvider();

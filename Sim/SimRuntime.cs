@@ -153,6 +153,14 @@ public sealed class SimRuntime
     private ArchetypeQuery<WorldPos, Wanderer, Health>? _colonistLosQ;
     private const long ColonistLosRebuildInterval = 60; // throttle (~1s @ 60Hz)
     private const int ColonistLosRadius = 18;            // tiles a colonist's LOS reaches
+    // Soft path-avoid: tiles where a stationary colonist stands cost a bit extra
+    // to cross, so other pawns route around campers (never blocked — still
+    // passable when it's the only way). Rebuilt on a throttle into a fresh
+    // immutable set, published to PathService for off-thread workers to read.
+    private long _stationaryAvoidNextTick;
+    private ArchetypeQuery<WorldPos, Wanderer, PathFollower>? _stationaryAvoidQ;
+    private const long StationaryAvoidRebuildInterval = 10; // ~0.17s @ 60Hz
+    private const float StationaryAvoidPenalty = 1.5f;       // ≈1.5 tiles' detour budget
     public IReadOnlySet<TilePos>? ColonistLosTiles => _colonistLosTiles;
     // Stockpile tiles currently promised to an in-flight haul job. Posting
     // a new haul avoids these so two carriers can't target the same cell.
@@ -408,6 +416,12 @@ public sealed class SimRuntime
         {
             _colonistLosNextTick = Tick + ColonistLosRebuildInterval;
             RebuildColonistLosTiles();
+        }
+        // Refresh the stationary-colonist soft-avoid before the brains path.
+        if (Tick >= _stationaryAvoidNextTick)
+        {
+            _stationaryAvoidNextTick = Tick + StationaryAvoidRebuildInterval;
+            RebuildStationaryAvoid();
         }
         _dummies.Step(Store, dt, Tick);
         // Drain auto-bed-claim requests posted by Plan(). Safe to do
@@ -4467,6 +4481,26 @@ public sealed class SimRuntime
     // same arc to the locked impact point, applying the wound on arrival.
     // Rebuild the shared pawn-occupancy set once per tick (after movement,
     // before build systems). BuildableSystem reads it to gate construction.
+    // Publish a fresh immutable set of tiles where a STATIONARY colonist stands
+    // (not mid-path), as a soft path-avoid. Other pawns then prefer to route
+    // around standing colonists. Moving pawns are excluded (their tile clears
+    // shortly — penalizing it would just thrash paths). Soft cost only: a tile
+    // is never blocked, so a doorway full of colonists is still passable.
+    private void RebuildStationaryAvoid()
+    {
+        var set = new HashSet<TilePos>();
+        (_stationaryAvoidQ ??= Store.Query<WorldPos, Wanderer, PathFollower>())
+            .ForEachEntity((ref WorldPos p, ref Wanderer _, ref PathFollower pf, Entity e) =>
+            {
+                if (e.HasComponent<Enemy>()) return; // colonists only
+                bool moving = pf.PendingPathId != 0
+                    || (pf.Waypoints is { Count: > 0 } && pf.Index < pf.Waypoints.Count);
+                if (moving) return;
+                set.Add(new TilePos((int)p.X, (int)p.Y));
+            });
+        PathService.SetDefaultAvoid(set, StationaryAvoidPenalty);
+    }
+
     private void RebuildOccupiedPawnTiles()
     {
         OccupiedPawnTiles.Clear();
