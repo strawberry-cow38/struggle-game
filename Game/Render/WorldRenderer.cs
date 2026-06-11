@@ -1666,7 +1666,7 @@ public partial class WorldRenderer : Node2D
         if (icon is not null)
         {
             var sil = StruggleGame.Game.UI.WeaponIcons.Silhouette(p.ItemPath, empty, p.LoadedAmmoPath);
-            DrawItemIcon(icon, sil, center, DroppedTilt(p.EntityId));
+            DrawItemIcon(icon, sil, center, DroppedTilt(p.EntityId), StruggleGame.Game.UI.WeaponIcons.DropScale(p.ItemPath));
             return;
         }
         float r = PixelsPerTile * 0.16f;
@@ -1688,11 +1688,11 @@ public partial class WorldRenderer : Node2D
     // Draw a weapon icon centered on a tile, scaled to fill it, rotated by
     // `angle`, with the same fat soft drop-shadow as the held/UI weapon icons
     // (offset dark silhouette copies) so it reads as a dropped object.
-    private void DrawItemIcon(Texture2D tex, Texture2D? sil, Vector2 center, float angle)
+    private void DrawItemIcon(Texture2D tex, Texture2D? sil, Vector2 center, float angle, float fill = 1.0f)
     {
         int tw = tex.GetWidth(), th = tex.GetHeight();
         if (tw <= 0 || th <= 0) return;
-        float s = (PixelsPerTile * 1.0f) / Math.Max(tw, th); // longest dim ≈ a full tile
+        float s = (PixelsPerTile * fill) / Math.Max(tw, th); // longest dim ≈ fill × a tile
         var size = new Vector2(tw * s, th * s);
         var rect = new Rect2(-size * 0.5f, size);
         if (sil is not null)

@@ -550,6 +550,26 @@ public partial class DraftActionBar : CanvasLayer
         foreach (var s in slots) _segGrid.AddChild(BuildSquare(s));
     }
 
+    // Right-click a pocket-sand weapon square to drop that weapon on the
+    // ground (keeping its magazine). Looks the equipped-slot index up by path
+    // from the current snapshot.
+    private void OnPocketSandGuiInput(InputEvent @event, string path)
+    {
+        if (@event is not InputEventMouseButton mb || mb.ButtonIndex != MouseButton.Right || !mb.Pressed) return;
+        if (Host?.LatestSnapshot is not { } snap || _shownPawnId < 0) return;
+        DummyState? found = null;
+        foreach (var d in snap.Dummies)
+            if (d.EntityId == _shownPawnId) { found = d; break; }
+        if (found is not { } p) return;
+        foreach (var eq in p.Equipped)
+            if (eq.ItemPath == path)
+            {
+                Host.QueueCommand(new DropEquippedCommand(_shownPawnId, eq.Index));
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+    }
+
     private static void MarkActive(List<WpnSeg> segs, string path)
     {
         for (int i = 0; i < segs.Count; i++)
@@ -583,7 +603,8 @@ public partial class DraftActionBar : CanvasLayer
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
             TooltipText = s.Path == "" ? "Go unarmed (stash your weapon)"
-                : ItemCatalog.ItemsByPath.TryGetValue(s.Path, out var d) ? d.DisplayName : s.Path,
+                : (ItemCatalog.ItemsByPath.TryGetValue(s.Path, out var d) ? d.DisplayName : s.Path)
+                  + "\nRight-click to drop",
         };
         var fill = s.Active ? CellActive : TileBg;
         btn.AddThemeStyleboxOverride("normal", MakeBox(fill, default, 0, 0));
@@ -600,6 +621,9 @@ public partial class DraftActionBar : CanvasLayer
             if (Host is null || _shownPawnId < 0) return;
             Host.QueueCommand(new SwapToWeaponCommand(_shownPawnId, path));
         };
+        // Right-click an equipped weapon to drop it (mag state goes with it).
+        if (path != "")
+            btn.GuiInput += @event => OnPocketSandGuiInput(@event, path);
         return btn;
     }
 

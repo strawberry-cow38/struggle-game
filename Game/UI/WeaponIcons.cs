@@ -106,6 +106,19 @@ public static class WeaponIcons
     public static ImageTexture? Texture(string itemPath, bool empty = false, string? loadedAmmoPath = null)
         => TextureByFile(ResolveFile(itemPath, empty, loadedAmmoPath));
 
+    // How big a DROPPED weapon draws relative to a tile (1.0 = fills the tile).
+    // Long guns fill it; small arms scale down so a pistol doesn't read as
+    // rifle-sized on the ground. New small pistols: add an entry here.
+    public static float DropScale(string itemPath)
+    {
+        string? id = ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def) ? def.Id : null;
+        return id switch
+        {
+            "CP33" => 0.5f,  // compact .22 pistol
+            _ => 1.0f,       // rifles / launchers fill the tile
+        };
+    }
+
     // Drop-shadow silhouette matching Texture(...).
     public static ImageTexture? Silhouette(string itemPath, bool empty = false, string? loadedAmmoPath = null)
         => SilhouetteByFile(ResolveFile(itemPath, empty, loadedAmmoPath));
