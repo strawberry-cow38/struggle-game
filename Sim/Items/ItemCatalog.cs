@@ -515,10 +515,10 @@ public static class ItemCatalog
         RocketFrag = RegisterItem("RocketFrag", "PG-7 Frag Rocket", Ammo, weight: 2f, bulk: 2f, maxStack: 20,
             ammo: new AmmoSpec { CategoryPath = RocketCategory, InjuryKind = ConditionKind.Gunshot, Damage = 40f, PenSharp = 8f, PenBlunt = 60f, BlastRadius = 2.6f, FragCount = 16 });
         // Internal shrapnel round — never loadable/dropped, just a stat block the
-        // projectile pipeline looks up for fragment hits. DisplayName == the
-        // wound caliber, so frag wounds read "blasted".
-        Fragment = RegisterItem("Fragment", "blasted", Ammo, weight: 0f, bulk: 0f, maxStack: 1,
-            ammo: new AmmoSpec { CategoryPath = "frag_internal", InjuryKind = ConditionKind.Gunshot, Damage = 16f, PenSharp = 10f, PenBlunt = 24f });
+        // projectile pipeline looks up for fragment hits. Its Shrapnel injury
+        // kind makes the wound read "Shrapnel" in the medical tab.
+        Fragment = RegisterItem("Fragment", "Shrapnel", Ammo, weight: 0f, bulk: 0f, maxStack: 1,
+            ammo: new AmmoSpec { CategoryPath = "frag_internal", InjuryKind = ConditionKind.Shrapnel, Damage = 16f, PenSharp = 10f, PenBlunt = 24f });
         RocketHedp = RegisterItem("RocketHEDP", "PG-7 HEDP Rocket", Ammo, weight: 2f, bulk: 2f, maxStack: 20,
             ammo: new AmmoSpec { CategoryPath = RocketCategory, InjuryKind = ConditionKind.Gunshot, Damage = 35f, PenSharp = 30f, PenBlunt = 50f, BlastRadius = 1.2f, BlastPlus = true });
         RocketIncend = RegisterItem("RocketIncend", "PG-7 Incendiary Rocket", Ammo, weight: 2f, bulk: 2f, maxStack: 20,

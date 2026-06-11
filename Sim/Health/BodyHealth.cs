@@ -25,6 +25,8 @@ public enum ConditionKind : byte
     Stab = 5,    // puncture — bleeds heavily, heals like a cut
     Gunshot = 6, // bullet wound — heavy damage + heavy bleed, heals like a cut
     Sickness = 7, // whole-body condition (illness, malnutrition, …) — no bleed
+    Blast = 8,   // explosion concussion — the raw blast of a warhead ("blasted")
+    Shrapnel = 9, // fragment hit from a frag warhead — sharp, bleeds like a gunshot
 }
 
 // Static definition of one body part in the hierarchy.
@@ -160,6 +162,8 @@ public static class BodyTree
         ConditionKind.Cut => 0.00010f * damage,
         ConditionKind.Stab => 0.00014f * damage, // punctures bleed more
         ConditionKind.Gunshot => 0.00018f * damage, // bleeds hardest
+        ConditionKind.Shrapnel => 0.00018f * damage, // sharp metal — bleeds like a gunshot
+        ConditionKind.Blast => 0.00012f * damage,    // concussive — bleeds, but less than a clean penetration
         ConditionKind.Burn => 0.00005f * damage,
         ConditionKind.Bruise => 0f,
         _ => 0f,
@@ -175,6 +179,8 @@ public static class BodyTree
         ConditionKind.Cut => 0.013f * damage,
         ConditionKind.Stab => 0.014f * damage,
         ConditionKind.Gunshot => 0.016f * damage,
+        ConditionKind.Shrapnel => 0.016f * damage,
+        ConditionKind.Blast => 0.016f * damage,
         ConditionKind.Burn => 0.018f * damage,
         ConditionKind.Bruise => 0.010f * damage,
         ConditionKind.Scar => 0.003f * damage,

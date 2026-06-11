@@ -4893,16 +4893,17 @@ public sealed class SimRuntime
         float centerDmg = 35f, radius = 2.6f;
         bool plus = false, incend = false;
         int fragCount = 0;
-        var kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot;
         if (Items.ItemCatalog.ItemsByPath.TryGetValue(ammoPath, out var def) && def.Ammo is not null)
         {
             centerDmg = def.Ammo.Damage;
             if (def.Ammo.BlastRadius > 0f) radius = def.Ammo.BlastRadius;
             plus = def.Ammo.BlastPlus;
             fragCount = def.Ammo.FragCount;
-            kind = def.Ammo.InjuryKind;
             incend = def.Ammo.InjuryKind == StruggleGame.Sim.Bodies.ConditionKind.Burn;
         }
+        // The raw blast (HEDP shaped charge, incendiary fireball) wounds as a
+        // concussive "Blasted" injury — not a gunshot.
+        var kind = StruggleGame.Sim.Bodies.ConditionKind.Blast;
         // Flash + a dirt kick at ground zero.
         _explosions.Add((cx, cy, radius, incend, SimConstants.ExplosionSec));
         _bloodImpacts.Add((cx, cy, 0f, 0f, 1.4f, true, BloodImpactSec));
@@ -4939,7 +4940,7 @@ public sealed class SimRuntime
         var parts = StruggleGame.Sim.Bodies.BodyTree.PunchableParts;
         foreach (var (id, hx, hy, dmg) in _explodeScratch)
         {
-            ApplyInjury(id, parts[_spawnRng.Next(parts.Count)], kind, dmg, "blasted");
+            ApplyInjury(id, parts[_spawnRng.Next(parts.Count)], kind, dmg, null);
             _bloodImpacts.Add((hx, hy, SimConstants.BodyAimHeight,
                 (float)(_spawnRng.NextDouble() * Math.PI * 2.0), 0.9f, false, BloodImpactSec));
         }

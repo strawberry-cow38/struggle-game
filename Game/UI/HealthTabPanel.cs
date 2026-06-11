@@ -421,6 +421,8 @@ public partial class HealthTabPanel : CanvasLayer
             ConditionKind.Scar => "Scar",
             ConditionKind.Gunshot when g.Caliber is not null =>
                 $"Gunshot — {ShortCaliber(g.Caliber)}",
+            ConditionKind.Blast => "Blasted",
+            ConditionKind.Shrapnel => "Shrapnel",
             _ => g.Kind.ToString(),
         };
         string countTag = g.Count > 1 ? $"  x{g.Count}" : "";
