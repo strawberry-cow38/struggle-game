@@ -259,6 +259,10 @@ public struct ItemPile : IComponent
     // non-weapons. MagCount stays 0 for items that never had a magazine.
     public int MagCount;
     public string? LoadedAmmoPath;
+    // Secondary (underbarrel launcher) magazine, same lifecycle. 0/null when
+    // the weapon has no secondary.
+    public int SecMagCount;
+    public string? SecLoadedAmmoPath;
 }
 
 // Pending deconstruct order on a wall tile. Job entity carries this;
@@ -602,6 +606,13 @@ public struct CarriedSlot
     public string ItemPath;
     public int Count;
     public bool Forbidden;
+    // For a hauled weapon: its stored magazines (captured from the ItemPile
+    // at pickup, restored on dropoff), so ammo state survives a stockpile
+    // haul. 0/null for non-weapons.
+    public int MagCount;
+    public string? LoadedAmmoPath;
+    public int SecMagCount;
+    public string? SecLoadedAmmoPath;
 }
 
 // A pawn carrying one or more items to a single stockpile destination.

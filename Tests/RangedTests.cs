@@ -755,6 +755,48 @@ public class RangedTests
         Assert.Equal(1, InvCount(e, ItemCatalog.Ammo40mmHe.FullPath)); // one grenade consumed
     }
 
+    [Fact]
+    public void SecondaryMag_SurvivesDropAndPickup()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, _) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        // No carried 40mm — the only grenade in the test is the chambered one,
+        // so a surviving tube can only have come through the pile.
+        ArmWithM203(sim, shooter, grenades: 0);
+        sim.Step(SimConstants.TickSeconds); sim.Step(SimConstants.TickSeconds);
+
+        // Chamber a grenade + some rifle rounds, let Plan mirror the live mags
+        // onto the equipped slot, then drop the rifle at the pawn's feet.
+        var e = sim.Store.GetEntityById(shooter);
+        { ref var rc = ref e.GetComponent<RangedCombat>(); rc.MagCount = 7; rc.LoadedAmmoPath = ItemCatalog.RifleAmmoFmj.FullPath; rc.SecMagCount = 1; rc.SecLoadedAmmoPath = ItemCatalog.Ammo40mmHe.FullPath; }
+        SetPos(sim, shooter, 20.5f, 20.5f);
+        sim.Step(SimConstants.TickSeconds);
+        sim.DropEquipped(shooter, 0);
+
+        int pileId = 0; ItemPile pile = default;
+        sim.Store.Query<ItemPile>().ForEachEntity((ref ItemPile p, Entity pe) =>
+        { if (p.ItemPath == ItemCatalog.M16M203.FullPath) { pileId = pe.Id; pile = p; } });
+        Assert.NotEqual(0, pileId);
+        Assert.Equal(1, pile.SecMagCount); // the chambered 40mm rode along
+        Assert.Equal(ItemCatalog.Ammo40mmHe.FullPath, pile.SecLoadedAmmoPath);
+        Assert.Equal(7, pile.MagCount); // primary mag still survives too
+
+        // Pick it back up — the tube state must reseed onto the fresh RangedCombat.
+        sim.SetEquipOrder(shooter, pileId);
+        bool restored = false;
+        for (int i = 0; i < 50 && !restored; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+            if (e.HasComponent<RangedCombat>() && e.GetComponent<RangedCombat>().SecMagCount == 1) restored = true;
+        }
+        Assert.True(restored, "the chambered grenade should survive drop -> pickup");
+        Assert.Equal(ItemCatalog.Ammo40mmHe.FullPath, e.GetComponent<RangedCombat>().SecLoadedAmmoPath);
+        Assert.Equal(7, e.GetComponent<RangedCombat>().MagCount);
+    }
+
     private static int InvCount(Entity e, string path)
     {
         int n = 0;

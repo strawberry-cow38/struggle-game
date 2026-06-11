@@ -490,14 +490,15 @@ public sealed class DummyController
                 // the pile (consuming may delete the entity), so ammo state
                 // carries onto the equipped slot.
                 int pileMag = 0; string? pileAmmo = null;
+                int pileSecMag = 0; string? pileSecAmmo = null;
                 if (itemEnt.HasComponent<ItemPile>())
-                { var ip = itemEnt.GetComponent<ItemPile>(); pileMag = ip.MagCount; pileAmmo = ip.LoadedAmmoPath; }
+                { var ip = itemEnt.GetComponent<ItemPile>(); pileMag = ip.MagCount; pileAmmo = ip.LoadedAmmoPath; pileSecMag = ip.SecMagCount; pileSecAmmo = ip.SecLoadedAmmoPath; }
                 int got = CookConsumePile?.Invoke(eo.ItemTile, eo.ItemPath, 1) ?? 0;
                 if (got > 0)
                 {
                     var eqSlot = Items.ItemCatalog.ItemsByPath.TryGetValue(eo.ItemPath, out var edef) && edef.IsArmor
                         ? EquipSlot.Apparel : EquipSlot.Generic;
-                    var equipSlot = new EquippedItemSlot { Slot = eqSlot, ItemPath = eo.ItemPath, Count = got, MagCount = pileMag, LoadedAmmoPath = pileAmmo };
+                    var equipSlot = new EquippedItemSlot { Slot = eqSlot, ItemPath = eo.ItemPath, Count = got, MagCount = pileMag, LoadedAmmoPath = pileAmmo, SecMagCount = pileSecMag, SecLoadedAmmoPath = pileSecAmmo };
                     bool newIsWeapon = edef is not null && (edef.IsWeapon || edef.IsRangedWeapon);
                     if (entity.HasComponent<Inventory>())
                     {
@@ -576,6 +577,13 @@ public sealed class DummyController
                     if (fit < 0) fit = 0;
                     want = Math.Min(want, fit);
                 }
+                // Capture a dropped weapon's stored magazines BEFORE consuming
+                // the pile (consuming may delete the entity), so ammo state
+                // carries into the pocketed stack.
+                int puMag = 0; string? puAmmo = null;
+                int puSecMag = 0; string? puSecAmmo = null;
+                if (itemEnt.HasComponent<ItemPile>())
+                { var ip = itemEnt.GetComponent<ItemPile>(); puMag = ip.MagCount; puAmmo = ip.LoadedAmmoPath; puSecMag = ip.SecMagCount; puSecAmmo = ip.SecLoadedAmmoPath; }
                 int got = want > 0 ? (CookConsumePile?.Invoke(po.ItemTile, po.ItemPath, want) ?? 0) : 0;
                 if (got > 0)
                 {
@@ -587,13 +595,13 @@ public sealed class DummyController
                         for (int k = 0; k < inv.Items.Count; k++)
                             if (inv.Items[k].ItemPath == po.ItemPath) { idx = k; break; }
                         if (idx >= 0) { var s = inv.Items[idx]; s.Count += got; inv.Items[idx] = s; }
-                        else inv.Items.Add(new InventoryStack { ItemPath = po.ItemPath, Count = got });
+                        else inv.Items.Add(new InventoryStack { ItemPath = po.ItemPath, Count = got, MagCount = puMag, LoadedAmmoPath = puAmmo, SecMagCount = puSecMag, SecLoadedAmmoPath = puSecAmmo });
                     }
                     else
                     {
                         cb.AddComponent(entity.Id, new Inventory
                         {
-                            Items = new List<InventoryStack> { new InventoryStack { ItemPath = po.ItemPath, Count = got } },
+                            Items = new List<InventoryStack> { new InventoryStack { ItemPath = po.ItemPath, Count = got, MagCount = puMag, LoadedAmmoPath = puAmmo, SecMagCount = puSecMag, SecLoadedAmmoPath = puSecAmmo } },
                             Equipped = new List<EquippedItemSlot>(),
                         });
                     }
@@ -1738,9 +1746,15 @@ public sealed class DummyController
                     return;
                 }
                 var hp = job.Entity.GetComponent<HaulPayload>();
+                // Capture a hauled weapon's stored magazines off the pile now —
+                // OnHaulPickup strips the ItemPile — so dropoff can restore them.
+                int hMag = 0; string? hAmmo = null;
+                int hSecMag = 0; string? hSecAmmo = null;
+                if (job.Entity.HasComponent<ItemPile>())
+                { var hip = job.Entity.GetComponent<ItemPile>(); hMag = hip.MagCount; hAmmo = hip.LoadedAmmoPath; hSecMag = hip.SecMagCount; hSecAmmo = hip.SecLoadedAmmoPath; }
                 var slots = new List<CarriedSlot>
                 {
-                    new CarriedSlot { EntityId = job.Entity.Id, ItemPath = hp.ItemPath, Count = hp.Count },
+                    new CarriedSlot { EntityId = job.Entity.Id, ItemPath = hp.ItemPath, Count = hp.Count, MagCount = hMag, LoadedAmmoPath = hAmmo, SecMagCount = hSecMag, SecLoadedAmmoPath = hSecAmmo },
                 };
                 var pending = new List<int>();
                 // Blueprint hauls skip topoffs — extra material at the
@@ -1808,8 +1822,9 @@ public sealed class DummyController
                     && pe.HasComponent<ItemPile>())
                 {
                     var hp = pe.GetComponent<HaulPayload>();
+                    var pip = pe.GetComponent<ItemPile>(); // guarded above; keeps a hauled weapon's mags
                     ref var live = ref entity.GetComponent<Carrying>();
-                    live.Slots!.Add(new CarriedSlot { EntityId = pe.Id, ItemPath = hp.ItemPath, Count = hp.Count });
+                    live.Slots!.Add(new CarriedSlot { EntityId = pe.Id, ItemPath = hp.ItemPath, Count = hp.Count, MagCount = pip.MagCount, LoadedAmmoPath = pip.LoadedAmmoPath, SecMagCount = pip.SecMagCount, SecLoadedAmmoPath = pip.SecLoadedAmmoPath });
                     live.PendingPickupIds!.Remove(pickupEntityId);
                     OnHaulPickup?.Invoke(pe, cb);
                 }

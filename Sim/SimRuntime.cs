@@ -1895,7 +1895,7 @@ public sealed class SimRuntime
         pileQuery.ForEachEntity((ref ItemPile p, Entity e) =>
         {
             string? label = e.HasComponent<Corpse>() ? e.GetComponent<Corpse>().Name : null;
-            pilesBuf[pi++] = new ItemPileState(e.Id, p.Tile, p.Count, p.ItemPath, e.HasComponent<Forbidden>(), label, p.MagCount, p.LoadedAmmoPath);
+            pilesBuf[pi++] = new ItemPileState(e.Id, p.Tile, p.Count, p.ItemPath, e.HasComponent<Forbidden>(), label, p.MagCount, p.LoadedAmmoPath, p.SecMagCount, p.SecLoadedAmmoPath);
         });
         snap.ItemPilesCount = pi;
 
@@ -2378,12 +2378,12 @@ public sealed class SimRuntime
     // Drop an ItemPile of (path, count) on the given tile. Used by
     // CookSystem when a meal finishes, by harness scenarios for stocking
     // ingredients, and anything else that needs a runtime drop.
-    public void SpawnItemPile(TilePos tile, string itemPath, int count, int magCount = 0, string? loadedAmmo = null, bool forbidden = false)
+    public void SpawnItemPile(TilePos tile, string itemPath, int count, int magCount = 0, string? loadedAmmo = null, bool forbidden = false, int secMagCount = 0, string? secLoadedAmmo = null)
     {
         if (count <= 0) return;
         var e = Store.CreateEntity();
         e.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
-        e.AddComponent(new ItemPile { Tile = tile, Count = count, ItemPath = itemPath, MagCount = magCount, LoadedAmmoPath = loadedAmmo });
+        e.AddComponent(new ItemPile { Tile = tile, Count = count, ItemPath = itemPath, MagCount = magCount, LoadedAmmoPath = loadedAmmo, SecMagCount = secMagCount, SecLoadedAmmoPath = secLoadedAmmo });
         if (forbidden) e.AddComponent(new Forbidden());
     }
 
@@ -4184,7 +4184,7 @@ public sealed class SimRuntime
                     continue;
                 }
                 if (e.HasComponent<HaulReserved>()) cb.RemoveComponent<HaulReserved>(e.Id);
-                cb.AddComponent(e.Id, new ItemPile { Tile = dropTile, Count = leftover, ItemPath = slot.ItemPath });
+                cb.AddComponent(e.Id, new ItemPile { Tile = dropTile, Count = leftover, ItemPath = slot.ItemPath, MagCount = slot.MagCount, LoadedAmmoPath = slot.LoadedAmmoPath, SecMagCount = slot.SecMagCount, SecLoadedAmmoPath = slot.SecLoadedAmmoPath });
                 cb.AddComponent(e.Id, new WorldPos { X = dropTile.X + 0.5f, Y = dropTile.Y + 0.5f });
             }
         }
@@ -4234,7 +4234,7 @@ public sealed class SimRuntime
         {
             if (slotEnt.HasComponent<HaulReserved>()) slotEnt.RemoveComponent<HaulReserved>();
             if (slotEnt.HasComponent<HaulPayload>()) slotEnt.RemoveComponent<HaulPayload>();
-            if (!slotEnt.HasComponent<ItemPile>()) slotEnt.AddComponent(new ItemPile { Tile = here, Count = slot.Count, ItemPath = slot.ItemPath });
+            if (!slotEnt.HasComponent<ItemPile>()) slotEnt.AddComponent(new ItemPile { Tile = here, Count = slot.Count, ItemPath = slot.ItemPath, MagCount = slot.MagCount, LoadedAmmoPath = slot.LoadedAmmoPath, SecMagCount = slot.SecMagCount, SecLoadedAmmoPath = slot.SecLoadedAmmoPath });
             if (!slotEnt.HasComponent<WorldPos>()) slotEnt.AddComponent(new WorldPos { X = here.X + 0.5f, Y = here.Y + 0.5f });
         }
         bool empty = (c.Slots.Count == 0) && (c.PendingPickupIds is null || c.PendingPickupIds.Count == 0);
@@ -5296,9 +5296,9 @@ public sealed class SimRuntime
         var tile = new TilePos((int)wp.X, (int)wp.Y);
         ref var inv = ref p.GetComponent<Inventory>();
         if (inv.Equipped is not null)
-            foreach (var eq in inv.Equipped) DropAtFreeAdjacent(tile, eq.ItemPath, eq.Count, eq.MagCount, eq.LoadedAmmoPath);
+            foreach (var eq in inv.Equipped) DropAtFreeAdjacent(tile, eq.ItemPath, eq.Count, eq.MagCount, eq.LoadedAmmoPath, eq.SecMagCount, eq.SecLoadedAmmoPath);
         if (inv.Items is not null)
-            foreach (var it in inv.Items) DropAtFreeAdjacent(tile, it.ItemPath, it.Count);
+            foreach (var it in inv.Items) DropAtFreeAdjacent(tile, it.ItemPath, it.Count, it.MagCount, it.LoadedAmmoPath, it.SecMagCount, it.SecLoadedAmmoPath);
         inv.Equipped?.Clear();
         inv.Items?.Clear();
     }
@@ -5306,7 +5306,7 @@ public sealed class SimRuntime
     private static readonly (int dx, int dy)[] _adjacent8 =
         { (1,0),(-1,0),(0,1),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1) };
 
-    private void DropAtFreeAdjacent(TilePos from, string path, int count, int magCount = 0, string? loadedAmmo = null)
+    private void DropAtFreeAdjacent(TilePos from, string path, int count, int magCount = 0, string? loadedAmmo = null, int secMagCount = 0, string? secLoadedAmmo = null)
     {
         var view = MapView;
         TilePos target = from;
@@ -5320,7 +5320,7 @@ public sealed class SimRuntime
         }
         // Gear dropped off a downed/dead pawn is forbidden until the player says
         // otherwise (so colonists don't immediately haul a corpse's loot away).
-        SpawnItemPile(target, path, count, magCount, loadedAmmo, forbidden: true);
+        SpawnItemPile(target, path, count, magCount, loadedAmmo, forbidden: true, secMagCount: secMagCount, secLoadedAmmo: secLoadedAmmo);
     }
 
     // A dead colonist's render HealthState: every stat pegged to ZERO (health,
@@ -5639,7 +5639,7 @@ public sealed class SimRuntime
         var slot = inv.Equipped[equipIndex];
         inv.Equipped.RemoveAt(equipIndex);
         var wp = pawn.GetComponent<WorldPos>();
-        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), slot.ItemPath, slot.Count, slot.MagCount, slot.LoadedAmmoPath, forbidden: true);
+        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), slot.ItemPath, slot.Count, slot.MagCount, slot.LoadedAmmoPath, forbidden: true, secMagCount: slot.SecMagCount, secLoadedAmmo: slot.SecLoadedAmmoPath);
     }
 
     // Equip one unit of a general-inventory stack that's already on the
@@ -5722,7 +5722,7 @@ public sealed class SimRuntime
         var stack = inv.Items[heldIndex];
         inv.Items.RemoveAt(heldIndex);
         var wp = pawn.GetComponent<WorldPos>();
-        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), stack.ItemPath, stack.Count, forbidden: true);
+        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), stack.ItemPath, stack.Count, stack.MagCount, stack.LoadedAmmoPath, forbidden: true, secMagCount: stack.SecMagCount, secLoadedAmmo: stack.SecLoadedAmmoPath);
     }
 
     // Drop a specific quantity from a held stack (the rest stays in inventory).
@@ -5735,10 +5735,15 @@ public sealed class SimRuntime
         if (inv.Items is null || heldIndex < 0 || heldIndex >= inv.Items.Count) return;
         var stack = inv.Items[heldIndex];
         int drop = Math.Min(amount, stack.Count);
-        if (drop >= stack.Count) inv.Items.RemoveAt(heldIndex);
+        // Mag state rides along only on a full-stack drop (weapons never split
+        // — they don't stack — so a partial drop is always magless resources).
+        bool whole = drop >= stack.Count;
+        if (whole) inv.Items.RemoveAt(heldIndex);
         else { stack.Count -= drop; inv.Items[heldIndex] = stack; }
         var wp = pawn.GetComponent<WorldPos>();
-        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), stack.ItemPath, drop, forbidden: true);
+        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), stack.ItemPath, drop,
+            whole ? stack.MagCount : 0, whole ? stack.LoadedAmmoPath : null, forbidden: true,
+            secMagCount: whole ? stack.SecMagCount : 0, secLoadedAmmo: whole ? stack.SecLoadedAmmoPath : null);
     }
 
     // ItemSpatialIndex feeders. Fire for every component add/remove in the
@@ -5918,7 +5923,9 @@ public sealed class SimRuntime
             string path = p.ItemPath;
             _itemIndex.OnEntityGone(e.Id);
             e.DeleteEntity();
-            SpawnItemPile(target, path, count);
+            // Carry the pile's mag state through the respawn so a relocated
+            // weapon keeps its ammo.
+            SpawnItemPile(target, path, count, p.MagCount, p.LoadedAmmoPath, secMagCount: p.SecMagCount, secLoadedAmmo: p.SecLoadedAmmoPath);
         }
     }
 
