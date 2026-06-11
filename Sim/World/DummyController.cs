@@ -478,10 +478,14 @@ public sealed class DummyController
                     var eqSlot = Items.ItemCatalog.ItemsByPath.TryGetValue(eo.ItemPath, out var edef) && edef.IsArmor
                         ? EquipSlot.Apparel : EquipSlot.Generic;
                     var equipSlot = new EquippedItemSlot { Slot = eqSlot, ItemPath = eo.ItemPath, Count = got, MagCount = pileMag, LoadedAmmoPath = pileAmmo };
+                    bool newIsWeapon = edef is not null && (edef.IsWeapon || edef.IsRangedWeapon);
                     if (entity.HasComponent<Inventory>())
                     {
                         ref var inv = ref entity.GetComponent<Inventory>();
                         inv.Equipped ??= new List<EquippedItemSlot>();
+                        inv.Items ??= new List<InventoryStack>();
+                        // Only one weapon equipped at a time — stash the old one.
+                        if (newIsWeapon) SimRuntime.StashEquippedWeapons(inv.Equipped, inv.Items);
                         inv.Equipped.Add(equipSlot);
                     }
                     else

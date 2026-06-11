@@ -206,7 +206,7 @@ public partial class GearTabPanel : CanvasLayer
         return b;
     }
 
-    private const int IconSize = 28;
+    private const int IconSize = 16;
 
     // Fixed-size icon for the left of a gear row: the weapon's art when it has
     // any, else a small neutral chip so names still line up.

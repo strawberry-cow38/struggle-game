@@ -5217,10 +5217,25 @@ public sealed class SimRuntime
         StashToInventory(inv.Items, slot);
     }
 
+    // Stash every currently-equipped WEAPON into general inventory (armor stays
+    // worn), keeping each weapon's magazine. Enforces "only one weapon equipped"
+    // — callers run this before equipping a new weapon.
+    internal static void StashEquippedWeapons(List<EquippedItemSlot> equipped, List<InventoryStack> items)
+    {
+        for (int i = equipped.Count - 1; i >= 0; i--)
+        {
+            var slot = equipped[i];
+            if (!ItemCatalog.ItemsByPath.TryGetValue(slot.ItemPath, out var d)) continue;
+            if (!d.IsWeapon && !d.IsRangedWeapon) continue;
+            equipped.RemoveAt(i);
+            StashToInventory(items, slot);
+        }
+    }
+
     // Move an equipped item into general inventory. Stackable resources merge
     // into an existing stack; non-stackable gear (weapons/armor) always becomes
     // its OWN stack so it keeps its per-item state (a gun's magazine).
-    private static void StashToInventory(List<InventoryStack> items, EquippedItemSlot slot)
+    internal static void StashToInventory(List<InventoryStack> items, EquippedItemSlot slot)
     {
         int cap = ItemCatalog.ItemsByPath.TryGetValue(slot.ItemPath, out var d) ? d.MaxStack : 1;
         string path = slot.ItemPath; int add = slot.Count;
@@ -5256,14 +5271,18 @@ public sealed class SimRuntime
         if (inv.Items is null || heldIndex < 0 || heldIndex >= inv.Items.Count) return;
         var stack = inv.Items[heldIndex];
         if (!ItemCatalog.ItemsByPath.TryGetValue(stack.ItemPath, out var def) || !def.Equippable) return;
+        string equipPath = stack.ItemPath;
+        bool isWeapon = def.IsWeapon || def.IsRangedWeapon;
         stack.Count -= 1;
         // Carry the stashed weapon's magazine back onto the equipped slot.
         int mag = stack.MagCount; string? ammo = stack.LoadedAmmoPath;
         if (stack.Count <= 0) inv.Items.RemoveAt(heldIndex);
         else inv.Items[heldIndex] = stack;
         inv.Equipped ??= new List<EquippedItemSlot>();
+        // Only one weapon equipped at a time — stash any current weapon first.
+        if (isWeapon) StashEquippedWeapons(inv.Equipped, inv.Items);
         var slot = def.IsArmor ? EquipSlot.Apparel : EquipSlot.Generic;
-        inv.Equipped.Add(new EquippedItemSlot { Slot = slot, ItemPath = stack.ItemPath, Count = 1, MagCount = mag, LoadedAmmoPath = ammo });
+        inv.Equipped.Add(new EquippedItemSlot { Slot = slot, ItemPath = equipPath, Count = 1, MagCount = mag, LoadedAmmoPath = ammo });
     }
 
     // Pocket Sand: stash every currently-equipped WEAPON back into the pocket
@@ -5278,14 +5297,7 @@ public sealed class SimRuntime
         inv.Items ??= new List<InventoryStack>();
 
         // Stash equipped weapons into the pocket (leave apparel/armor on).
-        for (int i = inv.Equipped.Count - 1; i >= 0; i--)
-        {
-            var slot = inv.Equipped[i];
-            if (!ItemCatalog.ItemsByPath.TryGetValue(slot.ItemPath, out var d)) continue;
-            if (!d.IsWeapon && !d.IsRangedWeapon) continue;
-            inv.Equipped.RemoveAt(i);
-            StashToInventory(inv.Items, slot); // keeps the weapon's magazine
-        }
+        StashEquippedWeapons(inv.Equipped, inv.Items);
 
         if (string.IsNullOrEmpty(itemPath)) return; // unarmed
         int hi = inv.Items.FindIndex(s => s.ItemPath == itemPath);
