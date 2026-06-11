@@ -48,6 +48,22 @@ public class RangedTests
         });
     }
 
+    private static void ArmWithM203(SimRuntime sim, int id, int grenades)
+    {
+        var e = sim.Store.GetEntityById(id);
+        e.AddComponent(new Inventory
+        {
+            Items = new List<InventoryStack>
+            {
+                new InventoryStack { ItemPath = ItemCatalog.Ammo40mmHe.FullPath, Count = grenades },
+            },
+            Equipped = new List<EquippedItemSlot>
+            {
+                new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = ItemCatalog.M16M203.FullPath, Count = 1 },
+            },
+        });
+    }
+
     [Fact]
     public void AimMode_AutoResolvesByRange()
     {
@@ -680,6 +696,63 @@ public class RangedTests
                     if (w.Kind == ConditionKind.Gunshot) { hit = true; break; }
         }
         Assert.False(hit, "a ranged colonist shouldn't fire at a target on an adjacent tile");
+    }
+
+    [Fact]
+    public void SecondaryStrike_FiresGrenade_AndDecrementsTube()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, _) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        ArmWithM203(sim, shooter, grenades: 3);
+        sim.Step(SimConstants.TickSeconds); sim.Step(SimConstants.TickSeconds);
+
+        // Preload the tube so the strike only waits out the M203's aim time.
+        var e = sim.Store.GetEntityById(shooter);
+        { ref var rc = ref e.GetComponent<RangedCombat>(); rc.SecMagCount = 1; rc.SecLoadedAmmoPath = ItemCatalog.Ammo40mmHe.FullPath; }
+        SetPos(sim, shooter, 20.5f, 20.5f);
+        Assert.True(sim.LaunchSecondary(shooter, 28, 20), "an in-band ground tile should be accepted");
+
+        bool sawGrenade = false;
+        for (int i = 0; i < 300 && !sawGrenade; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+            sim.Store.Query<Projectile>().ForEachEntity((ref Projectile pr, Entity _) => { if (pr.IsRocket) sawGrenade = true; });
+        }
+        Assert.True(sawGrenade, "the strike should lob one rocket-style grenade");
+        Assert.Equal(0, e.GetComponent<RangedCombat>().SecMagCount); // single shot — tube spent
+        Assert.False(e.GetComponent<RangedCombat>().SecTileTarget); // order consumed
+        Assert.Equal(3, InvCount(e, ItemCatalog.Ammo40mmHe.FullPath)); // fired the chambered one, not stock
+    }
+
+    [Fact]
+    public void SecondaryReload_PullsGrenadeFromInventory_OnCompletion()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, _) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        ArmWithM203(sim, shooter, grenades: 2);
+        sim.Step(SimConstants.TickSeconds); sim.Step(SimConstants.TickSeconds);
+
+        var e = sim.Store.GetEntityById(shooter);
+        Assert.Equal(0, e.GetComponent<RangedCombat>().SecMagCount); // tube starts empty
+        sim.ManualReloadSecondary(shooter);
+        Assert.True(e.GetComponent<RangedCombat>().SecReloading, "manual reload should start the tube reload");
+        Assert.Equal(2, InvCount(e, ItemCatalog.Ammo40mmHe.FullPath)); // pulled on COMPLETION, not start
+
+        // Ride out the M203's 150-tick reload (+ slack); Plan completes it.
+        for (int i = 0; i < 200; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+        }
+        Assert.False(e.GetComponent<RangedCombat>().SecReloading);
+        Assert.Equal(1, e.GetComponent<RangedCombat>().SecMagCount);
+        Assert.Equal(ItemCatalog.Ammo40mmHe.FullPath, e.GetComponent<RangedCombat>().SecLoadedAmmoPath);
+        Assert.Equal(1, InvCount(e, ItemCatalog.Ammo40mmHe.FullPath)); // one grenade consumed
     }
 
     private static int InvCount(Entity e, string path)

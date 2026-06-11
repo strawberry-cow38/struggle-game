@@ -478,6 +478,9 @@ public partial class ColonistBar : CanvasLayer
         // loadout signature (rebuild the icon when the mag crosses 0).
         sb.Append(d.HasRangedWeapon && d.RangedMag == 0 ? 'E' : '-');
         sb.Append(d.LoadedAmmoPath ?? "-").Append(';'); // RPG warhead colour = loaded rocket
+        // Secondary (underbarrel) mag rides along like the primary's.
+        sb.Append(d.HasSecondary && d.SecMag == 0 ? 'e' : '-');
+        sb.Append(d.SecAmmoPath ?? "-").Append(';');
         foreach (var eq in d.Equipped) sb.Append(eq.ItemPath).Append(';');
         return sb.ToString();
     }

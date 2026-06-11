@@ -1561,6 +1561,7 @@ public partial class WorldRenderer : Node2D
     {
         Sim.Snapshots.RocketWarhead.Hedp => new Color(0.40f, 0.58f, 1.0f),   // blue
         Sim.Snapshots.RocketWarhead.Incend => new Color(1.0f, 0.42f, 0.22f), // red
+        Sim.Snapshots.RocketWarhead.He40mm => new Color(0.45f, 0.50f, 0.28f), // 40mm HE = olive
         _ => new Color(0.45f, 0.85f, 0.40f),                                  // frag = green
     };
 

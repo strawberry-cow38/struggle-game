@@ -310,13 +310,15 @@ public sealed class DummyController
             // Seed the fresh combat state from the equipped weapon's STORED mag
             // (carried in via drop -> pickup), so a picked-up loaded gun keeps
             // its rounds instead of starting empty.
-            EquippedRangedSlot(entity, out var seedPath, out int seedMag, out string? seedAmmo);
+            EquippedRangedSlot(entity, out var seedPath, out int seedMag, out string? seedAmmo, out int seedSecMag, out string? seedSecAmmo);
             cb.AddComponent(entity.Id, new RangedCombat
             {
                 Mode = DefaultFireMode(rangedWeaponDef.Ranged!),
                 MagCount = Math.Min(seedMag, rangedWeaponDef.Ranged!.MagazineSize),
                 LoadedAmmoPath = seedAmmo,
                 ActiveWeaponPath = seedPath,
+                SecMagCount = Math.Min(seedSecMag, rangedWeaponDef.RangedSecondary?.MagazineSize ?? 0),
+                SecLoadedAmmoPath = seedSecAmmo,
             });
         }
         else if (!hasRangedWeapon && entity.HasComponent<RangedCombat>())
@@ -328,7 +330,7 @@ public sealed class DummyController
             // (pocket-sand switch / equip), load THAT weapon's stored magazine
             // (clamped to its capacity) so each gun keeps its own ammo instead
             // of inheriting the previous weapon's.
-            if (hasRangedWeapon && EquippedRangedSlot(entity, out var apath, out int amag, out var aammo)
+            if (hasRangedWeapon && EquippedRangedSlot(entity, out var apath, out int amag, out var aammo, out int asecMag, out var asecAmmo)
                 && rc0.ActiveWeaponPath != apath)
             {
                 rc0.MagCount = Math.Min(amag, rangedWeaponDef.Ranged!.MagazineSize);
@@ -336,16 +338,23 @@ public sealed class DummyController
                 rc0.ActiveWeaponPath = apath;
                 rc0.Reloading = false;
                 rc0.BurstRemaining = 0;
+                rc0.SecMagCount = Math.Min(asecMag, rangedWeaponDef.RangedSecondary?.MagazineSize ?? 0);
+                rc0.SecLoadedAmmoPath = asecAmmo;
+                rc0.SecReloading = false;
             }
             // Mirror the live magazine back onto the active weapon's slot, so
             // any drop / stash path records the current ammo.
-            SyncEquippedRangedMag(entity, rc0.MagCount, rc0.LoadedAmmoPath);
+            SyncEquippedRangedMag(entity, rc0.MagCount, rc0.LoadedAmmoPath, rc0.SecMagCount, rc0.SecLoadedAmmoPath);
             // Always finish a reload once its timer elapses, even if the pawn
             // stopped firing mid-reload (target lost) — this is the insert-mag
             // phase that actually fills the mag (else the reload would just keep
             // restarting and never load).
             if (rc0.Reloading && _tick >= rc0.NextActionTick && hasRangedWeapon)
                 CompleteReload(entity, ref rc0, rangedWeaponDef.Ranged!);
+            // Same for the secondary tube's reload, on its own Sec timer.
+            if (rc0.SecReloading && _tick >= rc0.SecNextActionTick && hasRangedWeapon
+                && rangedWeaponDef.RangedSecondary is { } secSpec0)
+                CompleteSecondaryReload(entity, ref rc0, secSpec0);
             // Recoil settles back down over time (fast between taps/bursts).
             if (rc0.Recoil > 0f && hasRangedWeapon)
                 rc0.Recoil = MathF.Max(0f, rc0.Recoil - rangedWeaponDef.Ranged!.RecoilRecoverPerSec * dt);
@@ -756,6 +765,17 @@ public sealed class DummyController
                 && TryGetRangedWeapon(entity, out var rktDef))
             {
                 ExecuteRocketFire(entity, rktDef.Ranged!, ref pos, ref path, ref w, dt, view, here);
+                return;
+            }
+
+            // Secondary (underbarrel launcher) ground-strike order: same
+            // hold-aim-lob flow as the rocket strike, on the weapon's
+            // SECONDARY spec + the RangedCombat Sec* fields.
+            if (entity.HasComponent<RangedCombat>()
+                && entity.GetComponent<RangedCombat>().SecTileTarget
+                && TryGetSecondarySpec(entity, out var secSpec))
+            {
+                ExecuteSecondaryFire(entity, secSpec, ref pos, ref path, ref w, dt, view, here);
                 return;
             }
 
@@ -1995,23 +2015,33 @@ public sealed class DummyController
         return false;
     }
 
-    // The active (first equipped) ranged-weapon slot: its path + stored mag.
-    // Drives per-weapon ammo (seeding/reloading RangedCombat on weapon change).
-    private static bool EquippedRangedSlot(Entity entity, out string path, out int mag, out string? ammo)
+    // The equipped weapon's secondary (underbarrel launcher) spec, if any.
+    private static bool TryGetSecondarySpec(Entity entity, out Items.RangedSpec spec)
     {
-        path = ""; mag = 0; ammo = null;
+        spec = null!;
+        if (!TryGetRangedWeapon(entity, out var def) || def.RangedSecondary is null) return false;
+        spec = def.RangedSecondary;
+        return true;
+    }
+
+    // The active (first equipped) ranged-weapon slot: its path + stored mags
+    // (primary + secondary). Drives per-weapon ammo (seeding/reloading
+    // RangedCombat on weapon change).
+    private static bool EquippedRangedSlot(Entity entity, out string path, out int mag, out string? ammo, out int secMag, out string? secAmmo)
+    {
+        path = ""; mag = 0; ammo = null; secMag = 0; secAmmo = null;
         if (!entity.HasComponent<Inventory>()) return false;
         var inv = entity.GetComponent<Inventory>();
         if (inv.Equipped is null) return false;
         foreach (var eq in inv.Equipped)
             if (Items.ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var d) && d.IsRangedWeapon)
-            { path = eq.ItemPath; mag = eq.MagCount; ammo = eq.LoadedAmmoPath; return true; }
+            { path = eq.ItemPath; mag = eq.MagCount; ammo = eq.LoadedAmmoPath; secMag = eq.SecMagCount; secAmmo = eq.SecLoadedAmmoPath; return true; }
         return false;
     }
 
-    // Mirror the live magazine onto the equipped ranged-weapon slot, so a drop
+    // Mirror the live magazines onto the equipped ranged-weapon slot, so a drop
     // records the current ammo. No-op if the pawn has no equipped ranged weapon.
-    private static void SyncEquippedRangedMag(Entity entity, int mag, string? ammo)
+    private static void SyncEquippedRangedMag(Entity entity, int mag, string? ammo, int secMag, string? secAmmo)
     {
         if (!entity.HasComponent<Inventory>()) return;
         ref var inv = ref entity.GetComponent<Inventory>();
@@ -2021,8 +2051,8 @@ public sealed class DummyController
             var s = inv.Equipped[k];
             if (Items.ItemCatalog.ItemsByPath.TryGetValue(s.ItemPath, out var d) && d.IsRangedWeapon)
             {
-                if (s.MagCount != mag || s.LoadedAmmoPath != ammo)
-                { s.MagCount = mag; s.LoadedAmmoPath = ammo; inv.Equipped[k] = s; }
+                if (s.MagCount != mag || s.LoadedAmmoPath != ammo || s.SecMagCount != secMag || s.SecLoadedAmmoPath != secAmmo)
+                { s.MagCount = mag; s.LoadedAmmoPath = ammo; s.SecMagCount = secMag; s.SecLoadedAmmoPath = secAmmo; inv.Equipped[k] = s; }
                 return;
             }
         }
@@ -2978,12 +3008,58 @@ public sealed class DummyController
         if (_tick < rc.AimReadyTick) return;   // still aiming
         if (_tick < rc.NextActionTick) return; // cooldown
 
-        FireRocket(entity, ref rc, pos, tpx, tpy, spec);
+        FireRocket(entity, ref rc, pos, tpx, tpy, spec, rc.LoadedAmmoPath);
         rc.MagCount--;
         rc.ShotTick = _tick;
         rc.NextActionTick = _tick + spec.CycleCooldownTicks;
         rc.TileTarget = false; // single shot — order consumed
         rc.AimTargetId = 0;    // clear the tile-aim sentinel
+    }
+
+    // Hold-and-lob a 40mm grenade at a fixed GROUND tile from the equipped
+    // weapon's SECONDARY launcher. Mirrors ExecuteRocketFire but runs on the
+    // Sec* mag/reload state, so the rifle's own mag and cooldowns are
+    // untouched. The aim delay is paid up front: LaunchSecondary pushes
+    // SecNextActionTick out by the secondary's AimTicks when the order lands.
+    private void ExecuteSecondaryFire(Entity entity, Items.RangedSpec spec, ref WorldPos pos, ref PathFollower path, ref Wanderer w, float dt, MapView view, TilePos here)
+    {
+        ref var rc = ref entity.GetComponent<RangedCombat>();
+        var targetTile = new TilePos(rc.SecFireTileX, rc.SecFireTileY);
+
+        // Hold ground: drop any path, snap to the tile.
+        if (path.PendingPathId != 0) { _paths.Discard(path.PendingPathId); path.PendingPathId = 0; }
+        path.Waypoints = null; path.Index = 0;
+        SnapToNearestTile(ref pos, dt, out _, out _);
+
+        float tpx = targetTile.X + 0.5f, tpy = targetTile.Y + 0.5f;
+        float ddx = tpx - pos.X, ddy = tpy - pos.Y;
+        float dist = MathF.Sqrt(ddx * ddx + ddy * ddy);
+        if (ddx * ddx + ddy * ddy > 1e-9f) w.Facing = MathF.Atan2(ddy, ddx);
+
+        // Bail if the shot's no longer legal (walked out of range, lost LoS).
+        bool inRange = dist >= SimConstants.RocketMinTargetRange && dist <= spec.Range;
+        bool los = LosClear?.Invoke(here.X, here.Y, targetTile.X, targetTile.Y) ?? true;
+        if (!inRange || !los) { rc.SecTileTarget = false; return; }
+
+        // Reload phases (same two-step as guns, on the Sec mag).
+        if (rc.SecReloading)
+        {
+            if (_tick < rc.SecNextActionTick) return;
+            CompleteSecondaryReload(entity, ref rc, spec);
+        }
+        if (rc.SecMagCount <= 0)
+        {
+            if (!TryStartSecondaryReload(entity, ref rc, spec)) { AnnounceSecOutOfAmmo(ref rc); rc.SecTileTarget = false; } // no grenades
+            return;
+        }
+
+        if (_tick < rc.SecNextActionTick) return; // still aiming / cooldown
+
+        FireRocket(entity, ref rc, pos, tpx, tpy, spec, rc.SecLoadedAmmoPath);
+        rc.SecMagCount--;
+        rc.ShotTick = _tick;
+        rc.SecNextActionTick = _tick + spec.CycleCooldownTicks;
+        rc.SecTileTarget = false; // single shot — order consumed
     }
 
     // Stamp the "Out of ammo!" overhead float — but only once the previous
@@ -2995,13 +3071,20 @@ public sealed class DummyController
         if (_tick - rc.OutOfAmmoTick >= OutOfAmmoAnnounceTicks) rc.OutOfAmmoTick = _tick;
     }
 
-    // Emit one rocket projectile toward a ground tile (flies through pawns,
-    // detonates on arrival — handled sim-side in StepProjectiles/ExplodeRocket).
-    private void FireRocket(Entity entity, ref RangedCombat rc, WorldPos pos, float tpx, float tpy, Items.RangedSpec spec)
+    // Same float for the secondary tube, on its own Sec timestamp.
+    private void AnnounceSecOutOfAmmo(ref RangedCombat rc)
+    {
+        if (_tick - rc.SecOutOfAmmoTick >= OutOfAmmoAnnounceTicks) rc.SecOutOfAmmoTick = _tick;
+    }
+
+    // Emit one rocket/grenade projectile toward a ground tile (flies through
+    // pawns, detonates on arrival — handled sim-side in StepProjectiles/
+    // ExplodeRocket). ammoPath picks the warhead (primary or secondary mag).
+    private void FireRocket(Entity entity, ref RangedCombat rc, WorldPos pos, float tpx, float tpy, Items.RangedSpec spec, string? ammoPath)
     {
         PendingProjectiles.Add(new ProjectileSpawn(
             pos.X, pos.Y, tpx, tpy, SimConstants.RocketFlightHeight, spec.ProjectileSpeed,
-            entity.Id, 0, true, rc.LoadedAmmoPath ?? "", IsRocket: true));
+            entity.Id, 0, true, ammoPath ?? "", IsRocket: true));
         rc.Recoil = MathF.Min(spec.MaxRecoilDegrees, rc.Recoil + spec.RecoilPerShot);
     }
 
@@ -3055,6 +3138,58 @@ public sealed class DummyController
             if (!Items.ItemCatalog.ItemsByPath.TryGetValue(stk.ItemPath, out var d) || d.Ammo is null) continue;
             if (d.Ammo.CategoryPath != spec.AmmoCategoryPath) continue;
             if (rc.PreferredAmmoPath is not null && stk.ItemPath != rc.PreferredAmmoPath) continue;
+            index = k;
+            return true;
+        }
+        return false;
+    }
+
+    // ─── Secondary (underbarrel launcher) reload — mirrors the primary's
+    // two-phase reload on the Sec* fields. ────────────────────────────────
+
+    // Begin a tube reload: empty the tube now, pull the grenade on completion.
+    private bool TryStartSecondaryReload(Entity entity, ref RangedCombat rc, Items.RangedSpec spec)
+    {
+        if (!TryFindSecondaryReloadStack(entity, spec, out _)) return false;
+        rc.SecReloading = true;
+        rc.SecReloadApplied = false; // grenade pulled on completion, not yet
+        rc.SecMagCount = 0;          // tube emptied
+        rc.SecNextActionTick = _tick + spec.ReloadTicks;
+        return true;
+    }
+
+    // Finish a tube reload: NOW pull the grenade from inventory into the tube.
+    private void CompleteSecondaryReload(Entity entity, ref RangedCombat rc, Items.RangedSpec spec)
+    {
+        rc.SecReloading = false;
+        // Idle top-ups (TopUpSecMagFromInventory) already pulled the grenade at
+        // start — the timer is just the animation. Pulling again would
+        // double-consume inventory and clobber the topped-up tube.
+        if (rc.SecReloadApplied) { rc.SecReloadApplied = false; return; }
+        if (!TryFindSecondaryReloadStack(entity, spec, out int k)) return; // ammo gone meanwhile
+        ref var inv = ref entity.GetComponent<Inventory>();
+        var stk = inv.Items![k];
+        int load = Math.Min(spec.MagazineSize, stk.Count);
+        stk.Count -= load;
+        if (stk.Count <= 0) inv.Items.RemoveAt(k); else inv.Items[k] = stk;
+        rc.SecMagCount = load;
+        rc.SecLoadedAmmoPath = stk.ItemPath;
+    }
+
+    // Index of the first inventory stack of ammo matching the secondary's
+    // category (no preferred-type lock for the tube). No mutation.
+    private static bool TryFindSecondaryReloadStack(Entity entity, Items.RangedSpec spec, out int index)
+    {
+        index = -1;
+        if (!entity.HasComponent<Inventory>()) return false;
+        ref var inv = ref entity.GetComponent<Inventory>();
+        if (inv.Items is null) return false;
+        for (int k = 0; k < inv.Items.Count; k++)
+        {
+            var stk = inv.Items[k];
+            if (stk.Count <= 0) continue;
+            if (!Items.ItemCatalog.ItemsByPath.TryGetValue(stk.ItemPath, out var d) || d.Ammo is null) continue;
+            if (d.Ammo.CategoryPath != spec.AmmoCategoryPath) continue;
             index = k;
             return true;
         }
@@ -3230,7 +3365,15 @@ public sealed class DummyController
             path.Waypoints = null; path.Index = 0;
             return true;
         }
-        if (rc.MagCount >= spec.MagazineSize) return false; // already full
+        // Same hold for an in-progress secondary (tube) reload.
+        if (rc.SecReloading)
+        {
+            if (_tick >= rc.SecNextActionTick) { rc.SecReloading = false; rc.SecReloadApplied = false; }
+            path.Waypoints = null; path.Index = 0;
+            return true;
+        }
+        if (rc.MagCount >= spec.MagazineSize)
+            return TrySecondaryTopUp(entity, ref rc, ref path); // primary full — top the tube off
 
         // The ammo type we want: keep the loaded type when topping a partial
         // mag, else the player-locked type, else anything compatible.
@@ -3245,7 +3388,7 @@ public sealed class DummyController
 
         // Otherwise go fetch some from the nearest matching pile.
         if (!TryFindNearestAmmoPile(here, spec, want, out var pileTile, out var pilePath))
-            return false; // no ammo anywhere → resume normal life
+            return TrySecondaryTopUp(entity, ref rc, ref path); // no rifle ammo anywhere — still top the tube off
 
         bool adjacent = Math.Abs(pileTile.X - here.X) <= 1 && Math.Abs(pileTile.Y - here.Y) <= 1;
         if (adjacent)
@@ -3293,6 +3436,43 @@ public sealed class DummyController
             return true;
         }
         return false;
+    }
+
+    // Idle top-up for the secondary (underbarrel) tube: when the pawn carries
+    // a matching grenade and the tube isn't full, load it where they stand (no
+    // fetch walk — grenades come from carried stock only). Returns true if it
+    // took control of the pawn this tick.
+    private bool TrySecondaryTopUp(Entity entity, ref RangedCombat rc, ref PathFollower path)
+    {
+        if (!TryGetSecondarySpec(entity, out var spec)) return false;
+        if (rc.SecMagCount >= spec.MagazineSize) return false; // already full
+        if (!TopUpSecMagFromInventory(entity, ref rc, spec)) return false;
+        path.Waypoints = null; path.Index = 0;
+        return true;
+    }
+
+    // Pull a grenade from inventory into the tube. Starts a timed reload with
+    // the round already in (the same ReloadApplied pattern as the primary, so
+    // completion doesn't pull from inventory a second time).
+    private bool TopUpSecMagFromInventory(Entity entity, ref RangedCombat rc, Items.RangedSpec spec)
+    {
+        if (!entity.HasComponent<Inventory>()) return false;
+        ref var inv = ref entity.GetComponent<Inventory>();
+        if (inv.Items is null) return false;
+        int need = spec.MagazineSize - rc.SecMagCount;
+        if (need <= 0) return false;
+        if (!TryFindSecondaryReloadStack(entity, spec, out int k)) return false;
+        var stk = inv.Items[k];
+        int load = Math.Min(need, stk.Count);
+        if (load <= 0) return false;
+        stk.Count -= load;
+        if (stk.Count <= 0) inv.Items.RemoveAt(k); else inv.Items[k] = stk;
+        rc.SecMagCount += load;
+        rc.SecLoadedAmmoPath = stk.ItemPath;
+        rc.SecReloading = true;
+        rc.SecReloadApplied = true; // grenade already in — don't pull again on completion
+        rc.SecNextActionTick = _tick + spec.ReloadTicks;
+        return true;
     }
 
     private bool TryFindNearestAmmoPile(TilePos here, Items.RangedSpec spec, string? want, out TilePos tile, out string path)

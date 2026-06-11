@@ -238,6 +238,16 @@ public readonly record struct DummyState(
     float PeekY,
     // Has rounds in the mag OR compatible ammo in inventory to reload with.
     bool RangedHasAmmo,
+    // ─── Secondary weapon (underbarrel launcher, e.g. the M203) ────────
+    // HasSecondary false → the rest is unused. Drives the second target
+    // button + the second mag panel on the draft action bar.
+    bool HasSecondary,
+    int SecMag,
+    int SecMagSize,
+    string? SecAmmoPath,
+    // Has a grenade chambered OR a compatible one in inventory to reload with.
+    bool SecHasAmmo,
+    bool SecReloading,
     // Firing pie meter: 0 = none, 1 = aiming, 2 = shot/burst cooldown; Progress
     // 0..1 fills the wedge.
     byte FireMeterPhase,
@@ -339,8 +349,8 @@ public readonly record struct FireState(TilePos Tile, float Intensity);
 public readonly record struct ProjectileState(float X, float Y, float Height, float Angle, float Speed, bool IsAp, float OriginX, float OriginY, bool IsRocket = false, RocketWarhead Warhead = RocketWarhead.None);
 
 // Which warhead a flying rocket carries — colours its nose cone in flight to
-// match the launcher's loaded round.
-public enum RocketWarhead : byte { None = 0, Frag = 1, Hedp = 2, Incend = 3 }
+// match the launcher's loaded round. He40mm is the M203's 40mm grenade.
+public enum RocketWarhead : byte { None = 0, Frag = 1, Hedp = 2, Incend = 3, He40mm = 4 }
 
 // A drifting smoke puff dropped by a flying rocket. Alpha 1 = just spawned →
 // 0 = gone. Seed varies the per-puff drift/size so the trail isn't uniform.

@@ -34,4 +34,5 @@ public enum ToolMode
     Sandbag = 29,
     MeleeAttackTarget = 30,
     RocketStrike = 31,
+    SecondaryStrike = 32,
 }

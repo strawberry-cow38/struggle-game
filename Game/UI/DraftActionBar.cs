@@ -61,6 +61,17 @@ public partial class DraftActionBar : CanvasLayer
     private Label _forceTargetCap = null!;
     private Button _rocketBtn = null!;
     private Control _rocketWrap = null!;
+
+    // Secondary-weapon (underbarrel launcher) tiles — shown only when the
+    // equipped weapon carries one (HasSecondary): its own mag panel + reload
+    // tile + ground-strike target tile.
+    private readonly List<Control> _secondaryWraps = new();
+    private ProgressBar _secMagBar = null!;
+    private Label _secMagTitle = null!;
+    private Label _secMagCount = null!;
+    private Button _secReloadBtn = null!;
+    private Button _secondaryBtn = null!;
+    private string? _lastSecAmmoPath = null;
     private Button _meleeBtn = null!;
     private Button _fireAtWillBtn = null!;
     private Button _reloadBtn = null!;
@@ -210,6 +221,31 @@ public partial class DraftActionBar : CanvasLayer
             Tools.Mode = _rocketBtn.ButtonPressed ? ToolMode.RocketStrike : ToolMode.None;
         };
         _rocketWrap = WrapOf(_rocketBtn);
+
+        // Secondary weapon (underbarrel launcher) — its own mag panel +
+        // reload tile, then the ground-strike target tile (rightmost).
+        var secMagPanel = BuildSecMagPanel();
+        _bar.AddChild(secMagPanel);
+        _secondaryWraps.Add(secMagPanel);
+
+        _secReloadBtn = BuildGizmo("Reload M203", toggle: false, parent: _bar, out _);
+        _secReloadBtn.TooltipText = "Reload the underbarrel launcher.";
+        _secReloadBtn.Pressed += () =>
+        {
+            if (Host is null || _shownPawnId < 0) return;
+            Host.QueueCommand(new ReloadSecondaryCommand(_shownPawnId));
+        };
+        _secondaryWraps.Add(WrapOf(_secReloadBtn));
+
+        // M203 strike tile — click, then a GROUND tile, to lob a grenade there.
+        _secondaryBtn = BuildGizmo("M203", toggle: true, parent: _bar, out _);
+        _secondaryBtn.TooltipText = "Click, then a ground tile, to fire the underbarrel launcher (min range 5 tiles).";
+        _secondaryBtn.Pressed += () =>
+        {
+            if (Tools is null) return;
+            Tools.Mode = _secondaryBtn.ButtonPressed ? ToolMode.SecondaryStrike : ToolMode.None;
+        };
+        _secondaryWraps.Add(WrapOf(_secondaryBtn));
     }
 
     private static Control WrapOf(Button tile) => (Control)tile.GetParent();
@@ -233,6 +269,7 @@ public partial class DraftActionBar : CanvasLayer
             // Pawn changed — invalidate caches so the new pawn's state gets applied fresh.
             _lastTileActive.Clear();
             _lastAmmoPath = null;
+            _lastSecAmmoPath = null;
         }
         _shownPawnId = p.EntityId;
         if (!_bar.Visible) _bar.Visible = true;
@@ -249,6 +286,8 @@ public partial class DraftActionBar : CanvasLayer
         bool rocket = p.HasRangedWeapon && p.HasRocketLauncher;
         _rocketWrap.Visible = rocket;
         WrapOf(_forceTargetBtn).Visible = p.HasRangedWeapon && !rocket;
+        // Secondary (underbarrel launcher) tiles only when the weapon has one.
+        foreach (var w in _secondaryWraps) w.Visible = p.HasSecondary;
 
         if (p.HasRangedWeapon)
         {
@@ -277,10 +316,24 @@ public partial class DraftActionBar : CanvasLayer
             _shownAimMode = p.RangedAimMode;
             _aimModeBtn.Text = p.RangedAimMode.ToString();
 
+            // Secondary (underbarrel) tube readout + strike-tool highlight.
+            if (p.HasSecondary)
+            {
+                _secMagTitle.Text = AmmoLongName(p.SecAmmoPath);
+                _secMagCount.Text = $"{p.SecMag} / {p.SecMagSize}";
+                _secMagBar.Value = p.SecMagSize > 0 ? (float)p.SecMag / p.SecMagSize : 0f;
+                if (p.SecAmmoPath != _lastSecAmmoPath)
+                {
+                    _secMagBar.AddThemeStyleboxOverride("fill", MakeBox(AmmoColor(p.SecAmmoPath), default, 0, 4));
+                    _lastSecAmmoPath = p.SecAmmoPath;
+                }
+            }
+
             if (Tools is not null)
             {
                 SetTileActive(_forceTargetBtn, Tools.Mode == ToolMode.ForceFireTarget);
                 SetTileActive(_rocketBtn, Tools.Mode == ToolMode.RocketStrike);
+                if (p.HasSecondary) SetTileActive(_secondaryBtn, Tools.Mode == ToolMode.SecondaryStrike);
             }
         }
 
@@ -397,48 +450,54 @@ public partial class DraftActionBar : CanvasLayer
     // Mag panel mirrors a gizmo: a square tile (big mag count on a dark
     // inset) with the weapon name as the caption beneath, so it lines up to
     // the same height as the buttons.
-    private Control BuildMagPanel()
+    private Control BuildMagPanel() => BuildMagPanelCore(96, out _magBar, out _magCount, out _magTitle);
+
+    // The secondary launcher's tube readout — same style, just narrower
+    // (its count is "0 / 1").
+    private Control BuildSecMagPanel() => BuildMagPanelCore(TileSize, out _secMagBar, out _secMagCount, out _secMagTitle);
+
+    private Control BuildMagPanelCore(int width, out ProgressBar bar, out Label count, out Label title)
     {
         var wrap = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         wrap.AddThemeConstantOverride("separation", 2);
 
-        var tile = new Control { CustomMinimumSize = new Vector2(96, TileSize) };
+        var tile = new Control { CustomMinimumSize = new Vector2(width, TileSize) };
 
         // Capacity bar fills the tile; fill color set per ammo type each frame.
-        _magBar = new ProgressBar
+        bar = new ProgressBar
         {
             MinValue = 0, MaxValue = 1, Step = 0.0001, ShowPercentage = false,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        _magBar.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        _magBar.AddThemeStyleboxOverride("background", MakeBox(UiTheme.Inset, BorderIdle, 2, 4, 0));
-        _magBar.AddThemeStyleboxOverride("fill", MakeBox(new Color(0.40f, 0.42f, 0.48f), default, 0, 4));
-        tile.AddChild(_magBar);
+        bar.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        bar.AddThemeStyleboxOverride("background", MakeBox(UiTheme.Inset, BorderIdle, 2, 4, 0));
+        bar.AddThemeStyleboxOverride("fill", MakeBox(new Color(0.40f, 0.42f, 0.48f), default, 0, 4));
+        tile.AddChild(bar);
 
-        _magCount = new Label
+        count = new Label
         {
             Text = "0 / 0",
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
-        _magCount.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        _magCount.AddThemeFontSizeOverride("font_size", 18);
-        _magCount.AddThemeColorOverride("font_color", new Color(0.95f, 0.97f, 0.98f));
-        _magCount.AddThemeConstantOverride("outline_size", 4);
-        _magCount.AddThemeColorOverride("font_outline_color", new Color(0f, 0f, 0f, 0.7f));
-        tile.AddChild(_magCount);
+        count.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        count.AddThemeFontSizeOverride("font_size", 18);
+        count.AddThemeColorOverride("font_color", new Color(0.95f, 0.97f, 0.98f));
+        count.AddThemeConstantOverride("outline_size", 4);
+        count.AddThemeColorOverride("font_outline_color", new Color(0f, 0f, 0f, 0.7f));
+        tile.AddChild(count);
         wrap.AddChild(tile);
 
-        _magTitle = new Label
+        title = new Label
         {
             Text = "Weapon",
-            CustomMinimumSize = new Vector2(96, 0),
+            CustomMinimumSize = new Vector2(width, 0),
             HorizontalAlignment = HorizontalAlignment.Center,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
-        _magTitle.AddThemeFontSizeOverride("font_size", 11);
-        wrap.AddChild(_magTitle);
+        title.AddThemeFontSizeOverride("font_size", 11);
+        wrap.AddChild(title);
 
         return wrap;
     }
@@ -560,6 +619,8 @@ public partial class DraftActionBar : CanvasLayer
 
         var sb = new System.Text.StringBuilder();
         foreach (var s in slots) sb.Append(s is { } v ? v.Path + (v.Active ? "1" : "0") + (v.Empty ? "E" : "") + (v.AmmoPath ?? "") : "_").Append('|');
+        // Secondary (underbarrel) mag rides along like the primary's.
+        sb.Append(p.SecMag).Append(p.SecAmmoPath ?? "");
         string sig = sb.ToString();
         if (sig == _pocketSig) return;
         _pocketSig = sig;
@@ -653,6 +714,7 @@ public partial class DraftActionBar : CanvasLayer
             _shownPawnId = -1;
             _lastTileActive.Clear();
             _lastAmmoPath = null;
+            _lastSecAmmoPath = null;
         }
     }
 }

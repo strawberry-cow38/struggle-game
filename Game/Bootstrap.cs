@@ -113,6 +113,9 @@ public partial class Bootstrap : Node2D
         var rocketStrikeDesignator = new RocketStrikeDesignator { Host = _host, Tools = _tools, Name = "RocketStrikeDesignator" };
         AddChild(rocketStrikeDesignator);
 
+        var secondaryStrikeDesignator = new SecondaryStrikeDesignator { Host = _host, Tools = _tools, Name = "SecondaryStrikeDesignator" };
+        AddChild(secondaryStrikeDesignator);
+
         var selector = new Selector { Host = _host, Tools = _tools, Name = "Selector" };
         AddChild(selector);
 

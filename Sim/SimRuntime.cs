@@ -1532,6 +1532,10 @@ public sealed class SimRuntime
             bool leaning = false;
             float peekX = p.X, peekY = p.Y;
             bool rangedHasAmmo = false;
+            bool hasSecondary = false;
+            int secMag = 0, secMagSize = 0;
+            string? secAmmo = null;
+            bool secHasAmmo = false, secReloading = false;
             byte fireMeterPhase = 0;
             float fireMeterProgress = 0f;
             float treatProgress = 0f;
@@ -1567,7 +1571,28 @@ public sealed class SimRuntime
                 loadedAmmo = rc.LoadedAmmoPath;
                 fireTargetId = rc.TargetEntityId;
                 shotTick = rc.ShotTick;
-                outOfAmmoTick = rc.OutOfAmmoTick;
+                // Either weapon running dry drives the "Out of ammo!" float.
+                outOfAmmoTick = Math.Max(rc.OutOfAmmoTick, rc.SecOutOfAmmoTick);
+                // Secondary (underbarrel launcher) readout, if the weapon has one.
+                if (TryGetEquippedSecondarySpec(ent, out var secSpec))
+                {
+                    hasSecondary = true;
+                    secMag = rc.SecMagCount;
+                    secMagSize = secSpec.MagazineSize;
+                    secAmmo = rc.SecLoadedAmmoPath;
+                    secReloading = rc.SecReloading;
+                    secHasAmmo = rc.SecMagCount > 0;
+                    if (!secHasAmmo && ent.HasComponent<Inventory>())
+                    {
+                        var sinv = ent.GetComponent<Inventory>();
+                        if (sinv.Items is not null)
+                            foreach (var s in sinv.Items)
+                                if (s.Count > 0
+                                    && Items.ItemCatalog.ItemsByPath.TryGetValue(s.ItemPath, out var sd)
+                                    && sd.Ammo is not null && sd.Ammo.CategoryPath == secSpec.AmmoCategoryPath)
+                                { secHasAmmo = true; break; }
+                    }
+                }
                 rangedMode = rc.Mode;
                 rangedModes = rspec.Modes;
                 rangedRange = rspec.Range;
@@ -1670,6 +1695,7 @@ public sealed class SimRuntime
                 hasRanged, hasRocket, rangedMag, rangedMagSize, loadedAmmo, rangedMode, rangedModes,
                 fireTargetId, shotTick, outOfAmmoTick, rangedRange, rangedStatus, rangedArea, rangedAimMode,
                 coverStance, leaning, peekX, peekY, rangedHasAmmo,
+                hasSecondary, secMag, secMagSize, secAmmo, secHasAmmo, secReloading,
                 fireMeterPhase, fireMeterProgress, treatProgress,
                 ent.HasComponent<Enemy>(),
                 (byte)(ent.HasComponent<EnemyBrain>() ? ent.GetComponent<EnemyBrain>().Goal : EnemyGoalKind.None),
@@ -1903,6 +1929,7 @@ public sealed class SimRuntime
             var warhead = !pr.IsRocket ? RocketWarhead.None
                 : pr.AmmoPath == Items.ItemCatalog.RocketHedp.FullPath ? RocketWarhead.Hedp
                 : pr.AmmoPath == Items.ItemCatalog.RocketIncend.FullPath ? RocketWarhead.Incend
+                : pr.AmmoPath == Items.ItemCatalog.Ammo40mmHe.FullPath ? RocketWarhead.He40mm
                 : RocketWarhead.Frag;
             projBuf[pri++] = new ProjectileState(pr.X, pr.Y, pr.Height, pr.Angle, pr.Speed, isAp, pr.OriginX, pr.OriginY, pr.IsRocket, warhead);
         });
@@ -4365,6 +4392,23 @@ public sealed class SimRuntime
         return false;
     }
 
+    // The secondary (underbarrel launcher) spec of the pawn's equipped ranged
+    // weapon, if it has one (e.g. the M16 M203's 40mm tube).
+    public static bool TryGetEquippedSecondarySpec(Entity ent, out Items.RangedSpec spec)
+    {
+        spec = null!;
+        if (!ent.HasComponent<Inventory>()) return false;
+        var inv = ent.GetComponent<Inventory>();
+        if (inv.Equipped is null) return false;
+        foreach (var eq in inv.Equipped)
+            if (Items.ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var def) && def.RangedSecondary is not null)
+            {
+                spec = def.RangedSecondary;
+                return true;
+            }
+        return false;
+    }
+
     // Order a drafted colonist with a ranged weapon to fire on a target.
     public void SetFireTarget(int shooterId, int targetId)
     {
@@ -4401,6 +4445,29 @@ public sealed class SimRuntime
         rc.TargetEntityId = 0; // ground strike supersedes any pawn target
         rc.AutoTarget = false;
         rc.BurstRemaining = 0;
+        return true;
+    }
+
+    // Player order: lob a 40mm grenade from the equipped weapon's SECONDARY
+    // (underbarrel) launcher at a GROUND tile. Same validation as LaunchRocket
+    // but against the secondary spec; sets the Sec tile-fire target. Unlike a
+    // rocket strike the RIFLE keeps its pawn target — only the tube fires here.
+    public bool LaunchSecondary(int shooterId, int tileX, int tileY)
+    {
+        if (!Store.TryGetEntityById(shooterId, out var s) || !s.HasComponent<Drafted>()) return false;
+        if (!s.HasComponent<RangedCombat>() || !s.HasComponent<WorldPos>()) return false;
+        if (!TryGetEquippedSecondarySpec(s, out var spec)) return false;
+        var wp = s.GetComponent<WorldPos>();
+        float dx = (tileX + 0.5f) - wp.X, dy = (tileY + 0.5f) - wp.Y;
+        float dist = MathF.Sqrt(dx * dx + dy * dy);
+        if (dist < SimConstants.RocketMinTargetRange || dist > spec.Range) return false;
+        if (!RangedLosClear((int)wp.X, (int)wp.Y, tileX, tileY)) return false;
+        ref var rc = ref s.GetComponent<RangedCombat>();
+        rc.SecTileTarget = true;
+        rc.SecFireTileX = tileX; rc.SecFireTileY = tileY;
+        // The aim delay is paid up front on the Sec timer (the controller has
+        // no per-target aim state for the tube — keep it simple).
+        rc.SecNextActionTick = Math.Max(rc.SecNextActionTick, Tick + spec.AimTicks);
         return true;
     }
 
@@ -4451,6 +4518,49 @@ public sealed class SimRuntime
         rc.LoadedAmmoPath = null;
         rc.Reloading = false;
         rc.BurstRemaining = 0;
+    }
+
+    // Draft action bar: manually reload the SECONDARY (underbarrel) launcher.
+    // Returns any chambered grenade to inventory first (no rounds lost), then
+    // starts the timed two-phase reload — the grenade is inserted when it
+    // completes (the controller's CompleteSecondaryReload).
+    public void ManualReloadSecondary(int pawnId)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var p)) return;
+        if (!p.HasComponent<RangedCombat>()) return;
+        if (!TryGetEquippedSecondarySpec(p, out var spec)) return;
+        UnloadSecondaryMagazine(p); // bank the chambered grenade (tube -> inventory)
+        if (!p.HasComponent<Inventory>()) return;
+        var inv = p.GetComponent<Inventory>();
+        if (inv.Items is null) return;
+        bool hasAmmo = false;
+        foreach (var stk in inv.Items)
+            if (stk.Count > 0
+                && Items.ItemCatalog.ItemsByPath.TryGetValue(stk.ItemPath, out var d) && d.Ammo is not null
+                && d.Ammo.CategoryPath == spec.AmmoCategoryPath)
+            { hasAmmo = true; break; }
+        if (!hasAmmo)
+        {
+            // Player hit reload with nothing to load — flash "Out of ammo!".
+            ref var rcEmpty = ref p.GetComponent<RangedCombat>();
+            rcEmpty.SecOutOfAmmoTick = Tick;
+            return;
+        }
+        ref var rc = ref p.GetComponent<RangedCombat>();
+        rc.SecReloading = true;
+        rc.SecReloadApplied = false;
+        rc.SecNextActionTick = Tick + spec.ReloadTicks;
+    }
+
+    // Empty the secondary tube, returning its grenade to inventory.
+    private static void UnloadSecondaryMagazine(Entity p)
+    {
+        ref var rc = ref p.GetComponent<RangedCombat>();
+        if (rc.SecMagCount > 0 && rc.SecLoadedAmmoPath is not null)
+            AddToInventory(p, rc.SecLoadedAmmoPath, rc.SecMagCount);
+        rc.SecMagCount = 0;
+        rc.SecLoadedAmmoPath = null;
+        rc.SecReloading = false;
     }
 
     // Reload-button RMB menu: lock the auto-reload ammo type and force an
@@ -5247,6 +5357,7 @@ public sealed class SimRuntime
             false, false, 0, 0, null, Items.FireMode.Single, Items.FireModeFlags.None,
             0, 0, 0, 0f, Snapshots.RangedStatus.None, Items.TargetArea.Auto, Items.AimMode.Aimed,
             0, false, x, y, false,
+            false, 0, 0, null, false, false, // no secondary on a corpse
             0, 0f, 0f,
             false,                       // IsEnemy
             (byte)EnemyGoalKind.None,
@@ -5515,7 +5626,7 @@ public sealed class SimRuntime
             int ex = items.FindIndex(s => s.ItemPath == path && s.Count + add <= cap);
             if (ex >= 0) { var s = items[ex]; s.Count += slot.Count; items[ex] = s; return; }
         }
-        items.Add(new InventoryStack { ItemPath = slot.ItemPath, Count = slot.Count, MagCount = slot.MagCount, LoadedAmmoPath = slot.LoadedAmmoPath });
+        items.Add(new InventoryStack { ItemPath = slot.ItemPath, Count = slot.Count, MagCount = slot.MagCount, LoadedAmmoPath = slot.LoadedAmmoPath, SecMagCount = slot.SecMagCount, SecLoadedAmmoPath = slot.SecLoadedAmmoPath });
     }
 
     // Drop an equipped item on the ground at the pawn's feet.
@@ -5545,15 +5656,16 @@ public sealed class SimRuntime
         string equipPath = stack.ItemPath;
         bool isWeapon = def.IsWeapon || def.IsRangedWeapon;
         stack.Count -= 1;
-        // Carry the stashed weapon's magazine back onto the equipped slot.
+        // Carry the stashed weapon's magazines back onto the equipped slot.
         int mag = stack.MagCount; string? ammo = stack.LoadedAmmoPath;
+        int secMag = stack.SecMagCount; string? secAmmo = stack.SecLoadedAmmoPath;
         if (stack.Count <= 0) inv.Items.RemoveAt(heldIndex);
         else inv.Items[heldIndex] = stack;
         inv.Equipped ??= new List<EquippedItemSlot>();
         // Only one weapon equipped at a time — stash any current weapon first.
         if (isWeapon) StashEquippedWeapons(inv.Equipped, inv.Items);
         var slot = def.IsArmor ? EquipSlot.Apparel : EquipSlot.Generic;
-        inv.Equipped.Add(new EquippedItemSlot { Slot = slot, ItemPath = equipPath, Count = 1, MagCount = mag, LoadedAmmoPath = ammo });
+        inv.Equipped.Add(new EquippedItemSlot { Slot = slot, ItemPath = equipPath, Count = 1, MagCount = mag, LoadedAmmoPath = ammo, SecMagCount = secMag, SecLoadedAmmoPath = secAmmo });
     }
 
     // Pocket Sand: stash every currently-equipped WEAPON back into the pocket
@@ -5575,9 +5687,10 @@ public sealed class SimRuntime
         if (hi < 0 || !ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def) || !def.Equippable) return;
         var st = inv.Items[hi];
         int mag = st.MagCount; string? ammo = st.LoadedAmmoPath;
+        int secMag = st.SecMagCount; string? secAmmo = st.SecLoadedAmmoPath;
         st.Count -= 1;
         if (st.Count <= 0) inv.Items.RemoveAt(hi); else inv.Items[hi] = st;
-        inv.Equipped.Add(new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = itemPath, Count = 1, MagCount = mag, LoadedAmmoPath = ammo });
+        inv.Equipped.Add(new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = itemPath, Count = 1, MagCount = mag, LoadedAmmoPath = ammo, SecMagCount = secMag, SecLoadedAmmoPath = secAmmo });
     }
 
     // Debug/demo: give a pawn an equipped rifle plus an SMG and a melee weapon

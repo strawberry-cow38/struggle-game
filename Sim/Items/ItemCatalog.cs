@@ -139,6 +139,10 @@ public sealed class ItemDef
     // weapon attaches a RangedCombat component (mag + fire mode).
     public RangedSpec? Ranged { get; }
     public bool IsRangedWeapon => Ranged is not null;
+    // Secondary launcher stats (an underbarrel grenade launcher like the
+    // M203), else null. Fires at a GROUND tile like the RPG, with its own
+    // magazine + ammo category, carried on the RangedCombat Sec* fields.
+    public RangedSpec? RangedSecondary { get; }
     // Ammo stats when this item is a round of ammunition, else null.
     public AmmoSpec? Ammo { get; }
     public bool IsAmmo => Ammo is not null;
@@ -146,7 +150,7 @@ public sealed class ItemDef
     public ArmorSpec? Armor { get; }
     public bool IsArmor => Armor is not null;
 
-    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable, (ConditionKind, float)[]? meleeAttacks, bool defaultStockpileAllowed, RangedSpec? ranged, AmmoSpec? ammo, int maxStack, ArmorSpec? armor)
+    internal ItemDef(string id, string displayName, ItemCategory category, float weight, float bulk, bool equippable, (ConditionKind, float)[]? meleeAttacks, bool defaultStockpileAllowed, RangedSpec? ranged, AmmoSpec? ammo, int maxStack, ArmorSpec? armor, RangedSpec? rangedSecondary)
     {
         Id = id;
         DisplayName = displayName;
@@ -160,6 +164,7 @@ public sealed class ItemDef
         Ammo = ammo;
         MaxStack = maxStack;
         Armor = armor;
+        RangedSecondary = rangedSecondary;
     }
 
     public string FullPath => $"{Category.FullPath}/{Id}";
@@ -197,6 +202,8 @@ public static class ItemCatalog
     // First ranged weapon — ships with all three fire modes for testing.
     public static readonly ItemDef AssaultRifle;
     public static readonly ItemDef M16M203;
+    // 40mm HE grenade for the M203's underbarrel tube — a small frag warhead.
+    public static readonly ItemDef Ammo40mmHe;
     // Torso armor. Stops most rounds (deflect → bruise); AP punches through.
     public static readonly ItemDef KevlarVest;
     public static readonly ItemCategory Ammo;
@@ -296,9 +303,15 @@ public static class ItemCatalog
                 ReloadTicks = 120,
             });
 
+        // 40mm HE — the M203's grenade: a scaled-down frag rocket (~60% of the
+        // RPG-7 frag round). Explodes at the target tile; lethality comes from
+        // the shrapnel spray, not the raw blast (same pipeline as rockets).
+        Ammo40mmHe = RegisterItem("Ammo40mmHE", "40mm HE", Ammo, weight: 0.23f, bulk: 0.2f, maxStack: 25,
+            ammo: new AmmoSpec { CategoryPath = "40mm", InjuryKind = ConditionKind.Gunshot, Damage = 10f, PenSharp = 5f, PenBlunt = 36f, BlastRadius = 2.5f, FragCount = 10 });
+
         // M16 + M203 — the M16A2 with an underbarrel grenade launcher. Rifle
-        // stats match the M16A2; the launcher is sprite-only for now (no
-        // grenade fire mode yet), it just adds carry weight.
+        // stats match the M16A2; the M203 is a SECONDARY weapon: a single-shot
+        // 40mm tube fired at a ground tile (RPG-style strike) with its own mag.
         M16M203 = RegisterItem("M16M203", "M16 M203", Equipment, weight: 5.5f, bulk: 3.5f, equippable: true,
             ranged: new RangedSpec
             {
@@ -317,6 +330,26 @@ public static class ItemCatalog
                 ShotCooldownTicks = 5,
                 CycleCooldownTicks = 24,
                 ReloadTicks = 120,
+            },
+            // The M203 tube: one 40mm grenade, lobbed slow + arced. Generous
+            // aim (it's a careful indirect shot) and a quick break-open reload.
+            rangedSecondary: new RangedSpec
+            {
+                Range = 35f,
+                AmmoCategoryPath = "40mm",
+                MagazineSize = 1,
+                Modes = FireModeFlags.Single,
+                BurstShots = 1,
+                ProjectileSpeed = 40f,
+                SpreadDegrees = 1.5f,
+                RecoilPerShot = 2f,
+                RecoilRecoverPerSec = 6f,
+                MaxRecoilDegrees = 6f,
+                WarmupTicks = 20,
+                AimTicks = 70,
+                ShotCooldownTicks = 60,
+                CycleCooldownTicks = 60,
+                ReloadTicks = 150,
             });
 
         // MP5 — 9mm SMG: low damage, very high RoF, short range, snappy aim,
@@ -589,12 +622,12 @@ public static class ItemCatalog
         return cat;
     }
 
-    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false, (ConditionKind, float)[]? meleeAttacks = null, bool defaultStockpileAllowed = true, RangedSpec? ranged = null, AmmoSpec? ammo = null, int maxStack = 75, ArmorSpec? armor = null)
+    public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false, (ConditionKind, float)[]? meleeAttacks = null, bool defaultStockpileAllowed = true, RangedSpec? ranged = null, AmmoSpec? ammo = null, int maxStack = 75, ArmorSpec? armor = null, RangedSpec? rangedSecondary = null)
     {
         // Equippable gear (weapons, armor) is never stackable — one per pile, so
         // each keeps its own state (e.g. a gun's magazine).
         if (equippable) maxStack = 1;
-        var item = new ItemDef(id, displayName, category, weight, bulk, equippable, meleeAttacks, defaultStockpileAllowed, ranged, ammo, maxStack, armor);
+        var item = new ItemDef(id, displayName, category, weight, bulk, equippable, meleeAttacks, defaultStockpileAllowed, ranged, ammo, maxStack, armor, rangedSecondary);
         if (!_itemsByPath.TryAdd(item.FullPath, item))
         {
             throw new InvalidOperationException($"Item already registered at path '{item.FullPath}'.");

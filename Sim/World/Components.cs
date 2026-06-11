@@ -653,6 +653,10 @@ public struct EquippedItemSlot
     // RangedCombat each tick), so it survives unequip/drop. 0 for non-weapons.
     public int MagCount;
     public string? LoadedAmmoPath;
+    // Secondary (underbarrel launcher) magazine, same lifecycle. 0/null when
+    // the weapon has no secondary.
+    public int SecMagCount;
+    public string? SecLoadedAmmoPath;
 }
 
 // One general-inventory stack. Unequipping an item drops it here; the
@@ -666,6 +670,9 @@ public struct InventoryStack
     // unequip/stash. 0 for non-weapons (which can stack; weapons can't).
     public int MagCount;
     public string? LoadedAmmoPath;
+    // Secondary (underbarrel launcher) magazine, same lifecycle.
+    public int SecMagCount;
+    public string? SecLoadedAmmoPath;
 }
 
 // Persistent per-pawn inventory: general carried stacks plus equipped
@@ -804,6 +811,18 @@ public struct RangedCombat : IComponent
     public bool Leaning;           // true = lateral wall-lean (7c); false = crouch (7b)
     public float PeekX, PeekY;     // world pos to fire from + place the hitbox when Popped
                                    // (== the pawn's tile for a crouch; the lean cell for a lean)
+    // ─── Secondary weapon (underbarrel launcher, e.g. the M203) ────────
+    // Mirrors the primary mag/reload/tile-strike state on its own fields, so
+    // the rifle keeps firing normally while the tube carries its grenade.
+    public bool SecTileTarget;        // lob one grenade at (SecFireTileX, SecFireTileY)
+    public int SecFireTileX, SecFireTileY;
+    public int SecMagCount;           // grenades currently in the tube
+    public string? SecLoadedAmmoPath; // which grenade is chambered
+    public bool SecReloading;         // tube refill in progress until SecNextActionTick
+    public bool SecReloadApplied;     // grenade already pulled at reload START (idle
+                                      // top-up) — completion must NOT pull again
+    public long SecNextActionTick;    // earliest tick the tube may fire / finish reloading
+    public long SecOutOfAmmoTick;     // last tick a tube reload failed for lack of grenades
 }
 
 // A bullet in flight — now a purely COSMETIC tracer. The hit is resolved

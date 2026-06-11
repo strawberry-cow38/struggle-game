@@ -328,11 +328,13 @@ public sealed class IssueMoveOrderCommand : ISimCommand
         {
             ref var rc = ref ent.GetComponent<RangedCombat>();
             rc.TargetEntityId = 0; rc.BurstRemaining = 0;
-            rc.TileTarget = false; // ...and any rocket ground-strike order
+            rc.TileTarget = false;    // ...and any rocket ground-strike order
+            rc.SecTileTarget = false; // ...and any secondary (M203) strike order
             // A fresh move order aborts an in-progress reload so the pawn can
             // reposition now. The mag only fills on reload COMPLETION, so the
             // dropped mag stays empty — no free instant reload from interrupting.
             rc.Reloading = false;
+            rc.SecReloading = false;
         }
 
         if (!ent.HasComponent<OrderQueue>())
@@ -884,6 +886,23 @@ public sealed class LaunchRocketCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.LaunchRocket(ShooterEntityId, TileX, TileY);
 }
 
+// "M203 strike" tool on a drafted pawn whose weapon carries a secondary
+// (underbarrel) launcher: lob a grenade at the clicked GROUND tile
+// (validated for min/max range + LoS sim-side, against the secondary spec).
+public sealed class LaunchSecondaryCommand : ISimCommand
+{
+    public int ShooterEntityId { get; }
+    public int TileX { get; }
+    public int TileY { get; }
+    public LaunchSecondaryCommand(int shooterId, int tileX, int tileY)
+    {
+        ShooterEntityId = shooterId;
+        TileX = tileX;
+        TileY = tileY;
+    }
+    public void Apply(SimRuntime sim) => sim.LaunchSecondary(ShooterEntityId, TileX, TileY);
+}
+
 // Draft action bar: switch the selected pawn's ranged weapon fire mode.
 public sealed class SetFireModeCommand : ISimCommand
 {
@@ -944,6 +963,14 @@ public sealed class ReloadWeaponCommand : ISimCommand
     public int PawnEntityId { get; }
     public ReloadWeaponCommand(int pawnId) { PawnEntityId = pawnId; }
     public void Apply(SimRuntime sim) => sim.ManualReload(PawnEntityId);
+}
+
+// Draft action bar: manually reload the secondary (underbarrel) launcher.
+public sealed class ReloadSecondaryCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public ReloadSecondaryCommand(int pawnId) { PawnEntityId = pawnId; }
+    public void Apply(SimRuntime sim) => sim.ManualReloadSecondary(PawnEntityId);
 }
 
 // Reload-button RMB menu: lock auto-reload to an ammo type + force-reload now.
