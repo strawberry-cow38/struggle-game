@@ -1142,6 +1142,7 @@ public sealed class SimRuntime
     // Cached query objects — Friflo queries are live reusable views; caching
     // avoids the ~640-byte allocation per Store.Query<>() call on every tick.
     private ArchetypeQuery<WorldPos, Wanderer>?  _wandererQ;
+    private ArchetypeQuery<WorldPos, Corpse>?    _corpseDummyQ;
     private ArchetypeQuery<Sleeping>?            _sleepingQ;
     private ArchetypeQuery<AtRecreation>?        _atRecreationQ;
     private ArchetypeQuery<BuildTarget>?         _buildTargetQ;
@@ -1259,7 +1260,8 @@ public sealed class SimRuntime
             : (x, y) => false;
 
         var dq = _wandererQ ??= Store.Query<WorldPos, Wanderer>();
-        EnsureCap(ref snap.DummiesBuf, dq.Count);
+        var corpseQ = _corpseDummyQ ??= Store.Query<WorldPos, Corpse>();
+        EnsureCap(ref snap.DummiesBuf, dq.Count + corpseQ.Count);
         var dummiesBuf = snap.DummiesBuf;
         int i = 0;
         dq.ForEachEntity((ref WorldPos p, ref Wanderer wr, Entity ent) =>
@@ -1586,6 +1588,13 @@ public sealed class SimRuntime
                         new PawnPathState(ent.Id, path ?? Array.Empty<TilePos>(), orders ?? Array.Empty<TilePos>()));
                 }
             }
+        });
+        // Dead colonists: keep them in the dummy list (greyed, IsDead) so they
+        // hold their colonist-bar portrait + info panel until the corpse is
+        // buried or lost. No body is rendered for them (the corpse pile is).
+        corpseQ.ForEachEntity((ref WorldPos cp, ref Corpse corpse, Entity ce) =>
+        {
+            dummiesBuf[i++] = MakeDeadDummy(ce.Id, cp.X, cp.Y, corpse.Name, BuildHealthState(corpse.Health));
         });
         snap.DummiesCount = i;
         snap.SelectedPaths = selPaths?.ToArray() ?? Array.Empty<PawnPathState>();
@@ -5011,6 +5020,48 @@ public sealed class SimRuntime
         }
         SpawnItemPile(target, path, count);
     }
+
+    // Build a render HealthState from a Health snapshot (live pawn or corpse).
+    private static HealthState BuildHealthState(in Health hc)
+    {
+        InjuryState[] injuries = Array.Empty<InjuryState>();
+        float bleedRate = 0f;
+        if (hc.Injuries is { Count: > 0 })
+        {
+            injuries = new InjuryState[hc.Injuries.Count];
+            for (int ii = 0; ii < hc.Injuries.Count; ii++)
+            {
+                var inj = hc.Injuries[ii];
+                injuries[ii] = new InjuryState(inj.PartId, inj.Kind, inj.Severity, inj.Caliber,
+                    World.HealthSystem.BleedOf(inj), inj.Tended, inj.Stabilized, inj.TendQuality);
+                bleedRate += World.HealthSystem.BleedOf(inj);
+            }
+        }
+        return new HealthState(hc.BloodLevel, bleedRate, hc.Pain, hc.Consciousness, hc.Moving,
+            hc.Manipulation, hc.Sight, hc.OverallHealth, hc.Unconscious, injuries);
+    }
+
+    // A corpse's stand-in DummyState: dead, no live state, so the colonist bar
+    // and info panel keep showing it (greyed) until it's buried/lost.
+    private static DummyState MakeDeadDummy(int id, float x, float y, string name, HealthState health)
+        => new DummyState(
+            id, x, y, "Dead", false, false,
+            Array.Empty<CarriedItemState>(), 0f, 0f,
+            SimConstants.MaxCarryWeight, SimConstants.MaxCarryBulk,
+            0f, false, 0,
+            1f, null,
+            Array.Empty<EquippedSlotState>(), Array.Empty<HeldStackState>(), health, 0f,
+            0, 0, 0, 0,
+            false, false, 0, 0, null, Items.FireMode.Single, Items.FireModeFlags.None,
+            0, 0, 0, 0f, Snapshots.RangedStatus.None, Items.TargetArea.Auto, Items.AimMode.Aimed,
+            0, false, x, y, false,
+            0, 0f, 0f,
+            false,                       // IsEnemy
+            (byte)EnemyGoalKind.None,
+            null,                        // AimHit
+            0f,                          // Mood
+            name,
+            true);                       // IsDead
 
     // Death: the colonist's consciousness hit zero. Drop any remaining
     // gear, leave a corpse holding their data, and remove the pawn.

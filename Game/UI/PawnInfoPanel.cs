@@ -396,7 +396,7 @@ public partial class PawnInfoPanel : CanvasLayer
             return;
         }
         var p = found.Value;
-        _nameLabel.Text = p.Name;
+        _nameLabel.Text = p.IsDead ? $"{p.Name} (Dead)" : p.Name;
 
         float oh = p.Health.OverallHealth;
         _healthBar.Value = oh;

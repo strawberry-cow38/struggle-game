@@ -247,7 +247,11 @@ public readonly record struct DummyState(
     // Mood 0..1 (stubbed for now). Drives the colonist-bar portrait border.
     float Mood,
     // Display name (placeholder, derived from the entity id for now).
-    string Name);
+    string Name,
+    // True for a dead colonist's corpse: it stays in the dummy list (greyed,
+    // not body-rendered) so it keeps its colonist-bar portrait + info panel
+    // until the corpse is buried or lost. Defaulted so live pawns are unchanged.
+    bool IsDead = false);
 
 // What a ranged colonist is doing right now, for the overhead label.
 public enum RangedStatus : byte { None = 0, Firing = 1, Watching = 2, Reloading = 3, TooClose = 4 }

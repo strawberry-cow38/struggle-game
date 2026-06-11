@@ -60,8 +60,6 @@ public partial class WorldRenderer : Node2D
     // tile's neighbor mask. Missing textures fall back to the
     // procedural brick overlay for that tile.
     private readonly Texture2D?[] _wallTextures = new Texture2D?[256];
-    private Node2D? _wallSpritesRoot;
-    private readonly Dictionary<TilePos, Sprite2D> _wallSprites = new();
 
     // Snapshot pair used for render-side interpolation. _prevSnap is the
     // last snapshot we drew from, _currSnap is the next one. We render at
@@ -236,8 +234,6 @@ public partial class WorldRenderer : Node2D
         _colonistW = LoadGroundTexture("res://assets/colonist/west.png");
         _treeTex = LoadGroundTexture("res://assets/world/tree.png");
 
-        _wallSpritesRoot = new Node2D { Name = "WallSprites", TextureFilter = TextureFilterEnum.Nearest };
-        AddChild(_wallSpritesRoot);
         for (int m = 0; m < 256; m++)
         {
             string bits = Convert.ToString(m, 2).PadLeft(8, '0');
@@ -312,7 +308,6 @@ public partial class WorldRenderer : Node2D
             if (_lastWallBytes is not null)
             {
                 _wallOverlayTex = BuildWallOverlay(_lastWallBytes, _mapWidth, _mapHeight);
-                UpdateWallSprites(_lastWallBytes, _mapWidth, _mapHeight);
             }
         }
         // Flooring bytes refresh on any map mutation (floors bump MapVersion).
@@ -718,6 +713,14 @@ public partial class WorldRenderer : Node2D
         _enemyIdScratch.Clear();
         foreach (var d in snap.Dummies) if (d.IsEnemy) _enemyIdScratch.Add(d.EntityId);
 
+        // 3D walls render here — above the ground/items/blood, but BELOW the
+        // pawns (next pass) so colonists pass in front of walls instead of
+        // being covered by them.
+        using (FrameProfiler.Instance.BeginScope("Walls"))
+        {
+            DrawWallSprites(viewMinTileX, viewMaxTileX, viewMinTileY, viewMaxTileY);
+        }
+
         // Paths render BEFORE the pawns so the lines sit under the colonists.
         using (FrameProfiler.Instance.BeginScope("Path"))
         {
@@ -759,6 +762,10 @@ public partial class WorldRenderer : Node2D
             {
                 if (kind == 0) { DrawTree(snap.Trees[idx], selectedTreeSet, simpleLod); continue; }
                 var d = snap.Dummies[idx];
+                // Dead colonists are represented by their corpse pile, not a
+                // body sprite — they ride along in snap.Dummies only for the
+                // colonist bar + info panel.
+                if (d.IsDead) continue;
                 float drawX = _prevDummyByIdScratch.TryGetValue(d.EntityId, out var prev)
                     ? Mathf.Lerp(prev.X, d.X, interpAlpha) : d.X;
                 float drawY = DummyDrawY(d);
@@ -2478,49 +2485,32 @@ public partial class WorldRenderer : Node2D
         return m;
     }
 
-    private void UpdateWallSprites(byte[] tiles, int width, int height)
+    // 3D wall sprites, drawn in immediate mode as a pass in _Draw (right before
+    // the pawns) so they render UNDER pawns — a colonist standing by a wall is
+    // drawn in front of it, not buried behind it. (Walls used to live in a child
+    // Node2D that drew after the whole _Draw, putting them on top of everything.)
+    // Scanned south-first so a taller wall sprite overhangs the tile below it
+    // and stacks correctly. Un-sprited masks fall back to the flat overlay.
+    private void DrawWallSprites(int minTX, int maxTX, int minTY, int maxTY)
     {
-        if (_wallSpritesRoot is null) return;
-        var seen = new HashSet<TilePos>();
-        for (int ty = 0; ty < height; ty++)
+        var tiles = _lastWallBytes;
+        if (tiles is null) return;
+        int w = _mapWidth, h = _mapHeight;
+        int y0 = Math.Max(0, minTY), y1 = Math.Min(h - 1, maxTY);
+        int x0 = Math.Max(0, minTX), x1 = Math.Min(w - 1, maxTX);
+        for (int ty = y0; ty <= y1; ty++)
         {
-            for (int tx = 0; tx < width; tx++)
+            for (int tx = x0; tx <= x1; tx++)
             {
-                if (tiles[ty * width + tx] == 0) continue;
-                int mask = WallNeighborMask(tiles, tx, ty, width, height);
+                if (tiles[ty * w + tx] == 0) continue;
+                int mask = WallNeighborMask(tiles, tx, ty, w, h);
                 var tex = _wallTextures[mask];
-                if (tex is null) continue;
-                var tile = new TilePos(tx, ty);
-                seen.Add(tile);
-                if (!_wallSprites.TryGetValue(tile, out var spr))
-                {
-                    spr = new Sprite2D
-                    {
-                        Centered = false,
-                        TextureFilter = TextureFilterEnum.Nearest,
-                    };
-                    _wallSpritesRoot.AddChild(spr);
-                    _wallSprites[tile] = spr;
-                }
-                spr.Texture = tex;
-                spr.Position = new Vector2(tx * PixelsPerTile, ty * PixelsPerTile);
+                if (tex is null) continue; // un-sprited — the flat overlay covers it
                 int srcW = tex.GetWidth();
-                if (srcW > 0)
-                {
-                    float s = (float)PixelsPerTile / srcW;
-                    spr.Scale = new Vector2(s, s);
-                }
-            }
-        }
-        if (_wallSprites.Count != seen.Count)
-        {
-            var rm = new List<TilePos>();
-            foreach (var kv in _wallSprites)
-                if (!seen.Contains(kv.Key)) rm.Add(kv.Key);
-            foreach (var t in rm)
-            {
-                _wallSprites[t].QueueFree();
-                _wallSprites.Remove(t);
+                if (srcW <= 0) continue;
+                float s = (float)PixelsPerTile / srcW;
+                var size = new Vector2(tex.GetWidth() * s, tex.GetHeight() * s);
+                DrawTextureRect(tex, new Rect2(new Vector2(tx * PixelsPerTile, ty * PixelsPerTile), size), tile: false);
             }
         }
     }

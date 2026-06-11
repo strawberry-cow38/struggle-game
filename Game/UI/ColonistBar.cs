@@ -104,7 +104,8 @@ public partial class ColonistBar : CanvasLayer
         {
             bool selected = sel.Contains(id);
             bool has = byId.TryGetValue(id, out var d);
-            Color ring = has ? MoodColor(d.Mood) : UiTheme.Border;
+            bool dead = has && d.IsDead;
+            Color ring = !has ? UiTheme.Border : dead ? DeadRingColor : MoodColor(d.Mood);
             // Outer card: neutral edge, cyan selection outline around the whole
             // card when selected, with a pulse-on-select + flicker glow (matches
             // the info-panel tabs). Mood ring stays on the frame.
@@ -131,6 +132,8 @@ public partial class ColonistBar : CanvasLayer
                     ApplyLoadout(portrait, d);
                     RefreshWeaponIcon(id, d);
                 }
+                // Dead colonists grey out (kept on the bar until buried/lost).
+                portrait.Modulate = dead ? DeadPortraitTint : Colors.White;
             }
         }
 
@@ -362,6 +365,10 @@ public partial class ColonistBar : CanvasLayer
     }
 
     // Red (low) → amber (mid) → green (high) mood ramp.
+    // Dead colonists: slate-grey ring + desaturated/dimmed portrait.
+    private static readonly Color DeadRingColor = new(0.45f, 0.47f, 0.52f);
+    private static readonly Color DeadPortraitTint = new(0.55f, 0.55f, 0.60f, 0.75f);
+
     private static Color MoodColor(float mood)
     {
         // Vivid, well-separated hues so orange and green don't blur together.
