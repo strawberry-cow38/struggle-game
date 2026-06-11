@@ -76,6 +76,7 @@ public partial class DraftActionBar : CanvasLayer
     private Button _fireAtWillBtn = null!;
     private Button _reloadBtn = null!;
     private PopupMenu _reloadMenu = null!;
+    private PopupMenu _secReloadMenu = null!;
     private readonly List<string> _reloadAmmoPaths = new();
 
     private static readonly FireMode[] _modeOrder = { FireMode.Single, FireMode.Burst, FireMode.Auto };
@@ -111,6 +112,10 @@ public partial class DraftActionBar : CanvasLayer
         _reloadMenu = new PopupMenu();
         AddChild(_reloadMenu);
         _reloadMenu.IdPressed += OnReloadMenuPick;
+
+        _secReloadMenu = new PopupMenu();
+        AddChild(_secReloadMenu);
+        _secReloadMenu.IdPressed += OnSecReloadMenuPick;
 
         // Left → right order (per design): mag · fire mode · reload · aim mode ·
         // target area · DRAFT · fire at will · unarmed · weapon. Every tile but
@@ -229,12 +234,13 @@ public partial class DraftActionBar : CanvasLayer
         _secondaryWraps.Add(secMagPanel);
 
         _secReloadBtn = BuildGizmo("Reload M203", toggle: false, parent: _bar, out _);
-        _secReloadBtn.TooltipText = "Reload the underbarrel launcher.";
+        _secReloadBtn.TooltipText = "Left-click: reload the underbarrel launcher. Right-click: unload.";
         _secReloadBtn.Pressed += () =>
         {
             if (Host is null || _shownPawnId < 0) return;
             Host.QueueCommand(new ReloadSecondaryCommand(_shownPawnId));
         };
+        _secReloadBtn.GuiInput += OnSecReloadGuiInput;
         _secondaryWraps.Add(WrapOf(_secReloadBtn));
 
         // M203 strike tile — click, then a GROUND tile, to lob a grenade there.
@@ -555,6 +561,28 @@ public partial class DraftActionBar : CanvasLayer
         }
         if (id >= 0 && id < _reloadAmmoPaths.Count)
             Host.QueueCommand(new SetReloadAmmoCommand(_shownPawnId, _reloadAmmoPaths[(int)id]));
+    }
+
+    // Right-click the Reload M203 tile → unload the tube. A popup menu (not a
+    // direct action) so ammo picks can slot in once more 40mm types exist.
+    private void OnSecReloadGuiInput(InputEvent @event)
+    {
+        if (@event is not InputEventMouseButton mb) return;
+        if (mb.ButtonIndex != MouseButton.Right || !mb.Pressed) return;
+        if (_shownPawnId < 0) return;
+
+        _secReloadMenu.Clear();
+        _secReloadMenu.AddItem("Unload M203", UnloadMenuId);
+
+        _secReloadMenu.Position = (Vector2I)GetViewport().GetMousePosition();
+        _secReloadMenu.Popup();
+    }
+
+    private void OnSecReloadMenuPick(long id)
+    {
+        if (Host is null || _shownPawnId < 0) return;
+        if (id == UnloadMenuId)
+            Host.QueueCommand(new UnloadSecondaryCommand(_shownPawnId));
     }
 
     // The Pocket Sand card: a single tile-sized panel holding a 2x2 grid of

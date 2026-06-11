@@ -248,6 +248,8 @@ public readonly record struct DummyState(
     // Has a grenade chambered OR a compatible one in inventory to reload with.
     bool SecHasAmmo,
     bool SecReloading,
+    // Last tick a grenade left the tube — its own launch sound, not the rifle's.
+    long SecShotTick,
     // Firing pie meter: 0 = none, 1 = aiming, 2 = shot/burst cooldown; Progress
     // 0..1 fills the wedge.
     byte FireMeterPhase,

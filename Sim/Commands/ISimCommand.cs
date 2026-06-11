@@ -990,6 +990,14 @@ public sealed class UnloadMagazineCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.UnloadMagazine(PawnEntityId);
 }
 
+// Reload-M203 RMB menu: empty the secondary tube back into inventory.
+public sealed class UnloadSecondaryCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public UnloadSecondaryCommand(int pawnId) { PawnEntityId = pawnId; }
+    public void Apply(SimRuntime sim) => sim.UnloadSecondary(PawnEntityId);
+}
+
 // Debug "Add Injury": apply a condition to a colonist's body part.
 public sealed class ApplyInjuryCommand : ISimCommand
 {

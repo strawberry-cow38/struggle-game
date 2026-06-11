@@ -833,6 +833,7 @@ public struct RangedCombat : IComponent
     public bool SecReloadApplied;     // grenade already pulled at reload START (idle
                                       // top-up) — completion must NOT pull again
     public long SecNextActionTick;    // earliest tick the tube may fire / finish reloading
+    public long SecShotTick;          // last tick a grenade left the tube (launch sound)
     public long SecOutOfAmmoTick;     // last tick a tube reload failed for lack of grenades
 }
 

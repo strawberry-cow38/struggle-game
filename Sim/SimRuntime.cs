@@ -1536,6 +1536,7 @@ public sealed class SimRuntime
             int secMag = 0, secMagSize = 0;
             string? secAmmo = null;
             bool secHasAmmo = false, secReloading = false;
+            long secShotTick = 0;
             byte fireMeterPhase = 0;
             float fireMeterProgress = 0f;
             float treatProgress = 0f;
@@ -1581,6 +1582,7 @@ public sealed class SimRuntime
                     secMagSize = secSpec.MagazineSize;
                     secAmmo = rc.SecLoadedAmmoPath;
                     secReloading = rc.SecReloading;
+                    secShotTick = rc.SecShotTick;
                     secHasAmmo = rc.SecMagCount > 0;
                     if (!secHasAmmo && ent.HasComponent<Inventory>())
                     {
@@ -1695,7 +1697,7 @@ public sealed class SimRuntime
                 hasRanged, hasRocket, rangedMag, rangedMagSize, loadedAmmo, rangedMode, rangedModes,
                 fireTargetId, shotTick, outOfAmmoTick, rangedRange, rangedStatus, rangedArea, rangedAimMode,
                 coverStance, leaning, peekX, peekY, rangedHasAmmo,
-                hasSecondary, secMag, secMagSize, secAmmo, secHasAmmo, secReloading,
+                hasSecondary, secMag, secMagSize, secAmmo, secHasAmmo, secReloading, secShotTick,
                 fireMeterPhase, fireMeterProgress, treatProgress,
                 ent.HasComponent<Enemy>(),
                 (byte)(ent.HasComponent<EnemyBrain>() ? ent.GetComponent<EnemyBrain>().Goal : EnemyGoalKind.None),
@@ -4552,6 +4554,13 @@ public sealed class SimRuntime
         rc.SecNextActionTick = Tick + spec.ReloadTicks;
     }
 
+    // Reload-M203 RMB menu: empty the secondary tube back into inventory.
+    public void UnloadSecondary(int pawnId)
+    {
+        if (!Store.TryGetEntityById(pawnId, out var p) || !p.HasComponent<RangedCombat>()) return;
+        UnloadSecondaryMagazine(p);
+    }
+
     // Empty the secondary tube, returning its grenade to inventory.
     private static void UnloadSecondaryMagazine(Entity p)
     {
@@ -5357,7 +5366,7 @@ public sealed class SimRuntime
             false, false, 0, 0, null, Items.FireMode.Single, Items.FireModeFlags.None,
             0, 0, 0, 0f, Snapshots.RangedStatus.None, Items.TargetArea.Auto, Items.AimMode.Aimed,
             0, false, x, y, false,
-            false, 0, 0, null, false, false, // no secondary on a corpse
+            false, 0, 0, null, false, false, 0, // no secondary on a corpse
             0, 0f, 0f,
             false,                       // IsEnemy
             (byte)EnemyGoalKind.None,

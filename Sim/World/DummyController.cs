@@ -3072,9 +3072,14 @@ public sealed class DummyController
 
         FireRocket(entity, ref rc, pos, tpx, tpy, spec, rc.SecLoadedAmmoPath);
         rc.SecMagCount--;
-        rc.ShotTick = _tick;
+        rc.SecShotTick = _tick; // tube launch sound — NOT ShotTick (no rifle report)
         rc.SecNextActionTick = _tick + spec.CycleCooldownTicks;
         rc.SecTileTarget = false; // single shot — order consumed
+        // Auto-reload the spent tube right away if a spare grenade is on hand —
+        // the per-tick sync block completes it even with no follow-up order.
+        // TryStartSecondaryReload is silently false when there's none (no
+        // OutOfAmmo float — the shot itself went fine).
+        TryStartSecondaryReload(entity, ref rc, spec);
     }
 
     // Stamp the "Out of ammo!" overhead float — but only once the previous

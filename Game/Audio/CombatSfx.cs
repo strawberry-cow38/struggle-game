@@ -19,6 +19,10 @@ public partial class CombatSfx : Node
     private readonly Dictionary<string, AudioStreamPlayer> _players = new();
     private AudioStreamPlayer? _default;
     private long _lastShotTick = 0;
+    // Secondary (underbarrel 40mm) launch — its own player + tick tracker, so
+    // a tube shot plays the GL thunk instead of the rifle report.
+    private AudioStreamPlayer? _secondary;
+    private long _lastSecShotTick = 0;
 
     public override void _Ready()
     {
@@ -34,6 +38,7 @@ public partial class CombatSfx : Node
             (ItemCatalog.Pistol, "Shot_GTEK22.ogg"),
             (ItemCatalog.BattleRifle, "Shot_GTEK_FALA.ogg"),
             (ItemCatalog.RocketLauncher, "Shot_GTEKRocketLaunch.ogg"),
+            (ItemCatalog.M16M203, "Shot_GTEK556mm.ogg"), // rifle report; the tube has its own
         };
         foreach (var (weapon, ogg) in map)
         {
@@ -44,6 +49,12 @@ public partial class CombatSfx : Node
             _players[weapon.FullPath] = p;
             _default ??= p; // the rifle is the fallback report
         }
+
+        // Underbarrel 40mm launch (DummyState.SecShotTick advancing).
+        _secondary = new AudioStreamPlayer { Name = "Shot_Secondary40mm", Bus = "Master" };
+        AddChild(_secondary);
+        var secStream = AudioStreamOggVorbis.LoadFromFile(ProjectSettings.GlobalizePath(Dir + "Shot_GTEK40mmGL.ogg"));
+        if (secStream is not null) _secondary.Stream = secStream;
     }
 
     public override void _Process(double delta)
@@ -64,6 +75,18 @@ public partial class CombatSfx : Node
             _lastShotTick = maxShot;
             var player = (weapon.Length > 0 && _players.TryGetValue(weapon, out var pl)) ? pl : _default;
             player?.Play();
+        }
+
+        // Secondary (40mm tube) launches, on their own tick — same collapse of
+        // simultaneous shots into one report.
+        long maxSec = _lastSecShotTick;
+        foreach (var d in snap.Dummies)
+            if (d.HasSecondary && d.SecShotTick > maxSec) maxSec = d.SecShotTick;
+
+        if (maxSec > _lastSecShotTick)
+        {
+            _lastSecShotTick = maxSec;
+            _secondary?.Play();
         }
     }
 

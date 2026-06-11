@@ -728,6 +728,46 @@ public class RangedTests
     }
 
     [Fact]
+    public void SecondaryStrike_AutoReloadsTube_WhenSpareGrenadeCarried()
+    {
+        var sim = new SimRuntime();
+        sim.Step(SimConstants.TickSeconds);
+        var (shooter, _) = TwoPawns(sim);
+        sim.Store.GetEntityById(shooter).AddComponent(new Drafted());
+        ArmWithM203(sim, shooter, grenades: 3);
+        sim.Step(SimConstants.TickSeconds); sim.Step(SimConstants.TickSeconds);
+
+        // Preload the tube so the strike only waits out the M203's aim time.
+        var e = sim.Store.GetEntityById(shooter);
+        { ref var rc = ref e.GetComponent<RangedCombat>(); rc.SecMagCount = 1; rc.SecLoadedAmmoPath = ItemCatalog.Ammo40mmHe.FullPath; }
+        SetPos(sim, shooter, 20.5f, 20.5f);
+        Assert.True(sim.LaunchSecondary(shooter, 28, 20), "an in-band ground tile should be accepted");
+
+        bool sawGrenade = false;
+        for (int i = 0; i < 300 && !sawGrenade; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+            sim.Store.Query<Projectile>().ForEachEntity((ref Projectile pr, Entity _) => { if (pr.IsRocket) sawGrenade = true; });
+        }
+        Assert.True(sawGrenade, "the strike should lob one rocket-style grenade");
+        // The shot stamps the tube's own launch tick AND kicks off the reload
+        // immediately (a spare 40mm is in inventory).
+        Assert.True(e.GetComponent<RangedCombat>().SecShotTick > 0, "the launch should stamp SecShotTick");
+        Assert.True(e.GetComponent<RangedCombat>().SecReloading, "the tube should auto-reload right after firing");
+
+        // Ride out the M203's 150-tick reload (+ slack); Plan completes it.
+        for (int i = 0; i < 200; i++)
+        {
+            SetPos(sim, shooter, 20.5f, 20.5f);
+            sim.Step(SimConstants.TickSeconds);
+        }
+        Assert.False(e.GetComponent<RangedCombat>().SecReloading);
+        Assert.Equal(1, e.GetComponent<RangedCombat>().SecMagCount);
+        Assert.Equal(2, InvCount(e, ItemCatalog.Ammo40mmHe.FullPath)); // one pulled from stock
+    }
+
+    [Fact]
     public void SecondaryReload_PullsGrenadeFromInventory_OnCompletion()
     {
         var sim = new SimRuntime();
