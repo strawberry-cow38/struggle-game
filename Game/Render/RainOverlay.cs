@@ -25,6 +25,22 @@ public partial class RainOverlay : CanvasLayer
     private ShaderMaterial? _material;
     private float _displayedIntensity;
 
+    // Per-layer base fall speeds (layer-uv units/sec) — must match the
+    // layer calls in rain.gdshader. The scroll PHASE integrates on the
+    // CPU (fall*dt per frame): fall varies with wind + intensity every
+    // frame, and a shader-side TIME*fall would teleport the whole field
+    // on every change ("tweaking out" while the weather drifts).
+    private static readonly float[] BaseFall = { 16f, 12f, 9f };
+    // Streak cell heights per layer (shader `len`) — used to wrap the
+    // accumulated phase by a whole number of cells so float precision
+    // holds over long sessions (one pattern re-roll every ~30+ min).
+    private static readonly float[] CellLen = { 2.2f, 1.5f, 1.0f };
+    private const float WrapCells = 16384f;
+    private readonly float[] _scroll = new float[3];
+    // Displayed wind chases the sim value like intensity does, so the
+    // streak slant turns smoothly instead of snapping on each weather step.
+    private Vector2 _displayedWind;
+
     public override void _Ready()
     {
         Layer = 10;
@@ -52,6 +68,7 @@ public partial class RainOverlay : CanvasLayer
         float target = snap.RainIntensity;
         float t = 1f - Mathf.Exp(-(float)delta * FadeRate);
         _displayedIntensity = Mathf.Lerp(_displayedIntensity, target, t);
+        _displayedWind = _displayedWind.Lerp(new Vector2(snap.RainWindX, snap.RainWindY), t);
         if (_displayedIntensity < 0.002f && target <= 0f)
         {
             _displayedIntensity = 0f;
@@ -60,8 +77,25 @@ public partial class RainOverlay : CanvasLayer
         }
         _rect.Visible = true;
 
+        // Integrate each layer's fall phase (see BaseFall comment) and
+        // derive the matching slant. Mirrors the old in-shader formula:
+        // fall = max(base * speed_k + windY, 2), slant = windX / fall.
+        float speedK = 0.8f + 0.4f * _displayedIntensity;
+        var scroll = new Vector3();
+        var slant = new Vector3();
+        for (int i = 0; i < 3; i++)
+        {
+            float fall = Mathf.Max(BaseFall[i] * speedK + _displayedWind.Y, 2f);
+            float wrap = CellLen[i] * WrapCells;
+            _scroll[i] = (_scroll[i] + fall * (float)delta) % wrap;
+            if (i == 0) { scroll.X = _scroll[i]; slant.X = _displayedWind.X / fall; }
+            else if (i == 1) { scroll.Y = _scroll[i]; slant.Y = _displayedWind.X / fall; }
+            else { scroll.Z = _scroll[i]; slant.Z = _displayedWind.X / fall; }
+        }
+
         _material.SetShaderParameter("intensity", _displayedIntensity);
-        _material.SetShaderParameter("wind", new Vector2(snap.RainWindX, snap.RainWindY));
+        _material.SetShaderParameter("scroll", scroll);
+        _material.SetShaderParameter("slant", slant);
         if (Camera is not null)
         {
             _material.SetShaderParameter("camera_center", Camera.GetScreenCenterPosition());

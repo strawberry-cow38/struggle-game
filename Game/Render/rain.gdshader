@@ -9,11 +9,17 @@ shader_type canvas_item;
 // vector, then scrolled along y by the fall speed. Each cell of a tall
 // thin grid owns at most one streak (hash gates existence → density
 // scales with intensity; hash also jitters x/phase so no tiling reads).
+//
+// Scroll phase is INTEGRATED on the CPU (RainOverlay accumulates
+// fall*dt per layer) instead of TIME * speed: speed varies with wind +
+// intensity every frame, and multiplying a varying speed by total TIME
+// teleports the whole field on every change.
 
 uniform float intensity : hint_range(0.0, 1.0) = 0.0; // 0 = invisible
-uniform vec2 wind = vec2(0.0, 0.0);       // tiles/sec drift (x slants streaks)
-uniform vec2 camera_center = vec2(0.0);   // world px at the screen center
-uniform float camera_zoom = 1.0;          // screen px per world px
+uniform vec3 scroll = vec3(0.0);           // per-layer fall phase, layer-uv units
+uniform vec3 slant = vec3(0.0);            // per-layer x-shear (windX / fall)
+uniform vec2 camera_center = vec2(0.0);    // world px at the screen center
+uniform float camera_zoom = 1.0;           // screen px per world px
 uniform vec2 viewport_size = vec2(1920.0, 1080.0);
 uniform float pixels_per_tile = 64.0;
 uniform vec3 rain_color : source_color = vec3(0.72, 0.82, 0.96);
@@ -24,14 +30,13 @@ float hash12(vec2 p) {
 	return fract((p3.x + p3.y) * p3.z);
 }
 
-// One layer of streaks. uv in world tiles; cols = streak columns per
-// tile, len = streak cell height in tiles, fall = tiles/sec.
-float rain_layer(vec2 uv, float t, float fall, float cols, float len, float density) {
-	// Shear so a streak's long axis runs along the velocity (wind.x, fall),
+// One layer of streaks. uv in world tiles; scr = accumulated fall phase,
+// shear = x slant; cols = streak columns per tile, len = streak cell
+// height in tiles.
+float rain_layer(vec2 uv, float scr, float shear, float cols, float len, float density) {
+	// Shear so a streak's long axis runs along the velocity (wind, fall),
 	// then scroll: features march down (and sideways via the shear).
-	fall = max(fall + wind.y, 2.0);
-	float slant = wind.x / fall;
-	vec2 p = vec2(uv.x - uv.y * slant, uv.y - t * fall);
+	vec2 p = vec2(uv.x - uv.y * shear, uv.y - scr);
 	vec2 cuv = vec2(p.x * cols, p.y / len);
 	vec2 id = floor(cuv);
 	float rnd = hash12(id);
@@ -60,15 +65,11 @@ void fragment() {
 		vec2 world_px = camera_center + (FRAGCOORD.xy - viewport_size * 0.5) / camera_zoom;
 		vec2 uv = world_px / pixels_per_tile;
 
-		// Heavier rain falls a touch faster and spawns denser sheets.
-		float speed_k = 0.8 + 0.4 * intensity;
-		float t = TIME;
-
 		// Near → far: bigger/faster/brighter to smaller/slower/dimmer.
 		float a = 0.0;
-		a += 0.60 * rain_layer(uv, t, 16.0 * speed_k, 6.0, 2.2, 0.30 * intensity + 0.05);
-		a += 0.45 * rain_layer(uv * 1.7 + 31.4, t, 12.0 * speed_k, 6.0, 1.5, 0.45 * intensity + 0.05);
-		a += 0.32 * rain_layer(uv * 2.6 + 77.7, t, 9.0 * speed_k, 6.0, 1.0, 0.60 * intensity + 0.05);
+		a += 0.60 * rain_layer(uv, scroll.x, slant.x, 6.0, 2.2, 0.30 * intensity + 0.05);
+		a += 0.45 * rain_layer(uv * 1.7 + 31.4, scroll.y, slant.y, 6.0, 1.5, 0.45 * intensity + 0.05);
+		a += 0.32 * rain_layer(uv * 2.6 + 77.7, scroll.z, slant.z, 6.0, 1.0, 0.60 * intensity + 0.05);
 
 		// Faint atmospheric haze so storms read grey even between streaks.
 		float haze = 0.06 * intensity;
