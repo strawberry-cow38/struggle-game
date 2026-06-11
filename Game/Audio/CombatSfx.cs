@@ -33,6 +33,7 @@ public partial class CombatSfx : Node
             (ItemCatalog.AutoShotgun, "ShotA.ogg"),
             (ItemCatalog.Pistol, "Shot_GTEK22.ogg"),
             (ItemCatalog.BattleRifle, "Shot_GTEK_FALA.ogg"),
+            (ItemCatalog.RocketLauncher, "Shot_GTEKRocketLaunch.ogg"),
         };
         foreach (var (weapon, ogg) in map)
         {
