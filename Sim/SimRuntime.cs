@@ -357,15 +357,14 @@ public sealed class SimRuntime
     // false for tests/harness so path results land same-tick + deterministically.
     public SimRuntime(int seed = 1337, bool asyncPathfinding = false)
     {
-        // Capture instance fields into cached delegates so BuildSnapshot
-        // never allocates a new closure each tick.
-        _aimIsWallDelegate = (x, y) => Map.GetWall(x, y) != WallType.None;
-        _aimIsSandbagDelegate = (x, y) => _sandbagMap.ContainsKey(new TilePos(x, y));
-
         // Start at 08:00 on Jan 1 2000 — first daylight tick of the
         // epoch day so the world spawns under full sun, not midnight.
         _worldTimeSec = 8 * 3600;
         Map = TileMap.GenerateDefault(SimConstants.MapSize, SimConstants.MapSize, seed);
+        // Capture instance fields into cached delegates AFTER Map is assigned
+        // so the nullable analyzer does not flag the Map access in the lambda.
+        _aimIsWallDelegate = (x, y) => Map.GetWall(x, y) != WallType.None;
+        _aimIsSandbagDelegate = (x, y) => _sandbagMap.ContainsKey(new TilePos(x, y));
         _spawnRng = new Random(seed + 7);
         PathService = new PathService(Map.Width, Map.Height, () => MapView, asyncPathfinding);
         // Keep the item index in lockstep with the ECS. These fire at the
