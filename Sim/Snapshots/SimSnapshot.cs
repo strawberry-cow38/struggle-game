@@ -319,7 +319,7 @@ public readonly record struct CropState(
 
 // Label overrides the catalog display name when set (corpses use the dead
 // colonist's name instead of "Corpse").
-public readonly record struct ItemPileState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden, string? Label);
+public readonly record struct ItemPileState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden, string? Label, int MagCount = 0, string? LoadedAmmoPath = null);
 
 public readonly record struct BloodPuddleState(TilePos Tile, float Amount);
 

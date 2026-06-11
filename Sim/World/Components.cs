@@ -253,6 +253,12 @@ public struct ItemPile : IComponent
     public TilePos Tile;
     public int Count;
     public string ItemPath;
+    // For a dropped weapon: the magazine it carries, so ammo state survives
+    // drop -> pickup and the dropped icon shows empty/loaded. Rounds in the mag
+    // (0 = empty) and the loaded ammo path (RPG warhead colour). Meaningless for
+    // non-weapons. MagCount stays 0 for items that never had a magazine.
+    public int MagCount;
+    public string? LoadedAmmoPath;
 }
 
 // Pending deconstruct order on a wall tile. Job entity carries this;
@@ -643,6 +649,10 @@ public struct EquippedItemSlot
     public EquipSlot Slot;
     public string ItemPath;
     public int Count;
+    // For a ranged weapon: its stored magazine (mirrored from the live
+    // RangedCombat each tick), so it survives unequip/drop. 0 for non-weapons.
+    public int MagCount;
+    public string? LoadedAmmoPath;
 }
 
 // One general-inventory stack. Unequipping an item drops it here; the

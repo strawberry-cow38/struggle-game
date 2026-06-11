@@ -659,7 +659,9 @@ public partial class WorldRenderer : Node2D
                 DrawItemPile(p);
                 if (p.Forbidden) DrawForbiddenMark(p.Tile);
                 if (selectedPileSet is not null && selectedPileSet.Contains(p.EntityId)) DrawWoodSelectionRing(p.Tile);
-                if (p.Tile.X == cursorTileX && p.Tile.Y == cursorTileY)
+                // Equippable gear (weapons/armor) is non-stackable — no count.
+                bool stackable = !(ItemCatalog.ItemsByPath.TryGetValue(p.ItemPath, out var pdef) && pdef.Equippable);
+                if (stackable && p.Tile.X == cursorTileX && p.Tile.Y == cursorTileY)
                 {
                     DrawStackLabel(stackFont, p.Tile, p.ItemPath, p.Count, p.Label);
                 }
@@ -1653,12 +1655,18 @@ public partial class WorldRenderer : Node2D
         if (p.ItemPath == ItemCatalog.Corpse.FullPath) { DrawCorpse(p.Tile); return; }
         if (p.ItemPath == ItemCatalog.Wood.FullPath) { DrawWood(p.Tile); return; }
         var center = new Vector2((p.Tile.X + 0.5f) * PixelsPerTile, (p.Tile.Y + 0.5f) * PixelsPerTile);
-        // Weapons drop showing their own icon, big enough to fill the tile and
-        // at a per-pile random tilt (kept upright — never flipped over) so a
-        // scatter of dropped guns looks natural. (Dropped ammo state isn't
-        // tracked, so the loaded/default variant is used.)
-        var icon = StruggleGame.Game.UI.WeaponIcons.Texture(p.ItemPath);
-        if (icon is not null) { DrawItemIcon(icon, center, DroppedTilt(p.EntityId)); return; }
+        // Weapons drop showing their own icon — empty/loaded variant from the
+        // pile's stored mag state — big enough to fill the tile and at a per-pile
+        // random tilt (kept upright, never flipped over) so a scatter of dropped
+        // guns looks natural.
+        bool empty = p.MagCount <= 0;
+        var icon = StruggleGame.Game.UI.WeaponIcons.Texture(p.ItemPath, empty, p.LoadedAmmoPath);
+        if (icon is not null)
+        {
+            var sil = StruggleGame.Game.UI.WeaponIcons.Silhouette(p.ItemPath, empty, p.LoadedAmmoPath);
+            DrawItemIcon(icon, sil, center, DroppedTilt(p.EntityId));
+            return;
+        }
         float r = PixelsPerTile * 0.16f;
         DrawCircle(center, r, CarrotBody);
         DrawArc(center, r, 0f, Mathf.Tau, 18, CarrotBodyDark, width: 1f, antialiased: true);
@@ -1675,19 +1683,29 @@ public partial class WorldRenderer : Node2D
         return (t * 2f - 1f) * MaxDropTilt;   // -60°..+60°
     }
 
-    // Draw an item icon centered on a tile, scaled to fill it, rotated by
-    // `angle`, with a flat ground shadow so it reads as a dropped object.
-    private void DrawItemIcon(Texture2D tex, Vector2 center, float angle)
+    // Draw a weapon icon centered on a tile, scaled to fill it, rotated by
+    // `angle`, with the same fat soft drop-shadow as the held/UI weapon icons
+    // (offset dark silhouette copies) so it reads as a dropped object.
+    private void DrawItemIcon(Texture2D tex, Texture2D? sil, Vector2 center, float angle)
     {
         int tw = tex.GetWidth(), th = tex.GetHeight();
         if (tw <= 0 || th <= 0) return;
         float s = (PixelsPerTile * 1.0f) / Math.Max(tw, th); // longest dim ≈ a full tile
         var size = new Vector2(tw * s, th * s);
-        DrawCircle(center + new Vector2(0f, PixelsPerTile * 0.16f), size.X * 0.30f, new Color(0f, 0f, 0f, 0.20f));
-        // Rotate about the tile center, then restore the identity transform so
-        // later draws in this _Draw aren't skewed.
+        var rect = new Rect2(-size * 0.5f, size);
+        if (sil is not null)
+        {
+            var shadow = new Color(0f, 0f, 0f, 0.16f);
+            float bx = size.X * 0.031f, by = size.X * 0.037f, sp = size.X * 0.022f; // UI ratios
+            foreach (var dir in HeldShadowDirs)
+            {
+                DrawSetTransform(center + new Vector2(bx + dir.X * sp, by + dir.Y * sp), angle, Vector2.One);
+                DrawTextureRect(sil, rect, tile: false, modulate: shadow);
+                DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+            }
+        }
         DrawSetTransform(center, angle, Vector2.One);
-        DrawTextureRect(tex, new Rect2(-size * 0.5f, size), tile: false);
+        DrawTextureRect(tex, rect, tile: false);
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
     }
 

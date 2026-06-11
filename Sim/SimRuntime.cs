@@ -1761,7 +1761,7 @@ public sealed class SimRuntime
         pileQuery.ForEachEntity((ref ItemPile p, Entity e) =>
         {
             string? label = e.HasComponent<Corpse>() ? e.GetComponent<Corpse>().Name : null;
-            pilesBuf[pi++] = new ItemPileState(e.Id, p.Tile, p.Count, p.ItemPath, e.HasComponent<Forbidden>(), label);
+            pilesBuf[pi++] = new ItemPileState(e.Id, p.Tile, p.Count, p.ItemPath, e.HasComponent<Forbidden>(), label, p.MagCount, p.LoadedAmmoPath);
         });
         snap.ItemPilesCount = pi;
 
@@ -2233,12 +2233,12 @@ public sealed class SimRuntime
     // Drop an ItemPile of (path, count) on the given tile. Used by
     // CookSystem when a meal finishes, by harness scenarios for stocking
     // ingredients, and anything else that needs a runtime drop.
-    public void SpawnItemPile(TilePos tile, string itemPath, int count)
+    public void SpawnItemPile(TilePos tile, string itemPath, int count, int magCount = 0, string? loadedAmmo = null)
     {
         if (count <= 0) return;
         var e = Store.CreateEntity();
         e.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
-        e.AddComponent(new ItemPile { Tile = tile, Count = count, ItemPath = itemPath });
+        e.AddComponent(new ItemPile { Tile = tile, Count = count, ItemPath = itemPath, MagCount = magCount, LoadedAmmoPath = loadedAmmo });
     }
 
     // Cook callback: consume up to `wanted` items of `itemPath` from any
@@ -5030,7 +5030,7 @@ public sealed class SimRuntime
         var tile = new TilePos((int)wp.X, (int)wp.Y);
         ref var inv = ref p.GetComponent<Inventory>();
         if (inv.Equipped is not null)
-            foreach (var eq in inv.Equipped) DropAtFreeAdjacent(tile, eq.ItemPath, eq.Count);
+            foreach (var eq in inv.Equipped) DropAtFreeAdjacent(tile, eq.ItemPath, eq.Count, eq.MagCount, eq.LoadedAmmoPath);
         if (inv.Items is not null)
             foreach (var it in inv.Items) DropAtFreeAdjacent(tile, it.ItemPath, it.Count);
         inv.Equipped?.Clear();
@@ -5040,7 +5040,7 @@ public sealed class SimRuntime
     private static readonly (int dx, int dy)[] _adjacent8 =
         { (1,0),(-1,0),(0,1),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1) };
 
-    private void DropAtFreeAdjacent(TilePos from, string path, int count)
+    private void DropAtFreeAdjacent(TilePos from, string path, int count, int magCount = 0, string? loadedAmmo = null)
     {
         var view = MapView;
         TilePos target = from;
@@ -5052,7 +5052,7 @@ public sealed class SimRuntime
             if (!_itemIndex.AnyItemAt(t)) { target = t; foundWalkable = true; break; } // prefer empty
             if (!foundWalkable) { target = t; foundWalkable = true; }
         }
-        SpawnItemPile(target, path, count);
+        SpawnItemPile(target, path, count, magCount, loadedAmmo);
     }
 
     // A dead colonist's render HealthState: every stat pegged to ZERO (health,
@@ -5234,7 +5234,7 @@ public sealed class SimRuntime
         var slot = inv.Equipped[equipIndex];
         inv.Equipped.RemoveAt(equipIndex);
         var wp = pawn.GetComponent<WorldPos>();
-        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), slot.ItemPath, slot.Count);
+        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), slot.ItemPath, slot.Count, slot.MagCount, slot.LoadedAmmoPath);
     }
 
     // Equip one unit of a general-inventory stack that's already on the

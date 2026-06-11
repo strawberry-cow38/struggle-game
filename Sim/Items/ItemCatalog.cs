@@ -567,6 +567,9 @@ public static class ItemCatalog
 
     public static ItemDef RegisterItem(string id, string displayName, ItemCategory category, float weight = 1f, float bulk = 1f, bool equippable = false, (ConditionKind, float)[]? meleeAttacks = null, bool defaultStockpileAllowed = true, RangedSpec? ranged = null, AmmoSpec? ammo = null, int maxStack = 75, ArmorSpec? armor = null)
     {
+        // Equippable gear (weapons, armor) is never stackable — one per pile, so
+        // each keeps its own state (e.g. a gun's magazine).
+        if (equippable) maxStack = 1;
         var item = new ItemDef(id, displayName, category, weight, bulk, equippable, meleeAttacks, defaultStockpileAllowed, ranged, ammo, maxStack, armor);
         if (!_itemsByPath.TryAdd(item.FullPath, item))
         {

@@ -295,12 +295,26 @@ public sealed class DummyController
         // structural add/remove lands at cb.Playback — next tick it's live.)
         bool hasRangedWeapon = TryGetRangedWeapon(entity, out var rangedWeaponDef);
         if (hasRangedWeapon && !entity.HasComponent<RangedCombat>())
-            cb.AddComponent(entity.Id, new RangedCombat { Mode = DefaultFireMode(rangedWeaponDef.Ranged!) });
+        {
+            // Seed the fresh combat state from the equipped weapon's STORED mag
+            // (carried in via drop -> pickup), so a picked-up loaded gun keeps
+            // its rounds instead of starting empty.
+            EquippedRangedSlotMag(entity, out int seedMag, out string? seedAmmo);
+            cb.AddComponent(entity.Id, new RangedCombat
+            {
+                Mode = DefaultFireMode(rangedWeaponDef.Ranged!),
+                MagCount = seedMag,
+                LoadedAmmoPath = seedAmmo,
+            });
+        }
         else if (!hasRangedWeapon && entity.HasComponent<RangedCombat>())
             cb.RemoveComponent<RangedCombat>(entity.Id);
         if (entity.HasComponent<RangedCombat>())
         {
             ref var rc0 = ref entity.GetComponent<RangedCombat>();
+            // Mirror the live magazine back onto the equipped weapon's slot, so
+            // any drop path records the current ammo on the dropped pile.
+            SyncEquippedRangedMag(entity, rc0.MagCount, rc0.LoadedAmmoPath);
             // Always finish a reload once its timer elapses, even if the pawn
             // stopped firing mid-reload (target lost) — this is the insert-mag
             // phase that actually fills the mag (else the reload would just keep
@@ -438,12 +452,18 @@ public sealed class DummyController
             {
                 path.Waypoints = null;
                 path.Index = 0;
+                // Capture the dropped weapon's stored magazine BEFORE consuming
+                // the pile (consuming may delete the entity), so ammo state
+                // carries onto the equipped slot.
+                int pileMag = 0; string? pileAmmo = null;
+                if (itemEnt.HasComponent<ItemPile>())
+                { var ip = itemEnt.GetComponent<ItemPile>(); pileMag = ip.MagCount; pileAmmo = ip.LoadedAmmoPath; }
                 int got = CookConsumePile?.Invoke(eo.ItemTile, eo.ItemPath, 1) ?? 0;
                 if (got > 0)
                 {
                     var eqSlot = Items.ItemCatalog.ItemsByPath.TryGetValue(eo.ItemPath, out var edef) && edef.IsArmor
                         ? EquipSlot.Apparel : EquipSlot.Generic;
-                    var equipSlot = new EquippedItemSlot { Slot = eqSlot, ItemPath = eo.ItemPath, Count = got };
+                    var equipSlot = new EquippedItemSlot { Slot = eqSlot, ItemPath = eo.ItemPath, Count = got, MagCount = pileMag, LoadedAmmoPath = pileAmmo };
                     if (entity.HasComponent<Inventory>())
                     {
                         ref var inv = ref entity.GetComponent<Inventory>();
@@ -1942,6 +1962,38 @@ public sealed class DummyController
                 return true;
             }
         return false;
+    }
+
+    // Read the stored magazine off the pawn's equipped ranged-weapon slot
+    // (used to seed a freshly-attached RangedCombat after a pickup).
+    private static void EquippedRangedSlotMag(Entity entity, out int mag, out string? ammo)
+    {
+        mag = 0; ammo = null;
+        if (!entity.HasComponent<Inventory>()) return;
+        var inv = entity.GetComponent<Inventory>();
+        if (inv.Equipped is null) return;
+        foreach (var eq in inv.Equipped)
+            if (Items.ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var d) && d.IsRangedWeapon)
+            { mag = eq.MagCount; ammo = eq.LoadedAmmoPath; return; }
+    }
+
+    // Mirror the live magazine onto the equipped ranged-weapon slot, so a drop
+    // records the current ammo. No-op if the pawn has no equipped ranged weapon.
+    private static void SyncEquippedRangedMag(Entity entity, int mag, string? ammo)
+    {
+        if (!entity.HasComponent<Inventory>()) return;
+        ref var inv = ref entity.GetComponent<Inventory>();
+        if (inv.Equipped is null) return;
+        for (int k = 0; k < inv.Equipped.Count; k++)
+        {
+            var s = inv.Equipped[k];
+            if (Items.ItemCatalog.ItemsByPath.TryGetValue(s.ItemPath, out var d) && d.IsRangedWeapon)
+            {
+                if (s.MagCount != mag || s.LoadedAmmoPath != ammo)
+                { s.MagCount = mag; s.LoadedAmmoPath = ammo; inv.Equipped[k] = s; }
+                return;
+            }
+        }
     }
 
     private static Items.FireMode DefaultFireMode(Items.RangedSpec spec)
