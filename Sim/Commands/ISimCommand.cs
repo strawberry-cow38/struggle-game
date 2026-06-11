@@ -1077,6 +1077,15 @@ public sealed class DropHeldItemCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.DropHeldItem(PawnEntityId, HeldIndex);
 }
 
+// Debug/gameplay: set a tile alight.
+public sealed class IgniteTileCommand : ISimCommand
+{
+    public TilePos Tile { get; }
+    public float Fuel { get; }
+    public IgniteTileCommand(TilePos tile, float fuel) { Tile = tile; Fuel = fuel; }
+    public void Apply(SimRuntime sim) => sim.IgniteTile(Tile, Fuel);
+}
+
 // Drop a specific quantity from a held inventory stack (Gear pane "Drop X").
 public sealed class DropHeldAmountCommand : ISimCommand
 {

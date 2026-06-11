@@ -48,6 +48,10 @@ public sealed class SimSnapshot
     internal int BloodPuddlesCount;
     public SnapshotList<BloodPuddleState> BloodPuddles => new(BloodPuddlesBuf, BloodPuddlesCount);
 
+    internal FireState[] FiresBuf = System.Array.Empty<FireState>();
+    internal int FiresCount;
+    public SnapshotList<FireState> Fires => new(FiresBuf, FiresCount);
+
     internal ProjectileState[] ProjectilesBuf = System.Array.Empty<ProjectileState>();
     internal int ProjectilesCount;
     public SnapshotList<ProjectileState> Projectiles => new(ProjectilesBuf, ProjectilesCount);
@@ -322,6 +326,8 @@ public readonly record struct CropState(
 public readonly record struct ItemPileState(int EntityId, TilePos Tile, int Count, string ItemPath, bool Forbidden, string? Label, int MagCount = 0, string? LoadedAmmoPath = null);
 
 public readonly record struct BloodPuddleState(TilePos Tile, float Amount);
+
+public readonly record struct FireState(TilePos Tile, float Intensity);
 
 // A bullet in flight, in tile coordinates. Angle is the travel heading for
 // drawing the streak; Speed (tiles/sec) sets the tracer length so it spans

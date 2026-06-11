@@ -81,6 +81,16 @@ public static class SimConstants
     // Explosion flash lifetime (seconds).
     public const float ExplosionSec = 0.5f;
 
+    // === Fire ===
+    // Fire logic runs on a throttle (every N ticks) for cost + spread cadence.
+    public const int FireStepEveryTicks = 6;        // ~10 Hz
+    public const float FireGrowPerSec = 0.8f;       // intensity ramp-up as it catches
+    public const float FireDiePerSec = 0.5f;        // ramp-down once out of fuel
+    public const float FireDamagePerSec = 9f;       // burn dmg to a pawn in a full blaze
+    public const float FireBaseFuelSec = 14f;       // how long a fresh fire burns
+    public const float FireSpreadChance = 0.16f;    // per eval, per flammable neighbour (× intensity)
+    public const float FireSpreadMinIntensity = 0.4f; // must be this hot to spread
+
     // Inventory caps for a colonist. Either one being exceeded stops them
     // adding more to their carry. Both default to 75 so a single wood
     // stack (also capped 75) maxes them out exactly.

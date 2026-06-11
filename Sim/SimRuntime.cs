@@ -217,6 +217,12 @@ public sealed class SimRuntime
     // Tile → blood-puddle entity (puddles persist, one per tile) so a bleed
     // drip is an O(1) lookup instead of a full BloodPuddle scan.
     private readonly Dictionary<TilePos, Entity> _bloodPuddleMap = new();
+    // Burning tiles, one Fire entity per tile.
+    private readonly Dictionary<TilePos, Entity> _fireMap = new();
+    private ArchetypeQuery<Fire>? _fireQ;
+    private long _fireNextTick;
+    private readonly List<Entity> _fireScratch = new();
+    private readonly Dictionary<TilePos, List<int>> _firePawnsByTile = new();
     private const float BloodImpactSec = 0.45f;
     // Transient rocket smoke puffs (world coords, height, remaining seconds,
     // and a 0..1 seed for per-puff drift/size jitter). Cosmetic; aged each tick.
@@ -462,6 +468,11 @@ public sealed class SimRuntime
         _hauls.Step(Store, dt);
         if (needTick) { _sleep.Step(Store, needDt); _needAccumDt = 0f; }
         _health.Step(Store, dt);
+        if (Tick >= _fireNextTick && _fireMap.Count > 0)
+        {
+            _fireNextTick = Tick + SimConstants.FireStepEveryTicks;
+            StepFires(SimConstants.FireStepEveryTicks * SimConstants.TickSeconds);
+        }
         AgeRoofFlashes(dt);
         AgeBloodImpacts(dt);
         // Merge/spill only ever act on a tile holding >=2 stacks. The item
@@ -1774,6 +1785,16 @@ public sealed class SimRuntime
             puddlesBuf[bpi++] = new BloodPuddleState(bp.Tile, bp.Amount);
         });
         snap.BloodPuddlesCount = bpi;
+
+        var fireQuery = _fireQ ??= Store.Query<Fire>();
+        EnsureCap(ref snap.FiresBuf, fireQuery.Count);
+        var firesBuf = snap.FiresBuf;
+        int firei = 0;
+        fireQuery.ForEachEntity((ref Fire f, Entity _) =>
+        {
+            firesBuf[firei++] = new FireState(f.Tile, f.Intensity);
+        });
+        snap.FiresCount = firei;
 
         var projQuery = _projectileQ ??= Store.Query<Projectile>();
         EnsureCap(ref snap.ProjectilesBuf, projQuery.Count);
@@ -4996,6 +5017,16 @@ public sealed class SimRuntime
             _bloodImpacts.Add((hx, hy, SimConstants.BodyAimHeight,
                 (float)(_spawnRng.NextDouble() * Math.PI * 2.0), 0.9f, false, BloodImpactSec));
         }
+
+        // Incendiary warhead: set the whole blast area alight.
+        if (incend)
+        {
+            int rr = (int)MathF.Ceiling(radius);
+            for (int dy = -rr; dy <= rr; dy++)
+                for (int dx = -rr; dx <= rr; dx++)
+                    if (dx * dx + dy * dy <= radius * radius)
+                        IgniteTile(new TilePos(ctx + dx, cty + dy), SimConstants.FireBaseFuelSec);
+        }
     }
 
     // Spray shrapnel from a blast: fragments fan out evenly (with jitter) and
@@ -5139,6 +5170,104 @@ public sealed class SimRuntime
         ne.AddComponent(new BloodPuddle { Tile = tile, Amount = 0.4f });
         ne.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
         _bloodPuddleMap[tile] = ne;
+    }
+
+    // ─── Fire ──────────────────────────────────────────────────────────
+    private static readonly (int dx, int dy)[] _fire4 = { (1, 0), (-1, 0), (0, 1), (0, -1) };
+
+    // A tile fire can spread to it: standing trees or crops (wood floors TODO).
+    private bool TileFlammable(TilePos t)
+        => _trees.ContainsKey(t) || _crops.ContainsKey(t);
+
+    // Set a tile alight (or refuel an existing fire). Walls don't burn. The
+    // fire carries its own fuel, so even bare ground burns for a while (e.g. an
+    // incendiary warhead) — spread, though, only reaches flammable neighbours.
+    public void IgniteTile(TilePos tile, float fuelSec)
+    {
+        if ((uint)tile.X >= (uint)Map.Width || (uint)tile.Y >= (uint)Map.Height) return;
+        if (Map.GetWall(tile.X, tile.Y) != WallType.None) return;
+        if (_fireMap.TryGetValue(tile, out var fe))
+        {
+            ref var ff = ref fe.GetComponent<Fire>();
+            ff.Fuel = MathF.Max(ff.Fuel, fuelSec);
+            return;
+        }
+        var e = Store.CreateEntity();
+        e.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
+        e.AddComponent(new Fire { Tile = tile, Intensity = 0.06f, Fuel = fuelSec });
+        _fireMap[tile] = e;
+    }
+
+    private void StepFires(float dt)
+    {
+        // Index pawns by tile once, so each fire damages whoever stands in it.
+        _firePawnsByTile.Clear();
+        (_worldPosHealthQ ??= Store.Query<WorldPos, Health>()).ForEachEntity((ref WorldPos wp, ref Health h, Entity pe) =>
+        {
+            var t = new TilePos((int)wp.X, (int)wp.Y); // downed pawns burn too
+            if (!_firePawnsByTile.TryGetValue(t, out var list)) { list = new List<int>(); _firePawnsByTile[t] = list; }
+            list.Add(pe.Id);
+        });
+
+        _fireScratch.Clear();
+        (_fireQ ??= Store.Query<Fire>()).ForEachEntity((ref Fire _, Entity e) => _fireScratch.Add(e));
+
+        foreach (var e in _fireScratch)
+        {
+            ref var f = ref e.GetComponent<Fire>();
+            if (f.Fuel > 0f) f.Intensity = MathF.Min(1f, f.Intensity + SimConstants.FireGrowPerSec * dt);
+            else f.Intensity -= SimConstants.FireDiePerSec * dt;
+            f.Fuel -= dt;
+
+            if (f.Intensity <= 0f)
+            {
+                ConsumeBurnedTile(f.Tile);
+                _fireMap.Remove(f.Tile);
+                e.DeleteEntity();
+                continue;
+            }
+
+            // Burn pawns standing in the fire.
+            if (_firePawnsByTile.TryGetValue(f.Tile, out var pawns))
+                foreach (var id in pawns)
+                    ApplyBurnTick(id, f.Intensity * SimConstants.FireDamagePerSec * dt);
+
+            // Spread to flammable neighbours once hot enough.
+            if (f.Intensity >= SimConstants.FireSpreadMinIntensity)
+                foreach (var (dx, dy) in _fire4)
+                {
+                    var n = new TilePos(f.Tile.X + dx, f.Tile.Y + dy);
+                    if (_fireMap.ContainsKey(n) || !TileFlammable(n)) continue;
+                    if (_spawnRng.NextDouble() < SimConstants.FireSpreadChance * f.Intensity)
+                        IgniteTile(n, SimConstants.FireBaseFuelSec);
+                }
+        }
+    }
+
+    // Fire died on this tile — destroy whatever burned (tree/crop → gone).
+    private void ConsumeBurnedTile(TilePos tile)
+    {
+        if (_trees.TryGetValue(tile, out var tree)) { _trees.Remove(tile); tree.DeleteEntity(); }
+        if (_crops.TryGetValue(tile, out var crop)) { _crops.Remove(tile); crop.DeleteEntity(); }
+    }
+
+    // Apply a tick of burn damage — grow the pawn's existing untended burn
+    // rather than spawning a fresh injury every tick (keeps the list sane).
+    private void ApplyBurnTick(int pawnId, float dmg)
+    {
+        if (dmg <= 0f) return;
+        if (!Store.TryGetEntityById(pawnId, out var pawn) || !pawn.HasComponent<Health>()) return;
+        ref var h = ref pawn.GetComponent<Health>();
+        h.Injuries ??= new List<PartInjury>();
+        for (int i = h.Injuries.Count - 1; i >= 0; i--)
+        {
+            var inj = h.Injuries[i];
+            if (inj.Kind == StruggleGame.Sim.Bodies.ConditionKind.Burn && !inj.Tended)
+            { inj.Severity += dmg; h.Injuries[i] = inj; HealthSystem.Recompute(ref h); return; }
+        }
+        var parts = StruggleGame.Sim.Bodies.BodyTree.PunchableParts;
+        h.Injuries.Add(new PartInjury { PartId = parts[_spawnRng.Next(parts.Count)], Kind = StruggleGame.Sim.Bodies.ConditionKind.Burn, Severity = dmg });
+        HealthSystem.Recompute(ref h);
     }
 
     // Debug/gameplay: add a condition to one of a colonist's body parts

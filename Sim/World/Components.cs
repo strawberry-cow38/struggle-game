@@ -893,6 +893,16 @@ public struct Health : IComponent
 
 // A pool of spilled blood on a tile. Amount 0..1 = how dark/large. Purely
 // cosmetic for now; persists (no cleaning yet).
+// A burning tile. Intensity ramps 0->1 as it catches, holds while it has fuel,
+// then dies back to 0 once fuel runs out (and the entity is removed). Damages
+// pawns standing on the tile and spreads to flammable neighbours (trees/crops).
+public struct Fire : IComponent
+{
+    public TilePos Tile;
+    public float Intensity; // 0..1 — visual size + damage + spread scalar
+    public float Fuel;      // seconds of burning left; <=0 → dying back down
+}
+
 public struct BloodPuddle : IComponent
 {
     public TilePos Tile;

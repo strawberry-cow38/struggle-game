@@ -24,6 +24,8 @@ public partial class WorldRenderer : Node2D
     // Directional colonist sprites (S/N/E/W), chosen by facing.
     private ImageTexture? _colonistS, _colonistN, _colonistE, _colonistW;
     private ImageTexture? _treeTex;
+    private ImageTexture? _fireStrip;   // 9-frame horizontal flame loop (1728x192)
+    private const int FireFrames = 9;
     // Reused each frame to Y-sort trees + colonists into one draw order so a
     // tree draws in front of a colonist standing above (behind) it. kind 0=tree,
     // 1=dummy; idx into the snapshot list.
@@ -233,6 +235,7 @@ public partial class WorldRenderer : Node2D
         _colonistE = LoadGroundTexture("res://assets/colonist/east.png");
         _colonistW = LoadGroundTexture("res://assets/colonist/west.png");
         _treeTex = LoadGroundTexture("res://assets/world/tree.png");
+        _fireStrip = LoadGroundTexture("res://assets/fire/fire_strip.png");
 
         for (int m = 0; m < 256; m++)
         {
@@ -955,6 +958,17 @@ public partial class WorldRenderer : Node2D
                 {
                     DrawOutOfAmmoText(labelFont, center, radius, 1f - sinceDry / (float)OutOfAmmoTextTicks);
                 }
+            }
+        }
+
+        // Fires render over the pawns (a pawn standing in one is engulfed).
+        using (FrameProfiler.Instance.BeginScope("Fires"))
+        {
+            foreach (var fire in snap.Fires)
+            {
+                if (fire.Tile.X < viewMinTileX || fire.Tile.X > viewMaxTileX
+                    || fire.Tile.Y < viewMinTileY || fire.Tile.Y > viewMaxTileY) continue;
+                DrawFire(fire, snap.Tick);
             }
         }
 
@@ -1709,6 +1723,25 @@ public partial class WorldRenderer : Node2D
         DrawSetTransform(center, angle, Vector2.One);
         DrawTextureRect(tex, rect, tile: false);
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+    }
+
+    // Animated tile fire: cycles the 9-frame strip (per-tile phase so fires
+    // aren't in lockstep), scaled by intensity, flame base sitting on the tile.
+    private void DrawFire(Sim.Snapshots.FireState fire, long tick)
+    {
+        if (_fireStrip is null) return;
+        int fw = _fireStrip.GetWidth() / FireFrames, fh = _fireStrip.GetHeight();
+        if (fw <= 0) return;
+        int phase = (fire.Tile.X * 7 + fire.Tile.Y * 13) % FireFrames;
+        int frame = (int)((tick / 5 + phase) % FireFrames); // ~12 fps loop
+        var src = new Rect2(frame * fw, 0, fw, fh);
+        float intensity = Mathf.Clamp(fire.Intensity, 0f, 1f);
+        float w = PixelsPerTile * (0.7f + 0.7f * intensity);
+        float h = w; // square frames
+        float cx = (fire.Tile.X + 0.5f) * PixelsPerTile;
+        float baseY = (fire.Tile.Y + 0.85f) * PixelsPerTile; // flame foot near tile bottom
+        var dest = new Rect2(cx - w * 0.5f, baseY - h, w, h);
+        DrawTextureRectRegion(_fireStrip, dest, src);
     }
 
     private void DrawWood(TilePos tile)

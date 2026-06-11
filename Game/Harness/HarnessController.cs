@@ -96,6 +96,14 @@ public partial class HarnessController : Node2D
                 _schedule.Add((3.0, h => h.Finish("pocketsand done"), "finish"));
                 _screenshotEverySec = double.PositiveInfinity;
                 break;
+            case "fire":
+                // Fire demo: light a cluster near center, let it grow, screenshot.
+                _schedule.Add((0.3, h => h.SetCameraZoom(3.0f), "zoom"));
+                _schedule.Add((0.5, h => h.IgniteCluster(), "ignite"));
+                _schedule.Add((2.6, h => h.Screenshot(), "shot"));
+                _schedule.Add((3.4, h => h.Finish("fire done"), "finish"));
+                _screenshotEverySec = double.PositiveInfinity;
+                break;
             case "gear":
                 // Gear pane demo: give the lowest pawn a loadout, select it,
                 // open the Gear tab, and screenshot.
@@ -1063,6 +1071,14 @@ public partial class HarnessController : Node2D
         Host.SelectedDummyId = id; // opens the pawn card so the health tab anchors above it
         if (GetTree().Root.FindChild("HealthTabPanel", true, false) is StruggleGame.Game.UI.HealthTabPanel panel)
             panel.OpenFor(id);
+    }
+
+    private void IgniteCluster()
+    {
+        int c = SimConstants.MapSize / 2;
+        for (int dy = -2; dy <= 2; dy++)
+            for (int dx = -2; dx <= 2; dx++)
+                Host.QueueCommand(new IgniteTileCommand(new TilePos(c + dx, c + dy), SimConstants.FireBaseFuelSec));
     }
 
     private void OpenGearForLowest()
