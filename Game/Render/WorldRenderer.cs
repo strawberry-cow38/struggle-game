@@ -659,11 +659,12 @@ public partial class WorldRenderer : Node2D
                 DrawItemPile(p);
                 if (p.Forbidden) DrawForbiddenMark(p.Tile);
                 if (selectedPileSet is not null && selectedPileSet.Contains(p.EntityId)) DrawWoodSelectionRing(p.Tile);
-                // Equippable gear (weapons/armor) is non-stackable — no count.
+                // Equippable gear (weapons/armor) is non-stackable — show the
+                // name on hover but no count.
                 bool stackable = !(ItemCatalog.ItemsByPath.TryGetValue(p.ItemPath, out var pdef) && pdef.Equippable);
-                if (stackable && p.Tile.X == cursorTileX && p.Tile.Y == cursorTileY)
+                if (p.Tile.X == cursorTileX && p.Tile.Y == cursorTileY)
                 {
-                    DrawStackLabel(stackFont, p.Tile, p.ItemPath, p.Count, p.Label);
+                    DrawStackLabel(stackFont, p.Tile, p.ItemPath, p.Count, p.Label, showCount: stackable);
                 }
             }
         }
@@ -1255,14 +1256,15 @@ public partial class WorldRenderer : Node2D
     // drown in text.
     private const int StackLabelFontSize = 25;
 
-    private void DrawStackLabel(Font? font, TilePos tile, string itemPath, int count, string? labelOverride = null)
+    private void DrawStackLabel(Font? font, TilePos tile, string itemPath, int count, string? labelOverride = null, bool showCount = true)
     {
         if (font is null) return;
         string name = labelOverride ?? (ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def)
             ? def.DisplayName
             : itemPath);
-        // Corpse labels are already the colonist name; don't append a count.
-        string text = labelOverride is not null ? name : $"{name} x{count}";
+        // Corpse labels are already the colonist name; non-stackable gear shows
+        // just the name — neither appends a count.
+        string text = (labelOverride is not null || !showCount) ? name : $"{name} x{count}";
         var size = font.GetStringSize(text, HorizontalAlignment.Left, -1f, StackLabelFontSize);
         float cx = (tile.X + 0.5f) * PixelsPerTile;
         float baseY = (tile.Y + 0.5f) * PixelsPerTile + PixelsPerTile * 0.22f + font.GetAscent(StackLabelFontSize);
