@@ -777,6 +777,9 @@ public struct RangedCombat : IComponent
     public long NextActionTick;    // earliest tick the next shot / reload-finish may happen
     public int BurstRemaining;     // shots left to fire in the current burst
     public bool Reloading;         // mag refill in progress until NextActionTick
+    public bool ReloadApplied;     // rounds already pulled at reload START (idle
+                                   // top-up) — the timer is just the animation, so
+                                   // CompleteReload must NOT pull from inventory again
     public long ShotTick;          // last tick a shot left the muzzle (flash anim)
     public long OutOfAmmoTick;     // last tick a reload failed for lack of ammo
                                    // (drives the "Out of ammo!" overhead float)

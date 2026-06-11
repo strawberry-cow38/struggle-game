@@ -192,6 +192,12 @@ public sealed class DummyController
         _releaseUrSeat = releaseUrSeat;
     }
 
+    // Called by SimRuntime.RemoveDummy: drop per-pawn cached state when a pawn
+    // entity is removed (death/debug/harness). Friflo recycles entity ids, so a
+    // stale throttle entry would delay the first job claim of a future pawn
+    // spawned with the same id.
+    public void OnPawnRemoved(int entityId) => _lastJobSeek.Remove(entityId);
+
     public void Step(EntityStore store, float dt, long tick)
     {
         _tick = tick;
@@ -210,8 +216,13 @@ public sealed class DummyController
             // pawn peeking around cover is perceived (and aimed at) where its
             // hitbox actually is, not at its body tile behind the wall.
             EffectivePos(e, p.X, p.Y, out float ex, out float ey);
-            if (e.HasComponent<Enemy>()) _enemyTargets.Add((e.Id, ex, ey)); // for colonist auto-engage
-            else _colonistTargets.Add((e.Id, ex, ey));                      // for enemy perception
+            // LoS gates raycast on the tile grid: while leaning, the hitbox
+            // tile is the peek CELL — truncating the interpolated float can
+            // land back on the body tile behind the wall, so carry the true
+            // tile alongside the float position.
+            EffectiveTile(e, p.X, p.Y, out int etx, out int ety);
+            if (e.HasComponent<Enemy>()) _enemyTargets.Add((e.Id, ex, ey, etx, ety)); // for colonist auto-engage
+            else _colonistTargets.Add((e.Id, ex, ey, etx, ety));                      // for enemy perception
         });
         var query = _wandererQ ??= store.Query<WorldPos, PathFollower, Wanderer>();
         // Tick-start crowding: count pawns per tile and pick the ONE mover to
@@ -837,8 +848,10 @@ public sealed class DummyController
                 }
                 var tp = tgt.GetComponent<WorldPos>();
                 var ttile = new TilePos((int)tp.X, (int)tp.Y);
-                bool adjacent = ttile != here
-                    && Math.Abs(ttile.X - here.X) <= 1 && Math.Abs(ttile.Y - here.Y) <= 1;
+                // Same tile counts: pawns are non-blocking, so attacker and
+                // target can share a tile — backing off a step first just
+                // wastes a move (mirrors the doctor's ptile == here check).
+                bool adjacent = Math.Abs(ttile.X - here.X) <= 1 && Math.Abs(ttile.Y - here.Y) <= 1;
                 if (adjacent)
                 {
                     path.Waypoints = null; path.Index = 0;
@@ -2059,11 +2072,12 @@ public sealed class DummyController
     public System.Func<Entity, bool, bool>? HasTreatableWounds;
     public System.Action<Entity, bool, float>? ApplyTreatment;
 
-    // (id, x, y) of every conscious non-enemy pawn, rebuilt once per Step.
-    private readonly List<(int Id, float X, float Y)> _colonistTargets = new();
+    // (id, effective pos, effective LoS tile) of every conscious non-enemy
+    // pawn, rebuilt once per Step.
+    private readonly List<(int Id, float X, float Y, int TileX, int TileY)> _colonistTargets = new();
     // Conscious enemies (id + pos), rebuilt each Step for drafted-colonist
     // auto-engagement (the mirror of _colonistTargets, which enemies perceive).
-    private readonly List<(int Id, float X, float Y)> _enemyTargets = new();
+    private readonly List<(int Id, float X, float Y, int TileX, int TileY)> _enemyTargets = new();
     private ArchetypeQuery<WorldPos, Wanderer, Health>? _colonistTargetsQ;
 
     // The hostile brain. Selects a goal on a stagger (perception is the
@@ -2217,7 +2231,9 @@ public sealed class DummyController
         while (guard-- > 0)
         {
             if (brain.MissionIndex >= mission.Count)
-                return EnemyGoalKind.None; // mission complete → idle
+                return EnemyGoalKind.Exfil; // mission complete → leave the map
+                                            // (no idle loitering when the queue
+                                            // was authored without an Exfil step)
 
             var obj = mission[brain.MissionIndex];
             switch (obj.Kind)
@@ -2230,7 +2246,9 @@ public sealed class DummyController
                 case EnemyObjectiveKind.Hold:
                     brain.GoalTileX = obj.TileX; brain.GoalTileY = obj.TileY; brain.HasGoalTile = true;
                     if (!Arrived(here, obj.TileX, obj.TileY)) return EnemyGoalKind.Advance; // walk there first
-                    if (brain.PhaseStartTick == 0) brain.PhaseStartTick = _tick;
+                    // 0 is the "not started" sentinel — arriving ON tick 0 must
+                    // not write 0 back or the timer restarts every think forever.
+                    if (brain.PhaseStartTick == 0) brain.PhaseStartTick = Math.Max(1, _tick);
                     if (obj.Param > 0 && _tick - brain.PhaseStartTick >= obj.Param)
                     { brain.PhaseStartTick = 0; AdvanceMission(ref brain); continue; }
                     return EnemyGoalKind.Hold;
@@ -2332,8 +2350,9 @@ public sealed class DummyController
             if (d2 >= bestD2) continue;
             // LoS-gated: no shooting through walls, and no ESP either — the
             // enemy only "sees" a colonist it has a clear line to (reuses the
-            // same LoS the firing code uses).
-            if (LosClear is not null && !LosClear(here.X, here.Y, (int)t.X, (int)t.Y)) continue;
+            // same LoS the firing code uses). Uses the effective TILE (the
+            // peek cell while leaning), not the truncated float position.
+            if (LosClear is not null && !LosClear(here.X, here.Y, t.TileX, t.TileY)) continue;
             bestD2 = d2; best = t.Id;
         }
         return best;
@@ -2351,7 +2370,7 @@ public sealed class DummyController
             float dx = t.X - hx, dy = t.Y - hy;
             float d2 = dx * dx + dy * dy;
             if (d2 >= bestD2) continue;
-            var et = new TilePos((int)t.X, (int)t.Y);
+            var et = new TilePos(t.TileX, t.TileY);
             bool los = LosClear?.Invoke(here.X, here.Y, et.X, et.Y) ?? true;
             if (!los && !TryFindLeanCell(view, here, et, out _)) continue; // can't see or peek it
             bestD2 = d2; best = t.Id;
@@ -2692,6 +2711,23 @@ public sealed class DummyController
         }
     }
 
+    // The TILE a pawn should be perceived/LoS-checked at: the full peek cell
+    // while popped out leaning (PeekX/Y is that cell's centre), else the body
+    // tile. Truncating the interpolated EffectivePos float can land on the
+    // body tile behind the wall, so tile-grid raycasts use this instead.
+    private static void EffectiveTile(Entity e, float bodyX, float bodyY, out int tx, out int ty)
+    {
+        tx = (int)bodyX; ty = (int)bodyY;
+        if (e.HasComponent<RangedCombat>())
+        {
+            var rc = e.GetComponent<RangedCombat>();
+            if (rc.Stance == CoverStance.Popped && rc.Leaning)
+            {
+                tx = (int)rc.PeekX; ty = (int)rc.PeekY;
+            }
+        }
+    }
+
     // Fraction of the full aim time it takes to swing a running burst onto a
     // fresh target — quicker than a cold acquire (already shouldered), but not
     // instant (instant snapping between targets is too strong).
@@ -2976,6 +3012,7 @@ public sealed class DummyController
     {
         if (!TryFindReloadStack(entity, ref rc, spec, out _)) return false;
         rc.Reloading = true;
+        rc.ReloadApplied = false;   // rounds pulled on completion, not yet
         rc.MagCount = 0;            // mag dropped
         rc.NextActionTick = _tick + spec.ReloadTicks;
         rc.BurstRemaining = 0;
@@ -2987,6 +3024,10 @@ public sealed class DummyController
     private void CompleteReload(Entity entity, ref RangedCombat rc, Items.RangedSpec spec)
     {
         rc.Reloading = false;
+        // Idle top-up reloads (TopUpMagFromInventory) already pulled the rounds
+        // at start — the timer was just the animation. Pulling again would
+        // double-consume inventory and clobber the topped-up mag.
+        if (rc.ReloadApplied) { rc.ReloadApplied = false; return; }
         if (!TryFindReloadStack(entity, ref rc, spec, out int k)) return; // ammo gone meanwhile
         ref var inv = ref entity.GetComponent<Inventory>();
         var stk = inv.Items![k];
@@ -3183,7 +3224,7 @@ public sealed class DummyController
         // Finish an in-progress reload (stand still until it completes).
         if (rc.Reloading)
         {
-            if (_tick >= rc.NextActionTick) rc.Reloading = false;
+            if (_tick >= rc.NextActionTick) { rc.Reloading = false; rc.ReloadApplied = false; }
             path.Waypoints = null; path.Index = 0;
             return true;
         }
@@ -3244,6 +3285,7 @@ public sealed class DummyController
             rc.MagCount += load;
             rc.LoadedAmmoPath = stk.ItemPath;
             rc.Reloading = true;
+            rc.ReloadApplied = true; // rounds already in — don't pull again on completion
             rc.NextActionTick = _tick + spec.ReloadTicks;
             rc.BurstRemaining = 0;
             return true;

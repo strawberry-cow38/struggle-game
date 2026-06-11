@@ -24,6 +24,9 @@ public sealed class HealthSystem
     public const float TendHealQualityBonus = 8f;    // quality 0.75 → ~7× heal rate
     public const float TendPainFactor = 0.6f;        // quality 0.75 → ~45% less pain
     public const float StabilizeBleedFraction = 0.25f; // 75% bleed stopped
+    // Stabilized (but untended) wounds heal modestly faster than raw ones —
+    // a quick patch helps, but nothing like a proper tend.
+    public const float StabilizeHealBonus = 0.5f;     // 1.5× heal rate
     // Blood (0..1 units) that must pool before a puddle is dripped.
     public const float PuddlePerDrip = 0.04f;
 
@@ -116,8 +119,10 @@ public sealed class HealthSystem
             {
                 var inj = h.Injuries[i];
                 if (BodyTree.IsPermanent(inj.Kind)) continue;
-                // Tended wounds shed severity far faster (scaled by quality).
-                float rate = HealPerSecHp * (inj.Tended ? 1f + TendHealQualityBonus * inj.TendQuality : 1f);
+                // Tended wounds shed severity far faster (scaled by quality);
+                // stabilized-only wounds get a modest in-between bonus.
+                float rate = HealPerSecHp * (inj.Tended ? 1f + TendHealQualityBonus * inj.TendQuality
+                    : inj.Stabilized ? 1f + StabilizeHealBonus : 1f);
                 inj.Severity -= rate * dt; // Severity == damage in HP
                 if (inj.Severity <= 0f) h.Injuries.RemoveAt(i);
                 else h.Injuries[i] = inj;

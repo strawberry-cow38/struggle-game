@@ -36,17 +36,25 @@ public sealed class CookSystem
 
     // Map-wide item count by path, built at most ONCE per tick (lazily, only if
     // a stove actually evaluates a bill) and shared across every stove/input —
-    // replaces a full ItemPile scan per stove per input check.
+    // replaces a full ItemPile scan per stove per input check. _pathTotals
+    // counts every pile (output-count checks: hauled-to-stockpile output still
+    // exists); _unreservedTotals excludes stacks already promised to an
+    // in-flight haul job (ingredient checks: don't start a cook on carrots the
+    // haul system is about to cart off elsewhere).
     private readonly Dictionary<string, int> _pathTotals = new();
+    private readonly Dictionary<string, int> _unreservedTotals = new();
     private bool _totalsReady;
     private void EnsureTotals(EntityStore store)
     {
         if (_totalsReady) return;
         _totalsReady = true;
         _pathTotals.Clear();
-        (_itemPileQ ??= store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity _) =>
+        _unreservedTotals.Clear();
+        (_itemPileQ ??= store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity e) =>
         {
             _pathTotals[p.ItemPath] = _pathTotals.GetValueOrDefault(p.ItemPath) + p.Count;
+            if (!e.HasComponent<HaulReserved>())
+                _unreservedTotals[p.ItemPath] = _unreservedTotals.GetValueOrDefault(p.ItemPath) + p.Count;
         });
     }
 
@@ -137,6 +145,24 @@ public sealed class CookSystem
             ref var stove = ref stoveEnt.GetComponent<Stove>();
             var board = stoveEnt.GetComponent<BillsBoard>();
 
+            // SpecificStockpile routing isn't wired into completion yet (output
+            // always drops at the workbench), but a stale target id — the
+            // stockpile was deleted after the bill was configured — shouldn't
+            // linger silently. Validate it here, fall back to DropAtWorkbench,
+            // and surface the downgrade in the watcher feed.
+            if (board.Bills is not null && f.BillIndex >= 0 && f.BillIndex < board.Bills.Count)
+            {
+                var b = board.Bills[f.BillIndex];
+                if (b.OutputDest == BillOutputDest.SpecificStockpile && !StockpileExists(b.StockpileEntityId))
+                {
+                    _sim.Watcher.RecordStaleBillTarget(_sim.Tick, f.StoveEntityId,
+                        $"bill {b.Recipe} target stockpile {b.StockpileEntityId} gone -> drop at workbench");
+                    b.OutputDest = BillOutputDest.DropAtWorkbench;
+                    b.StockpileEntityId = 0;
+                    board.Bills[f.BillIndex] = b;
+                }
+            }
+
             // Spawn output now that the query is done.
             _sim.SpawnItemPile(f.OutputTile, f.OutputItemPath, f.OutputCount);
 
@@ -175,6 +201,13 @@ public sealed class CookSystem
         foreach (var id in _completed) _sim.CompleteJob(id);
     }
 
+    private bool StockpileExists(int stockpileId)
+    {
+        foreach (var sp in _sim.Stockpiles)
+            if (sp.Id == stockpileId) return true;
+        return false;
+    }
+
     private bool IsBillSatisfied(Bill bill, Recipe recipe, EntityStore store)
     {
         switch (bill.RepeatMode)
@@ -196,7 +229,7 @@ public sealed class CookSystem
     {
         EnsureTotals(store);
         foreach (var input in recipe.Inputs)
-            if (_pathTotals.GetValueOrDefault(input.ItemPath) < input.Count) return false;
+            if (_unreservedTotals.GetValueOrDefault(input.ItemPath) < input.Count) return false;
         return true;
     }
 }

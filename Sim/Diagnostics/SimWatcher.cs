@@ -10,6 +10,7 @@ public enum SimAnomalyKind
     Stuck,
     BrainDead,
     Rescued,
+    StaleBillTarget,
 }
 
 public readonly record struct SimAnomaly(long Tick, int EntityId, SimAnomalyKind Kind, string Detail);
@@ -65,6 +66,11 @@ public sealed class SimWatcher
         Report(tick, entityId, SimAnomalyKind.Rescued, $"wall {from.X},{from.Y} -> {to.X},{to.Y}");
         Interlocked.Increment(ref _rescuedTotal);
     }
+
+    // One-off data-integrity warning: a bill's target stockpile no longer
+    // exists, so its output destination was downgraded to DropAtWorkbench.
+    public void RecordStaleBillTarget(long tick, int entityId, string detail)
+        => Report(tick, entityId, SimAnomalyKind.StaleBillTarget, detail);
 
     private readonly HashSet<int> _seenScratch = new();
     private ArchetypeQuery<WorldPos, PathFollower, Wanderer>? _pawnsQ;

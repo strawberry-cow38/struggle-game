@@ -7187,6 +7187,9 @@ public sealed class SimRuntime
             ref var pf = ref ent.GetComponent<PathFollower>();
             if (pf.PendingPathId != 0) PathService.Discard(pf.PendingPathId);
         }
+        // Controller-side per-pawn caches (job-seek throttle): Friflo recycles
+        // entity ids, so stale entries would bleed into a future pawn.
+        _dummies.OnPawnRemoved(entityId);
         ent.DeleteEntity();
         return true;
     }
