@@ -1385,6 +1385,7 @@ public sealed class SimRuntime
             }
 
             long swingT = 0, missT = 0, flinchT = 0;
+            long outOfAmmoTick = 0;
             if (ent.HasComponent<Combat>())
             {
                 var cm = ent.GetComponent<Combat>();
@@ -1442,6 +1443,7 @@ public sealed class SimRuntime
                 loadedAmmo = rc.LoadedAmmoPath;
                 fireTargetId = rc.TargetEntityId;
                 shotTick = rc.ShotTick;
+                outOfAmmoTick = rc.OutOfAmmoTick;
                 rangedMode = rc.Mode;
                 rangedModes = rspec.Modes;
                 rangedRange = rspec.Range;
@@ -1542,7 +1544,7 @@ public sealed class SimRuntime
                 recLevel, atRecKind, equipped, held, healthState, wr.Facing,
                 swingT, missT, flinchT, meleeTargetId,
                 hasRanged, hasRocket, rangedMag, rangedMagSize, loadedAmmo, rangedMode, rangedModes,
-                fireTargetId, shotTick, rangedRange, rangedStatus, rangedArea, rangedAimMode,
+                fireTargetId, shotTick, outOfAmmoTick, rangedRange, rangedStatus, rangedArea, rangedAimMode,
                 coverStance, leaning, peekX, peekY, rangedHasAmmo,
                 fireMeterPhase, fireMeterProgress, treatProgress,
                 ent.HasComponent<Enemy>(),
@@ -4267,7 +4269,13 @@ public sealed class SimRuntime
                 && d.Ammo.CategoryPath == spec.AmmoCategoryPath
                 && (preferred is null || stk.ItemPath == preferred))
             { hasAmmo = true; break; }
-        if (!hasAmmo) return;
+        if (!hasAmmo)
+        {
+            // Player hit reload with nothing to load — flash "Out of ammo!".
+            ref var rcEmpty = ref p.GetComponent<RangedCombat>();
+            rcEmpty.OutOfAmmoTick = Tick;
+            return;
+        }
         ref var rc = ref p.GetComponent<RangedCombat>();
         rc.Reloading = true;
         rc.NextActionTick = Tick + spec.ReloadTicks;

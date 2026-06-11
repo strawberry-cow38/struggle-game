@@ -931,6 +931,11 @@ public partial class WorldRenderer : Node2D
                 {
                     DrawMissedText(labelFont, center, radius, 1f - sinceMiss / (float)MissTextTicks);
                 }
+                long sinceDry = snap.Tick - d.OutOfAmmoTick;
+                if (d.OutOfAmmoTick > 0 && sinceDry >= 0 && sinceDry < OutOfAmmoTextTicks && labelFont is not null)
+                {
+                    DrawOutOfAmmoText(labelFont, center, radius, 1f - sinceDry / (float)OutOfAmmoTextTicks);
+                }
             }
         }
 
@@ -1024,6 +1029,23 @@ public partial class WorldRenderer : Node2D
         float rise = (1f - fade) * PixelsPerTile * 0.5f;
         var p = new Vector2(center.X - PixelsPerTile * 0.35f, center.Y - radius - 4f - rise);
         DrawString(font, p, "Missed!", HorizontalAlignment.Left, -1f, MissedFontSize, col);
+    }
+
+    private const long OutOfAmmoTextTicks = 90;
+    private const int OutOfAmmoFontSize = 22;
+    private static readonly Color OutOfAmmoColor = new(1f, 0.55f, 0.4f, 1f);
+    // "Out of ammo!" floating up + fading from a pawn whose reload found no ammo.
+    private void DrawOutOfAmmoText(Font font, Vector2 center, float radius, float fade)
+    {
+        var col = OutOfAmmoColor;
+        col.A = Mathf.Clamp(fade, 0f, 1f);
+        float rise = (1f - fade) * PixelsPerTile * 0.6f;
+        const string txt = "Out of ammo!";
+        float w = font.GetStringSize(txt, HorizontalAlignment.Left, -1f, OutOfAmmoFontSize).X;
+        var p = new Vector2(center.X - w * 0.5f, center.Y - radius - 4f - rise);
+        // Shadow then text, so it stays legible over bright tiles.
+        DrawString(font, p + new Vector2(1f, 1f), txt, HorizontalAlignment.Left, -1f, OutOfAmmoFontSize, new Color(0f, 0f, 0f, col.A * 0.7f));
+        DrawString(font, p, txt, HorizontalAlignment.Left, -1f, OutOfAmmoFontSize, col);
     }
 
     // Hover hit-chance panel styling.

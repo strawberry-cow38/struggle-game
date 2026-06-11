@@ -760,6 +760,8 @@ public struct RangedCombat : IComponent
     public int BurstRemaining;     // shots left to fire in the current burst
     public bool Reloading;         // mag refill in progress until NextActionTick
     public long ShotTick;          // last tick a shot left the muzzle (flash anim)
+    public long OutOfAmmoTick;     // last tick a reload failed for lack of ammo
+                                   // (drives the "Out of ammo!" overhead float)
     public float Recoil;           // accumulated recoil cone (degrees); decays over time
     public float LastSeenX, LastSeenY; // last fired-at target position — a lost
                                    // burst sprays its remaining rounds here

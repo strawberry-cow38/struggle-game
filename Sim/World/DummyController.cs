@@ -2768,7 +2768,7 @@ public sealed class DummyController
 
         if (rc.MagCount <= 0)
         {
-            if (!TryStartReload(entity, ref rc, spec)) rc.TargetEntityId = 0; // no ammo
+            if (!TryStartReload(entity, ref rc, spec)) { AnnounceOutOfAmmo(ref rc); rc.TargetEntityId = 0; } // no ammo
             return;
         }
 
@@ -2816,7 +2816,7 @@ public sealed class DummyController
         float ddx = tp.X - pos.X, ddy = tp.Y - pos.Y;
         if (ddx * ddx + ddy * ddy > 1e-9f) w.Facing = MathF.Atan2(ddy, ddx);
 
-        if (rc.MagCount <= 0) { rc.TargetEntityId = 0; rc.BurstRemaining = 0; return; } // dry → stop
+        if (rc.MagCount <= 0) { AnnounceOutOfAmmo(ref rc); rc.TargetEntityId = 0; rc.BurstRemaining = 0; return; } // dry → stop
         if (_tick < rc.NextActionTick) return;                                          // shot cooldown
 
         FireOneShot(entity, 0, false, spec, ref rc, pos, tp, MathF.Sqrt(ddx * ddx + ddy * ddy), snapshot: false);
@@ -2858,7 +2858,7 @@ public sealed class DummyController
         }
         if (rc.MagCount <= 0)
         {
-            if (!TryStartReload(entity, ref rc, spec)) { rc.TileTarget = false; rc.AimTargetId = 0; } // no rockets
+            if (!TryStartReload(entity, ref rc, spec)) { AnnounceOutOfAmmo(ref rc); rc.TileTarget = false; rc.AimTargetId = 0; } // no rockets
             return;
         }
 
@@ -2875,6 +2875,15 @@ public sealed class DummyController
         rc.NextActionTick = _tick + spec.CycleCooldownTicks;
         rc.TileTarget = false; // single shot — order consumed
         rc.AimTargetId = 0;    // clear the tile-aim sentinel
+    }
+
+    // Stamp the "Out of ammo!" overhead float — but only once the previous
+    // one has fully faded, so an auto-firing pawn that keeps re-acquiring a
+    // dry target doesn't reset the float to full opacity every tick.
+    private const long OutOfAmmoAnnounceTicks = 90;
+    private void AnnounceOutOfAmmo(ref RangedCombat rc)
+    {
+        if (_tick - rc.OutOfAmmoTick >= OutOfAmmoAnnounceTicks) rc.OutOfAmmoTick = _tick;
     }
 
     // Emit one rocket projectile toward a ground tile (flies through pawns,

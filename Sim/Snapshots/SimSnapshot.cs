@@ -217,6 +217,8 @@ public readonly record struct DummyState(
     StruggleGame.Sim.Items.FireModeFlags RangedModes,
     int FireTargetId,
     long ShotTick,
+    // Last tick a reload failed for lack of ammo → "Out of ammo!" overhead float.
+    long OutOfAmmoTick,
     float RangedRange,
     RangedStatus RangedStatus,
     StruggleGame.Sim.Items.TargetArea RangedTargetArea,
