@@ -571,7 +571,10 @@ public sealed class SimRuntime
         CheckmarkMode = checkmarkMode;
         // Switching mode can make in-flight jobs newly forbidden. Scan
         // every pawn and abort jobs whose work type is disallowed under
-        // the new mode.
+        // the new mode. AbortPawnJob is a structural change (component
+        // removal) — Friflo throws if done mid-iteration, so buffer the
+        // entities and abort after the query loop.
+        List<Entity>? toAbort = null;
         (_wandererQ ??= Store.Query<WorldPos, Wanderer>()).ForEachEntity((ref WorldPos _, ref Wanderer _, Entity ent) =>
         {
             if (!ent.HasComponent<BuildTarget>()) return;
@@ -579,8 +582,12 @@ public sealed class SimRuntime
             var job = Jobs.Get(bt.JobId);
             if (job is null) return;
             if (!WorkTypes.TryGet(job.Kind, out var wt)) return;
-            if (!IsWorkTypeAllowed(ent, wt)) AbortPawnJob(ent);
+            if (!IsWorkTypeAllowed(ent, wt)) (toAbort ??= new List<Entity>()).Add(ent);
         });
+        if (toAbort is not null)
+        {
+            foreach (var ent in toAbort) AbortPawnJob(ent);
+        }
     }
 
     public static void EnsureWorkPriorities(Entity ent)
@@ -5152,7 +5159,9 @@ public sealed class SimRuntime
         // The corpse is a real dropped item (selectable / haulable) that
         // also carries the colonist's data for resurrection.
         c.AddComponent(new ItemPile { Tile = tile, Count = 1, ItemPath = Items.ItemCatalog.Corpse.FullPath });
-        c.AddComponent(new Corpse { Tile = tile, Health = corpseHealth, Name = $"Colonist {pawnId}" });
+        // Same name source the live snapshot uses (ColonistNames.For) so
+        // the corpse keeps the colonist's display name.
+        c.AddComponent(new Corpse { Tile = tile, Health = corpseHealth, Name = ColonistNames.For(pawnId) });
         RemoveDummy(pawnId);
     }
 
@@ -7005,17 +7014,79 @@ public sealed class SimRuntime
         return false;
     }
 
-    // Delete a colonist by entity id. Releases any claimed job and
+    // Delete a colonist by entity id. Central cleanup for every removal
+    // path (death, debug, harness): re-anchors carried cargo, releases
+    // any claimed job, unbinds the stove, bed, and recreation seat, and
     // discards any in-flight path request so we don't leak handles.
+    // Entity deletion fires no component-removed events in Friflo, so
+    // every mirror/reservation keyed to this pawn must be cleared here.
     public bool RemoveDummy(int entityId)
     {
         if (!Store.TryGetEntityById(entityId, out var ent)) return false;
         if (!ent.HasComponent<Wanderer>()) return false;
+        // Mid-haul: drop carried item entities at the pawn's current tile
+        // so they re-anchor as world piles instead of vanishing with the
+        // pawn (the ItemPile component was stripped at pickup).
+        if (ent.HasComponent<Carrying>())
+        {
+            TilePos here;
+            if (ent.HasComponent<WorldPos>())
+            {
+                var wp = ent.GetComponent<WorldPos>();
+                here = new TilePos((int)wp.X, (int)wp.Y);
+            }
+            else
+            {
+                here = ent.GetComponent<Carrying>().DestTile;
+            }
+            var cb = Store.GetCommandBuffer();
+            DeliverCarrying(ent, here, cb);
+            cb.Playback();
+        }
         if (ent.HasComponent<BuildTarget>())
         {
             var bt = ent.GetComponent<BuildTarget>();
             Jobs.Release(bt.JobId);
             ent.RemoveComponent<BuildTarget>();
+        }
+        // Mid-cook: unbind the stove so it isn't stuck gated on a dead
+        // cook's entity id (mirrors the drafted-interrupt reset).
+        if (ent.HasComponent<Cooking>())
+        {
+            var cooking = ent.GetComponent<Cooking>();
+            if (Store.TryGetEntityById(cooking.StoveEntityId, out var stoveEnt)
+                && stoveEnt.HasComponent<Stove>())
+            {
+                ref var stove = ref stoveEnt.GetComponent<Stove>();
+                stove.CookProgressTicks = 0f;
+                stove.CurrentBillIndex = -1;
+                stove.ActiveCookEntityId = 0;
+            }
+        }
+        // Bed ownership: clear the BedAssignee mirror on the assigned bed,
+        // plus any in-flight sleep reservation this pawn still holds
+        // (_bedReservations is keyed by bed id, so scan values).
+        UnassignPawnBed(ent);
+        List<int>? staleBeds = null;
+        foreach (var kv in _bedReservations)
+        {
+            if (kv.Value == entityId) (staleBeds ??= new List<int>()).Add(kv.Key);
+        }
+        if (staleBeds is not null)
+        {
+            foreach (var bedId in staleBeds) _bedReservations.Remove(bedId);
+        }
+        // Recreation: free the Ur board seat whether the pawn was seated
+        // or still walking to it.
+        if (ent.HasComponent<AtRecreation>())
+        {
+            var ar = ent.GetComponent<AtRecreation>();
+            ReleaseUrSeat(ar.BoardEntityId, ar.SeatTile, ar.Role);
+        }
+        if (ent.HasComponent<RecreationReservation>())
+        {
+            var rr = ent.GetComponent<RecreationReservation>();
+            ReleaseUrSeat(rr.BoardEntityId, rr.SeatTile, rr.Role);
         }
         if (ent.HasComponent<PathFollower>())
         {
