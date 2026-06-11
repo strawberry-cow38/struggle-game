@@ -764,8 +764,17 @@ public partial class WorldRenderer : Node2D
                 var d = snap.Dummies[idx];
                 // Dead colonists are represented by their corpse pile, not a
                 // body sprite — they ride along in snap.Dummies only for the
-                // colonist bar + info panel.
-                if (d.IsDead) continue;
+                // colonist bar + info panel. Still draw a selection bracket on
+                // the corpse tile so picking it reads as selected.
+                if (d.IsDead)
+                {
+                    if (_selectedDummyIdsScratch.Contains(d.EntityId))
+                    {
+                        var dc = new Vector2(d.X * PixelsPerTile, d.Y * PixelsPerTile);
+                        DrawSelectionBrackets(dc, radius + 7f, SelAge(IdKey(1, d.EntityId)), (float)_selTime, rotate: true, color: SelBlue);
+                    }
+                    continue;
+                }
                 float drawX = _prevDummyByIdScratch.TryGetValue(d.EntityId, out var prev)
                     ? Mathf.Lerp(prev.X, d.X, interpAlpha) : d.X;
                 float drawY = DummyDrawY(d);

@@ -230,6 +230,12 @@ public partial class HealthTabPanel : CanvasLayer
         _shownPawn = sel.Value;
 
         var hs = p.Health;
+        // A corpse has no operations — grey out + disable the Operations tab,
+        // and bounce back to Overview if it was open.
+        _opsTab.Disabled = p.IsDead;
+        _opsTab.Modulate = p.IsDead ? new Color(0.55f, 0.55f, 0.6f, 0.6f) : Colors.White;
+        if (p.IsDead && _opsStub.Visible) SetActiveTab(true);
+
         _painValue.Text = $"{hs.Pain * 100f:0}%";
         _painValue.AddThemeColorOverride("font_color", CapColor(1f - hs.Pain)); // high pain = bad
         _bleedValue.Text = $"{hs.BleedRate * 100f:0.0}%";
@@ -237,7 +243,12 @@ public partial class HealthTabPanel : CanvasLayer
 
         // Bleed-out estimate (only while actively bleeding). Game-hours is
         // fixed by the sim; real time scales with the current game speed.
-        if (hs.BleedRate > 0f && Host is not null)
+        if (p.IsDead)
+        {
+            _deathValue.Text = "DEAD";
+            _deathValue.AddThemeColorOverride("font_color", new Color(0.95f, 0.30f, 0.30f));
+        }
+        else if (hs.BleedRate > 0f && Host is not null)
         {
             double gameHours = hs.BloodLevel * SimRuntime.SimSecondsPerRealSecond / (hs.BleedRate * 3600.0);
             double realSec = hs.BloodLevel / (hs.BleedRate * SimConstants.TickSeconds * System.Math.Max(1, Host.TickHz));

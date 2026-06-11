@@ -220,6 +220,8 @@ public partial class DraftActionBar : CanvasLayer
         foreach (var d in snap.Dummies)
             if (d.EntityId == sel.Value) { found = d; break; }
         if (found is not { } p) { HideBar(); return; }
+        // A corpse has no operations — hide the whole action bar (draft + all).
+        if (p.IsDead) { HideBar(); return; }
 
         _shownPawnId = p.EntityId;
         if (!_bar.Visible) _bar.Visible = true;

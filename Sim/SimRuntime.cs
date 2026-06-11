@@ -1594,7 +1594,7 @@ public sealed class SimRuntime
         // buried or lost. No body is rendered for them (the corpse pile is).
         corpseQ.ForEachEntity((ref WorldPos cp, ref Corpse corpse, Entity ce) =>
         {
-            dummiesBuf[i++] = MakeDeadDummy(ce.Id, cp.X, cp.Y, corpse.Name, BuildHealthState(corpse.Health));
+            dummiesBuf[i++] = MakeDeadDummy(ce.Id, cp.X, cp.Y, corpse.Name, BuildDeadHealthState(corpse.Health));
         });
         snap.DummiesCount = i;
         snap.SelectedPaths = selPaths?.ToArray() ?? Array.Empty<PawnPathState>();
@@ -5021,11 +5021,13 @@ public sealed class SimRuntime
         SpawnItemPile(target, path, count);
     }
 
-    // Build a render HealthState from a Health snapshot (live pawn or corpse).
-    private static HealthState BuildHealthState(in Health hc)
+    // A dead colonist's render HealthState: every stat pegged to ZERO (health,
+    // blood, bleed, pain, all capacities) and unconscious. The injury list is
+    // KEPT — wounds + their tended/stabilized state survive for the medical tab
+    // — but none of them bleed anymore (the colonist is dead).
+    private static HealthState BuildDeadHealthState(in Health hc)
     {
         InjuryState[] injuries = Array.Empty<InjuryState>();
-        float bleedRate = 0f;
         if (hc.Injuries is { Count: > 0 })
         {
             injuries = new InjuryState[hc.Injuries.Count];
@@ -5033,12 +5035,10 @@ public sealed class SimRuntime
             {
                 var inj = hc.Injuries[ii];
                 injuries[ii] = new InjuryState(inj.PartId, inj.Kind, inj.Severity, inj.Caliber,
-                    World.HealthSystem.BleedOf(inj), inj.Tended, inj.Stabilized, inj.TendQuality);
-                bleedRate += World.HealthSystem.BleedOf(inj);
+                    0f /* no bleed when dead */, inj.Tended, inj.Stabilized, inj.TendQuality);
             }
         }
-        return new HealthState(hc.BloodLevel, bleedRate, hc.Pain, hc.Consciousness, hc.Moving,
-            hc.Manipulation, hc.Sight, hc.OverallHealth, hc.Unconscious, injuries);
+        return new HealthState(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, true, injuries);
     }
 
     // A corpse's stand-in DummyState: dead, no live state, so the colonist bar
