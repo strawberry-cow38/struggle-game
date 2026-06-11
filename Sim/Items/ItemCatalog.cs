@@ -92,6 +92,11 @@ public sealed class AmmoSpec
     // warhead (HEDP) with barely any splash.
     public float BlastRadius;
     public bool BlastPlus;
+    // Fragmentation: on detonation, spawn this many shrapnel projectiles from
+    // the blast center (0 = none). They fan out + arc down to nearby ground,
+    // wounding whoever they cross — a frag warhead's lethality comes from these
+    // rather than the raw blast.
+    public int FragCount;
 }
 
 // Worn-armor stat block. Defends the listed body parts: a round with sharp
@@ -230,6 +235,7 @@ public static class ItemCatalog
     public static readonly ItemDef RocketFrag;    // green — standard frag
     public static readonly ItemDef RocketHedp;    // blue — HEDP
     public static readonly ItemDef RocketIncend;  // red — incendiary
+    public static readonly ItemDef Fragment;      // internal shrapnel round ("blasted")
     // Consumed per tend/stabilize job.
     public static readonly ItemDef Medicine;
 
@@ -507,7 +513,12 @@ public static class ItemCatalog
         // direct-hit weapon → tiny + shaped splash. Incendiary = same boom as
         // frag for now (ground-fire is a TODO until fire mechanics exist).
         RocketFrag = RegisterItem("RocketFrag", "PG-7 Frag Rocket", Ammo, weight: 2f, bulk: 2f, maxStack: 20,
-            ammo: new AmmoSpec { CategoryPath = RocketCategory, InjuryKind = ConditionKind.Gunshot, Damage = 40f, PenSharp = 8f, PenBlunt = 60f, BlastRadius = 2.6f });
+            ammo: new AmmoSpec { CategoryPath = RocketCategory, InjuryKind = ConditionKind.Gunshot, Damage = 40f, PenSharp = 8f, PenBlunt = 60f, BlastRadius = 2.6f, FragCount = 16 });
+        // Internal shrapnel round — never loadable/dropped, just a stat block the
+        // projectile pipeline looks up for fragment hits. DisplayName == the
+        // wound caliber, so frag wounds read "blasted".
+        Fragment = RegisterItem("Fragment", "blasted", Ammo, weight: 0f, bulk: 0f, maxStack: 1,
+            ammo: new AmmoSpec { CategoryPath = "frag_internal", InjuryKind = ConditionKind.Gunshot, Damage = 16f, PenSharp = 10f, PenBlunt = 24f });
         RocketHedp = RegisterItem("RocketHEDP", "PG-7 HEDP Rocket", Ammo, weight: 2f, bulk: 2f, maxStack: 20,
             ammo: new AmmoSpec { CategoryPath = RocketCategory, InjuryKind = ConditionKind.Gunshot, Damage = 35f, PenSharp = 30f, PenBlunt = 50f, BlastRadius = 1.2f, BlastPlus = true });
         RocketIncend = RegisterItem("RocketIncend", "PG-7 Incendiary Rocket", Ammo, weight: 2f, bulk: 2f, maxStack: 20,

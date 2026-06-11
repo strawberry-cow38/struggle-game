@@ -4663,7 +4663,10 @@ public sealed class SimRuntime
         foreach (var (id, ppx, ppy, bodyH, hitR) in _projPawns)
         {
             if (id == shooterId) continue;
-            if (Math.Abs((int)ppx - muzzleTX) <= 1 && Math.Abs((int)ppy - muzzleTY) <= 1) continue;
+            // The 3x3 muzzle-clear only applies to a real shooter (anti
+            // friendly-fire). Shrapnel (shooterId 0) erupts from the blast
+            // center and MUST be able to hit pawns standing right on it.
+            if (shooterId != 0 && Math.Abs((int)ppx - muzzleTX) <= 1 && Math.Abs((int)ppy - muzzleTY) <= 1) continue;
             float proj = ((ppx - fromX) * ddx + (ppy - fromY) * ddy) / (dist * dist);
             float u = Math.Clamp(proj, 0f, 1f);
             if (u >= bestFrac || u > blockFrac) continue;
@@ -4889,18 +4892,25 @@ public sealed class SimRuntime
     {
         float centerDmg = 35f, radius = 2.6f;
         bool plus = false, incend = false;
+        int fragCount = 0;
         var kind = StruggleGame.Sim.Bodies.ConditionKind.Gunshot;
         if (Items.ItemCatalog.ItemsByPath.TryGetValue(ammoPath, out var def) && def.Ammo is not null)
         {
             centerDmg = def.Ammo.Damage;
             if (def.Ammo.BlastRadius > 0f) radius = def.Ammo.BlastRadius;
             plus = def.Ammo.BlastPlus;
+            fragCount = def.Ammo.FragCount;
             kind = def.Ammo.InjuryKind;
             incend = def.Ammo.InjuryKind == StruggleGame.Sim.Bodies.ConditionKind.Burn;
         }
         // Flash + a dirt kick at ground zero.
         _explosions.Add((cx, cy, radius, incend, SimConstants.ExplosionSec));
         _bloodImpacts.Add((cx, cy, 0f, 0f, 1.4f, true, BloodImpactSec));
+
+        // A fragmentation warhead's lethality is the shrapnel, not the blast —
+        // spray fragments + skip the raw AoE damage. Other warheads (HEDP's
+        // shaped charge, incendiary's fireball) do their splash directly.
+        if (fragCount > 0) { SpawnFragments(cx, cy, fragCount); return; }
 
         int ctx = (int)cx, cty = (int)cy;
         _explodeScratch.Clear();
@@ -4929,9 +4939,32 @@ public sealed class SimRuntime
         var parts = StruggleGame.Sim.Bodies.BodyTree.PunchableParts;
         foreach (var (id, hx, hy, dmg) in _explodeScratch)
         {
-            ApplyInjury(id, parts[_spawnRng.Next(parts.Count)], kind, dmg, "RPG-7");
+            ApplyInjury(id, parts[_spawnRng.Next(parts.Count)], kind, dmg, "blasted");
             _bloodImpacts.Add((hx, hy, SimConstants.BodyAimHeight,
                 (float)(_spawnRng.NextDouble() * Math.PI * 2.0), 0.9f, false, BloodImpactSec));
+        }
+    }
+
+    // Spray shrapnel from a blast: fragments fan out evenly (with jitter) and
+    // arc DOWN to nearby ground (1.5–4 tiles out), so they rake the area around
+    // the blast instead of flying across the map. Each is a normal projectile —
+    // it resolves a hit on whatever it crosses (full coverage near the center,
+    // sparser with distance → natural falloff). Queued for next tick's spawn.
+    private void SpawnFragments(float cx, float cy, int count)
+    {
+        string fragPath = Items.ItemCatalog.Fragment.FullPath;
+        float baseAng = (float)(_spawnRng.NextDouble() * Math.PI * 2.0);
+        for (int i = 0; i < count; i++)
+        {
+            float ang = baseAng + i * (MathF.PI * 2f / count)
+                      + (float)((_spawnRng.NextDouble() - 0.5) * 0.35);
+            float range = 1.5f + (float)_spawnRng.NextDouble() * 2.5f;
+            float tox = cx + MathF.Cos(ang) * range;
+            float toy = cy + MathF.Sin(ang) * range;
+            // ToHeight ~ground: the ballistic solver launches from muzzle height
+            // and arcs the fragment down to the ground at the landing point.
+            _dummies.PendingProjectiles.Add(new ProjectileSpawn(
+                cx, cy, tox, toy, 0.05f, 32f, 0, 0, true, fragPath));
         }
     }
 
