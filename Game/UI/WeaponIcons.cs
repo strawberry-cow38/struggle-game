@@ -38,6 +38,17 @@ public static class WeaponIcons
             "CP33" => empty ? "cp33_nomag" : "cp33",
             "G3" => empty ? "g3_nomag" : "g3",
             "RPD" => empty ? "rpd_nomag" : "rpd",
+            // Non-weapon items (pixel-art icons under assets/items/).
+            "Wood" => "item_wood",
+            "Carrot" => "item_carrot",
+            "Medicine" => "item_medicine",
+            "SimpleMeal" => "item_meal",
+            "KevlarVest" => "item_kevlar",
+            "WoodenTrinket" => "item_trinket",
+            "RifleAmmoAP" or "RifleAmmoHP" or "RifleAmmoFMJ" or "Ammo762x51" or "Ammo762x39" => "ammo_rifle",
+            "Ammo9mm" or "Ammo22lr" => "ammo_pistol",
+            "Ammo12ga" => "ammo_shotgun",
+            "RocketFrag" => "ammo_rocket",
             _ => null,
         };
     }

@@ -218,9 +218,13 @@ public partial class GearTabPanel : CanvasLayer
     private static Control ItemIcon(string itemPath, bool empty, string? ammo)
     {
         var holder = new Control { CustomMinimumSize = new Vector2(IconW, IconH), MouseFilter = Control.MouseFilterEnum.Ignore };
-        if (ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var d) && (d.IsWeapon || d.IsRangedWeapon))
+        bool weapon = ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var d) && (d.IsWeapon || d.IsRangedWeapon);
+        if (weapon || WeaponIcons.Texture(itemPath, empty, ammo) is not null)
         {
-            var kind = d.IsRangedWeapon ? WeaponGlyph.Kind.Ranged : WeaponGlyph.Kind.Melee;
+            // Weapons keep their kind (for the glyph fallback); other items
+            // have art so the kind is unused.
+            var kind = (d?.IsRangedWeapon ?? false) ? WeaponGlyph.Kind.Ranged
+                     : weapon ? WeaponGlyph.Kind.Melee : WeaponGlyph.Kind.Unarmed;
             holder.AddChild(WeaponIcons.Make(itemPath, kind, pad: 1, shadow: true, empty: empty, loadedAmmoPath: ammo));
         }
         else

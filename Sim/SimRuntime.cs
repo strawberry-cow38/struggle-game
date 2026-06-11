@@ -5320,8 +5320,11 @@ public sealed class SimRuntime
         inv.Items ??= new List<InventoryStack>();
         inv.Equipped.Add(new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = ItemCatalog.AssaultRifle.FullPath, Count = 1, MagCount = 20 });
         inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.SubmachineGun.FullPath, Count = 1, MagCount = 30 });
-        inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.WoodenTrinket.FullPath, Count = 1 });
+        inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.KevlarVest.FullPath, Count = 1 });
         inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.Medicine.FullPath, Count = 12 });
+        inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.RifleAmmoFmj.FullPath, Count = 60 });
+        inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.Carrot.FullPath, Count = 5 });
+        inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.WoodenTrinket.FullPath, Count = 1 });
         inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.Wood.FullPath, Count = 40 });
     }
 
