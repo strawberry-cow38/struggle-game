@@ -5318,9 +5318,11 @@ public sealed class SimRuntime
         ref var inv = ref pawn.GetComponent<Inventory>();
         inv.Equipped ??= new List<EquippedItemSlot>();
         inv.Items ??= new List<InventoryStack>();
-        inv.Equipped.Add(new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = ItemCatalog.AssaultRifle.FullPath, Count = 1 });
-        inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.SubmachineGun.FullPath, Count = 1 });
+        inv.Equipped.Add(new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = ItemCatalog.AssaultRifle.FullPath, Count = 1, MagCount = 20 });
+        inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.SubmachineGun.FullPath, Count = 1, MagCount = 30 });
         inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.WoodenTrinket.FullPath, Count = 1 });
+        inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.Medicine.FullPath, Count = 12 });
+        inv.Items.Add(new InventoryStack { ItemPath = ItemCatalog.Wood.FullPath, Count = 40 });
     }
 
     // Drop a general-inventory stack on the ground at the pawn's feet.

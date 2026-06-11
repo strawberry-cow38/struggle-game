@@ -96,6 +96,16 @@ public partial class HarnessController : Node2D
                 _schedule.Add((3.0, h => h.Finish("pocketsand done"), "finish"));
                 _screenshotEverySec = double.PositiveInfinity;
                 break;
+            case "gear":
+                // Gear pane demo: give the lowest pawn a loadout, select it,
+                // open the Gear tab, and screenshot.
+                _schedule.Add((0.3, h => h.SetCameraZoom(3.0f), "zoom"));
+                _schedule.Add((0.5, h => h.GiveLowestSidearms(), "give gear"));
+                _schedule.Add((1.0, h => h.OpenGearForLowest(), "select + open gear"));
+                _schedule.Add((2.2, h => h.Screenshot(), "shot"));
+                _schedule.Add((3.0, h => h.Finish("gear done"), "finish"));
+                _screenshotEverySec = double.PositiveInfinity;
+                break;
             case "tileinfo":
                 // Selection-panel demo: build a wall, select it, screenshot the
                 // (now colonist-pane-styled) info panel bottom-left.
@@ -1052,6 +1062,14 @@ public partial class HarnessController : Node2D
         Host.QueueCommand(new DebugHealthDemoCommand(id));
         Host.SelectedDummyId = id; // opens the pawn card so the health tab anchors above it
         if (GetTree().Root.FindChild("HealthTabPanel", true, false) is StruggleGame.Game.UI.HealthTabPanel panel)
+            panel.OpenFor(id);
+    }
+
+    private void OpenGearForLowest()
+    {
+        if (LowestPawnId() is not int id) return;
+        Host.SelectedDummyId = id; // opens the pawn card so the gear pane anchors above it
+        if (GetTree().Root.FindChild("GearTabPanel", true, false) is StruggleGame.Game.UI.GearTabPanel panel)
             panel.OpenFor(id);
     }
 
