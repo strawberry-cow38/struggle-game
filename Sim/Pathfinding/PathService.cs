@@ -120,7 +120,14 @@ public sealed class PathService
             catch { path = null; }
             var result = new PathResult(
                 path is null ? PathStatus.NoPath : PathStatus.Found, path, item.View.Version);
-            if (_pending.ContainsKey(item.Id)) _ready[item.Id] = result;
+            // Store first, THEN re-check _pending. Checking before storing
+            // left a TOCTOU gap: a Discard between the check and the store
+            // (it removes _pending then _ready) would leave a stale _ready
+            // entry nothing ever consumes. With store-then-check, every
+            // interleaving ends clean — either Discard sweeps the stored
+            // result, or we see the id gone and remove it ourselves.
+            _ready[item.Id] = result;
+            if (!_pending.ContainsKey(item.Id)) _ready.TryRemove(item.Id, out _);
         }
     }
 

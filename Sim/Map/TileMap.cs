@@ -68,7 +68,15 @@ public sealed class TileMap
     }
     public void SetFlooring(TilePos p, FlooringType t) => SetFlooring(p.X, p.Y, t);
 
-    public WallType GetWall(int x, int y) => (WallType)_walls[Index(x, y)];
+    // Wall reads use Volatile.Read: the Godot main thread calls GetWall /
+    // Walkable directly (WallInfoPanel, Selector) while the sim thread
+    // writes via SetWall. _walls is allocated once and never replaced, so
+    // a single byte element read can't tear; the volatile read just keeps
+    // the JIT from caching a stale value across the racing write. Worst
+    // case is a one-frame-stale wall byte, which is fine for UI reads —
+    // an explicit lock here would cost more on the hot sim-side callers
+    // of these same accessors than the race ever could.
+    public WallType GetWall(int x, int y) => (WallType)Volatile.Read(ref _walls[Index(x, y)]);
     public WallType GetWall(TilePos p) => GetWall(p.X, p.Y);
     public void SetWall(int x, int y, WallType t)
     {
@@ -95,7 +103,7 @@ public sealed class TileMap
     public bool IsBorder(int x, int y) => x == 0 || y == 0 || x == Width - 1 || y == Height - 1;
     public bool IsBorder(TilePos p) => IsBorder(p.X, p.Y);
 
-    public bool Walkable(int x, int y) => InBounds(x, y) && !IsBorder(x, y) && _walls[Index(x, y)] == 0;
+    public bool Walkable(int x, int y) => InBounds(x, y) && !IsBorder(x, y) && Volatile.Read(ref _walls[Index(x, y)]) == 0;
     public bool Walkable(TilePos p) => Walkable(p.X, p.Y);
 
     public ReadOnlySpan<byte> RawTerrain => _terrain;

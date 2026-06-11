@@ -258,6 +258,13 @@ public partial class WorldRenderer : Node2D
     public override void _Process(double delta)
     {
         _selTime += delta;
+        // Tell the sim the oldest snapshot slot we may still read
+        // (interpolation keeps _prevSnap alive across frames) so
+        // BuildSnapshot never recycles it while _Draw iterates its
+        // pooled arrays. Everything else on the main thread reads
+        // LatestSnapshot fresh, which is always newer than _prevSnap.
+        long heldSeq = _prevSnap?.SeqId ?? _currSnap?.SeqId ?? 0;
+        if (heldSeq != 0 && Host is not null) Host.ReportRenderHeld(heldSeq);
         QueueRedraw();
         _visualLighting?.Tick();
     }

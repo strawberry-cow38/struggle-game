@@ -83,6 +83,12 @@ public sealed class SimHost : IDisposable
 
     public SimSnapshot? LatestSnapshot => Volatile.Read(ref _latest);
 
+    // Render thread reports the oldest snapshot SeqId it may still touch
+    // (WorldRenderer's interpolation _prevSnap) so BuildSnapshot never
+    // recycles that slot mid-draw. A reroll race just leaves the new
+    // runtime conservative until the next frame's report.
+    public void ReportRenderHeld(long seqId) => _sim.ReportRenderHeldSeq(seqId);
+
     // Switch tick rate at runtime. Loop reads _tickHz each iteration so the
     // change picks up next tick boundary without a restart.
     public void SetTickHz(int hz)
@@ -244,8 +250,10 @@ public sealed class SimHost : IDisposable
     }
 
     // Read-only accessor for the WallInfoPanel: is the wall at this
-    // tile player-built (deconstructable)?
-    public bool IsPlayerWall(TilePos tile) => _sim.PlayerWalls.Contains(tile);
+    // tile player-built (deconstructable)? Routed through the locked
+    // accessor — the sim thread mutates the player-wall list under
+    // _mapLock, and List.Contains racing an Add/Remove is undefined.
+    public bool IsPlayerWall(TilePos tile) => _sim.IsPlayerWallForRender(tile);
 
     // Bed placement legality check for the designator's preview overlay.
     // Synchronizes against the sim loop so the dict/set reads can't race
@@ -297,8 +305,10 @@ public sealed class SimHost : IDisposable
     public byte[] CopyLightRgbForRender() => _sim.CopyLightRgbForRender();
 
     // 0..1 light fraction at a tile: brightest of the per-lamp light and
-    // (when unroofed) the current sun level.
-    public float LightAt(StruggleGame.Sim.Map.TilePos tile) => _sim.LightAt(tile);
+    // (when unroofed) the current sun level. Routed through the locked
+    // accessor — the sim thread rewrites (and can replace) the lamp/roof
+    // arrays under _mapLock.
+    public float LightAt(StruggleGame.Sim.Map.TilePos tile) => _sim.LightAtForRender(tile);
 
     private static bool SelectionArrayEquals(int[] a, int[] b)
     {

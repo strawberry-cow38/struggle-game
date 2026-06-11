@@ -39,6 +39,9 @@ public sealed class SimRuntime
     public long RoomVersion { get; private set; }
     public int RoomCount { get; private set; }
     private int[] _roomTiles = Array.Empty<int>();
+    // Spare buffer DoRecomputeRooms fills before publishing (double
+    // buffer, see RoomIdAt) — never read directly.
+    private int[] _roomTilesScratch = Array.Empty<int>();
     // Roof layer. Both arrays are y*Width + x indexed.
     //   _roofTiles    : 1 = roofed (auto from room recompute OR painted by
     //                   the player's roof designator). Persists across
@@ -492,7 +495,9 @@ public sealed class SimRuntime
         if (_mapDirty) { DoRebuildMapView(); _mapDirty = false; }
         if (_roomsDirty) { DoRecomputeRooms(); _roomsDirty = false; }
         if (_lightDirty) { RecomputeLampLight(); _lightDirty = false; }
-        if (_sunDirty) { _lastSunR = sR; _lastSunG = sG; _lastSunB = sB; LightVersion++; _sunDirty = false; }
+        // _mapLock: render-thread light reads compose the sun triple under
+        // the lock; updating it inside too keeps the three bytes coherent.
+        if (_sunDirty) { lock (_mapLock) { _lastSunR = sR; _lastSunG = sG; _lastSunB = sB; } LightVersion++; _sunDirty = false; }
         Tick++;
         Watcher.Observe(Tick, Store, Jobs);
 #if DEBUG
@@ -1163,13 +1168,32 @@ public sealed class SimRuntime
         return true;
     }
 
-    // Double-buffered snapshot. We alternate which slot BuildSnapshot
-    // writes into so the renderer can keep reading the previously
-    // published instance while the next one is being assembled. Section
-    // arrays inside each slot are pooled + reused across ticks.
-    private readonly SimSnapshot _snapSlotA = new();
-    private readonly SimSnapshot _snapSlotB = new();
-    private bool _useSlotA;
+    // Pooled snapshot slots. BuildSnapshot recycles a slot only when the
+    // render thread can no longer be holding it: WorldRenderer reports
+    // (via ReportRenderHeldSeq) the oldest snapshot SeqId it may still
+    // read (the interpolation _prevSnap), and we only reuse slots
+    // strictly older than both that watermark and the most recently
+    // published slot. The old fixed double-buffer could be lapped — two
+    // sim ticks between render polls meant the sim rewrote the very slot
+    // the renderer was iterating, tearing pawn reads. If every slot is
+    // potentially held the pool grows (capped); past the cap we fall
+    // back to the oldest slot, matching the old double-buffer behavior.
+    // Cap sizing: the watermark only advances once per render frame, so
+    // a fast sim needs ticks-per-frame (6 at 6x speed / 60 fps) + the
+    // renderer's prev/curr pair before any slot frees up.
+    private readonly List<SimSnapshot> _snapSlots = new() { new(), new() };
+    private const int MaxSnapSlots = 10;
+    private long _lastSnapSeq;
+    // 0 = no report yet → assume the render thread may hold anything.
+    private long _renderHeldSeq;
+    // Static so SeqIds stay monotonic across Reroll — the renderer's held
+    // report can lag one runtime behind and must stay conservative.
+    private static long _snapSeqCounter;
+
+    // Render thread → sim: "I will never again touch a snapshot with
+    // SeqId below this". Monotonic per reader; Volatile pairs with the
+    // read in BuildSnapshot's slot pick.
+    public void ReportRenderHeldSeq(long seq) => Volatile.Write(ref _renderHeldSeq, seq);
 
     // Cached query objects — Friflo queries are live reusable views; caching
     // avoids the ~640-byte allocation per Store.Query<>() call on every tick.
@@ -1232,8 +1256,27 @@ public sealed class SimRuntime
 
     public SimSnapshot BuildSnapshot(int? selectedDummyId = null, int[]? selectedDummyIds = null, IReadOnlyCollection<int>? selectedTreeIds = null, IReadOnlyCollection<int>? selectedWoodIds = null, IReadOnlyCollection<int>? selectedCropIds = null, IReadOnlyCollection<TilePos>? selectedBlueprintTiles = null)
     {
-        _useSlotA = !_useSlotA;
-        var snap = _useSlotA ? _snapSlotA : _snapSlotB;
+        // Pick the oldest slot the render thread has promised it no longer
+        // holds (SeqId 0 = never published, always free). Never reuse the
+        // most recently built slot — it's the published _latest and can be
+        // acquired by the render thread at any moment.
+        long held = Volatile.Read(ref _renderHeldSeq);
+        SimSnapshot? snap = null;
+        SimSnapshot? oldestSlot = null;
+        for (int si = 0; si < _snapSlots.Count; si++)
+        {
+            var s = _snapSlots[si];
+            if (oldestSlot is null || s.SeqId < oldestSlot.SeqId) oldestSlot = s;
+            bool free = s.SeqId == 0 || (s.SeqId < held && s.SeqId != _lastSnapSeq);
+            if (free && (snap is null || s.SeqId < snap.SeqId)) snap = s;
+        }
+        if (snap is null)
+        {
+            if (_snapSlots.Count < MaxSnapSlots) { snap = new SimSnapshot(); _snapSlots.Add(snap); }
+            else snap = oldestSlot!; // degraded fallback: no reports (headless) or a stalled renderer
+        }
+        snap.SeqId = Interlocked.Increment(ref _snapSeqCounter);
+        _lastSnapSeq = snap.SeqId;
 
         _selBpTiles.Clear();
         if (selectedBlueprintTiles != null) foreach (var t in selectedBlueprintTiles) _selBpTiles.Add(t);
@@ -3343,6 +3386,15 @@ public sealed class SimRuntime
     }
 
     public IReadOnlyList<TilePos> PlayerWalls => _playerWalls;
+
+    // Render-thread accessor: _playerWalls is mutated under _mapLock on
+    // the sim thread (wall build/decon), so take the same lock here
+    // instead of letting the main thread run Contains over a list whose
+    // backing array can be reallocated mid-scan.
+    public bool IsPlayerWallForRender(TilePos tile)
+    {
+        lock (_mapLock) { return _playerWalls.Contains(tile); }
+    }
 
     // Post a door-deconstruct job. The door entity sticks around until
     // completion; the job carries a fresh Decon marker so DeconSystem
@@ -5952,24 +6004,30 @@ public sealed class SimRuntime
 
     // Per-tile room id lookup. 0 = outdoor faux room (including barrier
     // tiles); 1..RoomCount = enclosed interior. Returns -1 for out-of-
-    // bounds. Reads _roomTiles directly — caller is the sim thread or
-    // the render thread under _mapLock semantics (snapshot publishing
-    // guarantees stability between recompute and snapshot read).
+    // bounds. Lock-free: DoRecomputeRooms flood-fills a spare buffer and
+    // publishes the finished array with a Volatile.Write, and this read
+    // grabs the reference once — a render-thread caller (HUD hover
+    // readout) sees either the old or the new fully-computed map, worst
+    // case one recompute stale. Never reads a half-filled buffer.
     public int RoomIdAt(TilePos tile)
     {
         if (!Map.InBounds(tile)) return -1;
         int idx = tile.Y * Map.Width + tile.X;
-        if (idx < 0 || idx >= _roomTiles.Length) return -1;
-        return _roomTiles[idx];
+        var roomTiles = Volatile.Read(ref _roomTiles);
+        if (idx < 0 || idx >= roomTiles.Length) return -1;
+        return roomTiles[idx];
     }
 
     // Fixed-figure room temperature. Outdoor = OutdoorTempC; every
     // enclosed room clamps to IndoorTempC. Returns OutdoorTempC for
-    // unknown ids so out-of-range reads degrade gracefully.
+    // unknown ids so out-of-range reads degrade gracefully. Same
+    // publish-then-read discipline as RoomIdAt (render thread calls this
+    // for the HUD readout).
     public float RoomTempC(int roomId)
     {
-        if (roomId < 0 || roomId >= _roomTemps.Length) return SimConstants.OutdoorTempC;
-        return _roomTemps[roomId];
+        var temps = Volatile.Read(ref _roomTemps);
+        if (roomId < 0 || roomId >= temps.Length) return SimConstants.OutdoorTempC;
+        return temps[roomId];
     }
 
     // Tile temperature = the temperature of the room the tile is in.
@@ -6071,17 +6129,26 @@ public sealed class SimRuntime
     {
         int w = Map.Width, h = Map.Height;
         int n = w * h;
-        if (_roomTiles.Length != n) _roomTiles = new int[n];
+        // Flood-fill into the spare buffer and only publish the finished
+        // array (Volatile.Write, paired with the Volatile.Read in
+        // RoomIdAt) so a render-thread room lookup never observes a
+        // half-computed map. The replaced array becomes the next spare.
+        var next = _roomTilesScratch;
+        if (next.Length != n) next = new int[n];
         // Only player walls + doors enclose rooms. Procgen walls are
         // terrain, not room boundaries — empty maps should report 0
         // rooms. Outdoor (border-touching) components also collapse to 0.
-        int count = RoomMap.Compute(w, h, _playerWalls, _doorMap.Keys, _roomTiles);
+        int count = RoomMap.Compute(w, h, _playerWalls, _doorMap.Keys, next);
+        _roomTilesScratch = _roomTiles;
+        Volatile.Write(ref _roomTiles, next);
         RoomCount = count;
-        // Resize + repopulate the per-room temperature table. Index 0 is
-        // always the outdoor faux room; ids 1..count are interiors.
-        if (_roomTemps.Length != count + 1) _roomTemps = new float[count + 1];
-        _roomTemps[0] = SimConstants.OutdoorTempC;
-        for (int i = 1; i <= count; i++) _roomTemps[i] = SimConstants.IndoorTempC;
+        // Rebuild the per-room temperature table into a fresh array (it's
+        // tiny) and publish it the same way. Index 0 is always the
+        // outdoor faux room; ids 1..count are interiors.
+        var temps = new float[count + 1];
+        temps[0] = SimConstants.OutdoorTempC;
+        for (int i = 1; i <= count; i++) temps[i] = SimConstants.IndoorTempC;
+        Volatile.Write(ref _roomTemps, temps);
         RoomVersion++;
 
         AutoRoofAfterRecompute();
@@ -6390,22 +6457,28 @@ public sealed class SimRuntime
 
     private void EnsureRoofArrays(int w, int h)
     {
-        int n = w * h;
-        if (_roofTiles.Length != n) _roofTiles = new byte[n];
-        if (_noRoofTiles.Length != n) _noRoofTiles = new byte[n];
-        if (_lampR.Length != n)
+        // _mapLock: the render thread reads these arrays via
+        // LightAtForRender / CopyRoofTilesForRender etc., so replacing
+        // the references must be mutually exclusive with those reads.
+        lock (_mapLock)
         {
-            _lampR = new byte[n];
-            _lampG = new byte[n];
-            _lampB = new byte[n];
-            // Lamp buffer starts at zero — no lamps placed yet. Sun is
-            // composed in at read time so we only need to seed the
-            // global sun triple here.
-            ComputeSun(_worldTimeSec, out byte sR, out byte sG, out byte sB);
-            _lastSunR = sR; _lastSunG = sG; _lastSunB = sB;
-            LightVersion++;
+            int n = w * h;
+            if (_roofTiles.Length != n) _roofTiles = new byte[n];
+            if (_noRoofTiles.Length != n) _noRoofTiles = new byte[n];
+            if (_lampR.Length != n)
+            {
+                _lampR = new byte[n];
+                _lampG = new byte[n];
+                _lampB = new byte[n];
+                // Lamp buffer starts at zero — no lamps placed yet. Sun is
+                // composed in at read time so we only need to seed the
+                // global sun triple here.
+                ComputeSun(_worldTimeSec, out byte sR, out byte sG, out byte sB);
+                _lastSunR = sR; _lastSunG = sG; _lastSunB = sB;
+                LightVersion++;
+            }
+            EnsureLightChunkArrays(w, h);
         }
-        EnsureLightChunkArrays(w, h);
     }
 
     // Day/night sun. Hour-of-day drives intensity (smoothstep ramps over
@@ -6719,6 +6792,15 @@ public sealed class SimRuntime
     // touch lamps.
     private void RecomputeLampLight()
     {
+        // _mapLock: the render thread reads _lampR/G/B (LightAtForRender)
+        // and the chunk bookkeeping (CopyLightRgbForRender) under this
+        // lock; the rewrite below must not interleave with those reads.
+        // Runs at most once per tick via the _lightDirty coalesce flag.
+        lock (_mapLock) RecomputeLampLightLocked();
+    }
+
+    private void RecomputeLampLightLocked()
+    {
         // Phase 1: bring all dirty bakes up to date (this marks their
         // old + new chunks dirty via un/subscribe).
         foreach (var (tile, lampEnt) in _lampMap)
@@ -6870,8 +6952,20 @@ public sealed class SimRuntime
         }
     }
 
+    // Render-thread accessor for LightAt (HUD hover readout). Takes
+    // _mapLock so it can't race RecomputeLampLight / EnsureRoofArrays on
+    // the sim thread (both write the lamp/roof arrays under the same
+    // lock, and EnsureRoofArrays can replace the array references
+    // outright). Sim-thread callers use LightAt directly — they can't
+    // race the recompute because it also runs on the sim thread.
+    public float LightAtForRender(TilePos tile)
+    {
+        lock (_mapLock) { return LightAt(tile); }
+    }
+
     // 0..1 brightness at a tile. Composes lamp + (sun if unroofed) on
-    // demand. Out-of-bounds reads as dark (0).
+    // demand. Out-of-bounds reads as dark (0). Sim thread only — the
+    // render thread goes through LightAtForRender.
     public float LightAt(TilePos tile)
     {
         if (!Map.InBounds(tile)) return 0f;

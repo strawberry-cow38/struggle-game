@@ -4,13 +4,17 @@ using StruggleGame.Sim.World;
 
 namespace StruggleGame.Sim.Snapshots;
 
-// Per-tick render data. SimRuntime maintains two of these (a double
-// buffer) and alternates which slot it fills each tick, so the renderer
-// can keep reading the previously published instance while the next is
-// being built. Section arrays are oversized + reused across ticks; the
-// public SnapshotList<T> view exposes only the valid prefix.
+// Per-tick render data. SimRuntime maintains a small pool of these and
+// fills the oldest slot the renderer can no longer be holding (see the
+// SeqId watermark protocol in SimRuntime.BuildSnapshot), so the renderer
+// can keep reading published instances while the next is being built.
+// Section arrays are oversized + reused across ticks; the public
+// SnapshotList<T> view exposes only the valid prefix.
 public sealed class SimSnapshot
 {
+    // Monotonic build sequence id. The renderer reports the smallest
+    // SeqId it may still touch so the sim never recycles that slot.
+    public long SeqId { get; internal set; }
     public long Tick { get; internal set; }
     public long MapVersion { get; internal set; }
     public long WallVersion { get; internal set; }
