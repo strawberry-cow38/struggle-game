@@ -199,9 +199,11 @@ public partial class GearTabPanel : CanvasLayer
         return l;
     }
 
+    // Standard themed button (same as the rest of the UI), sized for a row.
     private static Button ActionBtn(string text)
     {
-        var b = new Button { Text = text, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(64, 24) };
+        var b = UiTheme.ActionButton(text);
+        b.CustomMinimumSize = new Vector2(64, 26);
         b.AddThemeFontSizeOverride("font_size", 12);
         return b;
     }
