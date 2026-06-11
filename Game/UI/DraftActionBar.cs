@@ -583,7 +583,7 @@ public partial class DraftActionBar : CanvasLayer
 
     // One weapon square: path, icon kind, active flag. Path "" = Unarmed,
     // a null entry = an empty square.
-    private readonly record struct WpnSeg(string Path, WeaponGlyph.Kind Kind, bool Active, bool Empty, string? AmmoPath);
+    private readonly record struct WpnSeg(string Path, WeaponGlyph.Kind Kind, bool Active, bool Empty, string? AmmoPath, bool SecEmpty = false);
 
     // Up to 3 carried weapons (equipped + pocketed, de-duped) fill the first
     // three squares; the 4th is always Unarmed. Empty squares pad the grid to
@@ -595,6 +595,7 @@ public partial class DraftActionBar : CanvasLayer
         bool anyEquipped = false;
         int pawnMag = p.RangedMag;          // local copies — `in p` can't be captured
         string? pawnAmmo = p.LoadedAmmoPath;
+        bool pawnSecEmpty = p.HasSecondary && p.SecMag <= 0;
 
         void Consider(string path, bool equipped)
         {
@@ -606,7 +607,9 @@ public partial class DraftActionBar : CanvasLayer
             // empty, and its loaded ammo (RPG warhead colour).
             bool empty = equipped && def.IsRangedWeapon && pawnMag == 0;
             string? ammo = equipped && def.IsRangedWeapon ? pawnAmmo : null;
-            weapons.Add(new WpnSeg(path, def.IsRangedWeapon ? WeaponGlyph.Kind.Ranged : WeaponGlyph.Kind.Melee, equipped, empty, ammo));
+            // Empty grenade tube (M203) swaps the active sprite to no-grenade.
+            bool secEmpty = equipped && def.RangedSecondary is not null && pawnSecEmpty;
+            weapons.Add(new WpnSeg(path, def.IsRangedWeapon ? WeaponGlyph.Kind.Ranged : WeaponGlyph.Kind.Melee, equipped, empty, ammo, secEmpty));
         }
 
         foreach (var eq in p.Equipped) Consider(eq.ItemPath, equipped: true);
@@ -692,7 +695,7 @@ public partial class DraftActionBar : CanvasLayer
 
         // Pixel-art icon if the item has one (assets/items/<key>.png);
         // otherwise the vector WeaponGlyph for that weapon kind.
-        btn.AddChild(WeaponIcons.Make(s.Path, s.Kind, empty: s.Empty, loadedAmmoPath: s.AmmoPath));
+        btn.AddChild(WeaponIcons.Make(s.Path, s.Kind, empty: s.Empty, loadedAmmoPath: s.AmmoPath, secEmpty: s.SecEmpty));
 
         string path = s.Path;
         btn.Pressed += () =>

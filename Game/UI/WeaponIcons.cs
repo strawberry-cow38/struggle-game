@@ -18,7 +18,7 @@ public static class WeaponIcons
     // itemPath (+ empty-mag state) -> asset file stem. null = no art (use the
     // vector glyph). Empty mag swaps to the "<gun>_nomag" sprite where one
     // exists (the M700 is an internal-mag bolt rifle, so it has none).
-    private static string? ResolveFile(string itemPath, bool empty, string? loadedAmmoPath)
+    private static string? ResolveFile(string itemPath, bool empty, string? loadedAmmoPath, bool secEmpty = false)
     {
         if (string.IsNullOrEmpty(itemPath)) return null;
         // ItemsByPath is keyed by FullPath ("Equipment/AssaultRifle"); match on
@@ -29,8 +29,14 @@ public static class WeaponIcons
             // RPG warhead colour = the loaded rocket type (empty = no rocket).
             "RPG7" => empty ? "rpg_empty" : RpgFile(loadedAmmoPath),
             "AssaultRifle" => empty ? "m16_nomag" : "m16",
-            // No no-mag edit yet — texture preview, always the full sprite.
-            "M16M203" => "m16m203",
+            // Two-axis variant: rifle mag x grenade tube (secEmpty = no grenade).
+            "M16M203" => (empty, secEmpty) switch
+            {
+                (false, false) => "m16m203",
+                (false, true) => "m16m203_nogren",
+                (true, false) => "m16m203_nomag",
+                (true, true) => "m16m203_nomag_nogren",
+            },
             "SubmachineGun" => empty ? "mp5_nomag" : "mp5",
             "BoltActionRifle" => "m700",
             "AKM" => empty ? "akm_nomag" : "akm",
@@ -115,9 +121,10 @@ public static class WeaponIcons
     }
 
     // Art texture for an item (empty = show the no-mag variant; loadedAmmoPath
-    // colours the RPG warhead), or null if it has no pixel art.
-    public static ImageTexture? Texture(string itemPath, bool empty = false, string? loadedAmmoPath = null)
-        => TextureByFile(ResolveFile(itemPath, empty, loadedAmmoPath));
+    // colours the RPG warhead; secEmpty = empty grenade tube), or null if it
+    // has no pixel art.
+    public static ImageTexture? Texture(string itemPath, bool empty = false, string? loadedAmmoPath = null, bool secEmpty = false)
+        => TextureByFile(ResolveFile(itemPath, empty, loadedAmmoPath, secEmpty));
 
     // How big a DROPPED weapon draws relative to a tile (1.0 = fills the tile).
     // Long guns fill it; small arms scale down so a pistol doesn't read as
@@ -133,8 +140,8 @@ public static class WeaponIcons
     }
 
     // Drop-shadow silhouette matching Texture(...).
-    public static ImageTexture? Silhouette(string itemPath, bool empty = false, string? loadedAmmoPath = null)
-        => SilhouetteByFile(ResolveFile(itemPath, empty, loadedAmmoPath));
+    public static ImageTexture? Silhouette(string itemPath, bool empty = false, string? loadedAmmoPath = null, bool secEmpty = false)
+        => SilhouetteByFile(ResolveFile(itemPath, empty, loadedAmmoPath, secEmpty));
 
     private static ImageTexture? UnarmedTexture() => TextureByFile("fist");
     private static ImageTexture? UnarmedSilhouette() => SilhouetteByFile("fist");
@@ -149,10 +156,10 @@ public static class WeaponIcons
     // An icon control that fills its parent rect (inset by pad): a TextureRect
     // when the item has art (or the fist for unarmed), otherwise the vector
     // WeaponGlyph. shadow lays a fat soft dark drop shadow behind the sprite.
-    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool shadow = false, bool empty = false, string? loadedAmmoPath = null)
+    public static Control Make(string itemPath, WeaponGlyph.Kind kind, int pad = 4, bool shadow = false, bool empty = false, string? loadedAmmoPath = null, bool secEmpty = false)
     {
-        var tex = Texture(itemPath, empty, loadedAmmoPath);
-        var sil = shadow ? Silhouette(itemPath, empty, loadedAmmoPath) : null;
+        var tex = Texture(itemPath, empty, loadedAmmoPath, secEmpty);
+        var sil = shadow ? Silhouette(itemPath, empty, loadedAmmoPath, secEmpty) : null;
         if (tex is null && kind == WeaponGlyph.Kind.Unarmed)
         {
             tex = UnarmedTexture();

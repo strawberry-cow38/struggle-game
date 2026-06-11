@@ -510,7 +510,9 @@ public partial class ColonistBar : CanvasLayer
         foreach (var ch in holder.GetChildren()) { holder.RemoveChild(ch); ch.QueueFree(); }
         var (path, kind) = WeaponIcons.PickEquipped(d);
         bool empty = kind == WeaponGlyph.Kind.Ranged && d.RangedMag == 0;
-        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2, shadow: true, empty: empty, loadedAmmoPath: d.LoadedAmmoPath));
+        // Empty grenade tube swaps to the no-grenade variant (M203).
+        bool secEmpty = d.HasSecondary && d.SecMag <= 0;
+        holder.AddChild(WeaponIcons.Make(path, kind, pad: 2, shadow: true, empty: empty, loadedAmmoPath: d.LoadedAmmoPath, secEmpty: secEmpty));
     }
 
     private void Reposition()

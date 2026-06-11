@@ -1236,9 +1236,11 @@ public partial class WorldRenderer : Node2D
         var (path, kind) = StruggleGame.Game.UI.WeaponIcons.PickEquipped(d);
         if (kind != StruggleGame.Game.UI.WeaponGlyph.Kind.Ranged) return;
         // Empty mag (reloading / out of ammo) shows the no-mag sprite; the
-        // loaded ammo colours an RPG's warhead.
+        // loaded ammo colours an RPG's warhead; an empty grenade tube shows
+        // the no-grenade variant (M203).
         bool empty = d.RangedMag == 0;
-        var tex = StruggleGame.Game.UI.WeaponIcons.Texture(path, empty, d.LoadedAmmoPath);
+        bool secEmpty = d.HasSecondary && d.SecMag <= 0;
+        var tex = StruggleGame.Game.UI.WeaponIcons.Texture(path, empty, d.LoadedAmmoPath, secEmpty);
         if (tex is null) return;
 
         float aspect = (float)tex.GetWidth() / tex.GetHeight();
@@ -1264,7 +1266,7 @@ public partial class WorldRenderer : Node2D
         // Fat soft drop shadow: dark silhouette copies offset down-right in
         // screen space, scaled to the gun length so it hugs the gun (same
         // proportions as the UI icon, not a floaty fixed gap).
-        var sil = StruggleGame.Game.UI.WeaponIcons.Silhouette(path, empty, d.LoadedAmmoPath);
+        var sil = StruggleGame.Game.UI.WeaponIcons.Silhouette(path, empty, d.LoadedAmmoPath, secEmpty);
         if (sil is not null)
         {
             var shadow = new Color(0f, 0f, 0f, 0.16f);
@@ -1711,10 +1713,11 @@ public partial class WorldRenderer : Node2D
         // random tilt (kept upright, never flipped over) so a scatter of dropped
         // guns looks natural.
         bool empty = p.MagCount <= 0;
-        var icon = StruggleGame.Game.UI.WeaponIcons.Texture(p.ItemPath, empty, p.LoadedAmmoPath);
+        bool secEmpty = p.SecMagCount <= 0;
+        var icon = StruggleGame.Game.UI.WeaponIcons.Texture(p.ItemPath, empty, p.LoadedAmmoPath, secEmpty);
         if (icon is not null)
         {
-            var sil = StruggleGame.Game.UI.WeaponIcons.Silhouette(p.ItemPath, empty, p.LoadedAmmoPath);
+            var sil = StruggleGame.Game.UI.WeaponIcons.Silhouette(p.ItemPath, empty, p.LoadedAmmoPath, secEmpty);
             DrawItemIcon(icon, sil, center, DroppedTilt(p.EntityId), StruggleGame.Game.UI.WeaponIcons.DropScale(p.ItemPath));
             return;
         }
