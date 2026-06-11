@@ -662,6 +662,10 @@ public struct InventoryStack
 {
     public string ItemPath;
     public int Count;
+    // For a stashed ranged weapon: its magazine, so ammo state survives
+    // unequip/stash. 0 for non-weapons (which can stack; weapons can't).
+    public int MagCount;
+    public string? LoadedAmmoPath;
 }
 
 // Persistent per-pawn inventory: general carried stacks plus equipped
@@ -762,6 +766,10 @@ public struct RangedCombat : IComponent
     public int FireTileX, FireTileY;
     public int MagCount;           // rounds currently in the magazine
     public string? LoadedAmmoPath; // which ammo is chambered (decides the wound)
+    // The equipped ranged weapon this live mag belongs to. When the active
+    // weapon changes (pocket-sand switch, equip), the mag is reloaded from the
+    // new weapon's stored slot so each gun keeps its own ammo.
+    public string? ActiveWeaponPath;
     public string? PreferredAmmoPath; // player-chosen reload ammo; null = any matching
     public StruggleGame.Sim.Items.FireMode Mode;
     public StruggleGame.Sim.Items.TargetArea TargetArea; // body region the shot aims for

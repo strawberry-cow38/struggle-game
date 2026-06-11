@@ -206,11 +206,39 @@ public partial class GearTabPanel : CanvasLayer
         return b;
     }
 
+    private const int IconSize = 28;
+
+    // Fixed-size icon for the left of a gear row: the weapon's art when it has
+    // any, else a small neutral chip so names still line up.
+    private static Control ItemIcon(string itemPath, bool empty, string? ammo)
+    {
+        var holder = new CenterContainer { CustomMinimumSize = new Vector2(IconSize, IconSize), MouseFilter = Control.MouseFilterEnum.Ignore };
+        if (WeaponIcons.Texture(itemPath, empty, ammo) is { } tex)
+        {
+            holder.AddChild(new TextureRect
+            {
+                Texture = tex,
+                CustomMinimumSize = new Vector2(IconSize, IconSize),
+                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            });
+        }
+        else
+        {
+            var chip = new Panel { CustomMinimumSize = new Vector2(IconSize - 8, IconSize - 8), MouseFilter = Control.MouseFilterEnum.Ignore };
+            chip.AddThemeStyleboxOverride("panel", UiTheme.Box(UiTheme.PanelDeep, UiTheme.Border, 1, 4, 0, glow: false));
+            holder.AddChild(chip);
+        }
+        return holder;
+    }
+
     private Control EquippedRow(EquippedSlotState eq)
     {
         var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         row.AddThemeConstantOverride("separation", 6);
-        string name = ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var d) ? d.DisplayName : eq.ItemPath;
+        bool ranged = ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var d) && d.IsRangedWeapon;
+        row.AddChild(ItemIcon(eq.ItemPath, empty: ranged && eq.MagCount <= 0, ammo: eq.LoadedAmmoPath));
+        string name = d is not null ? d.DisplayName : eq.ItemPath;
         var nameLbl = new Label { Text = name, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center };
         nameLbl.AddThemeFontSizeOverride("font_size", 14);
         row.AddChild(nameLbl);
@@ -229,6 +257,8 @@ public partial class GearTabPanel : CanvasLayer
         var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
         row.AddThemeConstantOverride("separation", 6);
         bool equippable = ItemCatalog.ItemsByPath.TryGetValue(h.ItemPath, out var d) && d.Equippable;
+        bool ranged = d is not null && d.IsRangedWeapon;
+        row.AddChild(ItemIcon(h.ItemPath, empty: ranged && h.MagCount <= 0, ammo: h.LoadedAmmoPath));
         string name = d is not null ? d.DisplayName : h.ItemPath;
         var nameLbl = new Label { Text = h.Count > 1 ? $"{name} x{h.Count}" : name, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center };
         nameLbl.AddThemeFontSizeOverride("font_size", 14);

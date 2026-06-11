@@ -288,8 +288,8 @@ public readonly record struct InjuryState(string PartId, StruggleGame.Sim.Bodies
 // Persistent inventory rows for the pawn info panel. Equipped slots and
 // general (held) stacks are indexed by position in their respective
 // component lists; the unequip / force-drop commands take that index.
-public readonly record struct EquippedSlotState(int Index, string ItemPath, int Count, EquipSlot Slot);
-public readonly record struct HeldStackState(int Index, string ItemPath, int Count);
+public readonly record struct EquippedSlotState(int Index, string ItemPath, int Count, EquipSlot Slot, int MagCount = 0, string? LoadedAmmoPath = null);
+public readonly record struct HeldStackState(int Index, string ItemPath, int Count, int MagCount = 0, string? LoadedAmmoPath = null);
 
 // Per-pawn work-tab row data. Priorities[i] is 0..8 (0 = disabled);
 // Allowed[i] is the parallel checkmark-mode state. Both arrays are

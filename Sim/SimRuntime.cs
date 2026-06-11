@@ -1349,7 +1349,7 @@ public sealed class SimRuntime
                     for (int ei = 0; ei < inv.Equipped.Count; ei++)
                     {
                         var es = inv.Equipped[ei];
-                        equipped[ei] = new EquippedSlotState(ei, es.ItemPath, es.Count, es.Slot);
+                        equipped[ei] = new EquippedSlotState(ei, es.ItemPath, es.Count, es.Slot, es.MagCount, es.LoadedAmmoPath);
                         if (ItemCatalog.ItemsByPath.TryGetValue(es.ItemPath, out var def))
                         {
                             carryW += def.Weight * es.Count;
@@ -1363,7 +1363,7 @@ public sealed class SimRuntime
                     for (int hi = 0; hi < inv.Items.Count; hi++)
                     {
                         var hs = inv.Items[hi];
-                        held[hi] = new HeldStackState(hi, hs.ItemPath, hs.Count);
+                        held[hi] = new HeldStackState(hi, hs.ItemPath, hs.Count, hs.MagCount, hs.LoadedAmmoPath);
                         if (ItemCatalog.ItemsByPath.TryGetValue(hs.ItemPath, out var def))
                         {
                             carryW += def.Weight * hs.Count;
@@ -2233,12 +2233,13 @@ public sealed class SimRuntime
     // Drop an ItemPile of (path, count) on the given tile. Used by
     // CookSystem when a meal finishes, by harness scenarios for stocking
     // ingredients, and anything else that needs a runtime drop.
-    public void SpawnItemPile(TilePos tile, string itemPath, int count, int magCount = 0, string? loadedAmmo = null)
+    public void SpawnItemPile(TilePos tile, string itemPath, int count, int magCount = 0, string? loadedAmmo = null, bool forbidden = false)
     {
         if (count <= 0) return;
         var e = Store.CreateEntity();
         e.AddComponent(new WorldPos { X = tile.X + 0.5f, Y = tile.Y + 0.5f });
         e.AddComponent(new ItemPile { Tile = tile, Count = count, ItemPath = itemPath, MagCount = magCount, LoadedAmmoPath = loadedAmmo });
+        if (forbidden) e.AddComponent(new Forbidden());
     }
 
     // Cook callback: consume up to `wanted` items of `itemPath` from any
@@ -5052,7 +5053,9 @@ public sealed class SimRuntime
             if (!_itemIndex.AnyItemAt(t)) { target = t; foundWalkable = true; break; } // prefer empty
             if (!foundWalkable) { target = t; foundWalkable = true; }
         }
-        SpawnItemPile(target, path, count, magCount, loadedAmmo);
+        // Gear dropped off a downed/dead pawn is forbidden until the player says
+        // otherwise (so colonists don't immediately haul a corpse's loot away).
+        SpawnItemPile(target, path, count, magCount, loadedAmmo, forbidden: true);
     }
 
     // A dead colonist's render HealthState: every stat pegged to ZERO (health,
@@ -5211,17 +5214,22 @@ public sealed class SimRuntime
         var slot = inv.Equipped[equipIndex];
         inv.Equipped.RemoveAt(equipIndex);
         inv.Items ??= new List<InventoryStack>();
-        int existing = inv.Items.FindIndex(s => s.ItemPath == slot.ItemPath);
-        if (existing >= 0)
+        StashToInventory(inv.Items, slot);
+    }
+
+    // Move an equipped item into general inventory. Stackable resources merge
+    // into an existing stack; non-stackable gear (weapons/armor) always becomes
+    // its OWN stack so it keeps its per-item state (a gun's magazine).
+    private static void StashToInventory(List<InventoryStack> items, EquippedItemSlot slot)
+    {
+        int cap = ItemCatalog.ItemsByPath.TryGetValue(slot.ItemPath, out var d) ? d.MaxStack : 1;
+        string path = slot.ItemPath; int add = slot.Count;
+        if (cap > 1)
         {
-            var s = inv.Items[existing];
-            s.Count += slot.Count;
-            inv.Items[existing] = s;
+            int ex = items.FindIndex(s => s.ItemPath == path && s.Count + add <= cap);
+            if (ex >= 0) { var s = items[ex]; s.Count += slot.Count; items[ex] = s; return; }
         }
-        else
-        {
-            inv.Items.Add(new InventoryStack { ItemPath = slot.ItemPath, Count = slot.Count });
-        }
+        items.Add(new InventoryStack { ItemPath = slot.ItemPath, Count = slot.Count, MagCount = slot.MagCount, LoadedAmmoPath = slot.LoadedAmmoPath });
     }
 
     // Drop an equipped item on the ground at the pawn's feet.
@@ -5234,7 +5242,7 @@ public sealed class SimRuntime
         var slot = inv.Equipped[equipIndex];
         inv.Equipped.RemoveAt(equipIndex);
         var wp = pawn.GetComponent<WorldPos>();
-        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), slot.ItemPath, slot.Count, slot.MagCount, slot.LoadedAmmoPath);
+        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), slot.ItemPath, slot.Count, slot.MagCount, slot.LoadedAmmoPath, forbidden: true);
     }
 
     // Equip one unit of a general-inventory stack that's already on the
@@ -5249,11 +5257,13 @@ public sealed class SimRuntime
         var stack = inv.Items[heldIndex];
         if (!ItemCatalog.ItemsByPath.TryGetValue(stack.ItemPath, out var def) || !def.Equippable) return;
         stack.Count -= 1;
+        // Carry the stashed weapon's magazine back onto the equipped slot.
+        int mag = stack.MagCount; string? ammo = stack.LoadedAmmoPath;
         if (stack.Count <= 0) inv.Items.RemoveAt(heldIndex);
         else inv.Items[heldIndex] = stack;
         inv.Equipped ??= new List<EquippedItemSlot>();
         var slot = def.IsArmor ? EquipSlot.Apparel : EquipSlot.Generic;
-        inv.Equipped.Add(new EquippedItemSlot { Slot = slot, ItemPath = stack.ItemPath, Count = 1 });
+        inv.Equipped.Add(new EquippedItemSlot { Slot = slot, ItemPath = stack.ItemPath, Count = 1, MagCount = mag, LoadedAmmoPath = ammo });
     }
 
     // Pocket Sand: stash every currently-equipped WEAPON back into the pocket
@@ -5274,18 +5284,17 @@ public sealed class SimRuntime
             if (!ItemCatalog.ItemsByPath.TryGetValue(slot.ItemPath, out var d)) continue;
             if (!d.IsWeapon && !d.IsRangedWeapon) continue;
             inv.Equipped.RemoveAt(i);
-            int ex = inv.Items.FindIndex(s => s.ItemPath == slot.ItemPath);
-            if (ex >= 0) { var s = inv.Items[ex]; s.Count += slot.Count; inv.Items[ex] = s; }
-            else inv.Items.Add(new InventoryStack { ItemPath = slot.ItemPath, Count = slot.Count });
+            StashToInventory(inv.Items, slot); // keeps the weapon's magazine
         }
 
         if (string.IsNullOrEmpty(itemPath)) return; // unarmed
         int hi = inv.Items.FindIndex(s => s.ItemPath == itemPath);
         if (hi < 0 || !ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var def) || !def.Equippable) return;
         var st = inv.Items[hi];
+        int mag = st.MagCount; string? ammo = st.LoadedAmmoPath;
         st.Count -= 1;
         if (st.Count <= 0) inv.Items.RemoveAt(hi); else inv.Items[hi] = st;
-        inv.Equipped.Add(new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = itemPath, Count = 1 });
+        inv.Equipped.Add(new EquippedItemSlot { Slot = EquipSlot.Generic, ItemPath = itemPath, Count = 1, MagCount = mag, LoadedAmmoPath = ammo });
     }
 
     // Debug/demo: give a pawn an equipped rifle plus an SMG and a melee weapon
@@ -5312,7 +5321,7 @@ public sealed class SimRuntime
         var stack = inv.Items[heldIndex];
         inv.Items.RemoveAt(heldIndex);
         var wp = pawn.GetComponent<WorldPos>();
-        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), stack.ItemPath, stack.Count);
+        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), stack.ItemPath, stack.Count, forbidden: true);
     }
 
     // Drop a specific quantity from a held stack (the rest stays in inventory).
@@ -5328,7 +5337,7 @@ public sealed class SimRuntime
         if (drop >= stack.Count) inv.Items.RemoveAt(heldIndex);
         else { stack.Count -= drop; inv.Items[heldIndex] = stack; }
         var wp = pawn.GetComponent<WorldPos>();
-        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), stack.ItemPath, drop);
+        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), stack.ItemPath, drop, forbidden: true);
     }
 
     // ItemSpatialIndex feeders. Fire for every component add/remove in the
@@ -5445,6 +5454,7 @@ public sealed class SimRuntime
         {
             if (e.HasComponent<HaulReserved>()) return;
             if (e.HasComponent<Corpse>()) return; // unique — never merge corpses
+            if (e.HasComponent<Forbidden>()) return; // a forbidden drop stays its own pile
             var key = (p.Tile, p.ItemPath);
             if (byKey.TryGetValue(key, out var existing))
             {

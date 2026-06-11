@@ -299,12 +299,13 @@ public sealed class DummyController
             // Seed the fresh combat state from the equipped weapon's STORED mag
             // (carried in via drop -> pickup), so a picked-up loaded gun keeps
             // its rounds instead of starting empty.
-            EquippedRangedSlotMag(entity, out int seedMag, out string? seedAmmo);
+            EquippedRangedSlot(entity, out var seedPath, out int seedMag, out string? seedAmmo);
             cb.AddComponent(entity.Id, new RangedCombat
             {
                 Mode = DefaultFireMode(rangedWeaponDef.Ranged!),
-                MagCount = seedMag,
+                MagCount = Math.Min(seedMag, rangedWeaponDef.Ranged!.MagazineSize),
                 LoadedAmmoPath = seedAmmo,
+                ActiveWeaponPath = seedPath,
             });
         }
         else if (!hasRangedWeapon && entity.HasComponent<RangedCombat>())
@@ -312,8 +313,21 @@ public sealed class DummyController
         if (entity.HasComponent<RangedCombat>())
         {
             ref var rc0 = ref entity.GetComponent<RangedCombat>();
-            // Mirror the live magazine back onto the equipped weapon's slot, so
-            // any drop path records the current ammo on the dropped pile.
+            // Per-weapon ammo: when the active equipped ranged weapon changes
+            // (pocket-sand switch / equip), load THAT weapon's stored magazine
+            // (clamped to its capacity) so each gun keeps its own ammo instead
+            // of inheriting the previous weapon's.
+            if (hasRangedWeapon && EquippedRangedSlot(entity, out var apath, out int amag, out var aammo)
+                && rc0.ActiveWeaponPath != apath)
+            {
+                rc0.MagCount = Math.Min(amag, rangedWeaponDef.Ranged!.MagazineSize);
+                rc0.LoadedAmmoPath = aammo;
+                rc0.ActiveWeaponPath = apath;
+                rc0.Reloading = false;
+                rc0.BurstRemaining = 0;
+            }
+            // Mirror the live magazine back onto the active weapon's slot, so
+            // any drop / stash path records the current ammo.
             SyncEquippedRangedMag(entity, rc0.MagCount, rc0.LoadedAmmoPath);
             // Always finish a reload once its timer elapses, even if the pawn
             // stopped firing mid-reload (target lost) — this is the insert-mag
@@ -1964,17 +1978,18 @@ public sealed class DummyController
         return false;
     }
 
-    // Read the stored magazine off the pawn's equipped ranged-weapon slot
-    // (used to seed a freshly-attached RangedCombat after a pickup).
-    private static void EquippedRangedSlotMag(Entity entity, out int mag, out string? ammo)
+    // The active (first equipped) ranged-weapon slot: its path + stored mag.
+    // Drives per-weapon ammo (seeding/reloading RangedCombat on weapon change).
+    private static bool EquippedRangedSlot(Entity entity, out string path, out int mag, out string? ammo)
     {
-        mag = 0; ammo = null;
-        if (!entity.HasComponent<Inventory>()) return;
+        path = ""; mag = 0; ammo = null;
+        if (!entity.HasComponent<Inventory>()) return false;
         var inv = entity.GetComponent<Inventory>();
-        if (inv.Equipped is null) return;
+        if (inv.Equipped is null) return false;
         foreach (var eq in inv.Equipped)
             if (Items.ItemCatalog.ItemsByPath.TryGetValue(eq.ItemPath, out var d) && d.IsRangedWeapon)
-            { mag = eq.MagCount; ammo = eq.LoadedAmmoPath; return; }
+            { path = eq.ItemPath; mag = eq.MagCount; ammo = eq.LoadedAmmoPath; return true; }
+        return false;
     }
 
     // Mirror the live magazine onto the equipped ranged-weapon slot, so a drop
