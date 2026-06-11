@@ -69,6 +69,7 @@ public partial class DebugBar : CanvasLayer
         AddOneShotButton(_hbox, "Reroll Map", () => Host?.Reroll(System.Environment.TickCount));
         AddOneShotButton(_hbox, "-1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(-3600)));
         AddOneShotButton(_hbox, "+1 hr", () => Host?.QueueCommand(new AdvanceWorldTimeCommand(3600)));
+        AddRainButton(_hbox);
         AddGodModeButton(_hbox);
 
         _hbox.Resized += Reposition;
@@ -154,6 +155,36 @@ public partial class DebugBar : CanvasLayer
     }
 
     private static string GodModeLabel(bool on) => on ? "God Mode: ON" : "God Mode: OFF";
+
+    // Weather override cycler: Auto (ambient walk) → Clear → Drizzle →
+    // Storm → back to Auto. The three presets pin RainIntensity via
+    // SetWeatherOverrideCommand; Auto releases the override.
+    private static readonly (string Label, float? Intensity)[] RainModes =
+    {
+        ("Rain: Auto", null),
+        ("Rain: Clear", 0f),
+        ("Rain: Drizzle", 0.35f),
+        ("Rain: Storm", 1f),
+    };
+    private int _rainMode;
+    private void AddRainButton(HBoxContainer parent)
+    {
+        var btn = new Button
+        {
+            Text = RainModes[_rainMode].Label,
+            CustomMinimumSize = new Vector2(0, ButtonHeight),
+            FocusMode = Control.FocusModeEnum.None,
+        };
+        btn.Pressed += () =>
+        {
+            _rainMode = (_rainMode + 1) % RainModes.Length;
+            var (label, intensity) = RainModes[_rainMode];
+            btn.Text = label;
+            if (intensity is float v) Host?.QueueCommand(new SetWeatherOverrideCommand(v));
+            else Host?.QueueCommand(new ClearWeatherOverrideCommand());
+        };
+        parent.AddChild(btn);
+    }
 
     // Non-toggle button — fires its action once on click and doesn't sit
     // in the _buttons map (no ToolMode to track).

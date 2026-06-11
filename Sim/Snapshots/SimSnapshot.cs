@@ -24,6 +24,12 @@ public sealed class SimSnapshot
     public long LightVersion { get; internal set; }
     public double WorldTimeSec { get; internal set; }
 
+    // Ambient weather (pure visual). Rain 0..1 + wind drift in tiles/sec;
+    // the render side smooths intensity itself, these are raw sim values.
+    public float RainIntensity { get; internal set; }
+    public float RainWindX { get; internal set; }
+    public float RainWindY { get; internal set; }
+
     internal DummyState[] DummiesBuf = System.Array.Empty<DummyState>();
     internal int DummiesCount;
     public SnapshotList<DummyState> Dummies => new(DummiesBuf, DummiesCount);

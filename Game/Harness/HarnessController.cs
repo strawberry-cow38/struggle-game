@@ -410,6 +410,17 @@ public partial class HarnessController : Node2D
                 }
                 _schedule.Add((120.0, h => h.Finish("rgb-wheel complete"), "finish"));
                 break;
+            case "rain":
+                // Rain overlay demo: force a storm with a strong westerly
+                // wind so the streaks slant hard, then grab two frames
+                // ~0.5s apart (different streak positions = motion check).
+                _schedule.Add((0.3, h => h.SetCameraZoom(1.5f), "zoom"));
+                _schedule.Add((0.5, h => h.ForceStorm(), "force storm + wind"));
+                _schedule.Add((3.5, h => h.Screenshot(), "shot A"));
+                _schedule.Add((4.0, h => h.Screenshot(), "shot B"));
+                _schedule.Add((5.0, h => h.Finish("rain done"), "finish"));
+                _screenshotEverySec = double.PositiveInfinity;
+                break;
             case "fonts":
                 _schedule.Add((0.3, h => h.FontShowcase(), "fonts"));
                 _schedule.Add((1.5, h => h.Screenshot(), "shot"));
@@ -1081,6 +1092,12 @@ public partial class HarnessController : Node2D
         Host.SelectedDummyId = id; // opens the pawn card so the health tab anchors above it
         if (GetTree().Root.FindChild("HealthTabPanel", true, false) is StruggleGame.Game.UI.HealthTabPanel panel)
             panel.OpenFor(id);
+    }
+
+    private void ForceStorm()
+    {
+        // Full storm, wind pinned westerly so the slant is unmistakable.
+        Host.QueueCommand(new SetWeatherOverrideCommand(1f, windX: 4.5f, windY: 0f));
     }
 
     private void IgniteCluster()

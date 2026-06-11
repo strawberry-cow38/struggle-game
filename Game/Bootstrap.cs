@@ -142,6 +142,9 @@ public partial class Bootstrap : Node2D
             return null;
         };
 
+        var rainOverlay = new RainOverlay { Host = _host, Camera = camera, Name = "RainOverlay" };
+        AddChild(rainOverlay);
+
         var hud = new HudOverlay { Host = _host, Name = "Hud" };
         AddChild(hud);
 

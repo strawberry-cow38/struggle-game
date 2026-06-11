@@ -145,6 +145,7 @@ public sealed class SimRuntime
     private readonly SafetySystem _safety;
     private readonly SleepSystem _sleep;
     private readonly HealthSystem _health;
+    private readonly WeatherSystem _weather;
     // Pawn tiles, rebuilt once per tick before the build phase. Buildable
     // systems read this to gate construction (don't spawn under a pawn)
     // instead of each rescanning every Wanderer.
@@ -396,6 +397,7 @@ public sealed class SimRuntime
         _urBoards = new UrBoardSystem(this, Jobs);
         _sandbags = new SandbagSystem(this, Jobs);
         _recreation = new RecreationSystem(seed + 11, GetAvailableRecreationKinds);
+        _weather = new WeatherSystem(seed + 13);
         _doorBuilds = new DoorBuildSystem(this, Jobs);
         _doors = new DoorSystem(_itemIndex.AnyUnreservedItemAt);
         _hauls = new HaulSystem(this, Jobs);
@@ -441,6 +443,9 @@ public sealed class SimRuntime
         _worldTimeSec += SimSecondsPerRealSecond * dt;
         ComputeSun(_worldTimeSec, out var sR, out var sG, out var sB);
         if (sR != _lastSunR || sG != _lastSunG || sB != _lastSunB) _sunDirty = true;
+        // Weather walks in world time so rain fronts ride the same clock
+        // as the sun (and freeze with pause / scale with tick rate).
+        _weather.Step((float)(SimSecondsPerRealSecond * dt));
         // Refresh the colonist-LOS threat field on a throttle, before the
         // pawn brains run (enemies read it for path weighting + the caught-in-
         // the-open override).
@@ -546,6 +551,13 @@ public sealed class SimRuntime
     // auto-acquire enemies — they only fire at a player-forced (RMB) target.
     public bool FireAtWill { get; private set; } = true;
     public void SetFireAtWill(bool on) { FireAtWill = on; _dummies.FireAtWill = on; }
+
+    // Debug/harness weather override: pin rain intensity (and optionally
+    // the wind vector). Clear hands control back to the ambient walk.
+    public void SetWeatherOverride(float intensity, float? windX = null, float? windY = null)
+        => _weather.SetOverride(intensity, windX, windY);
+    public void ClearWeatherOverride() => _weather.ClearOverride();
+    public float RainIntensity => _weather.RainIntensity;
 
     // Debug bar toggle. When true, build systems skip BlueprintCost gating
     // entirely — useful while the haul-to-blueprint pipeline is still being
@@ -1325,6 +1337,9 @@ public sealed class SimRuntime
         snap.SelectedOrders = null;
         snap.CheckmarkMode = CheckmarkMode;
         snap.FireAtWill = FireAtWill;
+        snap.RainIntensity = _weather.RainIntensity;
+        snap.RainWindX = _weather.WindX;
+        snap.RainWindY = _weather.WindY;
 
         // Rebuild the selection set only when the input array reference changes.
         // SimHost writes a brand-new array on each selection change, so reference

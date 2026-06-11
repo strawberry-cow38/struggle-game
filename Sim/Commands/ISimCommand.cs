@@ -77,6 +77,25 @@ public sealed class SetFireAtWillCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.SetFireAtWill(On);
 }
 
+// Debug/harness weather override: pin rain intensity 0..1 (Dev bar's
+// Clear / Drizzle / Storm presets), optionally forcing the wind vector
+// too (the visual harness wants a guaranteed streak slant).
+public sealed class SetWeatherOverrideCommand : ISimCommand
+{
+    public float Intensity { get; }
+    public float? WindX { get; }
+    public float? WindY { get; }
+    public SetWeatherOverrideCommand(float intensity, float? windX = null, float? windY = null)
+    { Intensity = intensity; WindX = windX; WindY = windY; }
+    public void Apply(SimRuntime sim) => sim.SetWeatherOverride(Intensity, WindX, WindY);
+}
+
+// Dev bar "Rain: Auto": release the override back to the ambient walk.
+public sealed class ClearWeatherOverrideCommand : ISimCommand
+{
+    public void Apply(SimRuntime sim) => sim.ClearWeatherOverride();
+}
+
 // Dev "Spawn Event" button: raise a sample player letter to exercise the
 // notification stack (hover tooltip / detail pane / right-click dismiss).
 public sealed class SpawnEventCommand : ISimCommand
