@@ -1653,9 +1653,25 @@ public partial class WorldRenderer : Node2D
         if (p.ItemPath == ItemCatalog.Corpse.FullPath) { DrawCorpse(p.Tile); return; }
         if (p.ItemPath == ItemCatalog.Wood.FullPath) { DrawWood(p.Tile); return; }
         var center = new Vector2((p.Tile.X + 0.5f) * PixelsPerTile, (p.Tile.Y + 0.5f) * PixelsPerTile);
+        // Weapons drop showing their own icon. (Dropped ammo state isn't
+        // tracked, so the loaded/default variant is used.)
+        var icon = StruggleGame.Game.UI.WeaponIcons.Texture(p.ItemPath);
+        if (icon is not null) { DrawItemIcon(icon, center); return; }
         float r = PixelsPerTile * 0.16f;
         DrawCircle(center, r, CarrotBody);
         DrawArc(center, r, 0f, Mathf.Tau, 18, CarrotBodyDark, width: 1f, antialiased: true);
+    }
+
+    // Draw an item icon centered on a tile, scaled to fit, with a soft ground
+    // shadow so it reads as a dropped object rather than a flat sticker.
+    private void DrawItemIcon(Texture2D tex, Vector2 center)
+    {
+        int tw = tex.GetWidth(), th = tex.GetHeight();
+        if (tw <= 0 || th <= 0) return;
+        float s = (PixelsPerTile * 0.82f) / Math.Max(tw, th);
+        var size = new Vector2(tw * s, th * s);
+        DrawCircle(center + new Vector2(0f, size.Y * 0.20f), size.X * 0.34f, new Color(0f, 0f, 0f, 0.22f));
+        DrawTextureRect(tex, new Rect2(center - size * 0.5f, size), tile: false);
     }
 
     private void DrawWood(TilePos tile)
