@@ -42,12 +42,12 @@ float rain_layer(vec2 uv, float t, float fall, float cols, float len, float dens
 	// Random x inside the column + soft edges. fwidth keeps the core
 	// from aliasing away when zoomed far out (streak thinner than 1px).
 	float cx = 0.2 + 0.6 * fract(rnd * 13.7);
-	float w = 0.06 + fwidth(cuv.x);
+	float w = 0.09 + fwidth(cuv.x);
 	float core = 1.0 - smoothstep(0.0, w, abs(f.x - cx));
-	// Streak segment: random phase, ~55% of the cell tall, faded head/tail.
+	// Streak segment: random phase, ~70% of the cell tall, faded head/tail.
 	float phase = fract(rnd * 7.31);
 	float fy = fract(f.y - phase);
-	float seg = smoothstep(0.0, 0.25, fy) * smoothstep(0.55, 0.35, fy);
+	float seg = smoothstep(0.0, 0.2, fy) * smoothstep(0.7, 0.45, fy);
 	return core * seg;
 }
 
@@ -66,9 +66,9 @@ void fragment() {
 
 		// Near → far: bigger/faster/brighter to smaller/slower/dimmer.
 		float a = 0.0;
-		a += 0.55 * rain_layer(uv, t, 16.0 * speed_k, 6.0, 1.4, 0.30 * intensity + 0.05);
-		a += 0.40 * rain_layer(uv * 1.7 + 31.4, t, 12.0 * speed_k, 6.0, 1.0, 0.45 * intensity + 0.05);
-		a += 0.28 * rain_layer(uv * 2.6 + 77.7, t, 9.0 * speed_k, 6.0, 0.7, 0.60 * intensity + 0.05);
+		a += 0.60 * rain_layer(uv, t, 16.0 * speed_k, 6.0, 2.2, 0.30 * intensity + 0.05);
+		a += 0.45 * rain_layer(uv * 1.7 + 31.4, t, 12.0 * speed_k, 6.0, 1.5, 0.45 * intensity + 0.05);
+		a += 0.32 * rain_layer(uv * 2.6 + 77.7, t, 9.0 * speed_k, 6.0, 1.0, 0.60 * intensity + 0.05);
 
 		// Faint atmospheric haze so storms read grey even between streaks.
 		float haze = 0.06 * intensity;
