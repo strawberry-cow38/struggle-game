@@ -66,8 +66,8 @@ public partial class RocketStrikeDesignator : Node2D
 
         var center = new Vector2(sx, sy) * PixelsPerTile;
         // Min (can't-fire) and max (reach) range rings.
-        DrawArc(center, SimConstants.RocketMinTargetRange * PixelsPerTile, 0, Mathf.Tau, 48, RingColor, 1.5f, true);
-        DrawArc(center, range * PixelsPerTile, 0, Mathf.Tau, 64, RingColor, 1.5f, true);
+        DrawArc(center, SimConstants.RocketMinTargetRange * PixelsPerTile, 0, Mathf.Tau, 48, RingColor, 3.0f, true);
+        DrawArc(center, range * PixelsPerTile, 0, Mathf.Tau, 64, RingColor, 3.0f, true);
 
         var world = GetGlobalMousePosition();
         int tx = Mathf.FloorToInt(world.X / PixelsPerTile);

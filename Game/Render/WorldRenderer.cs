@@ -112,7 +112,7 @@ public partial class WorldRenderer : Node2D
     // Dimmer line linking queued (not-yet-active) move/action waypoints.
     private static readonly Color QueuedPathColor = new(0.60f, 0.82f, 0.99f, 0.42f);
     // Max-range ring for a selected drafted ranged colonist.
-    private static readonly Color RangeCircleColor = new(1.0f, 0.45f, 0.30f, 0.35f);
+    private static readonly Color RangeCircleColor = new(1.0f, 0.45f, 0.30f, 0.55f);
     private static readonly Color DraftedRing = new(1.0f, 0.25f, 0.20f, 1.0f);
     private static readonly Color CoverCrouchColor = new(0.55f, 0.80f, 0.95f, 0.9f);
     private static readonly Color FacingArrowColor = new(0.15f, 0.10f, 0.05f, 0.9f);
@@ -890,7 +890,7 @@ public partial class WorldRenderer : Node2D
                         && d.Drafted && d.HasRangedWeapon && d.RangedRange > 0f)
                     {
                         float rr = d.RangedRange * PixelsPerTile;
-                        DrawArc(center, rr, 0f, Mathf.Tau, 64, RangeCircleColor, 1.5f, antialiased: true);
+                        DrawArc(center, rr, 0f, Mathf.Tau, 64, RangeCircleColor, 3.0f, antialiased: true);
                     }
                 }
                 // Combat labels embed a colonist id, so build+cache them once
@@ -1653,25 +1653,42 @@ public partial class WorldRenderer : Node2D
         if (p.ItemPath == ItemCatalog.Corpse.FullPath) { DrawCorpse(p.Tile); return; }
         if (p.ItemPath == ItemCatalog.Wood.FullPath) { DrawWood(p.Tile); return; }
         var center = new Vector2((p.Tile.X + 0.5f) * PixelsPerTile, (p.Tile.Y + 0.5f) * PixelsPerTile);
-        // Weapons drop showing their own icon. (Dropped ammo state isn't
+        // Weapons drop showing their own icon, big enough to fill the tile and
+        // at a per-pile random tilt (kept upright — never flipped over) so a
+        // scatter of dropped guns looks natural. (Dropped ammo state isn't
         // tracked, so the loaded/default variant is used.)
         var icon = StruggleGame.Game.UI.WeaponIcons.Texture(p.ItemPath);
-        if (icon is not null) { DrawItemIcon(icon, center); return; }
+        if (icon is not null) { DrawItemIcon(icon, center, DroppedTilt(p.EntityId)); return; }
         float r = PixelsPerTile * 0.16f;
         DrawCircle(center, r, CarrotBody);
         DrawArc(center, r, 0f, Mathf.Tau, 18, CarrotBodyDark, width: 1f, antialiased: true);
     }
 
-    // Draw an item icon centered on a tile, scaled to fit, with a soft ground
-    // shadow so it reads as a dropped object rather than a flat sticker.
-    private void DrawItemIcon(Texture2D tex, Vector2 center)
+    // Deterministic per-pile tilt in [-MaxDropTilt, +MaxDropTilt] (radians),
+    // hashed off the pile's entity id so it's stable across frames and never
+    // exceeds upright (|angle| < 90°, so the gun never reads upside-down).
+    private const float MaxDropTilt = 1.0472f; // 60°
+    private static float DroppedTilt(int entityId)
+    {
+        uint h = (uint)entityId * 2654435761u;
+        float t = (h & 0xFFFF) / 65535f;      // 0..1
+        return (t * 2f - 1f) * MaxDropTilt;   // -60°..+60°
+    }
+
+    // Draw an item icon centered on a tile, scaled to fill it, rotated by
+    // `angle`, with a flat ground shadow so it reads as a dropped object.
+    private void DrawItemIcon(Texture2D tex, Vector2 center, float angle)
     {
         int tw = tex.GetWidth(), th = tex.GetHeight();
         if (tw <= 0 || th <= 0) return;
-        float s = (PixelsPerTile * 0.82f) / Math.Max(tw, th);
+        float s = (PixelsPerTile * 1.0f) / Math.Max(tw, th); // longest dim ≈ a full tile
         var size = new Vector2(tw * s, th * s);
-        DrawCircle(center + new Vector2(0f, size.Y * 0.20f), size.X * 0.34f, new Color(0f, 0f, 0f, 0.22f));
-        DrawTextureRect(tex, new Rect2(center - size * 0.5f, size), tile: false);
+        DrawCircle(center + new Vector2(0f, PixelsPerTile * 0.16f), size.X * 0.30f, new Color(0f, 0f, 0f, 0.20f));
+        // Rotate about the tile center, then restore the identity transform so
+        // later draws in this _Draw aren't skewed.
+        DrawSetTransform(center, angle, Vector2.One);
+        DrawTextureRect(tex, new Rect2(-size * 0.5f, size), tile: false);
+        DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
     }
 
     private void DrawWood(TilePos tile)
