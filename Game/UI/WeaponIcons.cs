@@ -29,6 +29,8 @@ public static class WeaponIcons
             // RPG warhead colour = the loaded rocket type (empty = no rocket).
             "RPG7" => empty ? "rpg_empty" : RpgFile(loadedAmmoPath),
             "AssaultRifle" => empty ? "m16_nomag" : "m16",
+            // No no-mag edit yet — texture preview, always the full sprite.
+            "M16M203" => "m16m203",
             "SubmachineGun" => empty ? "mp5_nomag" : "mp5",
             "BoltActionRifle" => "m700",
             "AKM" => empty ? "akm_nomag" : "akm",

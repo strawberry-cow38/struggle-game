@@ -196,6 +196,7 @@ public static class ItemCatalog
     public static readonly ItemDef Corpse;
     // First ranged weapon — ships with all three fire modes for testing.
     public static readonly ItemDef AssaultRifle;
+    public static readonly ItemDef M16M203;
     // Torso armor. Stops most rounds (deflect → bruise); AP punches through.
     public static readonly ItemDef KevlarVest;
     public static readonly ItemCategory Ammo;
@@ -292,6 +293,29 @@ public static class ItemCatalog
                 // ~720 rpm cyclic = a shot every ~5 ticks at 60 Hz.
                 ShotCooldownTicks = 5,
                 CycleCooldownTicks = 24, // 0.4s between semi shots / bursts
+                ReloadTicks = 120,
+            });
+
+        // M16 + M203 — the M16A2 with an underbarrel grenade launcher. Rifle
+        // stats match the M16A2; the launcher is sprite-only for now (no
+        // grenade fire mode yet), it just adds carry weight.
+        M16M203 = RegisterItem("M16M203", "M16 M203", Equipment, weight: 5.5f, bulk: 3.5f, equippable: true,
+            ranged: new RangedSpec
+            {
+                Range = 50f,
+                AmmoCategoryPath = "Rifle",
+                MagazineSize = 30,
+                Modes = FireModeFlags.Single | FireModeFlags.Burst,
+                BurstShots = 3,
+                ProjectileSpeed = 150f,
+                SpreadDegrees = 1.2f,
+                RecoilPerShot = 1.0f,
+                RecoilRecoverPerSec = 9.0f,
+                MaxRecoilDegrees = 7.0f,
+                WarmupTicks = 12,
+                AimTicks = 54,
+                ShotCooldownTicks = 5,
+                CycleCooldownTicks = 24,
                 ReloadTicks = 120,
             });
 
