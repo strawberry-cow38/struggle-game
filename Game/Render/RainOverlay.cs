@@ -37,9 +37,16 @@ public partial class RainOverlay : CanvasLayer
     private static readonly float[] CellLen = { 2.2f, 1.5f, 1.0f };
     private const float WrapCells = 16384f;
     private readonly float[] _scroll = new float[3];
-    // Displayed wind chases the sim value like intensity does, so the
-    // streak slant turns smoothly instead of snapping on each weather step.
+    // Displayed wind chases the sim value MUCH slower than intensity —
+    // slant changes read as the whole sheet leaning, so they must creep.
+    // Gusts are expressed through the density waves instead (wave_phase).
+    private const float WindFadeRate = 0.25f;
+    // Visual wind authority: scale + cap on the slant so even storm wind
+    // tilts the streaks gently instead of shoving the plane around.
+    private const float SlantScale = 0.45f;
+    private const float SlantMax = 0.18f;
     private Vector2 _displayedWind;
+    private float _wavePhase;
 
     public override void _Ready()
     {
@@ -67,8 +74,9 @@ public partial class RainOverlay : CanvasLayer
 
         float target = snap.RainIntensity;
         float t = 1f - Mathf.Exp(-(float)delta * FadeRate);
+        float tw = 1f - Mathf.Exp(-(float)delta * WindFadeRate);
         _displayedIntensity = Mathf.Lerp(_displayedIntensity, target, t);
-        _displayedWind = _displayedWind.Lerp(new Vector2(snap.RainWindX, snap.RainWindY), t);
+        _displayedWind = _displayedWind.Lerp(new Vector2(snap.RainWindX, snap.RainWindY), tw);
         if (_displayedIntensity < 0.002f && target <= 0f)
         {
             _displayedIntensity = 0f;
@@ -88,14 +96,21 @@ public partial class RainOverlay : CanvasLayer
             float fall = Mathf.Max(BaseFall[i] * speedK + _displayedWind.Y, 2f);
             float wrap = CellLen[i] * WrapCells;
             _scroll[i] = (_scroll[i] + fall * (float)delta) % wrap;
-            if (i == 0) { scroll.X = _scroll[i]; slant.X = _displayedWind.X / fall; }
-            else if (i == 1) { scroll.Y = _scroll[i]; slant.Y = _displayedWind.X / fall; }
-            else { scroll.Z = _scroll[i]; slant.Z = _displayedWind.X / fall; }
+            float sl = Mathf.Clamp(_displayedWind.X * SlantScale / fall, -SlantMax, SlantMax);
+            if (i == 0) { scroll.X = _scroll[i]; slant.X = sl; }
+            else if (i == 1) { scroll.Y = _scroll[i]; slant.Y = sl; }
+            else { scroll.Z = _scroll[i]; slant.Z = sl; }
         }
+
+        // Gust waves roll faster (and feel choppier) in heavier weather.
+        // Wrap at Tau*10: both shader wave frequencies (1.0 and 0.7) hit a
+        // whole cycle there (10 / 7 turns), so the wrap is seamless.
+        _wavePhase = (_wavePhase + (0.35f + 0.65f * _displayedIntensity) * (float)delta) % (Mathf.Tau * 10f);
 
         _material.SetShaderParameter("intensity", _displayedIntensity);
         _material.SetShaderParameter("scroll", scroll);
         _material.SetShaderParameter("slant", slant);
+        _material.SetShaderParameter("wave_phase", _wavePhase);
         if (Camera is not null)
         {
             _material.SetShaderParameter("camera_center", Camera.GetScreenCenterPosition());
