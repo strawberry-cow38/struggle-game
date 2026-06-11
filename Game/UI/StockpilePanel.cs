@@ -135,7 +135,7 @@ public partial class StockpilePanel : CanvasLayer
 
     public override void _ExitTree()
     {
-        if (IsInsideTree()) GetTree().Root.SizeChanged -= Reposition;
+        GetTree().Root.SizeChanged -= Reposition;
     }
 
     public override void _Process(double delta)

@@ -255,6 +255,9 @@ public partial class WorldRenderer : Node2D
         return ImageTexture.CreateFromImage(img);
     }
 
+    // Last snapshot reference consumed by _Draw — used to detect new snapshots.
+    private SimSnapshot? _lastQueuedSnap;
+
     public override void _Process(double delta)
     {
         _selTime += delta;
@@ -265,7 +268,31 @@ public partial class WorldRenderer : Node2D
         // LatestSnapshot fresh, which is always newer than _prevSnap.
         long heldSeq = _prevSnap?.SeqId ?? _currSnap?.SeqId ?? 0;
         if (heldSeq != 0 && Host is not null) Host.ReportRenderHeld(heldSeq);
-        QueueRedraw();
+
+        var latest = Host?.LatestSnapshot;
+        bool snapChanged = !ReferenceEquals(latest, _lastQueuedSnap);
+        if (snapChanged) _lastQueuedSnap = latest;
+
+        // Always redraw when a new snapshot arrived (pawn movement, any world change).
+        // Also redraw whenever animated content is present: fires, projectiles, smoke,
+        // explosions, blood impacts, or active selections (pulsing brackets + camera pan
+        // requires per-frame redraw since _Draw reads GetCanvasTransform() each call).
+        // Only skip when fully static: same snapshot, no fires, no projectiles,
+        // no moving smoke/impacts, and nothing selected.
+        bool needRedraw = snapChanged;
+        if (!needRedraw && latest is not null)
+        {
+            needRedraw = latest.Fires.Length > 0
+                || latest.Projectiles.Length > 0
+                || latest.SmokePuffs.Length > 0
+                || latest.Explosions.Length > 0
+                || latest.BloodImpacts.Length > 0
+                || latest.SelectedDummyIds.Length > 0;
+        }
+        // When in doubt (no snapshot yet, or camera may be panning), keep redrawing.
+        if (!needRedraw && latest is null) needRedraw = true;
+
+        if (needRedraw) QueueRedraw();
         _visualLighting?.Tick();
     }
 

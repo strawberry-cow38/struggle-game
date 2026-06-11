@@ -42,6 +42,14 @@ public partial class ColonistBar : CanvasLayer
     private double _glowClock;                          // advances each frame, drives the selection glow
     private readonly Dictionary<int, double> _selSince = new(); // when each id became selected (for the pulse)
 
+    // Per-frame scratch — reused every _Process call to avoid allocations.
+    private readonly Dictionary<int, DummyState> _byIdScratch = new();
+    private readonly System.Text.StringBuilder _sigSb = new();
+    private readonly HashSet<int> _selScratch = new();
+    // Last rendered style state per card: tracks (cardEdge, ring, cardGlowSize)
+    // so we skip AddThemeStyleboxOverride when nothing has changed this frame.
+    private readonly Dictionary<int, (Color cardEdge, Color ring, int glowSize)> _lastCardState = new();
+
     private bool _dragging;       // rect-select (started on bar background)
     private bool _reordering;     // dragging a card to a new slot
     private int _reorderId = -1;
@@ -64,7 +72,7 @@ public partial class ColonistBar : CanvasLayer
 
     public override void _ExitTree()
     {
-        if (IsInsideTree()) GetTree().Root.SizeChanged -= Reposition;
+        GetTree().Root.SizeChanged -= Reposition;
     }
 
     public override void _Process(double delta)
@@ -72,38 +80,39 @@ public partial class ColonistBar : CanvasLayer
         if (Host?.LatestSnapshot is not { } snap) { _bar.Visible = false; return; }
         _glowClock += delta;
 
-        var byId = new Dictionary<int, DummyState>();
+        _byIdScratch.Clear();
         foreach (var d in snap.Dummies)
-            if (!d.IsEnemy) byId[d.EntityId] = d;
+            if (!d.IsEnemy) _byIdScratch[d.EntityId] = d;
 
-        _bar.Visible = byId.Count > 0;
+        _bar.Visible = _byIdScratch.Count > 0;
 
         // Reconcile the persistent order: drop gone, append new (right).
         for (int i = _order.Count - 1; i >= 0; i--)
-            if (!byId.ContainsKey(_order[i])) _order.RemoveAt(i);
+            if (!_byIdScratch.ContainsKey(_order[i])) _order.RemoveAt(i);
         _newScratch.Clear();
-        foreach (var id in byId.Keys) if (!_order.Contains(id)) _newScratch.Add(id);
+        foreach (var id in _byIdScratch.Keys) if (!_order.Contains(id)) _newScratch.Add(id);
         _newScratch.Sort();
         _order.AddRange(_newScratch);
 
-        var sb = new System.Text.StringBuilder();
-        foreach (var id in _order) sb.Append(id).Append(',');
-        string sig = sb.ToString();
+        _sigSb.Clear();
+        foreach (var id in _order) _sigSb.Append(id).Append(',');
+        string sig = _sigSb.ToString();
         if (sig != _lastSig)
         {
             _lastSig = sig;
             var ordered = new List<DummyState>(_order.Count);
-            foreach (var id in _order) ordered.Add(byId[id]);
+            foreach (var id in _order) ordered.Add(_byIdScratch[id]);
             Rebuild(ordered);
         }
 
         // Mood-coded card ring (border + glow), selection override; draft shows
         // as a portrait badge.
-        var sel = new HashSet<int>(Host.SelectedDummyIds);
+        _selScratch.Clear();
+        foreach (var sid in Host.SelectedDummyIds) _selScratch.Add(sid);
         foreach (var (id, card, frame, portrait) in _cards)
         {
-            bool selected = sel.Contains(id);
-            bool has = byId.TryGetValue(id, out var d);
+            bool selected = _selScratch.Contains(id);
+            bool has = _byIdScratch.TryGetValue(id, out var d);
             bool dead = has && d.IsDead;
             Color ring = !has ? UiTheme.Border : dead ? DeadRingColor : MoodColor(d.Mood);
             // Outer card: neutral edge, cyan selection outline around the whole
@@ -121,8 +130,17 @@ public partial class ColonistBar : CanvasLayer
                 cardGlowSize = UiTheme.GlowSize(gb);
             }
             else _selSince.Remove(id);
-            card.AddThemeStyleboxOverride("panel", CardBox(cardEdge, cardGlow, cardGlowSize));
-            frame.AddThemeStyleboxOverride("panel", FrameBox(ring));
+            // Only rebuild styleboxes when the visual state actually changed.
+            // Selected cards always update (glow is animated); unselected cards
+            // skip the allocation if edge + ring + glow are unchanged.
+            bool stateChanged = !_lastCardState.TryGetValue(id, out var lastState)
+                || lastState.cardEdge != cardEdge || lastState.ring != ring || lastState.glowSize != cardGlowSize;
+            if (selected || stateChanged)
+            {
+                card.AddThemeStyleboxOverride("panel", CardBox(cardEdge, cardGlow, cardGlowSize));
+                frame.AddThemeStyleboxOverride("panel", FrameBox(ring));
+                _lastCardState[id] = (cardEdge, ring, cardGlowSize);
+            }
             if (has)
             {
                 string lo = LoadoutSig(d);
@@ -328,6 +346,7 @@ public partial class ColonistBar : CanvasLayer
         _cards.Clear();
         _loadoutSig.Clear();
         _weaponSlots.Clear();
+        _lastCardState.Clear();
 
         BuildCards(colonists);
     }

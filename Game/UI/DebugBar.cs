@@ -96,7 +96,7 @@ public partial class DebugBar : CanvasLayer
     public override void _ExitTree()
     {
         if (Tools is not null) Tools.ModeChanged -= OnModeChanged;
-        if (IsInsideTree()) GetTree().Root.SizeChanged -= Reposition;
+        GetTree().Root.SizeChanged -= Reposition;
     }
 
     private static void AddLabel(HBoxContainer parent, string text)

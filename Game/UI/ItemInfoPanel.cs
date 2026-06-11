@@ -100,7 +100,7 @@ public partial class ItemInfoPanel : CanvasLayer
 
     public override void _ExitTree()
     {
-        if (IsInsideTree()) GetTree().Root.SizeChanged -= Reposition;
+        GetTree().Root.SizeChanged -= Reposition;
     }
 
     public override void _Process(double delta)

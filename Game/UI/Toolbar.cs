@@ -158,7 +158,7 @@ public partial class Toolbar : CanvasLayer
     public override void _ExitTree()
     {
         if (Tools is not null) Tools.ModeChanged -= OnModeChanged;
-        if (IsInsideTree()) GetTree().Root.SizeChanged -= Reposition;
+        GetTree().Root.SizeChanged -= Reposition;
     }
 
     private void AddButton(HBoxContainer parent, ToolMode mode, string label)

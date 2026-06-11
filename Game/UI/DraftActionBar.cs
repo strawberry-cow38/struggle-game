@@ -83,6 +83,11 @@ public partial class DraftActionBar : CanvasLayer
 
     private int _shownPawnId = -1;
 
+    // Cache the last active state per tile to skip redundant StyleBox allocations.
+    private readonly Dictionary<Button, bool> _lastTileActive = new();
+    // Cache last loaded ammo path to skip redundant mag bar StyleBox allocations.
+    private string? _lastAmmoPath = null;
+
     public override void _Ready()
     {
         Layer = 96;
@@ -223,6 +228,12 @@ public partial class DraftActionBar : CanvasLayer
         // A corpse has no operations — hide the whole action bar (draft + all).
         if (p.IsDead) { HideBar(); return; }
 
+        if (_shownPawnId != p.EntityId)
+        {
+            // Pawn changed — invalidate caches so the new pawn's state gets applied fresh.
+            _lastTileActive.Clear();
+            _lastAmmoPath = null;
+        }
         _shownPawnId = p.EntityId;
         if (!_bar.Visible) _bar.Visible = true;
 
@@ -253,7 +264,11 @@ public partial class DraftActionBar : CanvasLayer
             _magTitle.Text = AmmoLongName(p.LoadedAmmoPath);
             _magCount.Text = $"{p.RangedMag} / {p.RangedMagSize}";
             _magBar.Value = p.RangedMagSize > 0 ? (float)p.RangedMag / p.RangedMagSize : 0f;
-            _magBar.AddThemeStyleboxOverride("fill", MakeBox(AmmoColor(p.LoadedAmmoPath), default, 0, 4));
+            if (p.LoadedAmmoPath != _lastAmmoPath)
+            {
+                _magBar.AddThemeStyleboxOverride("fill", MakeBox(AmmoColor(p.LoadedAmmoPath), default, 0, 4));
+                _lastAmmoPath = p.LoadedAmmoPath;
+            }
             _forceTargetCap.Text = weaponName;
 
             _shownArea = p.RangedTargetArea;
@@ -363,8 +378,11 @@ public partial class DraftActionBar : CanvasLayer
 
     // Toggle tiles: green border + check when active, plain otherwise. For
     // value tiles (Text holds a value) this just swaps the border color.
-    private static void SetTileActive(Button tile, bool active)
+    // Skips StyleBox allocations when the active state hasn't changed.
+    private void SetTileActive(Button tile, bool active)
     {
+        if (_lastTileActive.TryGetValue(tile, out bool last) && last == active) return;
+        _lastTileActive[tile] = active;
         var border = active ? BorderActive : BorderIdle;
         tile.AddThemeStyleboxOverride("normal", ScanTile(TileBg, border));
         tile.AddThemeStyleboxOverride("pressed", ScanTile(TileBg, border));
@@ -629,6 +647,12 @@ public partial class DraftActionBar : CanvasLayer
 
     private void HideBar()
     {
-        if (_bar.Visible) { _bar.Visible = false; _shownPawnId = -1; }
+        if (_bar.Visible)
+        {
+            _bar.Visible = false;
+            _shownPawnId = -1;
+            _lastTileActive.Clear();
+            _lastAmmoPath = null;
+        }
     }
 }

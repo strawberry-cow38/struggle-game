@@ -95,6 +95,13 @@ public partial class VisualLighting : Node2D
         var snap = Host.LatestSnapshot;
         if (snap is null) return;
 
+        // Early-out: same snapshot object, same tick, and light grid unchanged —
+        // nothing to update. Saves a volatile read + three compares every render
+        // frame when the sim is paused or ticking slower than the render rate.
+        if (ReferenceEquals(snap, _lastLampSnap)
+            && snap.Tick == _lastLampSnapTick
+            && snap.LightVersion == _lastLightVersion) return;
+
         if (snap.LightVersion != _lastLightVersion)
         {
             RebuildLightTexture();

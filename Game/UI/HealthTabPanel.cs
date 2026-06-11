@@ -192,7 +192,7 @@ public partial class HealthTabPanel : CanvasLayer
 
     public override void _ExitTree()
     {
-        if (IsInsideTree()) GetTree().Root.SizeChanged -= Recenter;
+        GetTree().Root.SizeChanged -= Recenter;
     }
 
     // While hovering the conditions scroll area, route the wheel into it and

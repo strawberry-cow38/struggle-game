@@ -112,7 +112,7 @@ public partial class ScheduleTab : CanvasLayer
 
     public override void _ExitTree()
     {
-        if (IsInsideTree()) GetTree().Root.SizeChanged -= Reposition;
+        GetTree().Root.SizeChanged -= Reposition;
     }
 
     public void Toggle() { if (_open) Close(); else Open(); }

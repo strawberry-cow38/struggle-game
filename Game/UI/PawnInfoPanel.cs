@@ -222,7 +222,7 @@ public partial class PawnInfoPanel : CanvasLayer
 
     public override void _ExitTree()
     {
-        if (IsInsideTree()) GetTree().Root.SizeChanged -= Reposition;
+        GetTree().Root.SizeChanged -= Reposition;
     }
 
     // Tab styling mirrors HealthTabPanel: unselected = raised indigo w/ purple
