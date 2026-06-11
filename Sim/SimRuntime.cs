@@ -109,6 +109,11 @@ public sealed class SimRuntime
     private bool _lightDirty;
     // Reused output buffer for CopyLightRgbForRender (render thread only).
     private byte[]? _lightRgbScratch;
+    // Cached delegates for BuildSnapshot hit-chance estimation — avoids
+    // allocating a new Func<int,int,bool> closure each tick.
+    private readonly Func<int, int, bool> _aimIsWallDelegate;
+    private readonly Func<int, int, bool> _aimIsSandbagDelegate;
+    private readonly Func<int, int, bool> _aimIsSandbagNoneDelegate = (_, _) => false;
 
     public PathService PathService { get; }
     public SimWatcher Watcher { get; } = new();
@@ -156,6 +161,11 @@ public sealed class SimRuntime
     private ArchetypeQuery<WorldPos, Wanderer, Health>? _colonistLosQ;
     private const long ColonistLosRebuildInterval = 60; // throttle (~1s @ 60Hz)
     private const int ColonistLosRadius = 18;            // tiles a colonist's LOS reaches
+    // Double-buffer for colonist LoS — alternate between two instances so the
+    // one currently referenced by enemy brains is never mutated.
+    private readonly HashSet<TilePos> _colonistLosBufA = new();
+    private readonly HashSet<TilePos> _colonistLosBufB = new();
+    private bool _colonistLosUseA = true;
     // Soft path-avoid: tiles where a stationary colonist stands cost a bit extra
     // to cross, so other pawns route around campers (never blocked — still
     // passable when it's the only way). Rebuilt on a throttle into a fresh
@@ -164,6 +174,11 @@ public sealed class SimRuntime
     private ArchetypeQuery<WorldPos, Wanderer, PathFollower>? _stationaryAvoidQ;
     private const long StationaryAvoidRebuildInterval = 10; // ~0.17s @ 60Hz
     private const float StationaryAvoidPenalty = 1.5f;       // ≈1.5 tiles' detour budget
+    // Double-buffer for stationary avoid — alternate between two instances
+    // so the one currently held by path workers is never mutated.
+    private readonly HashSet<TilePos> _stationaryAvoidBufA = new();
+    private readonly HashSet<TilePos> _stationaryAvoidBufB = new();
+    private bool _stationaryAvoidUseA = true;
     public IReadOnlySet<TilePos>? ColonistLosTiles => _colonistLosTiles;
     // Stockpile tiles currently promised to an in-flight haul job. Posting
     // a new haul avoids these so two carriers can't target the same cell.
@@ -226,6 +241,10 @@ public sealed class SimRuntime
     private long _fireNextTick;
     private readonly List<Entity> _fireScratch = new();
     private readonly Dictionary<TilePos, List<int>> _firePawnsByTile = new();
+    // Pool of List<int> instances returned from _firePawnsByTile each fire tick.
+    // Cleared into this pool at the top of StepFires so the inner lists are
+    // reused rather than discarded.
+    private readonly List<List<int>> _firePawnListPool = new();
     private const float BloodImpactSec = 0.45f;
     // Transient rocket smoke puffs (world coords, height, remaining seconds,
     // and a 0..1 seed for per-puff drift/size jitter). Cosmetic; aged each tick.
@@ -338,6 +357,11 @@ public sealed class SimRuntime
     // false for tests/harness so path results land same-tick + deterministically.
     public SimRuntime(int seed = 1337, bool asyncPathfinding = false)
     {
+        // Capture instance fields into cached delegates so BuildSnapshot
+        // never allocates a new closure each tick.
+        _aimIsWallDelegate = (x, y) => Map.GetWall(x, y) != WallType.None;
+        _aimIsSandbagDelegate = (x, y) => _sandbagMap.ContainsKey(new TilePos(x, y));
+
         // Start at 08:00 on Jan 1 2000 — first daylight tick of the
         // epoch day so the world spawns under full sun, not midnight.
         _worldTimeSec = 8 * 3600;
@@ -1244,6 +1268,12 @@ public sealed class SimRuntime
         return n;
     }
 
+    // Cached selected-dummy id set: rebuilt only when the input array reference
+    // changes (SimHost writes a new array on each selection change, so the same
+    // reference across ticks means the selection hasn't changed).
+    private readonly HashSet<int> _selDummySet = new();
+    private int[]? _lastSelDummyArr;
+
     // Per-blueprint resource-cost arrays are only read by the info panel for
     // the SELECTED blueprint — the world renderer never touches Costs. So
     // only snapshot the cost array for selected tiles; everyone else gets the
@@ -1297,7 +1327,25 @@ public sealed class SimRuntime
         snap.CheckmarkMode = CheckmarkMode;
         snap.FireAtWill = FireAtWill;
 
-        var selSet = (selectedDummyIds is { Length: > 0 }) ? new HashSet<int>(selectedDummyIds) : null;
+        // Rebuild the selection set only when the input array reference changes.
+        // SimHost writes a brand-new array on each selection change, so reference
+        // equality is a reliable proxy for content equality.
+        HashSet<int>? selSet;
+        if (selectedDummyIds is { Length: > 0 })
+        {
+            if (!ReferenceEquals(selectedDummyIds, _lastSelDummyArr))
+            {
+                _lastSelDummyArr = selectedDummyIds;
+                _selDummySet.Clear();
+                foreach (var id in selectedDummyIds) _selDummySet.Add(id);
+            }
+            selSet = _selDummySet;
+        }
+        else
+        {
+            _lastSelDummyArr = null;
+            selSet = null;
+        }
         List<PawnPathState>? selPaths = null;
 
         // Hover hit-chance: resolve the single selected drafted ranged pawn (if
@@ -1329,10 +1377,10 @@ public sealed class SimRuntime
             };
         }
         snap.AimShooterId = aimShooterId;
-        Func<int, int, bool> aimIsWall = (x, y) => Map.GetWall(x, y) != WallType.None;
+        Func<int, int, bool> aimIsWall = _aimIsWallDelegate;
         Func<int, int, bool> aimIsSandbag = _sandbagMap.Count > 0
-            ? (x, y) => _sandbagMap.ContainsKey(new TilePos(x, y))
-            : (x, y) => false;
+            ? _aimIsSandbagDelegate
+            : _aimIsSandbagNoneDelegate;
 
         var dq = _wandererQ ??= Store.Query<WorldPos, Wanderer>();
         var corpseQ = _corpseDummyQ ??= Store.Query<WorldPos, Corpse>();
@@ -3962,16 +4010,23 @@ public sealed class SimRuntime
     public bool TryFindBestHaulDest(TilePos source, ItemDef def, out TilePos dest, out int stockpileId)
         => TryFindBestHaulDest(source, def, 1, out dest, out stockpileId);
 
+    // Reused scratch dictionary for the two-argument haul-dest overload.
+    // Only one caller runs at a time (sim is single-threaded here), so a
+    // single instance is safe. HaulSystem and BlueprintHaulSystem pass
+    // their own pre-built indices and never reach this overload.
+    private readonly Dictionary<TilePos, int> _haulCountScratch = new();
+
     public bool TryFindBestHaulDest(TilePos source, ItemDef def, int countToMove, out TilePos dest, out int stockpileId)
     {
         // Per-tile counts of the same item kind, for the merge-bias.
-        var countAt = new Dictionary<TilePos, int>();
+        // Reuse the scratch dictionary to avoid a per-call heap allocation.
+        _haulCountScratch.Clear();
         string path = def.FullPath;
         (_itemPileQ ??= Store.Query<ItemPile>()).ForEachEntity((ref ItemPile p, Entity ent) =>
         {
-            if (p.ItemPath == path) countAt[p.Tile] = p.Count;
+            if (p.ItemPath == path) _haulCountScratch[p.Tile] = p.Count;
         });
-        return TryFindBestHaulDest(source, def, countToMove, countAt, out dest, out stockpileId);
+        return TryFindBestHaulDest(source, def, countToMove, _haulCountScratch, out dest, out stockpileId);
     }
 
     // Walks the player's zones and picks the best cell that accepts the item.
@@ -4569,7 +4624,12 @@ public sealed class SimRuntime
     // is never blocked, so a doorway full of colonists is still passable.
     private void RebuildStationaryAvoid()
     {
-        var set = new HashSet<TilePos>();
+        // Alternate between two pre-allocated sets. The set currently held by
+        // PathService (and potentially by in-flight path workers) is left
+        // untouched; we clear and refill the OTHER one, then publish it.
+        _stationaryAvoidUseA = !_stationaryAvoidUseA;
+        var set = _stationaryAvoidUseA ? _stationaryAvoidBufA : _stationaryAvoidBufB;
+        set.Clear();
         (_stationaryAvoidQ ??= Store.Query<WorldPos, Wanderer, PathFollower>())
             .ForEachEntity((ref WorldPos p, ref Wanderer _, ref PathFollower pf, Entity e) =>
             {
@@ -4597,7 +4657,13 @@ public sealed class SimRuntime
     // the previous reference keeps reading valid immutable data.
     private void RebuildColonistLosTiles()
     {
-        var set = new HashSet<TilePos>();
+        // Alternate between two pre-allocated sets. The set currently
+        // published as _colonistLosTiles may be held by enemy-brain code
+        // on the same sim thread; we clear and refill the OTHER one, then
+        // do a volatile publish so the new reference is visible everywhere.
+        _colonistLosUseA = !_colonistLosUseA;
+        var set = _colonistLosUseA ? _colonistLosBufA : _colonistLosBufB;
+        set.Clear();
         int r = ColonistLosRadius;
         int w = Map.Width, h = Map.Height;
         (_colonistLosQ ??= Store.Query<WorldPos, Wanderer, Health>()).ForEachEntity((ref WorldPos p, ref Wanderer _, ref Health hp, Entity e) =>
@@ -5262,11 +5328,27 @@ public sealed class SimRuntime
     private void StepFires(float dt)
     {
         // Index pawns by tile once, so each fire damages whoever stands in it.
+        // Return existing lists to the pool before clearing the dictionary so
+        // they can be reused this tick rather than abandoned to GC.
+        foreach (var kv in _firePawnsByTile) { kv.Value.Clear(); _firePawnListPool.Add(kv.Value); }
         _firePawnsByTile.Clear();
         (_worldPosHealthQ ??= Store.Query<WorldPos, Health>()).ForEachEntity((ref WorldPos wp, ref Health h, Entity pe) =>
         {
             var t = new TilePos((int)wp.X, (int)wp.Y); // downed pawns burn too
-            if (!_firePawnsByTile.TryGetValue(t, out var list)) { list = new List<int>(); _firePawnsByTile[t] = list; }
+            if (!_firePawnsByTile.TryGetValue(t, out var list))
+            {
+                // Grab a pooled list if available, otherwise allocate once.
+                if (_firePawnListPool.Count > 0)
+                {
+                    list = _firePawnListPool[_firePawnListPool.Count - 1];
+                    _firePawnListPool.RemoveAt(_firePawnListPool.Count - 1);
+                }
+                else
+                {
+                    list = new List<int>();
+                }
+                _firePawnsByTile[t] = list;
+            }
             list.Add(pe.Id);
         });
 

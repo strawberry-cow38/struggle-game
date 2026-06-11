@@ -50,7 +50,13 @@ public sealed class SimWatcher
     private const float MovementEpsilon = 0.05f;
 
     private readonly Dictionary<int, PawnState> _pawns = new();
-    private readonly List<SimAnomaly> _recent = new();
+    // Fixed-size ring buffer for recent anomalies. _recentHead points to the
+    // slot that will be written next (oldest entry when full). Replaces the
+    // List<T> that used RemoveAt(0) (O(n) shift) + ToArray() (O(n) alloc)
+    // on every Report call.
+    private readonly SimAnomaly[] _recentRing = new SimAnomaly[MaxRecent];
+    private int _recentHead;   // index of next write slot
+    private int _recentCount;  // number of valid entries (0..MaxRecent)
     private SimAnomaly[] _publish = Array.Empty<SimAnomaly>();
     private int _stuckTotal;
     private int _brainDeadTotal;
@@ -180,8 +186,19 @@ public sealed class SimWatcher
     private void Report(long tick, int entityId, SimAnomalyKind kind, string detail)
     {
         var ev = new SimAnomaly(tick, entityId, kind, detail);
-        _recent.Add(ev);
-        if (_recent.Count > MaxRecent) _recent.RemoveAt(0);
-        Volatile.Write(ref _publish, _recent.ToArray());
+        // Write into the ring buffer at _recentHead, wrapping around.
+        // When the buffer is full this overwrites the oldest entry.
+        _recentRing[_recentHead] = ev;
+        _recentHead = (_recentHead + 1) % MaxRecent;
+        if (_recentCount < MaxRecent) _recentCount++;
+        // Publish a snapshot array ordered oldest-first. Re-use the existing
+        // published array if it has the right length to avoid an alloc when
+        // the buffer is full and steady-state.
+        var prev = _publish;
+        var arr = (prev.Length == _recentCount) ? prev : new SimAnomaly[_recentCount];
+        int readHead = _recentCount < MaxRecent ? 0 : _recentHead; // oldest slot
+        for (int i = 0; i < _recentCount; i++)
+            arr[i] = _recentRing[(readHead + i) % MaxRecent];
+        Volatile.Write(ref _publish, arr);
     }
 }

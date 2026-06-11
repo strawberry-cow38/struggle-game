@@ -2502,7 +2502,8 @@ public sealed class DummyController
                 && (LosClear?.Invoke(here.X, here.Y, et.X, et.Y) ?? true))
             {
                 brain.HasFireCell = false;
-                entity.GetComponent<RangedCombat>().TargetEntityId = targetId;
+                ref var rcOpen = ref entity.GetComponent<RangedCombat>();
+                rcOpen.TargetEntityId = targetId;
                 ExecuteRangedFire(entity, tgt, spec, ref pos, ref path, ref w, dt, view, here);
                 return;
             }
@@ -2524,7 +2525,8 @@ public sealed class DummyController
                 float fdx = tpw.X - pos.X, fdy = tpw.Y - pos.Y;
                 if (fdx * fdx + fdy * fdy > 1e-9f) w.Facing = MathF.Atan2(fdy, fdx);
                 if (!SnapToNearestTile(ref pos, dt, out _, out _)) return; // still easing in
-                entity.GetComponent<RangedCombat>().TargetEntityId = targetId;
+                ref var rcCell = ref entity.GetComponent<RangedCombat>();
+                rcCell.TargetEntityId = targetId;
                 ExecuteRangedFire(entity, tgt, spec, ref pos, ref path, ref w, dt, view, here);
             }
             else
