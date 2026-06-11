@@ -206,26 +206,27 @@ public partial class GearTabPanel : CanvasLayer
         return b;
     }
 
-    private const int IconSize = 16;
+    // Wide-ish so a horizontal gun sprite reads (like the colonist-bar
+    // portrait icon), but short to keep the row compact.
+    private const int IconW = 40, IconH = 22;
 
-    // Fixed-size icon for the left of a gear row: the weapon's art when it has
-    // any, else a small neutral chip so names still line up.
+    // Icon for the left of a gear row, rendered exactly like the portrait /
+    // pocket-sand weapon icons (WeaponIcons.Make — inset art + drop shadow).
+    // Non-weapon items (no art) get a small neutral chip so names still align.
     private static Control ItemIcon(string itemPath, bool empty, string? ammo)
     {
-        var holder = new CenterContainer { CustomMinimumSize = new Vector2(IconSize, IconSize), MouseFilter = Control.MouseFilterEnum.Ignore };
-        if (WeaponIcons.Texture(itemPath, empty, ammo) is { } tex)
+        var holder = new Control { CustomMinimumSize = new Vector2(IconW, IconH), MouseFilter = Control.MouseFilterEnum.Ignore };
+        if (ItemCatalog.ItemsByPath.TryGetValue(itemPath, out var d) && (d.IsWeapon || d.IsRangedWeapon))
         {
-            holder.AddChild(new TextureRect
-            {
-                Texture = tex,
-                CustomMinimumSize = new Vector2(IconSize, IconSize),
-                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-                MouseFilter = Control.MouseFilterEnum.Ignore,
-            });
+            var kind = d.IsRangedWeapon ? WeaponGlyph.Kind.Ranged : WeaponGlyph.Kind.Melee;
+            holder.AddChild(WeaponIcons.Make(itemPath, kind, pad: 1, shadow: true, empty: empty, loadedAmmoPath: ammo));
         }
         else
         {
-            var chip = new Panel { CustomMinimumSize = new Vector2(IconSize - 8, IconSize - 8), MouseFilter = Control.MouseFilterEnum.Ignore };
+            var chip = new Panel { MouseFilter = Control.MouseFilterEnum.Ignore };
+            chip.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+            int inx = (IconW - IconH) / 2 + 4;
+            chip.OffsetLeft = inx; chip.OffsetRight = -inx; chip.OffsetTop = 4; chip.OffsetBottom = -4;
             chip.AddThemeStyleboxOverride("panel", UiTheme.Box(UiTheme.PanelDeep, UiTheme.Border, 1, 4, 0, glow: false));
             holder.AddChild(chip);
         }
