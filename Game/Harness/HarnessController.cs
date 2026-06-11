@@ -104,6 +104,16 @@ public partial class HarnessController : Node2D
                 _schedule.Add((3.4, h => h.Finish("fire done"), "finish"));
                 _screenshotEverySec = double.PositiveInfinity;
                 break;
+            case "fire-video":
+                // Fire clip: zoom on a lit cluster, capture a PNG sequence.
+                _screenshotEverySec = 1.0 / 30.0;
+                _screenshotScale = 0.5f;
+                _warmupSec = 1.0;
+                _manualSim = true;
+                _schedule.Add((0.1, h => h.SetCameraZoom(4.0f), "zoom"));
+                _schedule.Add((0.3, h => h.IgniteCluster(), "ignite"));
+                _schedule.Add((5.0, h => h.Finish("fire-video done"), "finish"));
+                break;
             case "gear":
                 // Gear pane demo: give the lowest pawn a loadout, select it,
                 // open the Gear tab, and screenshot.
