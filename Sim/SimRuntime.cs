@@ -5315,6 +5315,22 @@ public sealed class SimRuntime
         SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), stack.ItemPath, stack.Count);
     }
 
+    // Drop a specific quantity from a held stack (the rest stays in inventory).
+    public void DropHeldItemAmount(int pawnId, int heldIndex, int amount)
+    {
+        if (amount <= 0) return;
+        if (!Store.TryGetEntityById(pawnId, out var pawn)) return;
+        if (!pawn.HasComponent<Inventory>() || !pawn.HasComponent<WorldPos>()) return;
+        ref var inv = ref pawn.GetComponent<Inventory>();
+        if (inv.Items is null || heldIndex < 0 || heldIndex >= inv.Items.Count) return;
+        var stack = inv.Items[heldIndex];
+        int drop = Math.Min(amount, stack.Count);
+        if (drop >= stack.Count) inv.Items.RemoveAt(heldIndex);
+        else { stack.Count -= drop; inv.Items[heldIndex] = stack; }
+        var wp = pawn.GetComponent<WorldPos>();
+        SpawnItemPile(new TilePos((int)wp.X, (int)wp.Y), stack.ItemPath, drop);
+    }
+
     // ItemSpatialIndex feeders. Fire for every component add/remove in the
     // store; we filter to ItemPile (the one ground-item kind) and
     // HaulReserved. On add the component is present so we read its tile/

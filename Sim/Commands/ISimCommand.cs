@@ -1077,6 +1077,21 @@ public sealed class DropHeldItemCommand : ISimCommand
     public void Apply(SimRuntime sim) => sim.DropHeldItem(PawnEntityId, HeldIndex);
 }
 
+// Drop a specific quantity from a held inventory stack (Gear pane "Drop X").
+public sealed class DropHeldAmountCommand : ISimCommand
+{
+    public int PawnEntityId { get; }
+    public int HeldIndex { get; }
+    public int Amount { get; }
+    public DropHeldAmountCommand(int pawnId, int heldIndex, int amount)
+    {
+        PawnEntityId = pawnId;
+        HeldIndex = heldIndex;
+        Amount = amount;
+    }
+    public void Apply(SimRuntime sim) => sim.DropHeldItemAmount(PawnEntityId, HeldIndex, Amount);
+}
+
 // === Roof commands ===
 // Drag-rect "build roof" — sets every tile in [A..B] to roofed (unless
 // the tile is marked no-roof). Instant for now; build jobs ship later.

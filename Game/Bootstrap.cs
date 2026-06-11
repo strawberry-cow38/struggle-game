@@ -196,7 +196,13 @@ public partial class Bootstrap : Node2D
         var needsTab = new NeedsPanel { Host = _host, Name = "NeedsPanel" };
         AddChild(needsTab);
 
-        var pawnInfoPanel = new PawnInfoPanel { Host = _host, HealthTab = healthTab, NeedsTab = needsTab, Name = "PawnInfoPanel" };
+        var dropQuantityDialog = new DropQuantityDialog { Host = _host, Name = "DropQuantityDialog" };
+        AddChild(dropQuantityDialog);
+
+        var gearTab = new GearTabPanel { Host = _host, DropDialog = dropQuantityDialog, Name = "GearTabPanel" };
+        AddChild(gearTab);
+
+        var pawnInfoPanel = new PawnInfoPanel { Host = _host, HealthTab = healthTab, NeedsTab = needsTab, GearTab = gearTab, Name = "PawnInfoPanel" };
         AddChild(pawnInfoPanel);
         hud.PawnPanel = pawnInfoPanel;
         hud.HealthTab = healthTab;
@@ -206,6 +212,8 @@ public partial class Bootstrap : Node2D
         needsTab.PawnPanel = pawnInfoPanel;
         needsTab.HealthRef = healthTab;
         needsTab.Hud = hud;
+        gearTab.PawnPanel = pawnInfoPanel;
+        gearTab.Hud = hud;
 
         var debugBar = new DebugBar { Tools = _tools, Host = _host, Name = "DebugBar" };
         AddChild(debugBar);

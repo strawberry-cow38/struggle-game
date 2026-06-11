@@ -22,6 +22,7 @@ public partial class PawnInfoPanel : CanvasLayer
     public SimHost? Host { get; set; }
     public HealthTabPanel? HealthTab { get; set; }
     public NeedsPanel? NeedsTab { get; set; }
+    public GearTabPanel? GearTab { get; set; }
 
     private const int PanelWidth = 560;
     private const int MarginLeft = 12;
@@ -178,7 +179,7 @@ public partial class PawnInfoPanel : CanvasLayer
                 {
                     if (HealthTab is null) return;
                     if (HealthTab.PanelOpen) HealthTab.Close(); // re-click → none selected
-                    else if (_shownPawnId >= 0) { _activeCardTab = ""; NeedsTab?.Close(); HealthTab.OpenFor(_shownPawnId); }
+                    else if (_shownPawnId >= 0) { _activeCardTab = ""; NeedsTab?.Close(); GearTab?.Close(); HealthTab.OpenFor(_shownPawnId); }
                     ApplyCardTabs();
                 };
             else if (tab == "Needs")
@@ -186,7 +187,15 @@ public partial class PawnInfoPanel : CanvasLayer
                 {
                     if (NeedsTab is null) return;
                     if (NeedsTab.PanelOpen) NeedsTab.Close();
-                    else if (_shownPawnId >= 0) { _activeCardTab = ""; HealthTab?.Close(); NeedsTab.OpenFor(_shownPawnId); }
+                    else if (_shownPawnId >= 0) { _activeCardTab = ""; HealthTab?.Close(); GearTab?.Close(); NeedsTab.OpenFor(_shownPawnId); }
+                    ApplyCardTabs();
+                };
+            else if (tab == "Gear")
+                t.Pressed += () =>
+                {
+                    if (GearTab is null) return;
+                    if (GearTab.PanelOpen) GearTab.Close();
+                    else if (_shownPawnId >= 0) { _activeCardTab = ""; HealthTab?.Close(); NeedsTab?.Close(); GearTab.OpenFor(_shownPawnId); }
                     ApplyCardTabs();
                 };
             else
@@ -194,11 +203,12 @@ public partial class PawnInfoPanel : CanvasLayer
                 {
                     // Click the active tab again to deselect (drop to none),
                     // rather than falling back to the previously selected tab.
-                    bool panelOpen = (HealthTab?.PanelOpen ?? false) || (NeedsTab?.PanelOpen ?? false);
+                    bool panelOpen = (HealthTab?.PanelOpen ?? false) || (NeedsTab?.PanelOpen ?? false) || (GearTab?.PanelOpen ?? false);
                     bool isActive = !panelOpen && _activeCardTab == name;
                     _activeCardTab = isActive ? "" : name;
                     HealthTab?.Close();
                     NeedsTab?.Close();
+                    GearTab?.Close();
                     ApplyCardTabs();
                 };
             _cardTabs.Add((name, t));
@@ -244,6 +254,7 @@ public partial class PawnInfoPanel : CanvasLayer
     {
         string eff = (HealthTab?.PanelOpen ?? false) ? "Health"
             : (NeedsTab?.PanelOpen ?? false) ? "Needs"
+            : (GearTab?.PanelOpen ?? false) ? "Gear"
             : _activeCardTab;
         if (eff == _appliedTab) return;
         _appliedTab = eff;
