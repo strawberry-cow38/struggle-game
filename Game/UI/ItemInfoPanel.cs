@@ -10,129 +10,47 @@ namespace StruggleGame.Game.UI;
 // selection shows display name + count + tile + forbid state.
 // Multi-selection aggregates count and exposes a Forbid All button
 // that toggles based on the majority state of the selection.
-public partial class ItemInfoPanel : CanvasLayer
+//
+// Chrome / lifecycle / positioning / change-detect come from
+// EntityInfoPanel; this only supplies the item body, render + actions.
+public partial class ItemInfoPanel : EntityInfoPanel
 {
-    public SimHost? Host { get; set; }
-
-    private const int PanelWidth = 560;
-    private const int MarginLeft = 12;
-    private const int MarginBottom = 16;
-    private const int PanelPad = 10;
-
-    private Panel _root = null!;
-    private VBoxContainer _vbox = null!;
-    private ScanlineStyleBox _panelBox = null!;
-    private double _glowT;
-    private Label _nameLabel = null!;
     private Label _countLabel = null!;
     private Label _tileLabel = null!;
     private Label _stateLabel = null!;
     private HpBar _hp = null!;
     private Button _forbidBtn = null!;
 
-    private int _shownCount = -1;
-    private int _shownFirstId = -1;
-    private long _lastSnapshotTick = -1;
     private bool _selectionForbidden;
 
-    public override void _Ready()
+    protected override int[] SelectedIds
     {
-        Layer = 95;
+        get => Host!.SelectedWoodIds;
+        set => Host!.SelectedWoodIds = value;
+    }
 
-        _root = new Panel
-        {
-            Name = "Root",
-            CustomMinimumSize = new Vector2(PanelWidth, 180),
-            MouseFilter = Control.MouseFilterEnum.Stop,
-            Visible = false,
-        };
-        AddChild(new GlassBackdrop { Target = _root, Corner = 12f }); // frosted blur behind
-        AddChild(_root);
+    protected override string Title => "Item";
 
-        // Same dreamcore glass frame as the colonist pane.
-        _panelBox = UiTheme.PanelBox(corner: 12, margin: 10);
-        _root.AddThemeStyleboxOverride("panel", _panelBox);
-        _root.Theme = UiTheme.LabelTheme();
-
-        _vbox = new VBoxContainer
-        {
-            AnchorRight = 1, AnchorBottom = 1,
-            OffsetLeft = 10, OffsetTop = 10, OffsetRight = -10, OffsetBottom = -10,
-            MouseFilter = Control.MouseFilterEnum.Pass,
-        };
-        _vbox.AddThemeConstantOverride("separation", 6);
-        _root.AddChild(_vbox);
-
-        var headerRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Pass };
-        _nameLabel = new Label { Text = "Item", CustomMinimumSize = new Vector2(0, 28) };
-        _nameLabel.AddThemeFontSizeOverride("font_size", 22);
-        _nameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        headerRow.AddChild(_nameLabel);
-        var closeBtn = UiTheme.CloseButton();
-        closeBtn.Pressed += () => Host!.SelectedWoodIds = Array.Empty<int>();
-        headerRow.AddChild(closeBtn);
-        _vbox.AddChild(headerRow);
-
-        _vbox.AddChild(new HSeparator());
-
+    protected override void BuildBody(VBoxContainer vbox)
+    {
         _countLabel = new Label { Text = "" };
-        _vbox.AddChild(_countLabel);
+        vbox.AddChild(_countLabel);
 
         _tileLabel = new Label { Text = "" };
-        _vbox.AddChild(_tileLabel);
+        vbox.AddChild(_tileLabel);
 
         _stateLabel = new Label { Text = "" };
-        _vbox.AddChild(_stateLabel);
+        vbox.AddChild(_stateLabel);
         _hp = new HpBar();
-        _vbox.AddChild(_hp);
+        vbox.AddChild(_hp);
 
         _forbidBtn = new Button { Text = "Forbid", CustomMinimumSize = new Vector2(0, 28) };
         _forbidBtn.Pressed += OnForbidPressed;
-        _vbox.AddChild(_forbidBtn);
+        vbox.AddChild(_forbidBtn);
 
         var hint = new Label { Text = "Hotkey: F", AutowrapMode = TextServer.AutowrapMode.WordSmart };
         hint.AddThemeFontSizeOverride("font_size", 11);
-        _vbox.AddChild(hint);
-
-        GetTree().Root.SizeChanged += Reposition;
-        CallDeferred(nameof(Reposition));
-    }
-
-    public override void _ExitTree()
-    {
-        GetTree().Root.SizeChanged -= Reposition;
-    }
-
-    public override void _Process(double delta)
-    {
-        if (Host is null) return;
-        var ids = Host.SelectedWoodIds;
-        var snap = Host.LatestSnapshot;
-        if (ids.Length == 0 || snap is null)
-        {
-            if (_root.Visible) { _root.Visible = false; _shownCount = -1; }
-            return;
-        }
-        if (!_root.Visible) _root.Visible = true;
-        _glowT += delta;
-        UiTheme.AnimateGlow(_panelBox, _glowT);
-        Reposition();
-        int first = ids[0];
-        if (ids.Length != _shownCount || first != _shownFirstId || snap.Tick != _lastSnapshotTick)
-        {
-            Render(snap, ids);
-            _shownCount = ids.Length;
-            _shownFirstId = first;
-            _lastSnapshotTick = snap.Tick;
-        }
-    }
-
-    private void Reposition()
-    {
-        var vp = GetViewport().GetVisibleRect().Size;
-        float h = Math.Max(350, _vbox.GetCombinedMinimumSize().Y + PanelPad * 2);
-        _root.Size = new Vector2(PanelWidth, h);
-        _root.Position = new Vector2(MarginLeft, vp.Y - h - MarginBottom);
+        vbox.AddChild(hint);
     }
 
     // One selected dropped stack, normalized across Wood + ItemPile.
@@ -145,14 +63,14 @@ public partial class ItemInfoPanel : CanvasLayer
                 outList.Add(new Stack(p.EntityId, p.Tile, p.Count, p.ItemPath, p.Forbidden, p.Label));
     }
 
-    private void Render(SimSnapshot snap, int[] ids)
+    protected override void Render(SimSnapshot snap, int[] ids)
     {
         var stacks = new List<Stack>(ids.Length);
         CollectSelected(snap, new HashSet<int>(ids), stacks);
         if (stacks.Count == 0)
         {
             // All stacks vanished (picked up / merged).
-            Host!.SelectedWoodIds = Array.Empty<int>();
+            SelectedIds = Array.Empty<int>();
             return;
         }
 
@@ -169,7 +87,7 @@ public partial class ItemInfoPanel : CanvasLayer
             var s = stacks[0];
             string name = s.Label ?? (ItemCatalog.ItemsByPath.TryGetValue(s.Path, out var def)
                 ? def.DisplayName : s.Path);
-            _nameLabel.Text = name;
+            NameLabel.Text = name;
             _countLabel.Text = $"Count: {s.Count}";
             _tileLabel.Text = $"Tile: ({s.Tile.X}, {s.Tile.Y})";
             _stateLabel.Text = s.Forbidden ? "Forbidden" : "Haulable";
@@ -178,7 +96,7 @@ public partial class ItemInfoPanel : CanvasLayer
         }
         else
         {
-            _nameLabel.Text = $"Items ({stacks.Count})";
+            NameLabel.Text = $"Items ({stacks.Count})";
             _countLabel.Text = $"Total: {totalCount}";
             _tileLabel.Text = $"First: ({stacks[0].Tile.X}, {stacks[0].Tile.Y})";
             _stateLabel.Text = $"{forbidden} forbidden · {haulable} haulable";
