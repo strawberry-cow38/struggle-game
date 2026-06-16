@@ -8,6 +8,7 @@ using StruggleGame.Game.Render;
 using StruggleGame.Game.Selection;
 using StruggleGame.Game.Tools;
 using StruggleGame.Game.UI;
+using StruggleGame.Game.WorldMap;
 using StruggleGame.Sim;
 
 namespace StruggleGame.Game;
@@ -30,6 +31,24 @@ public partial class Bootstrap : Node2D
         // explicitly on the window — caps to refresh, frees the CPU core the
         // uncapped renderer was burning, and kills the move-order-spam jitter.
         DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Enabled);
+
+        // World-map mode (--worldmap / --harness=worldmap): build only the 3D
+        // hex-sphere view, skipping the 2D colony game. --harness-out=<dir>
+        // turns on auto-orbit screenshot capture.
+        {
+            bool worldmap = false;
+            string? wmOut = null;
+            foreach (var a in OS.GetCmdlineArgs())
+            {
+                if (a == "--worldmap" || a == "--harness=worldmap") worldmap = true;
+                else if (a.StartsWith("--harness-out=")) wmOut = a.Substring("--harness-out=".Length);
+            }
+            if (worldmap)
+            {
+                AddChild(new WorldMapView { CaptureDir = wmOut, Name = "WorldMap" });
+                return;
+            }
+        }
 
         // Fresh world every launch. Harness still gets the deterministic
         // SimHost() default via --harness wiring elsewhere.
