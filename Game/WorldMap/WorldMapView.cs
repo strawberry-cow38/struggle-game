@@ -77,25 +77,31 @@ public partial class WorldMapView : Node3D
     private static Vector3 G(System.Numerics.Vector3 v) => new(v.X, v.Y, v.Z);
 
     // Per-vertex morph shader: lerp sphere position → flat-map position by `morph`.
+    // Local-area flatten: azimuthal-equidistant projection centered on the view
+    // direction. Each vertex's angular distance theta from the centre maps to a
+    // flat radius (scale*theta) in the camera-facing east/north plane, so the
+    // region you're looking at flattens 1:1 (crisp, undistorted) with no poles
+    // or date-line seam (only the antipode behind you wraps, off-screen).
     private const string ShaderCode = @"
 shader_type spatial;
-render_mode cull_disabled, specular_schlick_ggx;
+render_mode cull_disabled;
 uniform float morph : hint_range(0.0, 1.0) = 0.0;
-uniform vec3 flat_center;
-uniform vec3 flat_right;
-uniform vec3 flat_up;
-uniform vec3 flat_normal;
-uniform float center_lon;
-uniform float center_lat;
-uniform float scale_x = 2.0;
-uniform float scale_y = 2.0;
+uniform vec3 view_dir = vec3(0.0, 0.0, 1.0);
+uniform vec3 flat_right = vec3(1.0, 0.0, 0.0);
+uniform vec3 flat_up = vec3(0.0, 1.0, 0.0);
+uniform vec3 flat_center = vec3(0.0);
+uniform float flat_scale = 2.0;
 void vertex() {
-    float lon = UV2.x - center_lon;
-    lon = lon - TAU * floor(lon / TAU + 0.5);   // wrap to [-PI, PI] around the view
-    float lat = UV2.y - center_lat;
-    vec3 flat_pos = flat_center + (lon * scale_x) * flat_right + (lat * scale_y) * flat_up;
+    vec3 d = normalize(VERTEX);
+    float c = clamp(dot(d, view_dir), -1.0, 1.0);
+    float theta = acos(c);
+    vec3 t = d - view_dir * c;            // tangential component
+    float tl = length(t);
+    vec2 dir2 = tl > 1e-5 ? vec2(dot(t, flat_right), dot(t, flat_up)) / tl : vec2(0.0);
+    vec2 f = (flat_scale * theta) * dir2;
+    vec3 flat_pos = flat_center + f.x * flat_right + f.y * flat_up;
     VERTEX = mix(VERTEX, flat_pos, morph);
-    NORMAL = normalize(mix(NORMAL, flat_normal, morph));
+    NORMAL = normalize(mix(NORMAL, view_dir, morph));
 }
 void fragment() {
     ALBEDO = COLOR.rgb;
@@ -114,7 +120,6 @@ void fragment() {
         {
             Vector3 outward = G(tile.Center).Normalized();
             Vector3 center = outward * R;
-            float centerLon = Mathf.Atan2(outward.X, outward.Z);
 
             Color col = BiomeColor(tile.Biome);
             if (tile.Index == _currentTile) col = col.Lerp(new Color(1f, 1f, 1f), 0.35f);
@@ -127,9 +132,9 @@ void fragment() {
             for (int k = 0; k < n; k++)
             {
                 Vector3 a = center, b = ring[k], c = ring[(k + 1) % n];
-                AddVert(st, a, centerLon, col);
-                AddVert(st, b, centerLon, col);
-                AddVert(st, c, centerLon, col);
+                AddVert(st, a, col);
+                AddVert(st, b, col);
+                AddVert(st, c, col);
             }
         }
 
@@ -142,17 +147,13 @@ void fragment() {
     // Vertex normal = its own sphere direction (smooth shading). UV2 = the
     // vertex's lon/lat (radians), longitude unwrapped to the tile centre so a
     // tile's verts stay contiguous across the date-line.
-    private static void AddVert(SurfaceTool st, Vector3 v, float centerLon, Color c)
+    // Vertex normal = its own sphere direction (smooth shading). The flat-map
+    // position is derived in the shader from the sphere position, so no extra
+    // per-vertex data is needed.
+    private static void AddVert(SurfaceTool st, Vector3 v, Color c)
     {
-        Vector3 dir = v.Normalized();
-        float lon = Mathf.Atan2(dir.X, dir.Z);
-        // unwrap to within PI of the tile centre
-        while (lon - centerLon > Mathf.Pi) lon -= Mathf.Tau;
-        while (lon - centerLon < -Mathf.Pi) lon += Mathf.Tau;
-        float lat = Mathf.Asin(Mathf.Clamp(dir.Y, -1f, 1f));
         st.SetColor(c);
-        st.SetNormal(dir);
-        st.SetUV2(new Vector2(lon, lat));
+        st.SetNormal(v.Normalized());
         st.AddVertex(v);
     }
 
@@ -231,29 +232,21 @@ void fragment() {
 
     private void FreezeFlatFraming()
     {
-        Vector3 viewDir = _cam.GlobalPosition.Normalized();   // globe point facing the camera
-        float centerLat = Mathf.Asin(Mathf.Clamp(viewDir.Y, -1f, 1f));
+        Vector3 viewDir = _cam.GlobalPosition.Normalized();   // projection centre (point facing camera)
 
-        // North-up / east-right framing in the camera-facing plane, so the map
-        // is oriented by latitude/longitude (upright) rather than the orbit tilt.
+        // North-up / east-right framing in the camera-facing plane.
         Vector3 north = Vector3.Up - viewDir * Vector3.Up.Dot(viewDir);
         north = north.LengthSquared() < 1e-5f ? Vector3.Forward : north.Normalized();
         Vector3 east = north.Cross(viewDir).Normalized();
         _flatNorth = north;
 
         // Map sits at the origin (where the camera is already looking) so the
-        // zoomed-in camera frames a good region — NOT at viewDir*R, which would
-        // be right against the lens.
-        _mat.SetShaderParameter("flat_center", Vector3.Zero);
+        // zoomed-in camera frames a good region.
+        _mat.SetShaderParameter("view_dir", viewDir);
         _mat.SetShaderParameter("flat_right", east);
         _mat.SetShaderParameter("flat_up", north);
-        _mat.SetShaderParameter("flat_normal", viewDir);  // faces the camera
-        _mat.SetShaderParameter("center_lon", Mathf.Atan2(viewDir.X, viewDir.Z));
-        _mat.SetShaderParameter("center_lat", centerLat);
-        // Match the sphere's local scale at the view centre so the morph has no
-        // size jump where you're looking (equirect stretches away from there).
-        _mat.SetShaderParameter("scale_x", R * Mathf.Cos(centerLat));
-        _mat.SetShaderParameter("scale_y", R);
+        _mat.SetShaderParameter("flat_center", Vector3.Zero);
+        _mat.SetShaderParameter("flat_scale", R);
     }
 
     public override void _UnhandledInput(InputEvent e)
