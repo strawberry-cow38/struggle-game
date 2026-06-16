@@ -83,39 +83,28 @@ public partial class WorldMapView : Node3D
         foreach (var tile in _planet.Tiles)
         {
             Vector3 outward = G(tile.Center).Normalized();
-            // Subtle relief: land rises a touch above sea level.
-            float rTile = R * (1f + Mathf.Max(0f, tile.Elevation) * 0.04f);
-            Vector3 center = outward * rTile;
+            // ALL tiles at the same radius R. (A per-tile elevation bump gave
+            // adjacent tiles different corner radii, so shared corners no longer
+            // coincided — that was the "gap" between hexes.)
+            Vector3 center = outward * R;
 
             Color col = BiomeColor(tile.Biome);
             if (tile.Index == _currentTile) col = col.Lerp(new Color(1f, 1f, 1f), 0.35f);
-            // Edge color = slightly darker. Center-bright / edge-dark makes each
-            // hex read as a subtly raised "pillow" so the tiles stay visible on
-            // the otherwise smooth, seamless sphere.
-            Color edge = new Color(col.R * 0.78f, col.G * 0.78f, col.B * 0.78f);
 
             int n = tile.Corners.Length;
             var ring = new Vector3[n];
             for (int k = 0; k < n; k++)
-            {
-                Vector3 corner = G(tile.Corners[k]).Normalized();
-                // inset toward the tile centre direction, then re-project to rTile
-                Vector3 inset = corner.Lerp(outward, BorderInset).Normalized();
-                ring[k] = inset * rTile;
-            }
+                ring[k] = G(tile.Corners[k]).Normalized() * R; // shared, bit-identical between tiles
 
             for (int k = 0; k < n; k++)
             {
                 Vector3 a = center, b = ring[k], c = ring[(k + 1) % n];
-                // Smooth (spherical) normals: each vertex's normal is its own
-                // outward sphere direction. Coincident corners shared by adjacent
-                // tiles get the same normal, so lighting flows smoothly across
-                // tile edges and the whole thing reads as one smooth sphere.
-                // The center-bright / edge-dark vertex colors keep the hexes
-                // visible. Cull is disabled, so triangle winding is irrelevant.
+                // Smooth (spherical) normals + a single flat colour per tile, so
+                // adjacent tiles meet seamlessly (no edge lines, no gaps). Cull
+                // is disabled, so triangle winding is irrelevant.
                 AddVert(st, a, a.Normalized(), col);
-                AddVert(st, b, b.Normalized(), edge);
-                AddVert(st, c, c.Normalized(), edge);
+                AddVert(st, b, b.Normalized(), col);
+                AddVert(st, c, c.Normalized(), col);
             }
         }
 
@@ -126,8 +115,9 @@ public partial class WorldMapView : Node3D
             MaterialOverride = new StandardMaterial3D
             {
                 VertexColorUseAsAlbedo = true,
-                Roughness = 0.9f,
+                Roughness = 1.0f,                 // fully matte
                 Metallic = 0.0f,
+                SpecularMode = BaseMaterial3D.SpecularModeEnum.Disabled, // no shine/reflection
                 // Render both faces. The per-tile winding doesn't match Godot's
                 // front-face convention (the globe rendered inside-out), and a
                 // convex sphere can't show its interior anyway (the near,
