@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Threading.Tasks;
 using Godot;
@@ -5,29 +6,36 @@ using StruggleGame.Sim.World;
 
 namespace StruggleGame.Game.WorldMap;
 
-// 3D view of the HexPlanet: builds the Goldberg-sphere mesh (biome-colored
-// tiles), an orbiting camera, lighting, and a pin marker on the "current"
-// tile. Drag to orbit, wheel to zoom. When CaptureDir is set the view auto-
-// orbits, saves a few PNGs, and quits (used by the --worldmap harness so it
-// can be screenshotted headlessly-ish on the build box).
+// 3D view of the HexPlanet. Far out it's a smooth matte hex globe you orbit;
+// zoom in past a threshold and a vertex shader MORPHS the whole planet into a
+// flat equirectangular hex map, centered on whatever you were looking at and
+// facing the camera (master's "squish the hexes into a flat 2D map on zoom").
+//
+// The morph is per-vertex in a shader: each vertex carries its sphere position
+// (VERTEX) and its lon/lat (UV2); the shader lerps between the sphere point and
+// a flat plane position by a `morph` uniform. Centering + the facing plane are
+// frozen when the unwrap begins so the viewed region stays put as it flattens.
 public partial class WorldMapView : Node3D
 {
-    // Set by Bootstrap from --harness-out=. Non-null → capture mode.
-    public string? CaptureDir;
-    public int Frequency = 51; // 10*N²+2 = 26012 tiles (~10x of N=16)
+    public string? CaptureDir;            // non-null → auto-orbit + screenshot then quit
+    public int Frequency = 51;            // 10*N²+2 = 26012 tiles (~10x of N=16)
     public int Seed = 1337;
 
-    private const float R = 2.0f;          // planet radius (Godot units)
-    // 0 = corners stay at their true (shared) positions so adjacent tiles meet
-    // edge-to-edge with no gaps. Per-tile flat shading still defines the hexes.
-    private const float BorderInset = 0.0f;
+    private const float R = 2.0f;
+    private const float FlattenStart = R * 1.95f; // begin unwrap at this distance
+    private const float FlattenEnd = R * 1.25f;   // fully flat by here
 
     private HexPlanet _planet = null!;
     private Node3D _pivot = null!;
     private Camera3D _cam = null!;
+    private ShaderMaterial _mat = null!;
     private float _yaw = 0.6f, _pitch = 0.45f, _dist = R * 3.2f;
     private bool _dragging;
     private int _currentTile;
+
+    private float _morph;
+    private bool _flatFrozen;             // have we captured the unwrap framing?
+    private Vector3 _flatNorth = Vector3.Up;
 
     public override void _Ready()
     {
@@ -44,16 +52,12 @@ public partial class WorldMapView : Node3D
             _ = RunCapture();
     }
 
-    // ---- scene build ---------------------------------------------------------
-
     private void BuildEnvironment()
     {
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Color,
             BackgroundColor = new Color(0.02f, 0.02f, 0.05f),
-            // Ambient must read from our Color, NOT the (near-black) background —
-            // otherwise the night side of the globe goes pitch black.
             AmbientLightSource = Godot.Environment.AmbientSource.Color,
             AmbientLightColor = new Color(0.66f, 0.70f, 0.82f),
             AmbientLightEnergy = 0.95f,
@@ -61,9 +65,6 @@ public partial class WorldMapView : Node3D
         };
         AddChild(new WorldEnvironment { Environment = env });
 
-        // Gentle key light for form. Shadows OFF: the only shadow-caster is the
-        // marker pin, and its cast shadow streaks an ugly black wedge across the
-        // tiles. Even, readable tiles matter more than self-shadowing here.
         var sun = new DirectionalLight3D
         {
             RotationDegrees = new Vector3(-52, -38, 0),
@@ -75,6 +76,35 @@ public partial class WorldMapView : Node3D
 
     private static Vector3 G(System.Numerics.Vector3 v) => new(v.X, v.Y, v.Z);
 
+    // Per-vertex morph shader: lerp sphere position → flat-map position by `morph`.
+    private const string ShaderCode = @"
+shader_type spatial;
+render_mode cull_disabled, specular_schlick_ggx;
+uniform float morph : hint_range(0.0, 1.0) = 0.0;
+uniform vec3 flat_center;
+uniform vec3 flat_right;
+uniform vec3 flat_up;
+uniform vec3 flat_normal;
+uniform float center_lon;
+uniform float center_lat;
+uniform float scale_x = 2.0;
+uniform float scale_y = 2.0;
+void vertex() {
+    float lon = UV2.x - center_lon;
+    lon = lon - TAU * floor(lon / TAU + 0.5);   // wrap to [-PI, PI] around the view
+    float lat = UV2.y - center_lat;
+    vec3 flat_pos = flat_center + (lon * scale_x) * flat_right + (lat * scale_y) * flat_up;
+    VERTEX = mix(VERTEX, flat_pos, morph);
+    NORMAL = normalize(mix(NORMAL, flat_normal, morph));
+}
+void fragment() {
+    ALBEDO = COLOR.rgb;
+    ROUGHNESS = 1.0;
+    METALLIC = 0.0;
+    SPECULAR = 0.0;
+}
+";
+
     private void BuildPlanetMesh()
     {
         var st = new SurfaceTool();
@@ -83,10 +113,8 @@ public partial class WorldMapView : Node3D
         foreach (var tile in _planet.Tiles)
         {
             Vector3 outward = G(tile.Center).Normalized();
-            // ALL tiles at the same radius R. (A per-tile elevation bump gave
-            // adjacent tiles different corner radii, so shared corners no longer
-            // coincided — that was the "gap" between hexes.)
             Vector3 center = outward * R;
+            float centerLon = Mathf.Atan2(outward.X, outward.Z);
 
             Color col = BiomeColor(tile.Biome);
             if (tile.Index == _currentTile) col = col.Lerp(new Color(1f, 1f, 1f), 0.35f);
@@ -94,44 +122,37 @@ public partial class WorldMapView : Node3D
             int n = tile.Corners.Length;
             var ring = new Vector3[n];
             for (int k = 0; k < n; k++)
-                ring[k] = G(tile.Corners[k]).Normalized() * R; // shared, bit-identical between tiles
+                ring[k] = G(tile.Corners[k]).Normalized() * R;
 
             for (int k = 0; k < n; k++)
             {
                 Vector3 a = center, b = ring[k], c = ring[(k + 1) % n];
-                // Smooth (spherical) normals + a single flat colour per tile, so
-                // adjacent tiles meet seamlessly (no edge lines, no gaps). Cull
-                // is disabled, so triangle winding is irrelevant.
-                AddVert(st, a, a.Normalized(), col);
-                AddVert(st, b, b.Normalized(), col);
-                AddVert(st, c, c.Normalized(), col);
+                AddVert(st, a, centerLon, col);
+                AddVert(st, b, centerLon, col);
+                AddVert(st, c, centerLon, col);
             }
         }
 
         var mesh = st.Commit();
-        var mi = new MeshInstance3D
-        {
-            Mesh = mesh,
-            MaterialOverride = new StandardMaterial3D
-            {
-                VertexColorUseAsAlbedo = true,
-                Roughness = 1.0f,                 // fully matte
-                Metallic = 0.0f,
-                SpecularMode = BaseMaterial3D.SpecularModeEnum.Disabled, // no shine/reflection
-                // Render both faces. The per-tile winding doesn't match Godot's
-                // front-face convention (the globe rendered inside-out), and a
-                // convex sphere can't show its interior anyway (the near,
-                // outward-normal faces always win the depth test). Foolproof.
-                CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-            },
-        };
+        _mat = new ShaderMaterial { Shader = new Shader { Code = ShaderCode } };
+        var mi = new MeshInstance3D { Mesh = mesh, MaterialOverride = _mat };
         AddChild(mi);
     }
 
-    private static void AddVert(SurfaceTool st, Vector3 v, Vector3 n, Color c)
+    // Vertex normal = its own sphere direction (smooth shading). UV2 = the
+    // vertex's lon/lat (radians), longitude unwrapped to the tile centre so a
+    // tile's verts stay contiguous across the date-line.
+    private static void AddVert(SurfaceTool st, Vector3 v, float centerLon, Color c)
     {
+        Vector3 dir = v.Normalized();
+        float lon = Mathf.Atan2(dir.X, dir.Z);
+        // unwrap to within PI of the tile centre
+        while (lon - centerLon > Mathf.Pi) lon -= Mathf.Tau;
+        while (lon - centerLon < -Mathf.Pi) lon += Mathf.Tau;
+        float lat = Mathf.Asin(Mathf.Clamp(dir.Y, -1f, 1f));
         st.SetColor(c);
-        st.SetNormal(n);
+        st.SetNormal(dir);
+        st.SetUV2(new Vector2(lon, lat));
         st.AddVertex(v);
     }
 
@@ -139,9 +160,6 @@ public partial class WorldMapView : Node3D
     {
         var t = _planet.Tiles[_currentTile];
         Vector3 outward = G(t.Center).Normalized();
-        Vector3 basePos = outward * R * (1f + Mathf.Max(0f, t.Elevation) * 0.04f);
-
-        // A cone (cylinder w/ zero top radius) hovering above the tile, tip down.
         var pin = new MeshInstance3D
         {
             Mesh = new CylinderMesh { TopRadius = 0f, BottomRadius = 0.09f * R, Height = 0.26f * R, RadialSegments = 12 },
@@ -153,16 +171,17 @@ public partial class WorldMapView : Node3D
                 EmissionEnergyMultiplier = 2.2f,
             },
         };
-        // Orient local +Y (cone tip) to point DOWN toward the planet.
         Vector3 yAxis = -outward;
         Vector3 helper = Mathf.Abs(yAxis.Y) < 0.99f ? Vector3.Up : Vector3.Right;
         Vector3 xAxis = helper.Cross(yAxis).Normalized();
         Vector3 zAxis = xAxis.Cross(yAxis).Normalized();
-        var basis = new Basis(xAxis, yAxis, zAxis);
-        // Hover so the tip sits just above the tile surface.
-        pin.Transform = new Transform3D(basis, basePos + outward * (0.30f * R));
+        pin.Transform = new Transform3D(new Basis(xAxis, yAxis, zAxis), outward * R + outward * (0.30f * R));
+        // The pin only makes sense on the globe; hide it once flattened.
+        _pin = pin;
         AddChild(pin);
     }
+
+    private MeshInstance3D _pin = null!;
 
     private void BuildCameraRig()
     {
@@ -175,13 +194,67 @@ public partial class WorldMapView : Node3D
     private void UpdateOrbit()
     {
         _pitch = Mathf.Clamp(_pitch, -1.45f, 1.45f);
-        _dist = Mathf.Clamp(_dist, R * 1.4f, R * 8f);
+        _dist = Mathf.Clamp(_dist, R * 1.05f, R * 8f);
         _pivot.Rotation = new Vector3(_pitch, _yaw, 0f);
         _cam.Position = new Vector3(0f, 0f, _dist);
-        _cam.LookAt(Vector3.Zero, Vector3.Up);
+        _cam.LookAt(Vector3.Zero, Vector3.Up);   // provisional → gives correct GlobalPosition
+
+        UpdateMorph();                            // may freeze the flat framing (reads cam pos)
+
+        // On the flat map, roll the camera so its up is the map's north → the
+        // map reads upright instead of tilted to the orbit angle.
+        if (_morph > 0.001f)
+            _cam.LookAt(Vector3.Zero, _flatNorth);
     }
 
-    // ---- interactive orbit ---------------------------------------------------
+    // Map zoom distance → morph amount, and freeze the unwrap framing (centre +
+    // camera-facing plane) the moment the unwrap begins so the viewed region
+    // stays put as it flattens.
+    private void UpdateMorph()
+    {
+        float m = Mathf.Clamp((FlattenStart - _dist) / (FlattenStart - FlattenEnd), 0f, 1f);
+
+        if (m > 0f && !_flatFrozen)
+        {
+            FreezeFlatFraming();
+            _flatFrozen = true;
+        }
+        else if (m <= 0f)
+        {
+            _flatFrozen = false;
+        }
+
+        _morph = m;
+        if (_mat is not null) _mat.SetShaderParameter("morph", m);
+        if (_pin is not null) _pin.Visible = m < 0.5f;
+    }
+
+    private void FreezeFlatFraming()
+    {
+        Vector3 viewDir = _cam.GlobalPosition.Normalized();   // globe point facing the camera
+        float centerLat = Mathf.Asin(Mathf.Clamp(viewDir.Y, -1f, 1f));
+
+        // North-up / east-right framing in the camera-facing plane, so the map
+        // is oriented by latitude/longitude (upright) rather than the orbit tilt.
+        Vector3 north = Vector3.Up - viewDir * Vector3.Up.Dot(viewDir);
+        north = north.LengthSquared() < 1e-5f ? Vector3.Forward : north.Normalized();
+        Vector3 east = north.Cross(viewDir).Normalized();
+        _flatNorth = north;
+
+        // Map sits at the origin (where the camera is already looking) so the
+        // zoomed-in camera frames a good region — NOT at viewDir*R, which would
+        // be right against the lens.
+        _mat.SetShaderParameter("flat_center", Vector3.Zero);
+        _mat.SetShaderParameter("flat_right", east);
+        _mat.SetShaderParameter("flat_up", north);
+        _mat.SetShaderParameter("flat_normal", viewDir);  // faces the camera
+        _mat.SetShaderParameter("center_lon", Mathf.Atan2(viewDir.X, viewDir.Z));
+        _mat.SetShaderParameter("center_lat", centerLat);
+        // Match the sphere's local scale at the view centre so the morph has no
+        // size jump where you're looking (equirect stretches away from there).
+        _mat.SetShaderParameter("scale_x", R * Mathf.Cos(centerLat));
+        _mat.SetShaderParameter("scale_y", R);
+    }
 
     public override void _UnhandledInput(InputEvent e)
     {
@@ -191,15 +264,15 @@ public partial class WorldMapView : Node3D
             else if (mb.ButtonIndex == MouseButton.WheelUp) { _dist *= 0.9f; UpdateOrbit(); }
             else if (mb.ButtonIndex == MouseButton.WheelDown) { _dist *= 1.1f; UpdateOrbit(); }
         }
-        else if (e is InputEventMouseMotion mm && _dragging)
+        else if (e is InputEventMouseMotion mm && _dragging && _morph <= 0.001f)
         {
+            // Orbit only while we're still a globe; once unwrapping, the framing
+            // is frozen (pan across the flat map is a later addition).
             _yaw -= mm.Relative.X * 0.006f;
             _pitch -= mm.Relative.Y * 0.006f;
             UpdateOrbit();
         }
     }
-
-    // ---- biome palette -------------------------------------------------------
 
     private static Color BiomeColor(Biome b) => b switch
     {
@@ -216,25 +289,30 @@ public partial class WorldMapView : Node3D
         _               => new Color(1f, 0f, 1f),
     };
 
-    // ---- capture (for the --worldmap harness) --------------------------------
-
     private async Task RunCapture()
     {
         Directory.CreateDirectory(CaptureDir!);
-        float[] yaws = { 0.4f, 1.7f, 3.0f, 4.3f, 5.6f };
-        for (int i = 0; i < yaws.Length; i++)
+        // First a few globe angles, then zoom all the way in to capture the
+        // flattened map so a screenshot can verify both ends of the morph.
+        var frames = new (float yaw, float dist)[]
         {
-            _yaw = yaws[i];
-            _pitch = 0.5f;
+            (0.4f, R * 3.2f), (2.0f, R * 3.2f), (4.0f, R * 3.2f),
+            (0.4f, R * 1.7f),                       // mid-morph
+            (0.4f, R * 1.1f), (3.2f, R * 1.1f),     // fully flat
+        };
+        for (int i = 0; i < frames.Length; i++)
+        {
+            _yaw = frames[i].yaw;
+            _pitch = 0.4f;
+            _dist = frames[i].dist;
             UpdateOrbit();
-            // Let a couple of frames render before grabbing the backbuffer.
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
             var img = GetViewport().GetTexture().GetImage();
             string path = Path.Combine(CaptureDir!, $"worldmap_{i:D2}.png");
             img.SavePng(path);
-            GD.Print($"[worldmap] shot {i} -> {path}  ({_planet.TileCount} tiles, {_planet.PentagonCount} pentagons)");
+            GD.Print($"[worldmap] shot {i} (dist={_dist:0.0} morph={_morph:0.00}) -> {path}");
         }
         GetTree().Quit();
     }
