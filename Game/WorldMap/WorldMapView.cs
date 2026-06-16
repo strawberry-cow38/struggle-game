@@ -18,7 +18,9 @@ public partial class WorldMapView : Node3D
     public int Seed = 1337;
 
     private const float R = 2.0f;          // planet radius (Godot units)
-    private const float BorderInset = 0.06f; // pull corners in → thin tile gaps
+    // 0 = corners stay at their true (shared) positions so adjacent tiles meet
+    // edge-to-edge with no gaps. Per-tile flat shading still defines the hexes.
+    private const float BorderInset = 0.0f;
 
     private HexPlanet _planet = null!;
     private Node3D _pivot = null!;
@@ -118,6 +120,11 @@ public partial class WorldMapView : Node3D
                 VertexColorUseAsAlbedo = true,
                 Roughness = 0.9f,
                 Metallic = 0.0f,
+                // Render both faces. The per-tile winding doesn't match Godot's
+                // front-face convention (the globe rendered inside-out), and a
+                // convex sphere can't show its interior anyway (the near,
+                // outward-normal faces always win the depth test). Foolproof.
+                CullMode = BaseMaterial3D.CullModeEnum.Disabled,
             },
         };
         AddChild(mi);
