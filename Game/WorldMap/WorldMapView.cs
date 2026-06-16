@@ -14,7 +14,7 @@ public partial class WorldMapView : Node3D
 {
     // Set by Bootstrap from --harness-out=. Non-null → capture mode.
     public string? CaptureDir;
-    public int Frequency = 16;
+    public int Frequency = 51; // 10*N²+2 = 26012 tiles (~10x of N=16)
     public int Seed = 1337;
 
     private const float R = 2.0f;          // planet radius (Godot units)
@@ -89,6 +89,10 @@ public partial class WorldMapView : Node3D
 
             Color col = BiomeColor(tile.Biome);
             if (tile.Index == _currentTile) col = col.Lerp(new Color(1f, 1f, 1f), 0.35f);
+            // Edge color = slightly darker. Center-bright / edge-dark makes each
+            // hex read as a subtly raised "pillow" so the tiles stay visible on
+            // the otherwise smooth, seamless sphere.
+            Color edge = new Color(col.R * 0.78f, col.G * 0.78f, col.B * 0.78f);
 
             int n = tile.Corners.Length;
             var ring = new Vector3[n];
@@ -103,11 +107,15 @@ public partial class WorldMapView : Node3D
             for (int k = 0; k < n; k++)
             {
                 Vector3 a = center, b = ring[k], c = ring[(k + 1) % n];
-                // Winding so the front face points outward (back-face culling safe).
-                if ((b - a).Cross(c - a).Dot(outward) < 0f) (b, c) = (c, b);
-                AddVert(st, a, outward, col);
-                AddVert(st, b, outward, col);
-                AddVert(st, c, outward, col);
+                // Smooth (spherical) normals: each vertex's normal is its own
+                // outward sphere direction. Coincident corners shared by adjacent
+                // tiles get the same normal, so lighting flows smoothly across
+                // tile edges and the whole thing reads as one smooth sphere.
+                // The center-bright / edge-dark vertex colors keep the hexes
+                // visible. Cull is disabled, so triangle winding is irrelevant.
+                AddVert(st, a, a.Normalized(), col);
+                AddVert(st, b, b.Normalized(), edge);
+                AddVert(st, c, c.Normalized(), edge);
             }
         }
 

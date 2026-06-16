@@ -41,4 +41,14 @@ public partial class WorldMapOverlay : CanvasLayer
         hint.AddThemeColorOverride("font_color", new Color(0.92f, 0.94f, 1f));
         AddChild(hint);
     }
+
+    // Show/hide without rebuilding the (large) mesh. Pauses the SubViewport's
+    // rendering while hidden so it doesn't keep drawing the globe off-screen.
+    public void SetActive(bool on)
+    {
+        Visible = on;
+        _vp.RenderTargetUpdateMode = on
+            ? SubViewport.UpdateMode.Always
+            : SubViewport.UpdateMode.Disabled;
+    }
 }

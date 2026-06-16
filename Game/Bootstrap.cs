@@ -360,7 +360,8 @@ public partial class Bootstrap : Node2D
                 }
                 break;
             case Key.M:
-                // Toggle the 3D world-map overlay.
+                // Toggle the 3D world-map overlay. Built lazily once (the mesh
+                // is large), then just shown/hidden so re-opening is instant.
                 if (_worldMap is null)
                 {
                     _worldMap = new WorldMapOverlay { Name = "WorldMapOverlay" };
@@ -368,8 +369,7 @@ public partial class Bootstrap : Node2D
                 }
                 else
                 {
-                    _worldMap.QueueFree();
-                    _worldMap = null;
+                    _worldMap.SetActive(!_worldMap.Visible);
                 }
                 break;
             case Key.R:
