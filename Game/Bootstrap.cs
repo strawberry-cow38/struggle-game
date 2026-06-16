@@ -19,6 +19,7 @@ public partial class Bootstrap : Node2D
     private readonly ToolService _tools = new();
     private UI.MainMenuPanel? _menu;
     private WorldRenderer? _renderer;
+    private WorldMapOverlay? _worldMap;
 
     public override void _Ready()
     {
@@ -356,6 +357,19 @@ public partial class Bootstrap : Node2D
                 {
                     _renderer.ShowHitboxes = !_renderer.ShowHitboxes;
                     GD.Print(_renderer.ShowHitboxes ? "Hitboxes ON" : "Hitboxes OFF");
+                }
+                break;
+            case Key.M:
+                // Toggle the 3D world-map overlay.
+                if (_worldMap is null)
+                {
+                    _worldMap = new WorldMapOverlay { Name = "WorldMapOverlay" };
+                    AddChild(_worldMap);
+                }
+                else
+                {
+                    _worldMap.QueueFree();
+                    _worldMap = null;
                 }
                 break;
             case Key.R:

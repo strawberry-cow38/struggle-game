@@ -7,6 +7,7 @@ using StruggleGame.Sim.Commands;
 using StruggleGame.Sim.Map;
 using StruggleGame.Sim.Snapshots;
 using StruggleGame.Sim.World;
+using StruggleGame.Game.WorldMap;
 
 namespace StruggleGame.Game.Harness;
 
@@ -85,6 +86,15 @@ public partial class HarnessController : Node2D
                 _schedule.Add((10.0, h => h.DraftLowest(), "draft lowest pawn"));
                 _schedule.Add((12.0, h => h.MoveLowest(c - 8, c - 8, false), "move drafted SW"));
                 _schedule.Add((15.0, h => h.Finish("quick complete"), "finish"));
+                break;
+            case "worldmap-overlay":
+                // Boot the 2D colony, then open the M-key world-map overlay on
+                // top of it and screenshot — verifies the overlay covers the
+                // game + UI and the SubViewport renders the globe.
+                _schedule.Add((1.0, h => h.AddChild(new WorldMapOverlay { Name = "WorldMapOverlay" }), "open map"));
+                _schedule.Add((2.8, h => h.Screenshot(), "shot"));
+                _schedule.Add((3.6, h => h.Finish("worldmap-overlay done"), "finish"));
+                _screenshotEverySec = double.PositiveInfinity;
                 break;
             case "pocketsand":
                 // Pocket Sand demo: give the lowest pawn a rifle + spare
