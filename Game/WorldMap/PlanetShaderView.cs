@@ -56,7 +56,8 @@ public partial class PlanetShaderView : Node3D
         swBake.Stop();
         GD.Print($"[planet-shader] tiles={_planet.TileCount} gen={swGen.ElapsedMilliseconds}ms bake={swBake.ElapsedMilliseconds}ms lookup={TexW}x{TexH} pal={PalW}");
         var palTex = BuildPalette();
-        BuildSphere(idTex, palTex);
+        var cenTex = BuildCenters();
+        BuildSphere(idTex, palTex, cenTex);
         BuildCamera();
         UpdateOrbit();
 
@@ -109,7 +110,11 @@ public partial class PlanetShaderView : Node3D
             buckets[by * CW + bx].Add(t.Index);
         }
 
-        var buf = new byte[TexW * TexH * 4];
+        // Bake the TOP-2 nearest tiles per texel (id1, id2) as floats. Storing the
+        // 2nd-nearest is what makes crisp analytic edges robust: the shader draws
+        // the boundary exactly where the two nearest tile centres tie — no tap
+        // guessing, no neighbour table needed.
+        var f = new float[TexW * TexH * 2];
         for (int y = 0; y < TexH; y++)
         {
             float v = (y + 0.5f) / TexH;
@@ -121,8 +126,7 @@ public partial class PlanetShaderView : Node3D
                 int bx = Math.Clamp((int)(u * CW), 0, CW - 1);
                 var dir = DirFromUV(u, v);
 
-                int best = -1; float bestDot = -2f;
-                // search neighbourhood (wrap in u, clamp in v); full u-row near poles
+                int id1 = -1, id2 = -1; float d1 = -2f, d2 = -2f;
                 int rxLo = pole ? 0 : bx - 2, rxHi = pole ? CW - 1 : bx + 2;
                 for (int yy = by - 2; yy <= by + 2; yy++)
                 {
@@ -133,19 +137,20 @@ public partial class PlanetShaderView : Node3D
                         foreach (int ti in buckets[yy * CW + wx])
                         {
                             float dot = System.Numerics.Vector3.Dot(dir, tiles[ti].Center);
-                            if (dot > bestDot) { bestDot = dot; best = ti; }
+                            if (dot > d1) { d2 = d1; id2 = id1; d1 = dot; id1 = ti; }
+                            else if (dot > d2) { d2 = dot; id2 = ti; }
                         }
                     }
                 }
-                if (best < 0) best = 0;
-                int o = (y * TexW + x) * 4;
-                buf[o] = (byte)(best & 255);
-                buf[o + 1] = (byte)((best >> 8) & 255);
-                buf[o + 2] = (byte)((best >> 16) & 255);
-                buf[o + 3] = 255;
+                if (id1 < 0) id1 = 0;
+                if (id2 < 0) id2 = id1;
+                int o = (y * TexW + x) * 2;
+                f[o] = id1; f[o + 1] = id2;
             }
         }
-        var img = Image.CreateFromData(TexW, TexH, false, Image.Format.Rgba8, buf);
+        var bytes = new byte[f.Length * 4];
+        Buffer.BlockCopy(f, 0, bytes, 0, bytes.Length);
+        var img = Image.CreateFromData(TexW, TexH, false, Image.Format.Rgf, bytes);
         return ImageTexture.CreateFromImage(img);
     }
 
@@ -164,40 +169,71 @@ public partial class PlanetShaderView : Node3D
         return ImageTexture.CreateFromImage(img);
     }
 
+    // id -> tile centre xyz, as a float texture (for the analytic Voronoi edges).
+    private ImageTexture BuildCenters()
+    {
+        var f = new float[PalW * PalW * 4];
+        foreach (var t in _planet.Tiles)
+        {
+            int id = t.Index, px = id % PalW, py = id / PalW;
+            if (py >= PalW) continue;
+            int o = (py * PalW + px) * 4;
+            f[o] = t.Center.X; f[o + 1] = t.Center.Y; f[o + 2] = t.Center.Z; f[o + 3] = 0f;
+        }
+        var bytes = new byte[f.Length * 4];
+        Buffer.BlockCopy(f, 0, bytes, 0, bytes.Length);
+        var img = Image.CreateFromData(PalW, PalW, false, Image.Format.Rgbaf, bytes);
+        return ImageTexture.CreateFromImage(img);
+    }
+
+    // Analytic-Voronoi crisp edges. The id_tex (cheap) only gives CANDIDATE tiles;
+    // the true nearest tile + the boundary are computed per-pixel from the tile
+    // CENTRE positions (centers tex) — so edges are math, razor-sharp at ANY zoom.
+    // We tap the id texture in a small ring to discover the local neighbour tiles,
+    // then pick nearest/2nd-nearest centre; the boundary is where they tie.
     private const string Shader = @"
 shader_type spatial;
 render_mode cull_back;
-uniform sampler2D id_tex : filter_nearest;
+uniform sampler2D idpair : filter_nearest;     // r=nearest id, g=2nd-nearest id (floats)
 uniform sampler2D palette : filter_nearest;
+uniform sampler2D centers : filter_nearest;    // id -> tile centre xyz (Rgbaf)
 uniform float pal_w = 256.0;
 uniform float highlight_id = -1.0;
-uniform float border = 0.35;
+uniform float border = 0.55;
 varying vec3 v_dir;
 void vertex(){ v_dir = normalize(VERTEX); }
-float decode(vec2 uv){ vec4 c = texture(id_tex, uv); return floor(c.r*255.0+0.5) + floor(c.g*255.0+0.5)*256.0 + floor(c.b*255.0+0.5)*65536.0; }
+vec2 palUV(float id){ return (vec2(mod(id,pal_w), floor(id/pal_w)) + 0.5) / pal_w; }
+vec3 centreOf(float id){ return normalize(texture(centers, palUV(id)).xyz); }
 void fragment(){
     vec3 d = normalize(v_dir);
     float lon = atan(d.x, d.z);
     float lat = asin(clamp(d.y,-1.0,1.0));
     vec2 uv = vec2((lon+PI)/TAU, (PI*0.5 - lat)/PI);
-    float id = decode(uv);
-    float px = mod(id, pal_w);
-    float py = floor(id / pal_w);
-    vec3 col = texture(palette, (vec2(px,py)+0.5)/pal_w).rgb;
-    // border: id changes across the pixel (only meaningful when zoomed in)
-    float e = clamp(fwidth(id), 0.0, 1.0);
-    col = mix(col, col*0.5, e*border);
-    // highlight the current tile
-    if (highlight_id >= 0.0 && abs(id - highlight_id) < 0.5) col = mix(col, vec3(1.0,0.93,0.3), 0.55);
+
+    // the two nearest tiles are baked per texel → exact candidates, no guessing
+    vec2 pr = texture(idpair, uv).rg;
+    float id1 = pr.r, id2 = pr.g;
+    vec3 col = texture(palette, palUV(id1)).rgb;
+
+    // ANALYTIC edge: boundary is exactly where the two nearest centres tie. This
+    // is computed from the real centre directions, so it stays razor-crisp at ANY
+    // zoom regardless of the lookup texture resolution.
+    float diff = dot(d, centreOf(id1)) - dot(d, centreOf(id2));
+    float aa = fwidth(diff) * 1.5 + 1e-6;
+    float edge = 1.0 - smoothstep(0.0, aa, diff);
+    col = mix(col, col*0.4, edge*border);
+
+    if (highlight_id >= 0.0 && abs(id1 - highlight_id) < 0.5) col = mix(col, vec3(1.0,0.93,0.3), 0.5);
     ALBEDO = col; ROUGHNESS = 1.0; SPECULAR = 0.0; METALLIC = 0.0;
 }
 ";
 
-    private void BuildSphere(Texture2D idTex, Texture2D palTex)
+    private void BuildSphere(Texture2D idTex, Texture2D palTex, Texture2D cenTex)
     {
         _mat = new ShaderMaterial { Shader = new Shader { Code = Shader } };
-        _mat.SetShaderParameter("id_tex", idTex);
+        _mat.SetShaderParameter("idpair", idTex);
         _mat.SetShaderParameter("palette", palTex);
+        _mat.SetShaderParameter("centers", cenTex);
         _mat.SetShaderParameter("pal_w", (float)PalW);
         _mat.SetShaderParameter("highlight_id", (float)_currentTile);
         var mesh = new SphereMesh { Radius = 2f, Height = 4f, RadialSegments = 128, Rings = 96 };
