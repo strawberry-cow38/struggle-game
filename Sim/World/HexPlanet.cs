@@ -231,10 +231,14 @@ public sealed class HexPlanet
     // Smooth, coherent fields over the sphere from a seeded sum of sine waves
     // (cheap spherical "noise", fully deterministic). Elevation picks land vs
     // ocean + mountains; moisture + latitude pick the land biome.
+    private const int SmoothPasses = 2;   // neighbour-majority passes to de-speckle biomes
+
     private void AssignBiomes(int seed, float coverage)
     {
-        var elevDirs = SeededDirs(seed * 2 + 1, 8);
-        var moistDirs = SeededDirs(seed * 2 + 7, 6);
+        // Fewer octaves + lower frequency = big coherent continents/regions instead
+        // of small scattered blobs. (Was 8/6 dirs @ 1.7/2.3 → patchy/messy.)
+        var elevDirs = SeededDirs(seed * 2 + 1, 5);
+        var moistDirs = SeededDirs(seed * 2 + 7, 4);
         const float seaLevel = 0.02f;
 
         // Coverage region = a spherical cap around a seeded "world centre" dir,
@@ -258,8 +262,8 @@ public sealed class HexPlanet
                 t.Moisture = 1f;
                 continue;
             }
-            float elev = Field(t.Center, elevDirs, 1.7f);
-            float moist = (Field(t.Center, moistDirs, 2.3f) + 1f) * 0.5f; // 0..1
+            float elev = Field(t.Center, elevDirs, 0.85f);
+            float moist = (Field(t.Center, moistDirs, 1.1f) + 1f) * 0.5f; // 0..1
             float lat = MathF.Abs(t.Center.Y); // 0 equator .. 1 pole
 
             t.Generated = true;
@@ -267,6 +271,38 @@ public sealed class HexPlanet
             t.Moisture = moist;
             t.Biome = Classify(elev, moist, lat, seaLevel);
         }
+
+        SmoothBiomes();
+    }
+
+    // Neighbour-majority relaxation: each generated tile takes the most common
+    // biome among itself + its generated neighbours. Kills single-tile speckle and
+    // ragged boundaries → clean coherent regions. Deterministic (reads prior pass).
+    private void SmoothBiomes()
+    {
+        var cur = new Biome[Tiles.Length];
+        for (int i = 0; i < Tiles.Length; i++) cur[i] = Tiles[i].Biome;
+        int kinds = Enum.GetValues<Biome>().Length;
+        var tally = new int[kinds];
+
+        for (int pass = 0; pass < SmoothPasses; pass++)
+        {
+            var next = (Biome[])cur.Clone();
+            foreach (var t in Tiles)
+            {
+                if (!t.Generated) continue;
+                Array.Clear(tally);
+                tally[(int)cur[t.Index]]++;
+                foreach (int nb in t.Neighbors)
+                    if (Tiles[nb].Generated) tally[(int)cur[nb]]++;
+                int bestKind = (int)cur[t.Index], bestN = -1;
+                for (int k = 0; k < kinds; k++)
+                    if (tally[k] > bestN) { bestN = tally[k]; bestKind = k; }
+                next[t.Index] = (Biome)bestKind;
+            }
+            cur = next;
+        }
+        for (int i = 0; i < Tiles.Length; i++) Tiles[i].Biome = cur[i];
     }
 
     private static Biome Classify(float elev, float moist, float lat, float seaLevel)
