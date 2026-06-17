@@ -37,12 +37,21 @@ public partial class Bootstrap : Node2D
         // hex-sphere view, skipping the 2D colony game. --harness-out=<dir>
         // turns on auto-orbit screenshot capture.
         {
-            bool worldmap = false;
+            bool worldmap = false, planetShader = false;
             string? wmOut = null;
+            int psFreq = 64; float psCov = 1f;
             foreach (var a in OS.GetCmdlineArgs())
             {
                 if (a == "--worldmap" || a == "--harness=worldmap") worldmap = true;
+                else if (a == "--planet-shader" || a == "--harness=planet-shader") planetShader = true;
                 else if (a.StartsWith("--harness-out=")) wmOut = a.Substring("--harness-out=".Length);
+                else if (a.StartsWith("--ps-freq=")) int.TryParse(a.Substring("--ps-freq=".Length), out psFreq);
+                else if (a.StartsWith("--ps-cov=")) float.TryParse(a.Substring("--ps-cov=".Length), out psCov);
+            }
+            if (planetShader)
+            {
+                AddChild(new PlanetShaderView { CaptureDir = wmOut, Frequency = psFreq, Coverage = psCov, Name = "PlanetShader" });
+                return;
             }
             if (worldmap)
             {
