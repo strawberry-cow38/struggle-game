@@ -38,6 +38,10 @@ public sealed class WorldTile
     public Biome Biome;
     public float Elevation;      // -1..1 (negative = below sea level)
     public float Moisture;       // 0..1
+    // Coverage system (RimWorld-style): the sphere is ALWAYS full size; a world
+    // of X% coverage only runs biome generation on X% of the tiles. The rest are
+    // "null" tiles — ungenerated open water, cheap, no biome data.
+    public bool Generated;       // false = null/water tile (outside the coverage region)
     public bool IsPentagon => Corners.Length == 5;
 
     public WorldTile(int index, Vector3 center, Vector3[] corners, int[] neighbors)
@@ -53,23 +57,36 @@ public sealed class HexPlanet
 {
     public readonly int Frequency;
     public readonly int Seed;
+    public readonly float Coverage;     // 0..1 fraction of tiles with real biomes
     public readonly WorldTile[] Tiles;
 
+    // ~RimWorld 100% world ≈ 600k tiles. 10*N²+2 = 600252 at N=245.
+    public const int RimWorld100Frequency = 245;
+
     public int TileCount => Tiles.Length;
+    public int GeneratedTileCount
+    {
+        get { int n = 0; foreach (var t in Tiles) if (t.Generated) n++; return n; }
+    }
     public int PentagonCount
     {
         get { int n = 0; foreach (var t in Tiles) if (t.IsPentagon) n++; return n; }
     }
 
-    public HexPlanet(int frequency = 12, int seed = 1337)
+    // frequency = sphere subdivision (tile count, ALWAYS full for a given world
+    // scale). coverage = fraction of those tiles that get real biome generation
+    // (the rest are null/water). So a "30% world" has the SAME sphere as a 100%
+    // world — it just generates biomes on 30% of the tiles.
+    public HexPlanet(int frequency = 12, int seed = 1337, float coverage = 1f)
     {
         if (frequency < 1) frequency = 1;
         Frequency = frequency;
         Seed = seed;
+        Coverage = Math.Clamp(coverage, 0f, 1f);
 
         var (verts, faces) = BuildGeodesic(frequency);
         Tiles = BuildDual(verts, faces);
-        AssignBiomes(seed);
+        AssignBiomes(seed, Coverage);
     }
 
     // ---- icosahedron ---------------------------------------------------------
@@ -214,18 +231,38 @@ public sealed class HexPlanet
     // Smooth, coherent fields over the sphere from a seeded sum of sine waves
     // (cheap spherical "noise", fully deterministic). Elevation picks land vs
     // ocean + mountains; moisture + latitude pick the land biome.
-    private void AssignBiomes(int seed)
+    private void AssignBiomes(int seed, float coverage)
     {
         var elevDirs = SeededDirs(seed * 2 + 1, 8);
         var moistDirs = SeededDirs(seed * 2 + 7, 6);
         const float seaLevel = 0.02f;
 
+        // Coverage region = a spherical cap around a seeded "world centre" dir,
+        // sized so it contains ~coverage of the sphere. cap fraction =
+        // (1-cosθ)/2, so cosθ_max = 1 - 2*coverage. Tiles inside get real biome
+        // generation; tiles outside are null/water (no field eval = cheaper, so
+        // a smaller world genuinely generates faster while keeping the full sphere).
+        bool partial = coverage < 0.999f;
+        Vector3 worldCentre = SeededDirs(seed * 3 + 5, 1)[0];
+        worldCentre = Vector3.Normalize(worldCentre);
+        float cosCut = 1f - 2f * coverage; // coverage=1 → -1 (whole sphere)
+
         foreach (var t in Tiles)
         {
+            if (partial && Vector3.Dot(t.Center, worldCentre) < cosCut)
+            {
+                // outside coverage → null/water tile, skip the noise eval
+                t.Generated = false;
+                t.Biome = Biome.Ocean;
+                t.Elevation = -1f;
+                t.Moisture = 1f;
+                continue;
+            }
             float elev = Field(t.Center, elevDirs, 1.7f);
             float moist = (Field(t.Center, moistDirs, 2.3f) + 1f) * 0.5f; // 0..1
             float lat = MathF.Abs(t.Center.Y); // 0 equator .. 1 pole
 
+            t.Generated = true;
             t.Elevation = elev;
             t.Moisture = moist;
             t.Biome = Classify(elev, moist, lat, seaLevel);
