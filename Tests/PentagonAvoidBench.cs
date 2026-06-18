@@ -1,60 +1,57 @@
 using System;
-using System.IO;
-using System.Numerics;
-using System.Text;
 using StruggleGame.Sim.World;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace StruggleGame.Tests;
 
-// Question (master 2026-06-18): can the PLAYABLE region dodge all 12 pentagons so
-// the hexes stay 100% uniform (no tiling rewrite) and the pentagons live only in
-// the unplayable poles/water? This measures it: find the tile farthest from every
-// pentagon (the centre of the biggest pentagon-free cap = an icosahedron face
-// centroid), then report how much coverage stays pentagon-free around it.
-public class PentagonAvoidBench
+// Verifies the RimWorld-style fix (master 2026-06-18): pole-align the planet +
+// polar no-go caps → the playable equatorial band is 100% pentagon-free, all 12
+// pentagons buried in the impassable poles, hexes otherwise untouched.
+public class PentagonAvoidTests
 {
-    private readonly ITestOutputHelper _out;
-    public PentagonAvoidBench(ITestOutputHelper o){ _out = o; }
+    [Fact]
+    public void PoleAligned_TwoPentagonsAtPoles_TenInRings()
+    {
+        var p = new HexPlanet(64, 1337, 1f);
+        int atPole = 0, inRing = 0, other = 0;
+        foreach (var t in p.Tiles)
+        {
+            if (!t.IsPentagon) continue;
+            float absLat = MathF.Asin(Math.Clamp(MathF.Abs(t.Center.Y), 0f, 1f)) * 180f / MathF.PI;
+            if (absLat > 80f) atPole++;
+            else if (absLat is > 20f and < 33f) inRing++;   // ±26.57° rings
+            else other++;
+        }
+        Assert.Equal(2, atPole);     // one pentagon on each pole
+        Assert.Equal(10, inRing);    // ten in the ±26.57° rings
+        Assert.Equal(0, other);      // none stranded in the playable band
+    }
+
+    [Theory]
+    [InlineData(0.40f)]   // |lat| ≲ 23.6°
+    [InlineData(0.44f)]   // just under the 26.57° ring
+    public void PlayableBand_IsPentagonFree(float coverage)
+    {
+        var p = new HexPlanet(96, 7, coverage);
+        int playablePentagons = 0, playable = 0;
+        foreach (var t in p.Tiles)
+        {
+            if (!t.Generated) continue;
+            playable++;
+            if (t.IsPentagon) playablePentagons++;
+        }
+        Assert.Equal(0, playablePentagons);   // band is pure hexes
+        Assert.True(playable > p.TileCount / 4, $"band too small: {playable}/{p.TileCount}");
+    }
 
     [Fact]
-    public void Measure()
+    public void BigPolarNoGo_AndFullCoverageHasNoCaps()
     {
-        var sb = new StringBuilder();
-        void Line(string s){ _out.WriteLine(s); sb.AppendLine(s); }
+        var band = new HexPlanet(64, 1, 0.4f);
+        int nogo = 0; foreach (var t in band.Tiles) if (!t.Generated) nogo++;
+        Assert.True(nogo > band.TileCount / 2, "expected big polar no-go (>50%)");
 
-        var planet = new HexPlanet(64, 1337, 1f); // pentagon DIRECTIONS are the 12
-                                                   // icosa verts at any frequency
-        var pents = new System.Collections.Generic.List<Vector3>();
-        foreach (var t in planet.Tiles) if (t.IsPentagon) pents.Add(t.Center);
-        Line($"pentagons: {pents.Count}");
-
-        // best centre = tile maximizing the min angular distance to any pentagon
-        WorldTile best = planet.Tiles[0]; float bestMinDot = 2f;
-        foreach (var t in planet.Tiles)
-        {
-            float maxDot = -2f; // nearest pentagon = largest dot
-            foreach (var p in pents) { float d = Vector3.Dot(t.Center, p); if (d > maxDot) maxDot = d; }
-            if (maxDot < bestMinDot) { bestMinDot = maxDot; best = t; }
-        }
-        float capRadiusDeg = MathF.Acos(Math.Clamp(bestMinDot, -1f, 1f)) * 180f / MathF.PI;
-        float capFrac = (1f - bestMinDot) / 2f;
-        Line($"largest pentagon-free cap: radius {capRadiusDeg:F1} deg = {capFrac*100f:F1}% of sphere");
-        Line($"  → at 600k tiles that's ~{(int)(capFrac*600252)} playable hexes, zero pentagons");
-        Line("");
-
-        // For caps centred on `best`, how many pentagons fall inside each coverage?
-        Line("coverage% | pentagons inside the playable cap (centred to avoid them)");
-        foreach (float cov in new[]{ 0.05f, 0.10f, 0.105f, 0.15f, 0.20f, 0.30f })
-        {
-            float cosCut = 1f - 2f * cov;
-            int pentsInside = 0;
-            foreach (var p in pents) if (Vector3.Dot(p, best.Center) >= cosCut) pentsInside++;
-            Line($"   {cov*100,5:F1}% | {pentsInside}");
-        }
-
-        File.WriteAllText(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "pentagon-bench.txt"), sb.ToString());
+        var full = new HexPlanet(64, 1, 1f);
+        foreach (var t in full.Tiles) Assert.True(t.Generated); // coverage 1 = no caps
     }
 }

@@ -100,6 +100,14 @@ public sealed class HexPlanet
             N( 0, -1,  t), N( 0,  1,  t), N( 0, -1, -t), N( 0,  1, -t),
             N( t,  0, -1), N( t,  0,  1), N(-t,  0, -1), N(-t,  0,  1),
         };
+        // POLE-ALIGN: rotate so vertex 0 sits exactly on the +Y north pole (and,
+        // by symmetry, its antipode on the -Y south pole). The 12 icosa vertices
+        // become the 12 pentagons; pole-aligning puts 2 pentagons AT the poles
+        // and the other 10 in two rings at latitude ±arctan(1/2)≈±26.57°. That
+        // lets a latitude-based polar no-go cap bury ALL 12 pentagons in the
+        // unplayable poles, leaving the playable equatorial band pure hexes.
+        var rot = AlignRotation(v[0], new Vector3(0, 1, 0));
+        for (int i = 0; i < v.Length; i++) v[i] = Vector3.Normalize(Vector3.Transform(v[i], rot));
         var f = new[]
         {
             new[]{0,11,5},  new[]{0,5,1},   new[]{0,1,7},   new[]{0,7,10},  new[]{0,10,11},
@@ -111,6 +119,22 @@ public sealed class HexPlanet
     }
 
     private static Vector3 N(float x, float y, float z) => Vector3.Normalize(new Vector3(x, y, z));
+
+    // Quaternion that rotates unit vector `a` onto unit vector `b`.
+    private static Quaternion AlignRotation(Vector3 a, Vector3 b)
+    {
+        a = Vector3.Normalize(a); b = Vector3.Normalize(b);
+        float d = Vector3.Dot(a, b);
+        if (d > 0.99999f) return Quaternion.Identity;
+        if (d < -0.99999f)
+        {
+            var ortho = MathF.Abs(a.X) < 0.9f ? Vector3.UnitX : Vector3.UnitY;
+            var axis0 = Vector3.Normalize(Vector3.Cross(a, ortho));
+            return Quaternion.CreateFromAxisAngle(axis0, MathF.PI);
+        }
+        var axis = Vector3.Normalize(Vector3.Cross(a, b));
+        return Quaternion.CreateFromAxisAngle(axis, MathF.Acos(Math.Clamp(d, -1f, 1f)));
+    }
 
     // ---- geodesic subdivision (Class I) -------------------------------------
 
@@ -241,23 +265,24 @@ public sealed class HexPlanet
         var moistDirs = SeededDirs(seed * 2 + 7, 4);
         const float seaLevel = 0.02f;
 
-        // Coverage region = a spherical cap around a seeded "world centre" dir,
-        // sized so it contains ~coverage of the sphere. cap fraction =
-        // (1-cosθ)/2, so cosθ_max = 1 - 2*coverage. Tiles inside get real biome
-        // generation; tiles outside are null/water (no field eval = cheaper, so
-        // a smaller world genuinely generates faster while keeping the full sphere).
+        // RimWorld-style POLAR NO-GO CAPS: the playable area is an equatorial
+        // BAND (all longitudes), with big impassable caps at both poles. coverage
+        // = the band's area fraction; the band spans |latitude| ≤ asin(coverage),
+        // i.e. |Center.Y| ≤ coverage. Because the planet is pole-aligned, all 12
+        // pentagons sit at |lat| = 90° (2 poles) or ±26.57° (10 in rings), so a
+        // band with coverage ≤ sin(26.57°)=0.447 is ENTIRELY pentagon-free — the
+        // pentagons all fall inside the polar no-go caps. (coverage ≥1 = whole
+        // planet, no caps.)
         bool partial = coverage < 0.999f;
-        Vector3 worldCentre = SeededDirs(seed * 3 + 5, 1)[0];
-        worldCentre = Vector3.Normalize(worldCentre);
-        float cosCut = 1f - 2f * coverage; // coverage=1 → -1 (whole sphere)
+        float bandY = coverage; // |Center.Y| cutoff = sin(band latitude)
 
         foreach (var t in Tiles)
         {
-            if (partial && Vector3.Dot(t.Center, worldCentre) < cosCut)
+            if (partial && MathF.Abs(t.Center.Y) > bandY)
             {
-                // outside coverage → null/water tile, skip the noise eval
+                // polar no-go cap → impassable null/ice tile, skip the noise eval
                 t.Generated = false;
-                t.Biome = Biome.Ocean;
+                t.Biome = MathF.Abs(t.Center.Y) > 0.9f ? Biome.Snow : Biome.Ocean;
                 t.Elevation = -1f;
                 t.Moisture = 1f;
                 continue;

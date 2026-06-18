@@ -13,7 +13,10 @@ public partial class WorldMapOverlay : CanvasLayer
     // a future "generate world" screen will own that step. Built once then cached
     // (SetActive hides/shows, never rebuilds), so it's a one-time first-open cost.
     public int Frequency = StruggleGame.Sim.World.HexPlanet.RimWorld100Frequency; // 245
-    public float Coverage = 1f;
+    // Equatorial playable band as a fraction of the sphere. 0.4 → |lat|≲23.6°,
+    // which keeps all 12 pentagons inside the polar no-go caps (pentagon-free
+    // playable band) and gives big RimWorld-style impassable poles (~60%).
+    public float Coverage = 0.4f;
 
     private SubViewport _vp = null!;
 

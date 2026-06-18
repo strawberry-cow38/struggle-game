@@ -164,7 +164,9 @@ public partial class PlanetShaderView : Node3D
         var buf = new byte[PalW * PalW * 4];
         foreach (var t in _planet.Tiles)
         {
-            var c = t.Generated ? BiomeColor(t.Biome) : new Color(0.08f, 0.22f, 0.46f); // null = deep water
+            // No-go polar caps render as a distinct pale ice so the big impassable
+            // pole regions read clearly vs the playable band's ocean/biomes.
+            var c = t.Generated ? BiomeColor(t.Biome) : new Color(0.78f, 0.84f, 0.92f); // no-go = ice cap
             int id = t.Index, px = id % PalW, py = id / PalW;
             if (py >= PalW) continue;
             int o = (py * PalW + px) * 4;
@@ -368,10 +370,12 @@ void fragment(){
     private async Task RunCapture()
     {
         Directory.CreateDirectory(CaptureDir!);
-        var frames = new (float yaw, float dist)[]{ (0.6f,5.0f),(2.2f,5.0f),(0.6f,3.0f),(0.6f,2.5f) };
+        var frames = new (float yaw, float pitch, float dist)[]{
+            (0.6f, 0.35f, 5.0f), (0.6f, 1.4f, 5.0f) /*top-down on a pole*/,
+            (0.6f, 0.35f, 3.0f), (0.6f, 0.35f, 2.5f) };
         for (int i=0;i<frames.Length;i++)
         {
-            _yaw=frames[i].yaw; _pitch=0.35f; _dist=frames[i].dist; UpdateOrbit();
+            _yaw=frames[i].yaw; _pitch=frames[i].pitch; _dist=frames[i].dist; UpdateOrbit();
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
