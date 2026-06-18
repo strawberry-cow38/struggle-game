@@ -110,11 +110,13 @@ public partial class PlanetShaderView : Node3D
             buckets[by * CW + bx].Add(t.Index);
         }
 
-        // Bake the TOP-2 nearest tiles per texel (id1, id2) as floats. Storing the
-        // 2nd-nearest is what makes crisp analytic edges robust: the shader draws
-        // the boundary exactly where the two nearest tile centres tie — no tap
-        // guessing, no neighbour table needed.
-        var f = new float[TexW * TexH * 2];
+        // Bake the TOP-4 nearest tiles per texel (RGBA floats). Storing 4 candidates
+        // (not 2) is what makes corners clean: at a 3-way (or pentagon 4-way)
+        // junction the shader needs the 3rd/4th tile to find the true second-
+        // nearest, or the edge line overshoots/gaps at the vertex.
+        var f = new float[TexW * TexH * 4];
+        var id = new int[4];
+        var dd = new float[4];
         for (int y = 0; y < TexH; y++)
         {
             float v = (y + 0.5f) / TexH;
@@ -126,7 +128,9 @@ public partial class PlanetShaderView : Node3D
                 int bx = Math.Clamp((int)(u * CW), 0, CW - 1);
                 var dir = DirFromUV(u, v);
 
-                int id1 = -1, id2 = -1; float d1 = -2f, d2 = -2f;
+                // running top-4 by dot (descending: id[0] nearest)
+                id[0] = id[1] = id[2] = id[3] = -1;
+                dd[0] = dd[1] = dd[2] = dd[3] = -2f;
                 int rxLo = pole ? 0 : bx - 2, rxHi = pole ? CW - 1 : bx + 2;
                 for (int yy = by - 2; yy <= by + 2; yy++)
                 {
@@ -137,20 +141,22 @@ public partial class PlanetShaderView : Node3D
                         foreach (int ti in buckets[yy * CW + wx])
                         {
                             float dot = System.Numerics.Vector3.Dot(dir, tiles[ti].Center);
-                            if (dot > d1) { d2 = d1; id2 = id1; d1 = dot; id1 = ti; }
-                            else if (dot > d2) { d2 = dot; id2 = ti; }
+                            if (dot <= dd[3]) continue;
+                            int k = 3;
+                            while (k > 0 && dot > dd[k - 1]) { dd[k] = dd[k - 1]; id[k] = id[k - 1]; k--; }
+                            dd[k] = dot; id[k] = ti;
                         }
                     }
                 }
-                if (id1 < 0) id1 = 0;
-                if (id2 < 0) id2 = id1;
-                int o = (y * TexW + x) * 2;
-                f[o] = id1; f[o + 1] = id2;
+                if (id[0] < 0) id[0] = 0;
+                for (int k = 1; k < 4; k++) if (id[k] < 0) id[k] = id[0];
+                int o = (y * TexW + x) * 4;
+                f[o] = id[0]; f[o + 1] = id[1]; f[o + 2] = id[2]; f[o + 3] = id[3];
             }
         }
         var bytes = new byte[f.Length * 4];
         Buffer.BlockCopy(f, 0, bytes, 0, bytes.Length);
-        var img = Image.CreateFromData(TexW, TexH, false, Image.Format.Rgf, bytes);
+        var img = Image.CreateFromData(TexW, TexH, false, Image.Format.Rgbaf, bytes);
         return ImageTexture.CreateFromImage(img);
     }
 
@@ -224,17 +230,18 @@ void fragment(){
     float lat = asin(clamp(d.y,-1.0,1.0));
     vec2 uv = vec2((lon+PI)/TAU, (PI*0.5 - lat)/PI);
 
-    // the two nearest tiles are baked per texel → exact candidates, no guessing
-    vec2 pr = texture(idpair, uv).rg;
-    float ida = pr.r, idb = pr.g;
-    // Decide the nearest ANALYTICALLY (real centre distance) per-pixel, and COLOUR
-    // by that — same decision the edge uses — so the colour boundary coincides
-    // EXACTLY with the crisp outline (no blocky texel-grid colour bleed).
-    float sa = dot(d, centreOf(ida));
-    float sb = dot(d, centreOf(idb));
-    float id1 = sa >= sb ? ida : idb;       // truly-nearest here
-    float s1  = max(sa, sb);
-    float s2  = min(sa, sb);                 // second-nearest
+    // the FOUR nearest tiles are baked per texel → enough candidates to resolve
+    // 3-way/4-way corners. Find the true nearest + second-nearest among them by
+    // real centre distance, per-pixel. Colouring + the edge both use this, so the
+    // fill boundary == the outline AND corners close cleanly (no overshoot/gap).
+    vec4 cand = texture(idpair, uv);
+    float ids[4] = { cand.r, cand.g, cand.b, cand.a };
+    // nearest by true centre distance
+    float id1 = ids[0]; float s1 = -2.0;
+    for (int i = 0; i < 4; i++){ float s = dot(d, centreOf(ids[i])); if (s > s1){ s1 = s; id1 = ids[i]; } }
+    // second-nearest among the OTHER tiles (skip duplicates of id1 from padding)
+    float s2 = -2.0;
+    for (int i = 0; i < 4; i++){ if (abs(ids[i]-id1) < 0.5) continue; float s = dot(d, centreOf(ids[i])); if (s > s2) s2 = s; }
     vec3 col = texture(palette, palUV(id1)).rgb;
 
     // SURFACE TEXTURE so tiles read like terrain, not flat paint fills:
