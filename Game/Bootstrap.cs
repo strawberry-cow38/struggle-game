@@ -33,29 +33,25 @@ public partial class Bootstrap : Node2D
         // uncapped renderer was burning, and kills the move-order-spam jitter.
         DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Enabled);
 
-        // World-map mode (--worldmap / --harness=worldmap): build only the 3D
-        // hex-sphere view, skipping the 2D colony game. --harness-out=<dir>
-        // turns on auto-orbit screenshot capture.
+        // World-map standalone render mode (--worldmap / --planet-shader, or the
+        // --harness= equivalents): build only the 3D hex-sphere planet, skipping
+        // the 2D colony game. --harness-out=<dir> = auto-orbit screenshot capture.
+        // (The old flatten-morph WorldMapView was removed; PlanetShaderView is the
+        // single planet renderer, used both here and by the in-game M-key overlay.)
         {
-            bool worldmap = false, planetShader = false;
+            bool planet = false;
             string? wmOut = null;
             int psFreq = 64; float psCov = 1f;
             foreach (var a in OS.GetCmdlineArgs())
             {
-                if (a == "--worldmap" || a == "--harness=worldmap") worldmap = true;
-                else if (a == "--planet-shader" || a == "--harness=planet-shader") planetShader = true;
+                if (a is "--worldmap" or "--harness=worldmap" or "--planet-shader" or "--harness=planet-shader") planet = true;
                 else if (a.StartsWith("--harness-out=")) wmOut = a.Substring("--harness-out=".Length);
                 else if (a.StartsWith("--ps-freq=")) int.TryParse(a.Substring("--ps-freq=".Length), out psFreq);
                 else if (a.StartsWith("--ps-cov=")) float.TryParse(a.Substring("--ps-cov=".Length), out psCov);
             }
-            if (planetShader)
+            if (planet)
             {
                 AddChild(new PlanetShaderView { CaptureDir = wmOut, Frequency = psFreq, Coverage = psCov, Name = "PlanetShader" });
-                return;
-            }
-            if (worldmap)
-            {
-                AddChild(new WorldMapView { CaptureDir = wmOut, Name = "WorldMap" });
                 return;
             }
         }

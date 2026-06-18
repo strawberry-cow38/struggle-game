@@ -2,12 +2,19 @@ using Godot;
 
 namespace StruggleGame.Game.WorldMap;
 
-// In-game world-map overlay (toggled by M). Renders the 3D WorldMapView into a
-// SubViewport shown on a high CanvasLayer, so the globe covers the 2D colony
+// In-game world-map overlay (toggled by M). Renders the 3D PlanetShaderView into
+// a SubViewport shown on a high CanvasLayer, so the globe covers the 2D colony
 // AND its UI. The SubViewport gives the map its own 3D world (camera, light,
 // environment) isolated from the game. Drag to orbit, wheel to zoom inside it.
 public partial class WorldMapOverlay : CanvasLayer
 {
+    // In-game default planet scale. NOT RimWorld-100% (freq 245 = 600k tiles =
+    // ~13s one-time bake = a long freeze on first open). freq 96 ≈ 92k tiles
+    // bakes in ~5s and still looks dense. The planet is built once then cached
+    // (SetActive hides/shows, never rebuilds), so it's a one-time first-open cost.
+    public int Frequency = 96;
+    public float Coverage = 1f;
+
     private SubViewport _vp = null!;
 
     public override void _Ready()
@@ -28,7 +35,7 @@ public partial class WorldMapOverlay : CanvasLayer
             HandleInputLocally = true,
         };
         container.AddChild(_vp);
-        _vp.AddChild(new WorldMapView { Name = "WorldMapView" });
+        _vp.AddChild(new PlanetShaderView { Frequency = Frequency, Coverage = Coverage, Name = "PlanetShaderView" });
 
         // Close hint, top-left.
         var hint = new Label
