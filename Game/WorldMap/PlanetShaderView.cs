@@ -200,10 +200,24 @@ uniform sampler2D centers : filter_nearest;    // id -> tile centre xyz (Rgbaf)
 uniform float pal_w = 256.0;
 uniform float highlight_id = -1.0;
 uniform float border = 0.55;
+uniform float grain = 0.12;       // surface noise strength
+uniform float tile_var = 0.10;    // per-tile brightness variation
 varying vec3 v_dir;
 void vertex(){ v_dir = normalize(VERTEX); }
 vec2 palUV(float id){ return (vec2(mod(id,pal_w), floor(id/pal_w)) + 0.5) / pal_w; }
 vec3 centreOf(float id){ return normalize(texture(centers, palUV(id)).xyz); }
+// cheap hash + 3D value noise on the sphere direction (deterministic, no texture)
+float hash31(vec3 p){ p = fract(p*0.3183099 + 0.1); p *= 17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+float vnoise(vec3 x){
+    vec3 i = floor(x), f = fract(x); f = f*f*(3.0-2.0*f);
+    float n000=hash31(i+vec3(0,0,0)), n100=hash31(i+vec3(1,0,0));
+    float n010=hash31(i+vec3(0,1,0)), n110=hash31(i+vec3(1,1,0));
+    float n001=hash31(i+vec3(0,0,1)), n101=hash31(i+vec3(1,0,1));
+    float n011=hash31(i+vec3(0,1,1)), n111=hash31(i+vec3(1,1,1));
+    return mix(mix(mix(n000,n100,f.x),mix(n010,n110,f.x),f.y),
+               mix(mix(n001,n101,f.x),mix(n011,n111,f.x),f.y), f.z);
+}
+float fbm(vec3 p){ return 0.5*vnoise(p) + 0.25*vnoise(p*2.03) + 0.125*vnoise(p*4.01); }
 void fragment(){
     vec3 d = normalize(v_dir);
     float lon = atan(d.x, d.z);
@@ -215,6 +229,16 @@ void fragment(){
     float id1 = pr.r, id2 = pr.g;
     vec3 col = texture(palette, palUV(id1)).rgb;
 
+    // SURFACE TEXTURE so tiles read like terrain, not flat paint fills:
+    // per-tile brightness variation (breaks up same-biome flatness) + a multi-
+    // octave value-noise grain across the surface. Both deterministic from
+    // position/id, no texture asset.
+    float tv = hash31(vec3(id1*0.137, id1*0.0079, 3.1)) - 0.5;
+    col *= 1.0 + tv * tile_var;
+    float g = fbm(d * 90.0) - 0.5;          // fine grain
+    g += (fbm(d * 22.0) - 0.5) * 0.6;       // coarser mottle
+    col *= 1.0 + g * grain;
+
     // ANALYTIC edge: boundary is exactly where the two nearest centres tie. This
     // is computed from the real centre directions, so it stays razor-crisp at ANY
     // zoom regardless of the lookup texture resolution.
@@ -224,7 +248,7 @@ void fragment(){
     col = mix(col, col*0.4, edge*border);
 
     if (highlight_id >= 0.0 && abs(id1 - highlight_id) < 0.5) col = mix(col, vec3(1.0,0.93,0.3), 0.5);
-    ALBEDO = col; ROUGHNESS = 1.0; SPECULAR = 0.0; METALLIC = 0.0;
+    ALBEDO = clamp(col, 0.0, 1.0); ROUGHNESS = 1.0; SPECULAR = 0.0; METALLIC = 0.0;
 }
 ";
 
