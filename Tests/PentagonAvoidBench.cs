@@ -45,6 +45,25 @@ public class PentagonAvoidTests
     }
 
     [Fact]
+    public void PolarCap_PlayableBandIsAllHexes_NoPentagons()
+    {
+        // PolarCap tiling: hexes everywhere + pole-adjacent pentagon rings that
+        // fall inside the no-go ice caps. The PLAYABLE band must be 100% hexes.
+        var p = new HexPlanet(80, 3, 0.85f, HexPlanet.WorldGen.PolarCap);
+        int playable = 0, playablePent = 0, playableOddCorners = 0;
+        foreach (var t in p.Tiles)
+        {
+            if (!t.Generated) continue;
+            playable++;
+            if (t.IsPentagon) playablePent++;
+            if (t.Corners.Length != 6) playableOddCorners++;
+        }
+        Assert.Equal(0, playablePent);
+        Assert.Equal(0, playableOddCorners);          // every playable tile is a hexagon
+        Assert.True(playable > p.TileCount / 2, $"band too small: {playable}/{p.TileCount}");
+    }
+
+    [Fact]
     public void BigPolarNoGo_AndFullCoverageHasNoCaps()
     {
         var band = new HexPlanet(64, 1, 0.4f);

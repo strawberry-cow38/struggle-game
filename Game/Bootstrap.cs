@@ -42,16 +42,19 @@ public partial class Bootstrap : Node2D
             bool planet = false;
             string? wmOut = null;
             int psFreq = 64; float psCov = 1f;
+            var psMode = Sim.World.HexPlanet.WorldGen.PolarCap;
             foreach (var a in OS.GetCmdlineArgs())
             {
                 if (a is "--worldmap" or "--harness=worldmap" or "--planet-shader" or "--harness=planet-shader") planet = true;
                 else if (a.StartsWith("--harness-out=")) wmOut = a.Substring("--harness-out=".Length);
                 else if (a.StartsWith("--ps-freq=")) int.TryParse(a.Substring("--ps-freq=".Length), out psFreq);
                 else if (a.StartsWith("--ps-cov=")) float.TryParse(a.Substring("--ps-cov=".Length), out psCov);
+                else if (a == "--ps-mode=goldberg") psMode = Sim.World.HexPlanet.WorldGen.Goldberg;
+                else if (a == "--ps-mode=polar") psMode = Sim.World.HexPlanet.WorldGen.PolarCap;
             }
             if (planet)
             {
-                AddChild(new PlanetShaderView { CaptureDir = wmOut, Frequency = psFreq, Coverage = psCov, Name = "PlanetShader" });
+                AddChild(new PlanetShaderView { CaptureDir = wmOut, Frequency = psFreq, Coverage = psCov, Mode = psMode, Name = "PlanetShader" });
                 return;
             }
         }

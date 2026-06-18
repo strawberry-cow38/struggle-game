@@ -18,6 +18,7 @@ public partial class PlanetShaderView : Node3D
     public int Frequency = 64;     // 10*N^2+2 = 40,962 tiles (fast bake for the proto)
     public int Seed = 1337;
     public float Coverage = 1f;
+    public HexPlanet.WorldGen Mode = HexPlanet.WorldGen.Goldberg;
 
     // All sized adaptively from tile count in _Ready (so it's correct from 41k to 600k+).
     private int TexW, TexH;   // equirect lookup resolution
@@ -44,7 +45,7 @@ public partial class PlanetShaderView : Node3D
     public override void _Ready()
     {
         var swGen = System.Diagnostics.Stopwatch.StartNew();
-        _planet = new HexPlanet(Frequency, Seed, Coverage);
+        _planet = new HexPlanet(Frequency, Seed, Coverage, Mode);
         swGen.Stop();
         SizeTextures(_planet.TileCount);
         _currentTile = _planet.NearestTile(new System.Numerics.Vector3(0.25f, 0.6f, 0.4f));
@@ -167,7 +168,9 @@ public partial class PlanetShaderView : Node3D
             // No-go polar caps render as a distinct pale ice so the big impassable
             // pole regions read clearly vs the playable band's ocean/biomes.
             var c = t.Generated ? BiomeColor(t.Biome) : new Color(0.78f, 0.84f, 0.92f); // no-go = ice cap
-            if (t.IsPentagon) c = new Color(1f, 0.05f, 0.05f); // debug: pentagons bright red
+            // (PolarCap tiling forces the unavoidable pentagons into the pole-
+            //  adjacent rings, which sit inside the no-go ice caps → never in the
+            //  playable band. No debug-red needed.)
             int id = t.Index, px = id % PalW, py = id / PalW;
             if (py >= PalW) continue;
             int o = (py * PalW + px) * 4;

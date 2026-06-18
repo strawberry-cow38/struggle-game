@@ -13,12 +13,13 @@ public partial class WorldMapOverlay : CanvasLayer
     // a future "generate world" screen will own that step. Built once then cached
     // (SetActive hides/shows, never rebuilds), so it's a one-time first-open cost.
     public int Frequency = StruggleGame.Sim.World.HexPlanet.RimWorld100Frequency; // 245
-    // Equatorial playable band as a fraction of the sphere. 0.8 → |lat|≲53°, so
-    // the polar no-go ice caps are modest (~20% of the planet) instead of huge.
-    // Tradeoff: the 10 ring-pentagons (±26.57°) are now INSIDE the playable band
-    // (shown bright red for now) — only the 2 pole pentagons stay buried. Dialling
-    // this down toward 0.45 grows the caps until all 12 are buried again.
-    public float Coverage = 0.8f;
+    // Goldberg = beautiful REGULAR hexes (the lat-long PolarCap tiling makes the
+    // tiles come out square-ish, not hex). The 12 pentagons render as normal
+    // terrain (invisible specks among 600k tiles), so we keep the pretty hexes.
+    public StruggleGame.Sim.World.HexPlanet.WorldGen Mode =
+        StruggleGame.Sim.World.HexPlanet.WorldGen.Goldberg;
+    // Equatorial playable band fraction. 0.85 → small polar no-go ice caps (~15%).
+    public float Coverage = 0.85f;
 
     private SubViewport _vp = null!;
 
@@ -41,7 +42,7 @@ public partial class WorldMapOverlay : CanvasLayer
             UseTaa = true,                 // temporal AA — smooths hex edges + grain
         };
         container.AddChild(_vp);
-        _vp.AddChild(new PlanetShaderView { Frequency = Frequency, Coverage = Coverage, Name = "PlanetShaderView" });
+        _vp.AddChild(new PlanetShaderView { Frequency = Frequency, Coverage = Coverage, Mode = Mode, Name = "PlanetShaderView" });
 
         // Close hint, top-left.
         var hint = new Label

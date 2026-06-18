@@ -73,18 +73,31 @@ public sealed class HexPlanet
         get { int n = 0; foreach (var t in Tiles) if (t.IsPentagon) n++; return n; }
     }
 
-    // frequency = sphere subdivision (tile count, ALWAYS full for a given world
-    // scale). coverage = fraction of those tiles that get real biome generation
-    // (the rest are null/water). So a "30% world" has the SAME sphere as a 100%
-    // world — it just generates biomes on 30% of the tiles.
-    public HexPlanet(int frequency = 12, int seed = 1337, float coverage = 1f)
+    // Two tilings:
+    //  Goldberg  — subdivided icosahedron dual: perfectly uniform hexes BUT 12
+    //              pentagons scattered across the sphere.
+    //  PolarCap  — lat-long-triangulation dual: hexes EVERYWHERE + exactly one big
+    //              cap polygon at each pole (the "weird shape" that absorbs the
+    //              irregularity). NO pentagons anywhere in the playable field.
+    //              Hexes stretch a bit near the poles, but those are the impassable
+    //              no-go caps anyway. This is the in-game default.
+    public enum WorldGen { Goldberg, PolarCap }
+    public readonly WorldGen Mode;
+
+    // frequency = tile-density knob (≈600k tiles at 245 in either mode). coverage
+    // = equatorial playable band; the rest are impassable polar no-go caps.
+    public HexPlanet(int frequency = 12, int seed = 1337, float coverage = 1f,
+                     WorldGen mode = WorldGen.Goldberg)
     {
         if (frequency < 1) frequency = 1;
         Frequency = frequency;
         Seed = seed;
         Coverage = Math.Clamp(coverage, 0f, 1f);
+        Mode = mode;
 
-        var (verts, faces) = BuildGeodesic(frequency);
+        var (verts, faces) = mode == WorldGen.PolarCap
+            ? BuildLatLong((int)Math.Round(frequency * 2.236)) // match ~tile count of Goldberg
+            : BuildGeodesic(frequency);
         Tiles = BuildDual(verts, faces);
         AssignBiomes(seed, Coverage);
     }
@@ -188,6 +201,58 @@ public sealed class HexPlanet
                 }
             }
         }
+        return (verts, faces);
+    }
+
+    // ---- lat-long triangulation (→ dual = hexes + 2 polar cap polygons) ------
+
+    // Triangulate a UV/lat-long sphere: 2 pole vertices + `rings` latitude rings
+    // of `cols` vertices, pole fans + consistent-diagonal quad strips between
+    // rings. Its DUAL (via BuildDual) is hexagons at every ring vertex (interior
+    // degree 6) plus ONE big polygon at each pole vertex (degree = cols) — i.e.
+    // hexes everywhere + a "weird shape" cap at each pole, NO pentagons. Wraps
+    // seamlessly in longitude (col index mod cols). Hexes stretch toward the
+    // poles (UV distortion), but the poles are the impassable no-go caps.
+    private static (List<Vector3> verts, List<int[]> faces) BuildLatLong(int rings)
+    {
+        if (rings < 2) rings = 2;
+        int cols = rings * 2;
+        var verts = new List<Vector3>(rings * cols + 2);
+        var faces = new List<int[]>();
+
+        int north = 0, south = 1;
+        verts.Add(new Vector3(0, 1, 0));   // north pole
+        verts.Add(new Vector3(0, -1, 0));  // south pole
+
+        // ring r = 0..rings-1, latitude from just below +90 to just above -90.
+        int RingV(int r, int c) => 2 + r * cols + ((c % cols) + cols) % cols;
+        for (int r = 0; r < rings; r++)
+        {
+            float lat = MathF.PI / 2f - (r + 1) * MathF.PI / (rings + 1);
+            float cy = MathF.Sin(lat), cr = MathF.Cos(lat);
+            for (int c = 0; c < cols; c++)
+            {
+                float lon = c * MathF.Tau / cols;
+                verts.Add(new Vector3(cr * MathF.Sin(lon), cy, cr * MathF.Cos(lon)));
+            }
+        }
+
+        // north cap fan
+        for (int c = 0; c < cols; c++)
+            faces.Add(new[] { north, RingV(0, c + 1), RingV(0, c) });
+        // strips between consecutive rings (consistent diagonal → degree-6 duals)
+        for (int r = 0; r < rings - 1; r++)
+            for (int c = 0; c < cols; c++)
+            {
+                int a = RingV(r, c), b = RingV(r, c + 1);
+                int d = RingV(r + 1, c), e = RingV(r + 1, c + 1);
+                faces.Add(new[] { a, b, e });
+                faces.Add(new[] { a, e, d });
+            }
+        // south cap fan
+        for (int c = 0; c < cols; c++)
+            faces.Add(new[] { south, RingV(rings - 1, c), RingV(rings - 1, c + 1) });
+
         return (verts, faces);
     }
 
