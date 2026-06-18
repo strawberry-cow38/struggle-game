@@ -226,7 +226,15 @@ void fragment(){
 
     // the two nearest tiles are baked per texel → exact candidates, no guessing
     vec2 pr = texture(idpair, uv).rg;
-    float id1 = pr.r, id2 = pr.g;
+    float ida = pr.r, idb = pr.g;
+    // Decide the nearest ANALYTICALLY (real centre distance) per-pixel, and COLOUR
+    // by that — same decision the edge uses — so the colour boundary coincides
+    // EXACTLY with the crisp outline (no blocky texel-grid colour bleed).
+    float sa = dot(d, centreOf(ida));
+    float sb = dot(d, centreOf(idb));
+    float id1 = sa >= sb ? ida : idb;       // truly-nearest here
+    float s1  = max(sa, sb);
+    float s2  = min(sa, sb);                 // second-nearest
     vec3 col = texture(palette, palUV(id1)).rgb;
 
     // SURFACE TEXTURE so tiles read like terrain, not flat paint fills:
@@ -239,10 +247,9 @@ void fragment(){
     g += (fbm(d * 22.0) - 0.5) * 0.6;       // coarser mottle
     col *= 1.0 + g * grain;
 
-    // ANALYTIC edge: boundary is exactly where the two nearest centres tie. This
-    // is computed from the real centre directions, so it stays razor-crisp at ANY
-    // zoom regardless of the lookup texture resolution.
-    float diff = dot(d, centreOf(id1)) - dot(d, centreOf(id2));
+    // ANALYTIC edge: boundary is exactly where the two nearest centres tie — the
+    // SAME s1/s2 that chose the colour, so fill + outline always agree.
+    float diff = s1 - s2;
     float aa = fwidth(diff) * 1.5 + 1e-6;
     float edge = 1.0 - smoothstep(0.0, aa, diff);
     col = mix(col, col*0.4, edge*border);
