@@ -39,8 +39,6 @@ public partial class PlanetShaderView : Node3D
     private Node3D _pivot = null!;
     private Camera3D _cam = null!;
     private float _yaw = 0.6f, _pitch = 0.4f, _dist = 5.0f;
-    private bool _drag;   // LMB orbit
-    private bool _pan;    // MMB pan
     private int _currentTile;
 
     public override void _Ready()
@@ -294,18 +292,19 @@ void fragment(){
         _pivot.Rotation = new Vector3(_pitch, _yaw, 0);
         _cam.Position = new Vector3(0, 0, _dist); _cam.LookAt(Vector3.Zero, Vector3.Up);
 
-        // Hex grid fades out as you zoom in past the surface (close = bare textured
-        // ground, like real terrain); ground colour + grain always stay. Visible
-        // when zoomed out (strategic grid). altitude = dist - R.
+        // Hex grid fades out as you zoom toward the surface: GONE for the ~3
+        // closest zoom levels (incl. most-zoomed), fading in only once you're
+        // well out (strategic grid). Ground colour + grain always stay. altitude
+        // = dist - R; closest ~3 wheel steps sit under alt≈0.4.
         float alt = _dist - PlanetR;
-        float gridStrength = Mathf.SmoothStep(0.22f, 0.9f, alt); // ~0 close, ~0.55 far
+        float gridStrength = Mathf.SmoothStep(0.42f, 1.4f, alt); // 0 for ~3 closest levels
         _mat?.SetShaderParameter("border", gridStrength * 0.55f);
     }
 
-    // Angular step per unit of input, scaled so movement tracks the SURFACE at a
-    // consistent on-screen rate: close in = fine steps (pan nearby ground), far
-    // out = big swings. Proportional to altitude above the surface.
-    private float SurfaceRate() => Mathf.Clamp((_dist - PlanetR) * 0.9f, 0.04f, 2.0f);
+    // Angular step per unit of input, scaled by ZOOM LEVEL so movement tracks the
+    // SURFACE at a consistent on-screen rate: close in = fine steps (pan nearby
+    // ground slowly), far out = big swings. Proportional to altitude above surface.
+    private float SurfaceRate() => Mathf.Clamp((_dist - PlanetR) * 1.0f, 0.02f, 2.5f);
 
     private bool _wDown, _aDown, _sDown, _dDown;
 
@@ -327,15 +326,18 @@ void fragment(){
     {
         if (e is InputEventMouseButton mb)
         {
-            if (mb.ButtonIndex == MouseButton.Left) _drag = mb.Pressed;
-            else if (mb.ButtonIndex == MouseButton.Middle) _pan = mb.Pressed;   // MMB pan
-            else if (mb.ButtonIndex == MouseButton.WheelUp) { _dist *= 0.9f; UpdateOrbit(); }
-            else if (mb.ButtonIndex == MouseButton.WheelDown) { _dist *= 1.1f; UpdateOrbit(); }
+            // Finer wheel steps (~0.95 vs 0.9) ≈ double the zoom levels in-between.
+            if (mb.ButtonIndex == MouseButton.WheelUp) { _dist *= 0.95f; UpdateOrbit(); }
+            else if (mb.ButtonIndex == MouseButton.WheelDown) { _dist *= 1.0526f; UpdateOrbit(); }
+            // LMB does NOT move the camera anymore (killed). MMB-drag pans —
+            // tracked via the motion event's button mask below (robust vs missed
+            // release events), so no per-button bool needed.
         }
-        else if (e is InputEventMouseMotion mm && (_drag || _pan))
+        else if (e is InputEventMouseMotion mm
+                 && (mm.ButtonMask & MouseButtonMask.Middle) != 0)
         {
-            // LMB orbit + MMB pan both move the surface focus; scale by surface
-            // rate so the drag tracks the ground under the cursor at any zoom.
+            // MMB-drag pans the surface focus point; scaled by zoom level so the
+            // drag tracks the ground under the cursor at any altitude.
             float k = SurfaceRate() * 0.004f;
             _yaw -= mm.Relative.X * k; _pitch -= mm.Relative.Y * k;
             UpdateOrbit();
