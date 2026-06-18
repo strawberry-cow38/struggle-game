@@ -8,11 +8,11 @@ namespace StruggleGame.Game.WorldMap;
 // environment) isolated from the game. Drag to orbit, wheel to zoom inside it.
 public partial class WorldMapOverlay : CanvasLayer
 {
-    // In-game default planet scale. NOT RimWorld-100% (freq 245 = 600k tiles =
-    // ~13s one-time bake = a long freeze on first open). freq 96 ≈ 92k tiles
-    // bakes in ~5s and still looks dense. The planet is built once then cached
+    // In-game planet scale = full RimWorld-100% (freq 245 = 600,252 tiles). The
+    // one-time lookup bake (~13s) freezes on first open; master accepted that —
+    // a future "generate world" screen will own that step. Built once then cached
     // (SetActive hides/shows, never rebuilds), so it's a one-time first-open cost.
-    public int Frequency = 96;
+    public int Frequency = StruggleGame.Sim.World.HexPlanet.RimWorld100Frequency; // 245
     public float Coverage = 1f;
 
     private SubViewport _vp = null!;
