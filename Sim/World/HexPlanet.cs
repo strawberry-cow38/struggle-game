@@ -38,6 +38,9 @@ public sealed class WorldTile
     public Biome Biome;
     public float Elevation;      // -1..1 (negative = below sea level)
     public float Moisture;       // 0..1
+    public float TemperatureC;   // avg annual °C (from latitude + elevation)
+    public float RainfallMm;     // avg annual mm (from moisture)
+    public float LatitudeDeg => MathF.Asin(Math.Clamp(Center.Y, -1f, 1f)) * 180f / MathF.PI;
     // Coverage system (RimWorld-style): the sphere is ALWAYS full size; a world
     // of X% coverage only runs biome generation on X% of the tiles. The rest are
     // "null" tiles — ungenerated open water, cheap, no biome data.
@@ -360,6 +363,13 @@ public sealed class HexPlanet
             t.Elevation = elev;
             t.Moisture = moist;
             t.Biome = Classify(elev, moist, lat, seaLevel);
+            // Plausible climate numbers for the info panel: warm at the equator,
+            // cold at the poles, cooler at altitude; rain scales with moisture.
+            // latFrac = 0 at equator → 1 at pole (use real latitude, not sin).
+            float latFrac = MathF.Asin(Math.Clamp(lat, 0f, 1f)) * 2f / MathF.PI;
+            float landElev = MathF.Max(0f, elev);
+            t.TemperatureC = 30f - 45f * latFrac - landElev * 20f;
+            t.RainfallMm = moist * moist * 3200f;
         }
 
         SmoothBiomes();

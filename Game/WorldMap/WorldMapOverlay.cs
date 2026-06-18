@@ -1,4 +1,6 @@
 using Godot;
+using StruggleGame.Game.UI;
+using StruggleGame.Sim.World;
 
 namespace StruggleGame.Game.WorldMap;
 
@@ -20,8 +22,16 @@ public partial class WorldMapOverlay : CanvasLayer
         StruggleGame.Sim.World.HexPlanet.WorldGen.Goldberg;
     // Equatorial playable band fraction. 0.85 → small polar no-go ice caps (~15%).
     public float Coverage = 0.85f;
+    public bool AutoSelectDemo = false;   // harness: auto-select a tile for the screenshot
 
     private SubViewport _vp = null!;
+    private PlanetShaderView _planet = null!;
+
+    // Tile info panel (matches the game's dreamcore UiTheme glass panels).
+    private Panel _info = null!;
+    private ScanlineStyleBox _infoBox = null!;
+    private Label _infoTitle = null!, _infoBody = null!;
+    private double _glowT;
 
     public override void _Ready()
     {
@@ -42,18 +52,79 @@ public partial class WorldMapOverlay : CanvasLayer
             UseTaa = true,                 // temporal AA — smooths hex edges + grain
         };
         container.AddChild(_vp);
-        _vp.AddChild(new PlanetShaderView { Frequency = Frequency, Coverage = Coverage, Mode = Mode, Name = "PlanetShaderView" });
+        _planet = new PlanetShaderView { Frequency = Frequency, Coverage = Coverage, Mode = Mode, Name = "PlanetShaderView" };
+        _planet.SelectionChanged += OnTileSelected;
+        _vp.AddChild(_planet);
+
+        BuildInfoPanel();
+
+        if (AutoSelectDemo)
+            Callable.From(() => _planet.DebugSelect(
+                _planet.Planet.NearestTile(new System.Numerics.Vector3(0.25f, 0.45f, 0.5f)))).CallDeferred();
 
         // Close hint, top-left.
         var hint = new Label
         {
-            Text = "World Map  ·  press M to close",
+            Text = "World Map  ·  press M to close  ·  click a tile",
             MouseFilter = Control.MouseFilterEnum.Ignore,
             Position = new Vector2(22, 16),
         };
         hint.AddThemeFontSizeOverride("font_size", 18);
         hint.AddThemeColorOverride("font_color", new Color(0.92f, 0.94f, 1f));
         AddChild(hint);
+    }
+
+    // Bottom-right glass info panel, same dreamcore styling as the in-game panes.
+    private void BuildInfoPanel()
+    {
+        _info = new Panel { Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore };
+        _info.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        _info.Position = new Vector2(22, 56);
+        _info.CustomMinimumSize = new Vector2(320, 168);
+        _infoBox = UiTheme.PanelBox(corner: 12, margin: 10);
+        _info.AddThemeStyleboxOverride("panel", _infoBox);
+        AddChild(_info);
+
+        var vbox = new VBoxContainer
+        {
+            AnchorRight = 1, AnchorBottom = 1,
+            OffsetLeft = 14, OffsetTop = 12, OffsetRight = -14, OffsetBottom = -12,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        vbox.AddThemeConstantOverride("separation", 6);
+        _info.AddChild(vbox);
+
+        _infoTitle = new Label();
+        _infoTitle.AddThemeFontSizeOverride("font_size", 22);
+        _infoTitle.AddThemeColorOverride("font_color", UiTheme.Accent);
+        vbox.AddChild(_infoTitle);
+        vbox.AddChild(new HSeparator());
+        _infoBody = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        _infoBody.AddThemeFontSizeOverride("font_size", 16);
+        _infoBody.AddThemeColorOverride("font_color", UiTheme.Text);
+        vbox.AddChild(_infoBody);
+    }
+
+    private void OnTileSelected(int idx)
+    {
+        if (idx < 0) { _info.Visible = false; return; }
+        var t = _planet.Planet.Tiles[idx];
+        _infoTitle.Text = $"{t.Biome}";
+        string hemi = t.LatitudeDeg >= 0 ? "N" : "S";
+        int elevM = (int)Mathf.Round(t.Elevation * 4000f); // -1..1 → ~±4000 m
+        _infoBody.Text =
+            $"Tile #{t.Index}\n" +
+            $"Latitude:  {Mathf.Abs(t.LatitudeDeg):0.0}° {hemi}\n" +
+            $"Avg temp:  {t.TemperatureC:0.0} °C\n" +
+            $"Rainfall:  {t.RainfallMm:0} mm/yr\n" +
+            $"Elevation: {elevM} m\n" +
+            $"Moisture:  {Mathf.Round(t.Moisture * 100f)}%";
+        _info.Visible = true;
+    }
+
+    public override void _Process(double delta)
+    {
+        if (_info.Visible) { _glowT += delta; UiTheme.AnimateGlow(_infoBox, _glowT); }
     }
 
     // Show/hide without rebuilding the (large) mesh. Pauses the SubViewport's

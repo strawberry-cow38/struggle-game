@@ -41,6 +41,44 @@ public partial class PlanetShaderView : Node3D
     private Camera3D _cam = null!;
     private float _yaw = 0.6f, _pitch = 0.4f, _dist = 5.0f;
     private int _currentTile;
+    private int _selected = -1;                 // -1 = nothing selected
+    public HexPlanet Planet => _planet;          // so the overlay can read tile data
+    public int Selected => _selected;
+    public event Action<int>? SelectionChanged;   // fires with selected index (-1 = none)
+
+    // Programmatic select (harness/demo screenshots; same path as a click).
+    public void DebugSelect(int idx)
+    {
+        _selected = idx;
+        _mat?.SetShaderParameter("highlight_id", (float)_selected);
+        SelectionChanged?.Invoke(_selected);
+    }
+
+    // Click → ray from the camera → planet sphere → nearest tile. Re-clicking the
+    // same tile deselects; clicking empty space deselects. Highlights via the
+    // shader's highlight_id and notifies the overlay (for the info panel).
+    private void PickAt(Vector2 screenPos)
+    {
+        Vector3 ro = _cam.ProjectRayOrigin(screenPos);
+        Vector3 rd = _cam.ProjectRayNormal(screenPos);
+        int hit = -1;
+        // intersect ray with the unit-planet sphere (centre origin, radius PlanetR)
+        float b = ro.Dot(rd), c = ro.Dot(ro) - PlanetR * PlanetR;
+        float disc = b * b - c;
+        if (disc >= 0f)
+        {
+            float t = -b - Mathf.Sqrt(disc);
+            if (t > 0f)
+            {
+                Vector3 p = (ro + rd * t).Normalized();
+                hit = _planet.NearestTile(new System.Numerics.Vector3(p.X, p.Y, p.Z));
+                if (!_planet.Tiles[hit].Generated) hit = -1; // can't select no-go tiles
+            }
+        }
+        _selected = (hit == _selected) ? -1 : hit;          // toggle
+        _mat?.SetShaderParameter("highlight_id", (float)_selected);
+        SelectionChanged?.Invoke(_selected);
+    }
 
     public override void _Ready()
     {
@@ -278,7 +316,7 @@ void fragment(){
         _mat.SetShaderParameter("palette", palTex);
         _mat.SetShaderParameter("centers", cenTex);
         _mat.SetShaderParameter("pal_w", (float)PalW);
-        _mat.SetShaderParameter("highlight_id", (float)_currentTile);
+        _mat.SetShaderParameter("highlight_id", -1f); // nothing selected at start
         var mesh = new SphereMesh { Radius = 2f, Height = 4f, RadialSegments = 128, Rings = 96 };
         AddChild(new MeshInstance3D { Mesh = mesh, MaterialOverride = _mat });
     }
@@ -298,13 +336,9 @@ void fragment(){
         _pivot.Rotation = new Vector3(_pitch, _yaw, 0);
         _cam.Position = new Vector3(0, 0, _dist); _cam.LookAt(Vector3.Zero, Vector3.Up);
 
-        // Hex grid fades out as you zoom toward the surface: GONE for the ~3
-        // closest zoom levels (incl. most-zoomed), fading in only once you're
-        // well out (strategic grid). Ground colour + grain always stay. altitude
-        // = dist - R; closest ~3 wheel steps sit under alt≈0.4.
-        float alt = _dist - PlanetR;
-        float gridStrength = Mathf.SmoothStep(0.42f, 1.4f, alt); // 0 for ~3 closest levels
-        _mat?.SetShaderParameter("border", gridStrength * 0.55f);
+        // Hex grid lines hidden at ALL zoom levels (master) — the surface reads as
+        // smooth biome terrain; the only outline drawn is the selected tile's.
+        _mat?.SetShaderParameter("border", 0f);
     }
 
     // Angular step per unit of input, scaled by ZOOM LEVEL so movement tracks the
@@ -335,9 +369,9 @@ void fragment(){
             // Finer wheel steps (~0.95 vs 0.9) ≈ double the zoom levels in-between.
             if (mb.ButtonIndex == MouseButton.WheelUp) { _dist *= 0.95f; UpdateOrbit(); }
             else if (mb.ButtonIndex == MouseButton.WheelDown) { _dist *= 1.0526f; UpdateOrbit(); }
-            // LMB does NOT move the camera anymore (killed). MMB-drag pans —
-            // tracked via the motion event's button mask below (robust vs missed
-            // release events), so no per-button bool needed.
+            // LMB CLICK = select/deselect a tile (LMB no longer moves the camera).
+            else if (mb.ButtonIndex == MouseButton.Left && mb.Pressed) PickAt(mb.Position);
+            // MMB-drag pans — tracked via the motion button-mask below.
         }
         else if (e is InputEventMouseMotion mm
                  && (mm.ButtonMask & MouseButtonMask.Middle) != 0)

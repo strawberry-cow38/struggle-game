@@ -91,7 +91,7 @@ public partial class HarnessController : Node2D
                 // Boot the 2D colony, then open the M-key world-map overlay on
                 // top of it and screenshot — verifies the overlay covers the
                 // game + UI and the SubViewport renders the globe.
-                _schedule.Add((1.0, h => h.AddChild(new WorldMapOverlay { Name = "WorldMapOverlay" }), "open map"));
+                _schedule.Add((1.0, h => h.AddChild(new WorldMapOverlay { Name = "WorldMapOverlay", AutoSelectDemo = true, Frequency = 96 }), "open map"));
                 _schedule.Add((2.8, h => h.Screenshot(), "shot"));
                 _schedule.Add((3.6, h => h.Finish("worldmap-overlay done"), "finish"));
                 _screenshotEverySec = double.PositiveInfinity;
