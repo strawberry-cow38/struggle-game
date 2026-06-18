@@ -39,7 +39,8 @@ public partial class PlanetShaderView : Node3D
     private Node3D _pivot = null!;
     private Camera3D _cam = null!;
     private float _yaw = 0.6f, _pitch = 0.4f, _dist = 5.0f;
-    private bool _drag;
+    private bool _drag;   // LMB orbit
+    private bool _pan;    // MMB pan
     private int _currentTile;
 
     public override void _Ready()
@@ -283,18 +284,73 @@ void fragment(){
         _pivot = new Node3D(); AddChild(_pivot);
         _cam = new Camera3D { Current = true, Fov = 45f }; _pivot.AddChild(_cam);
     }
+    private const float PlanetR = 2f;
     private void UpdateOrbit()
     {
-        _pitch = Mathf.Clamp(_pitch, -1.45f, 1.45f); _dist = Mathf.Clamp(_dist, 2.3f, 9f);
+        _pitch = Mathf.Clamp(_pitch, -1.45f, 1.45f); _dist = Mathf.Clamp(_dist, PlanetR + 0.12f, 9f);
+        // Pivot rotates the globe around its centre, so the point facing the
+        // camera IS the surface focus point — orbit / pan / WASD all move THAT
+        // point across the surface (master: pan relative to the surface point).
         _pivot.Rotation = new Vector3(_pitch, _yaw, 0);
         _cam.Position = new Vector3(0, 0, _dist); _cam.LookAt(Vector3.Zero, Vector3.Up);
+
+        // Hex grid fades out as you zoom in past the surface (close = bare textured
+        // ground, like real terrain); ground colour + grain always stay. Visible
+        // when zoomed out (strategic grid). altitude = dist - R.
+        float alt = _dist - PlanetR;
+        float gridStrength = Mathf.SmoothStep(0.22f, 0.9f, alt); // ~0 close, ~0.55 far
+        _mat?.SetShaderParameter("border", gridStrength * 0.55f);
     }
+
+    // Angular step per unit of input, scaled so movement tracks the SURFACE at a
+    // consistent on-screen rate: close in = fine steps (pan nearby ground), far
+    // out = big swings. Proportional to altitude above the surface.
+    private float SurfaceRate() => Mathf.Clamp((_dist - PlanetR) * 0.9f, 0.04f, 2.0f);
+
+    private bool _wDown, _aDown, _sDown, _dDown;
+
+    public override void _Process(double delta)
+    {
+        // WASD pans the surface focus point (W/S = north/south, A/D = east/west),
+        // at surface-relative speed.
+        float dy = (_sDown ? 1 : 0) - (_wDown ? 1 : 0);
+        float dx = (_dDown ? 1 : 0) - (_aDown ? 1 : 0);
+        if (dx != 0 || dy != 0)
+        {
+            float step = SurfaceRate() * (float)delta * 1.6f;
+            _yaw += dx * step; _pitch += dy * step;
+            UpdateOrbit();
+        }
+    }
+
     public override void _UnhandledInput(InputEvent e)
     {
-        if (e is InputEventMouseButton mb){ if(mb.ButtonIndex==MouseButton.Left)_drag=mb.Pressed;
-            else if(mb.ButtonIndex==MouseButton.WheelUp){_dist*=0.9f;UpdateOrbit();}
-            else if(mb.ButtonIndex==MouseButton.WheelDown){_dist*=1.1f;UpdateOrbit();} }
-        else if (e is InputEventMouseMotion mm && _drag){ _yaw-=mm.Relative.X*0.006f; _pitch-=mm.Relative.Y*0.006f; UpdateOrbit(); }
+        if (e is InputEventMouseButton mb)
+        {
+            if (mb.ButtonIndex == MouseButton.Left) _drag = mb.Pressed;
+            else if (mb.ButtonIndex == MouseButton.Middle) _pan = mb.Pressed;   // MMB pan
+            else if (mb.ButtonIndex == MouseButton.WheelUp) { _dist *= 0.9f; UpdateOrbit(); }
+            else if (mb.ButtonIndex == MouseButton.WheelDown) { _dist *= 1.1f; UpdateOrbit(); }
+        }
+        else if (e is InputEventMouseMotion mm && (_drag || _pan))
+        {
+            // LMB orbit + MMB pan both move the surface focus; scale by surface
+            // rate so the drag tracks the ground under the cursor at any zoom.
+            float k = SurfaceRate() * 0.004f;
+            _yaw -= mm.Relative.X * k; _pitch -= mm.Relative.Y * k;
+            UpdateOrbit();
+        }
+        else if (e is InputEventKey ke && !ke.Echo)
+        {
+            bool p = ke.Pressed;
+            switch (ke.Keycode)
+            {
+                case Key.W: _wDown = p; break;
+                case Key.A: _aDown = p; break;
+                case Key.S: _sDown = p; break;
+                case Key.D: _dDown = p; break;
+            }
+        }
     }
 
     private static Color BiomeColor(Biome b) => b switch

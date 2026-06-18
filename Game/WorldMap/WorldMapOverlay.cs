@@ -33,6 +33,8 @@ public partial class WorldMapOverlay : CanvasLayer
         {
             RenderTargetUpdateMode = SubViewport.UpdateMode.Always,
             HandleInputLocally = true,
+            UseTaa = true,                 // temporal AA — smooths hex edges + grain
+            Msaa3D = Viewport.Msaa.Msaa4X,  // pairs well with TAA for clean edges
         };
         container.AddChild(_vp);
         _vp.AddChild(new PlanetShaderView { Frequency = Frequency, Coverage = Coverage, Name = "PlanetShaderView" });
