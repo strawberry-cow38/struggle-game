@@ -13,10 +13,12 @@ public partial class WorldMapOverlay : CanvasLayer
     // a future "generate world" screen will own that step. Built once then cached
     // (SetActive hides/shows, never rebuilds), so it's a one-time first-open cost.
     public int Frequency = StruggleGame.Sim.World.HexPlanet.RimWorld100Frequency; // 245
-    // Equatorial playable band as a fraction of the sphere. 0.4 → |lat|≲23.6°,
-    // which keeps all 12 pentagons inside the polar no-go caps (pentagon-free
-    // playable band) and gives big RimWorld-style impassable poles (~60%).
-    public float Coverage = 0.4f;
+    // Equatorial playable band as a fraction of the sphere. 0.8 → |lat|≲53°, so
+    // the polar no-go ice caps are modest (~20% of the planet) instead of huge.
+    // Tradeoff: the 10 ring-pentagons (±26.57°) are now INSIDE the playable band
+    // (shown bright red for now) — only the 2 pole pentagons stay buried. Dialling
+    // this down toward 0.45 grows the caps until all 12 are buried again.
+    public float Coverage = 0.8f;
 
     private SubViewport _vp = null!;
 

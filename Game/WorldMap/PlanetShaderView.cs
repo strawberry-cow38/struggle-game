@@ -167,6 +167,7 @@ public partial class PlanetShaderView : Node3D
             // No-go polar caps render as a distinct pale ice so the big impassable
             // pole regions read clearly vs the playable band's ocean/biomes.
             var c = t.Generated ? BiomeColor(t.Biome) : new Color(0.78f, 0.84f, 0.92f); // no-go = ice cap
+            if (t.IsPentagon) c = new Color(1f, 0.05f, 0.05f); // debug: pentagons bright red
             int id = t.Index, px = id % PalW, py = id / PalW;
             if (py >= PalW) continue;
             int o = (py * PalW + px) * 4;
